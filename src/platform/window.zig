@@ -25,22 +25,29 @@ pub const Window = struct {
     wake_type: u32,
 
     pub fn init(title: [*:0]const u8, w: c_int, h: c_int) !Window {
+        preferWayland();
         preferNvidiaEgl();
         // Fechar a janela é o app quem decide (ficar na bandeja ou sair). Sem
         // isto o SDL ainda manda um QUIT junto, e QUIT aqui é sempre sair.
         _ = c.SDL_SetHint(c.SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
         _ = c.SDL_SetAppMetadata("larperCord", (@import("build_options").version ++ "\x00").ptr, "dev.larpercord");
-        if (!c.SDL_Init(c.SDL_INIT_VIDEO)) return error.SdlInit;
+        if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
+            std.log.err("SDL video: {s}", .{c.SDL_GetError()});
+            return error.SdlInit;
+        }
+        errdefer c.SDL_Quit();
         var flags = c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY | c.SDL_WINDOW_TRANSPARENT;
         // LARPER_HIDDEN=1: janela escondida (medir desempenho com a GPU de verdade).
         if (c.SDL_getenv("LARPER_HIDDEN") != null) flags |= c.SDL_WINDOW_HIDDEN;
         const window = c.SDL_CreateWindow(title, w, h, flags) orelse return error.SdlWindow;
+        errdefer c.SDL_DestroyWindow(window);
         if (decodeIcon(icon_64)) |icon| {
             _ = c.SDL_SetWindowIcon(window, icon);
             c.SDL_DestroySurface(icon);
         }
         // LARPER_RENDERER escolhe o backend do SDL (opengl, vulkan, gpu, software).
         const renderer = c.SDL_CreateRenderer(window, c.SDL_getenv("LARPER_RENDERER")) orelse return error.SdlRenderer;
+        if (@import("timeline.zig").enabled) std.log.info("SDL video: {s}, renderer: {s}", .{ c.SDL_GetCurrentVideoDriver(), c.SDL_GetRendererName(renderer) });
         _ = c.SDL_SetRenderVSync(renderer, 1);
         _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_NONE);
         const wake_type = c.SDL_RegisterEvents(1);
@@ -67,6 +74,20 @@ pub const Window = struct {
         return c.SDL_SavePNG(surface, path);
     }
 };
+
+/// Uma sessão Wayland usa a conexão nativa, mesmo em compositores onde o SDL
+/// prefere XWayland. Se ela não estiver disponível, tenta X11. A prioridade
+/// mínima preserva SDL_VIDEO_DRIVER (inclusive offscreen no QA) e outros hints.
+fn preferWayland() void {
+    if (@import("builtin").os.tag != .linux) return;
+    const display = c.SDL_getenv("WAYLAND_DISPLAY");
+    const socket = c.SDL_getenv("WAYLAND_SOCKET");
+    const session = c.SDL_getenv("XDG_SESSION_TYPE");
+    const wayland = (display != null and display[0] != 0) or
+        (socket != null and socket[0] != 0) or
+        (session != null and std.mem.eql(u8, std.mem.span(session), "wayland"));
+    if (wayland) _ = c.SDL_SetHintWithPriority(c.SDL_HINT_VIDEO_DRIVER, "wayland,x11", c.SDL_HINT_DEFAULT);
+}
 
 /// Ícones embutidos (tools/gen_icons.py).
 pub const icon_64 = @embedFile("icon_64");
