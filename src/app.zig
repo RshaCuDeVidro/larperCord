@@ -3003,8 +3003,10 @@ pub const App = struct {
             const clear = [4]f32{ bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a };
             const draw_data = c.ImGui_GetDrawData();
             if (@import("ui/video.zig").takeChanged()) app.gate.redraw();
+            // GIF que toca aos poucos: quadro novo na mesma textura, com o desenho igual.
+            const gif_changed = app.images.takeChanged();
             // Igual ao que já está na tela: sem GPU nem present. Prints e QA leem os pixels.
-            const show = app.gate.check(quadro.sum(draw_data, clear), (app.opts.qa and !app.qa_real_gate) or app.opts.shot != null or bench or record_dir != null or quadro.texturesDirty(draw_data));
+            const show = app.gate.check(quadro.sum(draw_data, clear), gif_changed or (app.opts.qa and !app.qa_real_gate) or app.opts.shot != null or bench or record_dir != null or quadro.texturesDirty(draw_data));
             app.stats.frames_built = app.gate.built;
             app.stats.frames_skipped = app.gate.skipped;
             if (show) {
@@ -3332,7 +3334,8 @@ pub const App = struct {
         const clear = [4]f32{ bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a };
         const draw_data = c.ImGui_GetDrawData();
         if (@import("ui/video.zig").takeChanged()) app.gate.redraw();
-        const show = app.gate.check(quadro.sum(draw_data, clear), wl.shot != null or quadro.texturesDirty(draw_data));
+        const gif_changed = app.images.takeChanged();
+        const show = app.gate.check(quadro.sum(draw_data, clear), gif_changed or wl.shot != null or quadro.texturesDirty(draw_data));
         if (show) {
             _ = c.SDL_SetRenderScale(r, app.io.*.DisplayFramebufferScale.x, app.io.*.DisplayFramebufferScale.y);
             _ = c.SDL_SetRenderDrawColorFloat(r, clear[0], clear[1], clear[2], clear[3]);

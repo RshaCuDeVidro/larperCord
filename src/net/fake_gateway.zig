@@ -2800,10 +2800,14 @@ fn demoPoll(which: usize, mine: u16, epoch_ms: i64) !*polls.Poll {
     return p;
 }
 
+/// O GIF do Klipy da demonstração (QA_SUITE=midia): a página dele e o nome do anexo.
+pub const klipy_page = "https://klipy.com/gifs/larper-dance";
+pub const klipy_file = "larper-dance";
+
 /// Mensagem de voz (o Ogg é feito na hora pelo player), anexo com spoiler,
-/// anexo marcado como sensível e uma imagem antiga com o link vencido. O
-/// #música também tem o árabe e o hebraico (`demoRtlMessages`, nas posições
-/// 1, 2, 5 e 6 contando do fim): estas ficam nas 3, 4, 8 e 7.
+/// anexo marcado como sensível, uma imagem antiga com o link vencido e um GIF do
+/// Klipy. O #música também tem o árabe e o hebraico (`demoRtlMessages`, nas
+/// posições 1, 2, 5 e 6 contando do fim): estas ficam nas 3, 4, 8, 7 e 11.
 fn demoMediaMessages(msgs: []types.Message) !void {
     const n = msgs.len;
     const set = struct {
@@ -2829,6 +2833,11 @@ fn demoMediaMessages(msgs: []types.Message) !void {
     try set(&msgs[n - 4], pick("final da série 👀 (spoiler!)", "series finale 👀 (spoiler!)"), .{ .url = try alloc.dupe(u8, "demo:2"), .filename = try alloc.dupe(u8, "SPOILER_final.png"), .width = 720, .height = 720, .spoiler = true });
     try set(&msgs[n - 8], "", .{ .url = try alloc.dupe(u8, "demo:3"), .filename = try alloc.dupe(u8, "foto.png"), .width = 960, .height = 540, .sensitive = true });
     try set(&msgs[n - 7], pick("foto de ontem", "yesterday's photo"), .{ .url = try alloc.dupe(u8, "demo:expired:1?ex=1&is=0&hm=qa"), .filename = try alloc.dupe(u8, "ontem.png"), .width = 900, .height = 560 });
+    // Link do Klipy: o Discord manda um embed "gifv" e o anexo sai como o gateway de
+    // verdade monta (`embedAttachments`): a miniatura animada pelo proxy, sem prévia
+    // parada à parte, e a página como chave dos favoritos. Longo, como muitos do Klipy:
+    // passa do limite de cada GIF e toca aos poucos (ui/gif_stream.zig).
+    try set(&msgs[n - 11], klipy_page, .{ .url = try alloc.dupe(u8, "demo:longgif"), .filename = try alloc.dupe(u8, klipy_file), .width = 400, .height = 240, .animated = true, .embed = true, .link = try alloc.dupe(u8, klipy_page) });
 }
 
 /// #zig do primeiro servidor: respostas a mensagens sem texto, para a prévia

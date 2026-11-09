@@ -1,7 +1,8 @@
 //! QA da mídia (QA_SUITE=midia): mensagem de voz (tocar, pausar, buscar na
 //! barra e chegar ao fim), capa de spoiler e de conteúdo sensível, link de
 //! anexo vencido renovado uma vez só e a aba de figurinhas (pacotes buscados
-//! só quando ela abre, a de outro servidor trancada sem Nitro, enviar).
+//! só quando ela abre, a de outro servidor trancada sem Nitro, enviar) e o GIF do
+//! Klipy, que anda sozinho e chega à tela sem nenhum evento.
 //! Tudo na demonstração: o #música do primeiro servidor (fake_gateway.zig).
 const std = @import("std");
 const c = @import("c");
@@ -15,6 +16,7 @@ const voice_msg = @import("ui/voice_msg.zig");
 const media_cover = @import("ui/media_cover.zig");
 const media_refresh = @import("core/media_refresh.zig");
 const stickers = @import("core/stickers.zig");
+const gif_stream = @import("ui/gif_stream.zig");
 const StoredMessage = @import("core/store.zig").StoredMessage;
 const Id = types.Id;
 
@@ -195,6 +197,75 @@ fn packsNotRefetched(_: *App) bool {
     return gw.sent.sticker_packs.load(.monotonic) == 1 and qa.find("sticker:900501") != null;
 }
 
+// --- GIF do Klipy -----------------------------------------------------------------
+
+fn jumpKlipy(app: *App) void {
+    jump(app, gw.klipy_file);
+}
+fn tKlipy(app: *App, buf: []u8) []const u8 {
+    const id = idOf(app, gw.klipy_file);
+    if (id == 0) return "";
+    return std.fmt.bufPrint(buf, "att:{d}:0", .{id}) catch "";
+}
+fn klipyBadge(app: *App) bool {
+    var b: [64]u8 = undefined;
+    const id = idOf(app, gw.klipy_file);
+    return id != 0 and qa.find(std.fmt.bufPrint(&b, "gif-badge:{d}:0", .{id}) catch return false) != null;
+}
+/// A animação que a conversa desenha (o anexo aponta para o GIF longo da demonstração).
+fn klipyStream(app: *App) ?*gif_stream.Stream {
+    var it = app.images.map.iterator();
+    while (it.next()) |e| if (std.mem.endsWith(u8, e.key_ptr.*, " demo:longgif") and e.value_ptr.state == .ready) return e.value_ptr.stream;
+    return null;
+}
+fn klipyStreams(app: *App) bool {
+    var b: [64]u8 = undefined;
+    return klipyStream(app) != null and qa.find(tKlipy(app, &b)) != null and !klipyBadge(app);
+}
+
+/// O QA normalmente desenha todo quadro (lê os pixels). Aqui o portão vale de verdade e a
+/// checagem, que roda depois de ele decidir, olha quadro a quadro: `hidden` conta os
+/// quadros do GIF que ficaram fora da tela; `same`, os iguais que o portão pulou.
+const Watch = struct { shown: u32 = 0, skipped: u64 = 0, frames: u32 = 0, hidden: u32 = 0, same: u32 = 0 };
+var watch: Watch = .{};
+fn watchStart(app: *App) void {
+    const st = klipyStream(app) orelse return;
+    watch = .{ .shown = st.shown, .skipped = app.gate.skipped };
+    app.qa_real_gate = true;
+}
+fn watchStop(app: *App) void {
+    app.qa_real_gate = false;
+}
+fn klipyAdvances(app: *App) bool {
+    const st = klipyStream(app) orelse return false;
+    const skipped = app.gate.skipped != watch.skipped;
+    if (st.shown != watch.shown) {
+        watch.frames +%= st.shown -% watch.shown;
+        if (skipped) watch.hidden += 1;
+    } else if (skipped) watch.same += 1;
+    watch.shown = st.shown;
+    watch.skipped = app.gate.skipped;
+    // 30 ms por quadro: uns 30 quadros em pouco menos de 1 s.
+    return watch.frames >= 30;
+}
+fn klipyReachedScreen(_: *App) bool {
+    if (c.SDL_getenv("QA_DEBUG") != null) std.debug.print("[klipy] quadros {d}, fora da tela {d}, iguais pulados {d}\n", .{ watch.frames, watch.hidden, watch.same });
+    return watch.frames >= 30 and watch.hidden == 0 and watch.same > 0;
+}
+fn klipyHoverPlays(app: *App) bool {
+    return klipyReachedScreen(app) and !klipyBadge(app);
+}
+fn autoplayOff(app: *App) void {
+    app.st.settings.autoplay_gifs = false;
+}
+fn autoplayOn(app: *App) void {
+    app.st.settings.autoplay_gifs = true;
+}
+fn klipyStill(app: *App) bool {
+    const st = klipyStream(app) orelse return false;
+    return st.shown == watch.shown and klipyBadge(app);
+}
+
 pub const ops = [_]Op{
     s("mensagem de voz"),
     click("guild:500000"),
@@ -256,4 +327,30 @@ pub const ops = [_]Op{
     click("sticker:900401"),
     expect("um clique manda a figurinha (sticker_ids) e ela chega na conversa", stickerArrived),
     .{ .shot = "midia-figurinha-enviada" },
+
+    s("GIF do Klipy (embed gifv)"),
+    .{ .run = jumpKlipy },
+    expect("o GIF do Klipy aparece tocando aos poucos, sem o selo de GIF", klipyStreams),
+    .{ .shot = "midia-klipy" },
+    // Sem o mouse em cima e sem nenhum evento: o desenho fica igual, só a textura muda.
+    .{ .hover = .{ .mark = "guild:500000" } },
+    .{ .wait = 250 },
+    .{ .run = watchStart },
+    .{ .expect = .{ .name = "sem mexer em nada, o GIF anda sozinho", .check = klipyAdvances, .timeout_ms = 4000 } },
+    .{ .run = watchStop },
+    expect("cada quadro novo do GIF chega à tela, mesmo com o desenho igual", klipyReachedScreen),
+    .{ .run = autoplayOff },
+    .{ .wait = 100 },
+    .{ .run = watchStart },
+    .{ .wait = 500 },
+    .{ .run = watchStop },
+    expect("com \"tocar GIFs sozinhos\" desligado, fica parado e com o selo", klipyStill),
+    .{ .hover = .{ .dyn = tKlipy } },
+    .{ .wait = 100 },
+    .{ .run = watchStart },
+    .{ .expect = .{ .name = "com o mouse em cima, anda", .check = klipyAdvances, .timeout_ms = 4000 } },
+    .{ .run = watchStop },
+    expect("e cada quadro chega à tela, sem o selo", klipyHoverPlays),
+    .{ .run = autoplayOn },
+    .{ .hover = .{ .mark = "guild:500000" } },
 };

@@ -12,7 +12,8 @@ fn addItems(seed: u64, ptr: anytype, n: c_int) u64 {
 }
 
 /// Dois quadros com o mesmo resumo saem iguais na tela, desde que nenhuma textura
-/// tenha trocado de conteúdo sem trocar de ID (o vídeo avisa: `video.takeChanged`).
+/// tenha trocado de conteúdo sem trocar de ID (o vídeo e o GIF que toca aos poucos
+/// avisam: `video.takeChanged` e `images.Cache.takeChanged`).
 pub fn sum(dd: *const c.ImDrawData, clear: [4]f32) u64 {
     var h = add(0, std.mem.asBytes(&clear));
     h = add(h, std.mem.asBytes(&dd.DisplayPos));
