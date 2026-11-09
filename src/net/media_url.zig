@@ -63,6 +63,10 @@ pub fn tenorVideoFromPage(html: []const u8) ?[]const u8 {
 /// Ax = webp animado, bem menor que o GIF; tabela em
 /// wiki.archiveteam.org/index.php/Tenor)
 ///   media.giphy.com/media/<id>/giphy.mp4 -> .../giphy.gif
+/// Klipy fica de fora: cada tamanho e formato tem um nome sorteado na mesma pasta
+/// (static.klipy.com/ii/<hash>/14/af/MCCBoQlZ.mp4 é o GIF um0L4dFH.gif e o WebP
+/// eUbp2uNc.webp), e nem precisa: a miniatura que o Discord manda já é o WebP
+/// animado, que o proxy dele entrega com `animated=true` (ver `proxiedUrl`).
 pub fn gifFromVideo(buf: []u8, video: []const u8) ?[]const u8 {
     if (!std.mem.startsWith(u8, video, "https://")) return null;
     const q = std.mem.indexOfScalar(u8, video, '?') orelse video.len;
@@ -115,6 +119,8 @@ test "vídeo do tenor e do giphy a partir do gif (para guardar o favorito)" {
     try std.testing.expect(videoFromGif(&b, "https://media.tenor.com/abc/x.gif") == null);
     try std.testing.expect(videoFromGif(&b, "https://media.tenor.com/H5y5Fk9VdKcAAAPo/a/b.gif") == null);
     try std.testing.expect(videoFromGif(&b, "demo:gif") == null);
+    // Klipy: o nome do MP4 não sai do nome do GIF (o favorito guarda a imagem como está).
+    try std.testing.expect(videoFromGif(&b, "https://static.klipy.com/ii/935d7ab9d8c6202580a668421940ec81/14/af/um0L4dFH.gif") == null);
 }
 
 /// O tamanho guardado de uma imagem pedida com `v` pixels. Pequenas ficam no tamanho exato,
@@ -179,6 +185,9 @@ test "gif do tenor e do giphy a partir do vídeo" {
     try std.testing.expectEqualStrings("https://media.giphy.com/media/abc/giphy.gif", gifFromVideo(&b, "https://media.giphy.com/media/abc/giphy.mp4").?);
     try std.testing.expect(gifFromVideo(&b, "https://evil.com/x.mp4") == null);
     try std.testing.expect(gifFromVideo(&b, "https://media.tenor.co/videos/abc.mp4") == null);
+    // Klipy: nenhum endereço inventado (o GIF vem da miniatura que o Discord manda).
+    try std.testing.expect(gifFromVideo(&b, "https://static.klipy.com/ii/935d7ab9d8c6202580a668421940ec81/14/af/MCCBoQlZ.mp4") == null);
+    try std.testing.expect(gifFromVideo(&b, "https://images-ext-1.discordapp.net/external/x/https/static.klipy.com/ii/935d7ab9d8c6202580a668421940ec81/14/af/MCCBoQlZ.mp4") == null);
     allow_gif_hosts.store(false, .release);
     try std.testing.expect(!allowedHost("https://media.tenor.com/x.gif"));
     allow_gif_hosts.store(true, .release);

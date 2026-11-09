@@ -186,6 +186,7 @@ fn image(ctx: *d.Ctx, dl: *c.ImDrawList, a: *const Attachment, r: d.Rect, scale:
         d.rect(dl, br, d.Rgba.black.alpha(0.6 * alpha), 4);
         const f = ctx.ui.get(.bold);
         d.text(dl, f, 11, br.x + (br.w - d.width(f, 11, "GIF")) / 2, d.centerY(br, 11), d.Rgba.white.alpha(alpha), "GIF");
+        qa.mark(br, "gif-badge:{d}:{d}", .{ msg_id, index });
     }
     if (star_r) |sr| {
         gif_fav.want(ctx);
