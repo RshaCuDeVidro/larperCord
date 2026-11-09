@@ -13,6 +13,7 @@ const anim = @import("ui/anim.zig");
 const resize = @import("ui/resize.zig");
 const mosaic = @import("ui/mosaic.zig");
 const updater = @import("net/updater.zig");
+const changelog = @import("core/changelog.zig");
 const S = @import("ui/settings_state.zig");
 const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
@@ -1041,8 +1042,20 @@ fn newestItem() bool {
     return qa.find(k) != null;
 }
 fn changelogReal(_: *App) bool {
-    // O conteúdo de verdade do CHANGELOG, no idioma da interface, sem o título do arquivo.
-    return qa.find("changelog-section:Chamadas") != null and qa.find("changelog-section:Correções") != null and newestItem();
+    // O conteúdo de verdade do CHANGELOG, no idioma da interface (o QA roda em português),
+    // sem o título do arquivo: cada seção da versão mais nova aparece com o título dela.
+    // As seções vêm do próprio arquivo, então o teste não muda a cada release.
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const versions = changelog.parse(arena.allocator(), @embedFile("changelog_pt")) catch return false;
+    if (versions.len == 0 or versions[0].sections.len == 0) return false;
+    var b: [128]u8 = undefined;
+    for (versions[0].sections) |sec| {
+        if (sec.title.len == 0) continue;
+        const k = std.fmt.bufPrint(&b, "changelog-section:{s}", .{sec.title}) catch return false;
+        if (qa.find(k) == null) return false;
+    }
+    return newestItem();
 }
 fn currentMarked(_: *App) bool {
     var b: [64]u8 = undefined;
