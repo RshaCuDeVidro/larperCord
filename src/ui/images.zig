@@ -189,6 +189,9 @@ pub const Cache = struct {
     /// Quando o próximo quadro de um GIF na tela vence (o laço do app acorda
     /// nessa hora em vez de redesenhar sem parar). Zerado a cada quadro.
     next_frame_ms: i64 = std.math.maxInt(i64),
+    /// Um GIF que toca aos poucos pôs um quadro novo na textura dele neste quadro
+    /// (ver `takeChanged`).
+    texture_changed: bool = false,
     evicted_ms: i64 = 0,
     /// Hora do último quadro desenhado (o app marca). É contra ela que se mede
     /// o "não aparece há um tempo": depois de o app dormir mais de um minuto,
@@ -322,10 +325,18 @@ pub const Cache = struct {
         return .loading;
     }
 
+    /// A imagem de alguma textura mudou sem o ID dela mudar (o GIF que toca aos poucos
+    /// usa uma textura só). O desenho sai igual ao do quadro anterior, e o app manda
+    /// este quadro para a tela mesmo assim. Uma vez por quadro, depois de desenhar.
+    pub fn takeChanged(cache: *Cache) bool {
+        defer cache.texture_changed = false;
+        return cache.texture_changed;
+    }
+
     /// O quadro de agora (todos os GIFs andam no mesmo relógio) e quando
     /// o próximo vence.
     fn frameOf(cache: *Cache, e: *const Entry, play: bool) *c.SDL_Texture {
-        if (e.stream) |st| return if (play and st.frame(cache.now_ms, &cache.next_frame_ms)) st.tex else e.frames[0].tex;
+        if (e.stream) |st| return if (play and st.frame(cache.now_ms, &cache.next_frame_ms, &cache.texture_changed)) st.tex else e.frames[0].tex;
         if (e.frames.len == 1 or !play) return e.frames[0].tex;
         const total = e.total();
         const t: u32 = @intCast(@mod(cache.now_ms, @as(i64, total)));

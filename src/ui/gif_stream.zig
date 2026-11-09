@@ -4,6 +4,10 @@
 //! animação precisa de quadros e termina depois de 2 s sem pedido. Parada (sem o mouse
 //! em cima, com "tocar sozinho" desligado) ou fora da tela, ninguém pede quadro e nada
 //! roda. GIF (stb_image, quadro a quadro) e WebP animado (WebPAnimDecoder).
+//!
+//! Cada quadro novo vai para a mesma textura: o desenho do ImGui sai igual ao do
+//! quadro anterior (mesmo ID de textura), e o app só manda o quadro para a tela
+//! porque `frame` avisa que a imagem mudou (ver core/ritmo.zig e ui/quadro.zig).
 const std = @import("std");
 const c = @import("c");
 const quadros = @import("../core/gif_quadros.zig");
@@ -61,13 +65,15 @@ pub const Stream = struct {
     last_seq: u32 = 0,
 
     /// O quadro de agora (todo pedido de quadro passa por aqui). false = nenhum ainda:
-    /// quem chama mostra o primeiro, parado. Marca em `next_ms` quando o próximo vence.
-    pub fn frame(s: *Stream, now: i64, next_ms: *i64) bool {
+    /// quem chama mostra o primeiro, parado. Marca em `next_ms` quando o próximo vence
+    /// e põe `changed` em true quando a textura recebeu um quadro novo.
+    pub fn frame(s: *Stream, now: i64, next_ms: *i64, changed: *bool) bool {
         c.SDL_LockMutex(mutex);
         defer c.SDL_UnlockMutex(mutex);
         if (s.ring.count > 0 and s.pace.ready(now)) {
             const slot = &s.slots[s.ring.head];
             _ = c.SDL_UpdateTexture(s.tex, null, slot.px.ptr, @as(c_int, s.w) * 4);
+            changed.* = true;
             s.pace.shown(now, slot.delay_ms);
             if (s.shown > 0 and slot.seq != 0 and slot.seq != s.last_seq +% 1) s.out_of_order += 1;
             s.last_seq = slot.seq;
