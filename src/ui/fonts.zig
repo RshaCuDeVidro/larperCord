@@ -48,15 +48,32 @@ var missing_n: usize = 0;
 /// (ver `loadBlocks`). Tamanho fixo, e nada acontece para quem nunca vê uma letra dessas.
 var misses: font_blocks.Misses = .{};
 
+/// As letras que pediram cada grupo antes da reserva dele entrar (até 8): a que a reserva não
+/// tiver vai procurar fonte pelo bloco (ver `loadWanted`). O ImGui guarda a letra que faltou
+/// como sem desenho e não pergunta de novo, e a reserva do árabe costuma ser o DejaVu Sans,
+/// que já está inteiro no atlas (é o dos símbolos): nada mudaria e ela ficaria "?" para sempre.
+var group_cps: [groups][8]u32 = undefined;
+var group_cps_n: [groups]u8 = @splat(0);
+
 fn onGlyphMissing(cp: c_uint) callconv(.c) void {
     // Invisível (o U+FEFF cai na faixa do árabe) não pede fonte nenhuma.
     if (plain_letters.invisible(cp)) return;
     if (groupOf(cp)) |g| {
-        if (!tried_once[@intFromEnum(g)]) {
-            wanted[@intFromEnum(g)] = true;
+        const gi = @intFromEnum(g);
+        if (!tried_once[gi]) {
+            wanted[gi] = true;
+            const n = group_cps_n[gi];
+            if (n < group_cps[gi].len and std.mem.indexOfScalar(u32, group_cps[gi][0..n], cp) == null) {
+                group_cps[gi][n] = cp;
+                group_cps_n[gi] = n + 1;
+            }
             return;
         }
-    } else if (blockToSearch(cp)) |b| {
+        // A reserva do grupo entrou e mesmo assim falta esta letra (o heh goal do urdu, U+06C1,
+        // e as formas dele não estão no DejaVu Sans): o sistema diz qual fonte tem, só para o
+        // bloco dela, como nas outras escritas.
+    }
+    if (blockToSearch(cp)) |b| {
         if (misses.note(b, cp)) return;
     }
     noteMissing(cp);
@@ -99,8 +116,13 @@ fn onGlyphInvisible(cp: c_uint) callconv(.c) bool {
 /// nenhum texto usou ainda (no Windows, o itálico do Segoe UI não tem árabe e o normal tem:
 /// desenhando só no normal, as reservas nunca são procuradas). Escrita já procurada: nada.
 pub fn request(cp: u32) void {
-    const g = groupOf(cp) orelse return;
-    if (!tried_once[@intFromEnum(g)]) wanted[@intFromEnum(g)] = true;
+    if (groupOf(cp)) |g| if (!tried_once[@intFromEnum(g)]) {
+        wanted[@intFromEnum(g)] = true;
+        return;
+    };
+    // Grupo já procurado (ou letra de outra escrita): a fonte do bloco dela, se ainda não
+    // foi procurada.
+    if (blockToSearch(cp)) |b| _ = misses.note(b, cp);
 }
 
 /// As letras que continuam sem fonte, para as Configurações dizerem quais escritas são.
@@ -260,12 +282,26 @@ pub const Fonts = struct {
                 f.cjk[f.cjk_n] = .{ .data = data, .index = m.index, .ranges = ranges };
                 f.cjk_n += 1;
             }
+            // A letra que pediu o grupo e não está na reserva dele: a fonte do bloco dela.
+            for (group_cps[gi][0..group_cps_n[gi]]) |cp| {
+                if (f.groupHas(gi, cp)) continue;
+                if (blockToSearch(cp)) |b| _ = misses.note(b, cp);
+            }
+            group_cps_n[gi] = 0;
         }
         f.loadBlocks();
         // Como na abertura: o cache de fontes do sistema não precisa ficar na memória.
         if (!sys.windows) c.FcFini();
         for (f.faces.items) |e| for (f.cjk[first_new..f.cjk_n]) |j| f.mergeOne(e.font, j);
         return true;
+    }
+
+    /// Alguma reserva do grupo `gi` (ou a fonte dos símbolos, que pode ser a mesma) tem `cp`.
+    fn groupHas(f: *const Fonts, gi: usize, cp: u32) bool {
+        const ranges = rangesOf(@enumFromInt(gi));
+        for (f.cjk[0..f.cjk_n]) |o| if (o.ranges == ranges and fileHas(o.data, o.index, &.{cp})) return true;
+        if (f.symbols) |sym| if (fileHas(sym.data, sym.index, &.{cp})) return true;
+        return false;
     }
 
     /// Letras de outras escritas pediram fonte (ver `onGlyphMissing`): para cada bloco, uma vez
