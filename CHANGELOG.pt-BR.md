@@ -17,6 +17,9 @@
 - GIFs longos, como os do Klipy, voltam a tocar sozinhos, não só com o mouse em cima. Isso quebrou na 0.6.2.
 - Imagens de embed que o proxy de mídia do Discord não reduz, como as dos cartões do X/Twitter, agora carregam pela original. Com o log de depuração ligado, ele diz por que uma imagem falhou.
 
+**Chamadas**
+- Canais de voz com call mostram há quanto tempo ela está rolando, como no Discord (`16:42:14`). Escolha o formato, ou desligue, em Configurações → Aparência → Canais de voz. Também dá para escrever o seu com `{H}`, `{mm}`, `{ss}` e os outros campos. O app só acorda por isso com algum tempo na tela, e só quando o texto muda: uma vez por segundo com segundos, no máximo uma vez por minuto sem.
+
 **Texto em qualquer idioma**
 - Mais correções no árabe e no hebraico, a partir do relato de majd-tqe (#9). Título, autor e nome de campo de embed que começam em árabe ou hebraico terminam na borda direita do cartão, como a descrição.
 - Uma linha que começa com número, como "1." ou "12-", fica da direita para a esquerda, com o número e o ponto ou o traço na ordem certa.
