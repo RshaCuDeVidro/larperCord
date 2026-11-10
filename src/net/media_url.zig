@@ -216,6 +216,45 @@ pub fn proxiedUrl(buf: []u8, url: []const u8, w: u16, h: u16) ?[:0]const u8 {
     return std.fmt.bufPrintSentinel(buf, "{s}{s}{s}{s}width={d}", .{ url, sep, if (video) "format=webp&" else "", if (anim) "animated=true&" else "", w }, 0) catch null;
 }
 
+/// Como terminou o pedido de uma imagem.
+pub const Fetched = enum { ok, http_error, network, too_big, stopped, undecodable };
+
+/// O pedido com o tamanho (`proxiedUrl`) falhou: vale pedir a original, o endereço como
+/// veio? Só quando o proxy recusou (HTTP de erro, resposta vazia, redirecionamento para
+/// fora) ou mandou algo que não abrimos, e só se o pedido levou parâmetros nossos. Erro de
+/// rede e arquivo grande demais não mudam pedindo de outro jeito, e a original de um vídeo
+/// é o vídeo (o que se queria era um quadro dele).
+pub fn retryOriginal(url: []const u8, w: u16, h: u16, why: Fetched) bool {
+    if (why != .http_error and why != .undecodable) return false;
+    const q = std.mem.indexOfScalar(u8, url, '?');
+    const path = url[0 .. q orelse url.len];
+    for ([_][]const u8{ ".mp4", ".webm", ".mov" }) |ext| if (std.ascii.endsWithIgnoreCase(path, ext)) return false;
+    var b: [2048]u8 = undefined;
+    const sized = proxiedUrl(&b, url, w, h) orelse return false;
+    return !std.mem.eql(u8, sized, url);
+}
+
+test "imagem que o proxy não reduz: pede a original" {
+    // Cartão de link do X: o endereço do twimg não tem extensão (o formato vai na query), e o
+    // proxy guarda essa query dentro do caminho (%3F...). Ela fica como está.
+    const x_card = "https://images-ext-1.discordapp.net/external/AbC_dEf-123/%3Fformat%3Djpg%26name%3Dorig/https/pbs.twimg.com/card_img/2118161767721218048/fOKohnpN";
+    var b: [512]u8 = undefined;
+    try std.testing.expectEqualStrings(x_card ++ "?width=768", proxiedUrl(&b, x_card, 768, 384).?);
+    try std.testing.expect(retryOriginal(x_card, 768, 384, .http_error));
+    try std.testing.expect(retryOriginal(x_card, 768, 384, .undecodable));
+    // Rede caída, arquivo grande, app fechando: pedir de novo não muda nada.
+    try std.testing.expect(!retryOriginal(x_card, 768, 384, .network));
+    try std.testing.expect(!retryOriginal(x_card, 768, 384, .too_big));
+    try std.testing.expect(!retryOriginal(x_card, 768, 384, .stopped));
+    // O pedido já era a original (sem tamanho, ou fora do proxy): não há outro.
+    try std.testing.expect(!retryOriginal(x_card, 4096, 4096, .http_error));
+    try std.testing.expect(!retryOriginal("https://cdn.discordapp.com/attachments/1/2/a.png?ex=1", 256, 128, .http_error));
+    // A original de um vídeo é o vídeo, não um quadro.
+    try std.testing.expect(!retryOriginal("https://media.discordapp.net/attachments/1/2/v.mp4?ex=1", 320, 180, .http_error));
+    // WebP animado do proxy: a original também anima.
+    try std.testing.expect(retryOriginal("https://images-ext-1.discordapp.net/external/x/https/static.klipy.com/a.webp", 232, 240, .undecodable));
+}
+
 test "url do proxy pede o tamanho e mantém o WebP" {
     var b: [512]u8 = undefined;
     // Sem altura: a imagem mantém a proporção, seja qual for a caixa pedida.

@@ -650,6 +650,11 @@ fn load(curl: *?*c.CURL, jb: Job, stop: *std.atomic.Value(bool)) Pixels {
     // (um .mp4 renomeado para .gif, por exemplo), os decodificadores do sistema
     // não rodam em algo que a pessoa só passou o olho: vídeo é com um clique.
     var allow_video = false;
+    // Baixado agora pelo endereço do proxy (não arquivo, Tenor nem guardado), pedido
+    // sem tamanho, e o que o servidor disse do pedido (para o log).
+    var from_net = false;
+    var original = false;
+    var info: FetchInfo = .{};
     var bytes: std.ArrayList(u8) = .empty;
     defer bytes.deinit(alloc);
     if (std.mem.startsWith(u8, jb.url, "file://")) {
@@ -694,15 +699,46 @@ fn load(curl: *?*c.CURL, jb: Job, stop: *std.atomic.Value(bool)) Pixels {
             allow_video = true;
         }
     } else if (!recentGet(jb.url, &bytes)) {
-        if (!download(curl, jb, &bytes, stop)) return .{};
-        recentPut(jb.url, bytes.items);
+        from_net = true;
+        var got = downloadAs(curl, jb, &bytes, stop, false, &info);
+        // O proxy de mídia recusou a imagem reduzida: a original, que o cache reduz aqui.
+        if (got != .ok and media_url.retryOriginal(jb.url, jb.max_w, jb.max_h, got)) {
+            logFail(jb.url, "a reduzida falhou; pedindo a original", .{});
+            bytes.clearRetainingCapacity();
+            info = .{};
+            got = downloadAs(curl, jb, &bytes, stop, true, &info);
+            original = true;
+        }
+        if (got != .ok) return .{};
     }
-    // Vaga de decodificação (no máximo 2 ao mesmo tempo).
-    if (decode_slots) |sem| c.SDL_WaitSemaphore(sem);
-    const px = decode(bytes.items, jb.max_w, jb.max_h, stop, allow_video);
-    if (decode_slots) |sem| c.SDL_SignalSemaphore(sem);
-    if (px.frames.len == 0) logFail(jb.url, "não decodificou ({d} bytes, começa com {x})", .{ bytes.items.len, bytes.items[0..@min(4, bytes.items.len)] });
+    var px = decodeSlot(bytes.items, jb, stop, allow_video);
+    if (px.frames.len == 0) {
+        logUndecoded(jb.url, bytes.items, &info);
+        // O proxy mandou o que não sabemos abrir (AVIF, uma página de erro): a original.
+        if (from_net and !original and !allow_video and media_url.retryOriginal(jb.url, jb.max_w, jb.max_h, .undecodable)) {
+            logFail(jb.url, "pedindo a original", .{});
+            bytes.clearRetainingCapacity();
+            info = .{};
+            if (downloadAs(curl, jb, &bytes, stop, true, &info) != .ok) return px;
+            px = decodeSlot(bytes.items, jb, stop, false);
+            if (px.frames.len == 0) logUndecoded(jb.url, bytes.items, &info);
+        }
+    }
+    // Só o que abriu fica guardado para o próximo tamanho.
+    if (from_net and px.frames.len > 0) recentPut(jb.url, bytes.items);
     return px;
+}
+
+/// Decodifica numa das vagas (no máximo 2 ao mesmo tempo).
+fn decodeSlot(data: []const u8, jb: Job, stop: *std.atomic.Value(bool), allow_video: bool) Pixels {
+    if (decode_slots) |sem| c.SDL_WaitSemaphore(sem);
+    defer if (decode_slots) |sem| c.SDL_SignalSemaphore(sem);
+    return decode(data, jb.max_w, jb.max_h, stop, allow_video);
+}
+
+/// Os primeiros bytes e o tipo que o servidor disse: "ftypavif" é AVIF, "<!DO" é uma página.
+fn logUndecoded(url: []const u8, data: []const u8, info: *const FetchInfo) void {
+    logFail(url, "não decodificou ({d} bytes, tipo \"{s}\", começa com {x})", .{ data.len, info.contentType(), data[0..@min(12, data.len)] });
 }
 
 /// Com LARPER_DEBUG_MEDIA, diz no log por que uma imagem falhou. Só host e
@@ -776,25 +812,57 @@ pub fn curlGlobalInit() void {
 }
 
 fn download(curl: *?*c.CURL, jb: Job, out: *std.ArrayList(u8), stop: *std.atomic.Value(bool)) bool {
+    var info: FetchInfo = .{};
+    return downloadAs(curl, jb, out, stop, false, &info) == .ok;
+}
+
+/// Baixa a imagem de `jb` pedindo o tamanho ao proxy de mídia ou, com `original`, o
+/// endereço como veio.
+fn downloadAs(curl: *?*c.CURL, jb: Job, out: *std.ArrayList(u8), stop: *std.atomic.Value(bool), original: bool, info: *FetchInfo) media_url.Fetched {
     var ubuf: [2048]u8 = undefined;
-    const url = proxiedUrl(&ubuf, jb.url, jb.max_w, jb.max_h) orelse return false;
+    const url = (if (original) std.fmt.bufPrintSentinel(&ubuf, "{s}", .{jb.url}, 0) catch null else proxiedUrl(&ubuf, jb.url, jb.max_w, jb.max_h)) orelse return .network;
     var ls: ListSink = .{ .list = out };
-    if (!fetch(curl, url, ls.sink(), stop, 25)) {
-        if (ls.too_big) logFail(jb.url, "grande demais (mais de {d} MB)", .{max_download / (1024 * 1024)});
-        return false;
+    if (!fetchEx(curl, url, ls.sink(), stop, 25, info)) {
+        if (ls.too_big) {
+            logFail(jb.url, "grande demais (mais de {d} MB)", .{max_download / (1024 * 1024)});
+            return .too_big;
+        }
+        if (stop.load(.acquire)) return .stopped;
+        if (info.status < 300) return .network;
+        // O que o app pôs no pedido (o resto do endereço já está no log do `fetchEx`).
+        if (!original and url.len > jb.url.len) logFail(jb.url, "o pedido levou {s}", .{url[jb.url.len..]});
+        return .http_error;
     }
     if (out.items.len == 0) {
         logFail(jb.url, "resposta vazia", .{});
-        return false;
+        return .http_error;
     }
-    return true;
+    return .ok;
 }
+
+/// O que a última resposta de um `fetchEx` disse (para o log e para saber se vale pedir
+/// a imagem de outro jeito).
+pub const FetchInfo = struct {
+    /// Código HTTP da última resposta; 0 se não houve (erro de rede, domínio recusado).
+    status: c_long = 0,
+    ctype: [64]u8 = undefined,
+    ctype_len: u8 = 0,
+
+    pub fn contentType(f: *const FetchInfo) []const u8 {
+        return f.ctype[0..f.ctype_len];
+    }
+};
 
 /// Baixa `url` como está (sem pedir tamanho ao proxy de mídia) para `sink`.
 /// Só de domínios permitidos, redirecionamentos conferidos um a um e com o
 /// proxy das configurações. `timeout_s` = 0: sem limite total (vídeo), mas
 /// desiste se ficar 20 s quase parado.
 pub fn fetch(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic.Value(bool), timeout_s: c_long) bool {
+    var info: FetchInfo = .{};
+    return fetchEx(curl, url, sink, stop, timeout_s, &info);
+}
+
+pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic.Value(bool), timeout_s: c_long, info: *FetchInfo) bool {
     if (!allowedHost(url)) {
         logFail(url, "domínio não permitido", .{});
         return false;
@@ -846,6 +914,12 @@ pub fn fetch(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic.V
         }
         var status: c_long = 0;
         _ = c.curl_easy_getinfo(h, c.CURLINFO_RESPONSE_CODE, &status);
+        info.status = status;
+        var ct: [*c]u8 = null;
+        _ = c.curl_easy_getinfo(h, c.CURLINFO_CONTENT_TYPE, &ct);
+        const ct_s: []const u8 = if (ct != null) std.mem.span(ct) else "";
+        info.ctype_len = @intCast(@min(ct_s.len, info.ctype.len));
+        @memcpy(info.ctype[0..info.ctype_len], ct_s[0..info.ctype_len]);
         if (status >= 300 and status < 400) {
             var loc: [*c]u8 = null;
             _ = c.curl_easy_getinfo(h, c.CURLINFO_REDIRECT_URL, &loc);
@@ -855,7 +929,8 @@ pub fn fetch(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic.V
             }
             const next = std.mem.span(loc);
             if (!allowedHost(next)) {
-                logFail(url, "redirecionou para um domínio não permitido", .{});
+                const after = if (std.mem.indexOf(u8, next, "://")) |i| next[i + 3 ..] else next;
+                logFail(url, "redirecionou para um domínio não permitido ({s})", .{after[0 .. std.mem.indexOfAny(u8, after, "/?#@") orelse after.len]});
                 return false;
             }
             cur_url = std.fmt.bufPrintSentinel(&cur, "{s}", .{next}, 0) catch return false;
