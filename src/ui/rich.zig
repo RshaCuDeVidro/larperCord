@@ -459,7 +459,7 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
             }
             for (0..@max(n_runs, 1)) |ri| {
                 const r: Plan.Run = if (n_runs > 0) planned.?.run(piece, ri) else .{ .from = 0, .to = s.len, .w = w, .x = x, .rtl = false };
-                const rs = if (atomic) s else s[r.from..r.to];
+                const rs = if (atomic) s else r.slice(s);
                 const dir: bidi.Dir = if (r.rtl) .rtl else if (vline != null) .ltr else .auto;
                 const px = r.x;
                 if (planned != null) {

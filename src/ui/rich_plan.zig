@@ -75,7 +75,20 @@ pub const Plan = struct {
     gap_hi: [max]f32 = undefined,
 
     pub const Line = struct { lo: f32, hi: f32, rtl: bool, right: bool, last: bool, gap_lo: f32, gap_hi: f32 };
-    pub const Run = struct { from: usize, to: usize, w: f32, x: f32, rtl: bool };
+    pub const Run = struct {
+        from: usize,
+        to: usize,
+        w: f32,
+        x: f32,
+        rtl: bool,
+
+        /// O texto do trecho dentro de `s`, o texto do pedaço como a passada que desenha o vê.
+        /// Os índices vêm da passada que mediu: se o texto mudou entre as duas, fica no que há.
+        pub fn slice(r: Run, s: []const u8) []const u8 {
+            const to = @min(r.to, s.len);
+            return s[@min(r.from, to)..to];
+        }
+    };
 
     pub fn reset(p: *Plan) void {
         p.n = 0;
@@ -667,6 +680,13 @@ test "bloco de código não sai do lugar no meio do árabe" {
     try expectNear(350, p.xAt(0, 0));
     try expectNear(295, p.xAt(1, 0));
     try expectNear(350, p.xAt(3, 0));
+}
+
+test "o trecho fica dentro do texto mesmo se ele encolheu entre medir e desenhar" {
+    const r: Plan.Run = .{ .from = 3, .to = 9, .w = 0, .x = 0, .rtl = false };
+    try std.testing.expectEqualStrings("defghi", r.slice("abcdefghij"));
+    try std.testing.expectEqualStrings("de", r.slice("abcde"));
+    try std.testing.expectEqualStrings("", r.slice("ab"));
 }
 
 test "menção e emoji inteiros entram no parágrafo como um caractere da classe deles" {
