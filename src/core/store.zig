@@ -12,6 +12,7 @@ const polls_mod = @import("polls.zig");
 const envio = @import("envio.zig");
 const thread_edit = @import("thread_edit.zig");
 const mencao = @import("mencao.zig");
+const dm_order = @import("dm_order.zig");
 const Id = types.Id;
 
 /// LARPER_READ_DEBUG: conta no log por que cada canal ficou não lido (só IDs).
@@ -762,6 +763,39 @@ pub const Store = struct {
         }
     }
 
+    /// Uma DM teve atividade nova: sobe na lista até o lugar dela (core/dm_order.zig).
+    fn raiseDm(s: *Store, id: Id) void {
+        const list = s.guild_channels.getPtr(0) orelse return;
+        const at = std.mem.indexOfScalar(Id, list.items, id) orelse return;
+        const cs = s.channel(id) orelse return;
+        const K = struct {
+            fn of(st: *const Store, x: Id) Id {
+                return if (st.channel(x)) |c| dm_order.activity(&c.info) else 0;
+            }
+        };
+        _ = dm_order.raise(list.items, at, dm_order.activity(&cs.info), @as(*const Store, s), K.of);
+    }
+
+    fn dmToFront(s: *Store, id: Id) void {
+        const list = s.guild_channels.getPtr(0) orelse return;
+        _ = dm_order.toFront(list.items, std.mem.indexOfScalar(Id, list.items, id) orelse return);
+    }
+
+    /// Mensagem numa DM que a lista não tem (nova sem CHANNEL_CREATE, ou fechada
+    /// antes e reaberta pela mensagem): entra uma provisória com quem escreveu,
+    /// para a mensagem não se perder. O canal inteiro (nome do grupo, todos que
+    /// estão nele, pedido de mensagem) vem logo depois (`fetch_channel`).
+    fn noteDmMessage(s: *Store, ch_id: Id, author: Id, group: bool) !void {
+        if (s.channels.contains(ch_id)) return;
+        // Mandada por nós de outro aparelho: a outra pessoa só vem com o canal.
+        const other: Id = if (author != s.me) author else 0;
+        const name = if (s.users.get(other)) |u| u.name else "";
+        const owned = try ev_alloc.dupe(u8, name);
+        const recipients: []Id = if (group and other != 0) ev_alloc.dupe(Id, &.{other}) catch &.{} else &.{};
+        try s.mergeChannel(.{ .id = ch_id, .guild = 0, .name = owned, .topic = "", .recipient = other, .recipients = recipients, .group = group });
+        s.raiseDm(ch_id);
+    }
+
     /// CHANNEL_RECIPIENT_ADD/REMOVE: alguém entrou ou saiu de um grupo. A
     /// resposta do pedido e o evento do gateway dizem o mesmo: repetir não muda
     /// nada. Tirarem a gente é perder o grupo.
@@ -1110,6 +1144,9 @@ pub const Store = struct {
                 for (r.users) |u| try s.mergeUser(u);
                 for (r.guilds) |g| try s.mergeGuild(g);
                 for (r.channels) |ch| try s.mergeChannel(ch);
+                // As DMs na ordem do READY (o gateway já pôs a mais recente em
+                // cima). Numa reconexão, o que chegou enquanto estava fora conta.
+                if (s.guild_channels.getPtr(0)) |dms| dm_order.adopt(s.gpa, dms.items, r.channels) catch {};
                 // READY é o retrato atual da conta: refaz os estados de voz
                 // em vez de empilhar em cima do que sobrou da sessão anterior.
                 var vit = s.channels.valueIterator();
@@ -1331,7 +1368,14 @@ pub const Store = struct {
                 }
             },
             .guild_delete => |id| s.removeGuild(id),
-            .channel_upsert => |ch| try s.mergeChannel(ch),
+            .channel_upsert => |ch| {
+                const before: ?Id = if (s.channel(ch.id)) |cs| dm_order.activity(&cs.info) else null;
+                try s.mergeChannel(ch);
+                // DM nova (alguém começou a conversa, ou uma fechada voltou) ou
+                // com mensagem mais nova: sobe. Renomear um grupo não mexe.
+                if (s.channel(ch.id)) |cs| if (dm_order.isDm(&cs.info) and (before == null or dm_order.activity(&cs.info) > before.?)) s.raiseDm(ch.id);
+            },
+            .dm_message => |dm| try s.noteDmMessage(dm.channel, dm.author, dm.group),
             .channel_delete => |id| s.removeChannel(id),
             .recipient => |r| try s.recipientChange(r.channel, r.user, r.add),
             .read => |r| s.applyAck(r.channel, r.message, r.manual),
@@ -2151,6 +2195,8 @@ pub const Store = struct {
         _ = now_ms;
         const prev_last = cs.info.last_message;
         cs.info.last_message = @max(prev_last, m.id);
+        // Mensagem nova numa DM, de quem for (a nossa também): vai para o topo da lista.
+        if (cs.info.last_message > prev_last and dm_order.isDm(&cs.info)) s.raiseDm(cs.info.id);
         // Falar é ter lido: o Discord marca sozinho quando mandamos.
         if (m.author == s.me and m.id != 0) {
             cs.read_id = @max(cs.read_id, m.id);
@@ -2313,6 +2359,8 @@ pub const Store = struct {
             .spans = try markdown.parse(s.gpa, owned),
             .pending = true,
         });
+        // A DM sobe na hora, como no Discord (a confirmação acerta o lugar).
+        if (dm_order.isDm(&cs.info)) s.dmToFront(channel_id);
         s.trim(cs);
         cs.version +%= 1;
         s.rev +%= 1;
@@ -3154,4 +3202,122 @@ test "membro pendente: entra e sai do conjunto só pelo campo que veio" {
     try std.testing.expect(s.isPending(7));
     try s.apply(.{ .entrada = .{ .pending = .{ .guild = 7, .pending = false } } }, 0);
     try std.testing.expect(!s.isPending(7));
+}
+
+fn testDm(id: Id, recipient: Id, last: Id) !types.Channel {
+    const c_alloc = std.heap.c_allocator;
+    return .{ .id = id, .guild = 0, .name = try c_alloc.dupe(u8, "dm"), .topic = try c_alloc.dupe(u8, ""), .recipient = recipient, .last_message = last };
+}
+
+fn testMsg(id: Id, channel: Id, author: Id) !types.Message {
+    return .{ .id = id, .channel = channel, .author = author, .timestamp = 0, .content = try std.heap.c_allocator.dupe(u8, "oi") };
+}
+
+test "lista de DMs: mensagem nova (recebida ou nossa) sobe; apagar e renomear não mexem" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    const chans = try c_alloc.alloc(types.Channel, 4);
+    chans[0] = try testDm(10, 2, 400);
+    chans[1] = try testDm(11, 3, 300);
+    chans[2] = .{ .id = 50, .guild = 5, .name = try c_alloc.dupe(u8, "geral"), .topic = try c_alloc.dupe(u8, ""), .last_message = 900 };
+    chans[3] = try testDm(12, 4, 200);
+    try s.apply(.{ .ready = .{ .me = 1, .users = try c_alloc.alloc(types.User, 0), .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Recebida na do fim: topo.
+    try s.apply(.{ .message_create = try testMsg(500, 12, 4) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 12, 10, 11 }, s.channelsOf(0));
+    // Mensagem num servidor não mexe nas DMs.
+    try s.apply(.{ .message_create = try testMsg(950, 50, 2) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 12, 10, 11 }, s.channelsOf(0));
+    // A nossa: sobe na hora (pendente) e a confirmação mantém lá.
+    try s.addPending(11, "eu", 77, 0, 0, &.{});
+    try std.testing.expectEqualSlices(Id, &.{ 11, 12, 10 }, s.channelsOf(0));
+    var mine = try testMsg(600, 11, 1);
+    mine.nonce = 77;
+    try s.apply(.{ .message_create = mine }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 11, 12, 10 }, s.channelsOf(0));
+    // A nossa de outro aparelho (sem pendente) também sobe.
+    try s.apply(.{ .message_create = try testMsg(700, 10, 1) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Apagar a última não reordena (o Discord também não).
+    try s.apply(.{ .message_delete = .{ .channel = 10, .id = 700 } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Mensagem velha chegando atrasada (ID menor que a última): fica onde está.
+    try s.apply(.{ .message_create = try testMsg(450, 12, 4) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // CHANNEL_UPDATE sem mensagem nova (nome, ícone): não sobe.
+    try s.apply(.{ .channel_upsert = try testDm(12, 4, 0) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+}
+
+test "lista de DMs: conversa nova entra no topo; só a mensagem traz a provisória" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    const users = try c_alloc.alloc(types.User, 1);
+    users[0] = .{ .id = 8, .name = try c_alloc.dupe(u8, "gustavo") };
+    const chans = try c_alloc.alloc(types.Channel, 2);
+    chans[0] = try testDm(types.makeSnowflake(1_700_000_002_000, 0), 2, types.makeSnowflake(1_700_000_005_000, 0));
+    chans[1] = try testDm(types.makeSnowflake(1_700_000_001_000, 0), 3, types.makeSnowflake(1_700_000_004_000, 0));
+    const a = chans[0].id;
+    const b = chans[1].id;
+    try s.apply(.{ .ready = .{ .me = 1, .users = users, .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    // CHANNEL_CREATE de uma DM nova, ainda sem mensagem: vale quando foi criada.
+    const fresh = types.makeSnowflake(1_700_000_009_000, 0);
+    try s.apply(.{ .channel_upsert = try testDm(fresh, 5, 0) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ fresh, a, b }, s.channelsOf(0));
+    // Reaberta (CHANNEL_CREATE de uma antiga, com a última mensagem dela): no lugar dela.
+    const old = types.makeSnowflake(1_699_000_000_000, 0);
+    try s.apply(.{ .channel_upsert = try testDm(old, 6, types.makeSnowflake(1_700_000_004_500, 0)) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ fresh, a, old, b }, s.channelsOf(0));
+    // Só a mensagem, de uma DM que a lista não tem: provisória com quem escreveu, no topo.
+    const unknown = types.makeSnowflake(1_699_500_000_000, 0);
+    try s.apply(.{ .dm_message = .{ .channel = unknown, .author = 8 } }, 0);
+    try s.apply(.{ .message_create = try testMsg(types.makeSnowflake(1_700_000_010_000, 0), unknown, 8) }, 0);
+    try std.testing.expectEqual(unknown, s.channelsOf(0)[0]);
+    const cs = s.channel(unknown).?;
+    try std.testing.expectEqual(@as(Id, 8), cs.info.recipient);
+    try std.testing.expectEqualStrings("gustavo", cs.info.name);
+    try std.testing.expect(cs.info.unread and cs.messages.items.len == 1);
+    // A segunda mensagem não recria nada; o canal inteiro (GET) completa sem mexer na ordem.
+    try s.apply(.{ .dm_message = .{ .channel = unknown, .author = 8 } }, 0);
+    try std.testing.expectEqual(@as(usize, 1), s.channel(unknown).?.messages.items.len);
+    try s.apply(.{ .channel_upsert = try testDm(unknown, 8, 0) }, 0);
+    try std.testing.expectEqual(unknown, s.channelsOf(0)[0]);
+    try std.testing.expect(s.channel(unknown).?.messages.items.len == 1);
+    // Grupo só pela mensagem: provisória de grupo com quem escreveu.
+    const grp = types.makeSnowflake(1_699_600_000_000, 0);
+    try s.apply(.{ .dm_message = .{ .channel = grp, .author = 8, .group = true } }, 0);
+    try std.testing.expect(s.channel(grp).?.info.group);
+    try std.testing.expectEqualSlices(Id, &.{8}, s.channel(grp).?.info.recipients);
+    // Mandada por nós de outro aparelho: sem a outra pessoa até o canal chegar.
+    const ours = types.makeSnowflake(1_699_700_000_000, 0);
+    try s.apply(.{ .dm_message = .{ .channel = ours, .author = 1 } }, 0);
+    try std.testing.expectEqual(@as(Id, 0), s.channel(ours).?.info.recipient);
+    // Fechada em outro aparelho (CHANNEL_DELETE) e reaberta por uma mensagem.
+    try s.apply(.{ .channel_delete = a }, 0);
+    try std.testing.expect(std.mem.indexOfScalar(Id, s.channelsOf(0), a) == null);
+    try s.apply(.{ .dm_message = .{ .channel = a, .author = 8 } }, 0);
+    try s.apply(.{ .message_create = try testMsg(types.makeSnowflake(1_700_000_020_000, 0), a, 8) }, 0);
+    try std.testing.expectEqual(a, s.channelsOf(0)[0]);
+}
+
+test "lista de DMs: o READY de uma reconexão traz a ordem nova" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    var chans = try c_alloc.alloc(types.Channel, 3);
+    chans[0] = try testDm(10, 2, 400);
+    chans[1] = try testDm(11, 3, 300);
+    chans[2] = try testDm(12, 4, 200);
+    try s.apply(.{ .ready = .{ .me = 1, .users = try c_alloc.alloc(types.User, 0), .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Fora do ar, 12 recebeu mensagem: o READY novo já vem com ela em cima.
+    chans = try c_alloc.alloc(types.Channel, 3);
+    chans[0] = try testDm(12, 4, 800);
+    chans[1] = try testDm(10, 2, 400);
+    chans[2] = try testDm(11, 3, 300);
+    try s.apply(.{ .ready = .{ .me = 1, .users = try c_alloc.alloc(types.User, 0), .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 12, 10, 11 }, s.channelsOf(0));
 }

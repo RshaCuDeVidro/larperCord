@@ -47,6 +47,7 @@ const limits_json = @import("limits_json.zig");
 const debug_log = @import("../platform/debug_log.zig");
 const conta_net = @import("conta_net.zig");
 const social = @import("social.zig");
+const dm_order = @import("../core/dm_order.zig");
 const media_flags = @import("../core/media_flags.zig");
 const media_refresh = @import("../core/media_refresh.zig");
 const stickers = @import("../core/stickers.zig");
@@ -1262,6 +1263,12 @@ pub const Gateway = struct {
             if (j.get(d, "member")) |m| g.memberColor(j.id(j.get(d, "guild_id")) orelse 0, j.id(j.get(j.get(d, "author") orelse .null, "id")) orelse 0, m);
             g.messageThread(d);
             if (try g.message(d)) |m| {
+                // DM ou grupo: a conversa pode não estar na lista (nova sem
+                // CHANNEL_CREATE, ou fechada antes); o Store cuida disso antes.
+                const ct = j.int(j.get(d, "channel_type"));
+                if (j.id(j.get(d, "guild_id")) == null and (ct == null or ct == 1 or ct == 3)) {
+                    g.emit(.{ .dm_message = .{ .channel = m.channel, .author = m.author, .group = ct == 3 } });
+                }
                 g.emit(.{ .message_create = m });
                 g.emitPoll(d);
             }
@@ -2777,7 +2784,7 @@ pub const Gateway = struct {
             try channels.append(alloc, ch);
         }
         // DMs mais recentes primeiro (o id da última mensagem cresce com o tempo).
-        sortDms(channels.items, j.array(j.get(d, "private_channels")));
+        sortDms(channels.items);
 
         for (j.array(j.get(d, "relationships"))) |rv| {
             if (j.get(rv, "user")) |u| addUser(&users, &seen, u, .offline);
@@ -2831,28 +2838,16 @@ pub const Gateway = struct {
         };
     }
 
-    fn sortDms(chs: []types.Channel, pcs: []const Value) void {
+    /// As DMs vêm depois dos canais dos servidores, cada uma já com a última
+    /// mensagem (`last_message_id`): a mais recente em cima e, sem mensagem
+    /// nenhuma, pela data em que a conversa foi criada (core/dm_order.zig).
+    fn sortDms(chs: []types.Channel) void {
         var first_dm: usize = chs.len;
         for (chs, 0..) |ch, i| if (ch.guild == 0) {
             first_dm = i;
             break;
         };
-        // Conta de muitas DMs: a última mensagem é lida uma vez por canal,
-        // não a cada comparação.
-        var last: std.AutoHashMapUnmanaged(Id, u64) = .empty;
-        defer last.deinit(alloc);
-        last.ensureTotalCapacity(alloc, @intCast(pcs.len)) catch return;
-        for (pcs) |pc| if (j.id(j.get(pc, "id"))) |id| {
-            last.putAssumeCapacity(id, j.id(j.get(pc, "last_message_id")) orelse 0);
-        };
-        const Ctx = struct {
-            last: *const std.AutoHashMapUnmanaged(Id, u64),
-            fn lt(self: @This(), a: types.Channel, b: types.Channel) bool {
-                if (a.guild != 0 or b.guild != 0) return false;
-                return (self.last.get(a.id) orelse 0) > (self.last.get(b.id) orelse 0);
-            }
-        };
-        @import("../core/sort.zig").stable(types.Channel, chs[first_dm..], Ctx{ .last = &last }, Ctx.lt);
+        @import("../core/sort.zig").stable(types.Channel, chs[first_dm..], {}, dm_order.newerFirst);
     }
 
     /// Canais de um servidor na ordem do Discord: soltos primeiro, depois
@@ -4219,6 +4214,18 @@ pub const Gateway = struct {
                 var resp = g.request("POST", "/users/@me/channels", body) orelse return;
                 defer resp.body.deinit(alloc);
                 if (resp.status >= 300) return g.noticeHttp(i18n.tr("não deu para abrir a conversa", "couldn't open the conversation"), &resp);
+                var arena = std.heap.ArenaAllocator.init(alloc);
+                defer arena.deinit();
+                const v = std.json.parseFromSliceLeaky(Value, arena.allocator(), resp.body.items, .{}) catch return;
+                if (g.channelValue(v, 0) catch null) |ch| g.emit(.{ .channel_upsert = ch });
+            },
+            .fetch_channel => |id| {
+                // Só leitura: a conversa que apareceu por uma mensagem, inteira.
+                var b: [48]u8 = undefined;
+                const path = std.fmt.bufPrint(&b, "/channels/{d}", .{id}) catch return;
+                var resp = g.request("GET", path, null) orelse return;
+                defer resp.body.deinit(alloc);
+                if (resp.status != 200) return;
                 var arena = std.heap.ArenaAllocator.init(alloc);
                 defer arena.deinit();
                 const v = std.json.parseFromSliceLeaky(Value, arena.allocator(), resp.body.items, .{}) catch return;

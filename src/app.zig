@@ -2122,6 +2122,8 @@ pub const App = struct {
             if (e == .message_create and app.store.ready) plugin_host.onMessage(app, e.message_create);
             if (e == .message_delete) plugin_host.onDelete(app, e.message_delete.channel, e.message_delete.id);
             const edited: types.Id = if (e == .message_update and e.message_update.content != null) e.message_update.id else 0;
+            // DM que a lista não tem: o Store põe uma provisória e o canal inteiro vem do Discord.
+            const fetch_dm: types.Id = if (e == .dm_message and app.store.channel(e.dm_message.channel) == null) e.dm_message.channel else 0;
             if (app.opts.stats) switch (e) {
                 .status => |st| std.log.info("conexão: {t}", .{st}),
                 .notice => |n| std.log.info("aviso: {s}", .{n}),
@@ -2130,6 +2132,7 @@ pub const App = struct {
                 else => {},
             };
             app.store.apply(e, now()) catch {};
+            if (fetch_dm != 0) app.cmd(.{ .fetch_channel = fetch_dm });
             if (edited != 0) plugin_host.onEdit(app, edited);
             if (quiet) |ch| app.st.filtros.quiet(app.gpa, &app.store, ch);
             app.afterEvent(e);

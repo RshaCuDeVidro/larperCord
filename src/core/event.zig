@@ -106,6 +106,12 @@ pub const Event = union(enum) {
     guild_delete: Id,
     /// CHANNEL_CREATE / CHANNEL_UPDATE.
     channel_upsert: types.Channel,
+    /// Vem antes do `message_create` de uma DM ou grupo (MESSAGE_CREATE sem
+    /// servidor). Se a lista não tem a conversa (nova, sem CHANNEL_CREATE, ou
+    /// fechada antes), o Store põe uma provisória no topo, com quem escreveu,
+    /// e a interface pede o canal inteiro (`fetch_channel`). `group`: o
+    /// `channel_type` disse que é grupo.
+    dm_message: struct { channel: Id, author: Id, group: bool = false },
     channel_delete: Id,
     /// CHANNEL_RECIPIENT_ADD / REMOVE: alguém entrou ou saiu de um grupo.
     recipient: struct { channel: Id, user: Id, add: bool },
@@ -353,6 +359,9 @@ pub const Command = union(enum) {
     relationship: struct { user: Id, accept: bool, from: @import("conta.zig").Origin },
     /// Abre (ou acha) a DM com alguém; chega como CHANNEL_CREATE.
     create_dm: Id,
+    /// Uma DM ou grupo inteiro (GET /channels/{id}); chega como `channel_upsert`.
+    /// É o que completa a conversa que apareceu só por uma mensagem (`dm_message`).
+    fetch_channel: Id,
     /// Perfil completo (banner, bio…) ao abrir o cartão de alguém.
     fetch_profile: struct { user: Id, guild: Id },
     /// Dá (add) ou tira um cargo de alguém.

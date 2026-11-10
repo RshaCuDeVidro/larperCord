@@ -11,6 +11,7 @@ const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
 const types = @import("../core/types.zig");
 const Id = types.Id;
+const cc = @import("comp_channels.zig");
 
 pub const View = enum { none, requests, spam };
 /// O que a lista de DMs mostra: as conversas ou uma das abas de pedidos.
@@ -106,7 +107,7 @@ pub fn list(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, tree: bool, pills: b
         d.text(dl, font, 13, r.x + (r.w - d.width(font, 13, t)) / 2, y + 12, ctx.col(.faint), t);
         return y + 40;
     }
-    for (dms, 0..) |id, idx| {
+    for (dms) |id| {
         const cs = ctx.store.channel(id) orelse continue;
         if (cs.info.request != want) continue;
         const u = ctx.store.user(cs.info.recipient);
@@ -122,7 +123,8 @@ pub fn list(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, tree: bool, pills: b
         // Os botões ficam fora da área que abre a conversa (um clique, uma coisa).
         const buttons_w = bsz * 2 + 14;
         const open_r: d.Rect = .{ .x = rr.x, .y = rr.y, .w = rr.w - buttons_w, .h = rr.h };
-        const hb = d.hit(ctx, 400 + idx * 3, open_r);
+        // Pedidos também sobem com mensagem nova: o clique é da conversa, não da posição.
+        const hb = d.hit(ctx, cc.rowHit(id, 2), open_r);
         qa.mark(open_r, "request:{d}", .{id});
         if (hb.clicked) ctx.act(.{ .select_channel = id });
         const selected = ctx.st.activeChannel() == id and !ctx.st.friends;
@@ -147,8 +149,8 @@ pub fn list(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, tree: bool, pills: b
         const dec_r: d.Rect = .{ .x = rr.right() - bsz - 2, .y = cy - bsz / 2, .w = bsz, .h = bsz };
         qa.mark(acc_r, "request-accept:{d}", .{id});
         qa.mark(dec_r, "request-decline:{d}", .{id});
-        if (roundButton(ctx, dl, 401 + idx * 3, acc_r, tree, false, i18n.tr("Aceitar", "Accept"))) ctx.act(.{ .social = .{ .accept_request = id } });
-        if (roundButton(ctx, dl, 402 + idx * 3, dec_r, tree, true, i18n.tr("Recusar", "Decline"))) ctx.act(.{ .social = .{ .reject_request = id } });
+        if (roundButton(ctx, dl, cc.rowHit(id, 3), acc_r, tree, false, i18n.tr("Aceitar", "Accept"))) ctx.act(.{ .social = .{ .accept_request = id } });
+        if (roundButton(ctx, dl, cc.rowHit(id, 4), dec_r, tree, true, i18n.tr("Recusar", "Decline"))) ctx.act(.{ .social = .{ .reject_request = id } });
         y += row_h;
     }
     return y;
