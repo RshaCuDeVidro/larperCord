@@ -24,6 +24,7 @@
 - Os marcadores de lista, com bolinha ou número, ficam à direita.
 - O espaço a mais antes de alguns emojis, como ⚠️ e ✔️, sumiu.
 - A letra ہ do urdu aparece em vez de `?`, e as Configurações não dizem mais que falta fonte para o árabe quando o DejaVu Sans o tem.
+- As bandeiras da Inglaterra, da Escócia e do País de Gales, e alguns caracteres invisíveis raros, não custam mais cerca de 5,5 MB de memória para cada fonte e tamanho.
 
 **Limitações conhecidas**
 - Árabe e hebraico digitados na caixa de mensagem ainda vão da esquerda para a direita. A mensagem aparece certa depois de enviada.

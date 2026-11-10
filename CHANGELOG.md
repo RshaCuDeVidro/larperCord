@@ -24,6 +24,7 @@
 - Bullet and numbered list markers sit on the right.
 - The extra space before some emoji, like ⚠️ and ✔️, is gone.
 - The Urdu letter ہ shows instead of `?`, and Settings no longer lists Arabic as missing a font when DejaVu Sans has it.
+- The England, Scotland and Wales flags, and a few rare invisible characters, no longer cost about 5.5 MB of memory for each font and size.
 
 **Known limitations**
 - Arabic and Hebrew you type in the message box still go left to right. The message shows correctly once it's sent.
