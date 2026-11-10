@@ -306,6 +306,20 @@ pub const QaRun = struct { off: u32, len: u32, x: f32, y: f32, w: f32, rtl: bool
 pub var qa_runs: [256]QaRun = undefined;
 pub var qa_runs_n: usize = 0;
 
+/// O número da lista fica na margem terminando pouco antes do texto (ver `markerGlyph`), no
+/// lugar do "•": o mais largo da mensagem que passaria da margem do nível dele (e, num
+/// parágrafo RTL, da borda direita da coluna) diz quanto os itens numerados vão para dentro.
+fn numberExtra(o: Opts, spans: []const md.Span) f32 {
+    var extra: f32 = 0;
+    for (spans) |*sp| {
+        if (!sp.flags.number) continue;
+        const font = fontFor(o, sp);
+        const size = o.size * scaleOf(sp);
+        extra = @max(extra, d.width(font, size, sp.text) - d.width(font, size, "•") - size);
+    }
+    return extra;
+}
+
 /// Largura de uma palavra. Uma enorme ("kkkk…"): se o começo já não cabe na
 /// linha, não precisa medir o resto (ela vai em pedaços de qualquer jeito).
 fn wordWidth(font: *c.ImFont, size: f32, s: []const u8, wrap: f32) f32 {
@@ -356,6 +370,11 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
     if (watched) qa_runs_n = 0;
     // O pedaço anterior terminou com espaço (o que entra no parágrafo entre os dois).
     var prev_space = false;
+    // Recuo a mais dos itens de lista numerada: o número largo ("100.", "1000.") não cabe na
+    // margem de sempre, e os itens numerados (com as linhas que quebram) vão um pouco para
+    // dentro, todos juntos, como no Discord (o texto de "10." e de "1000." começa no mesmo x).
+    const number_extra = numberExtra(o, spans);
+    var item_numbered = false;
     var piece: usize = 0;
     // Com o plano: a faixa da tela que o texto ocupa, se alguma linha foi para a direita (e
     // alguma não), e a primeira e a última linha.
@@ -391,6 +410,7 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 x = 0;
                 y += cur_h + o.line_h * @as(f32, @floatFromInt(@min(word.breaks, 3) - 1));
                 line_start = true;
+                item_numbered = false;
             } else if (x > indent and x + w > wrap) {
                 x = 0;
                 y += cur_h;
@@ -398,7 +418,8 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
             }
             if (line_start) {
                 cur_h = lineHeight(o, sp);
-                indent = indentOf(o, sp);
+                if (sp.flags.number) item_numbered = true;
+                indent = indentOf(o, sp) + (if (sp.flags.list and item_numbered) number_extra else 0);
                 x = indent;
             }
             var rest: []const u8 = "";

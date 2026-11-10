@@ -536,6 +536,33 @@ fn wideNumbers(app: *App) bool {
     return true;
 }
 
+/// O marcador de cada item da mensagem fica dentro da coluna do texto: o número largo empurra
+/// o item para dentro em vez de passar da borda (a esquerda, ou a direita num parágrafo RTL).
+fn markersInColumn(app: *App, text: []const u8) bool {
+    if (!watchMsg(app, text)) return false;
+    const m = rulesMsg(app, text) orelse return false;
+    const col = colOf(m.msg.id) orelse return false;
+    var any = false;
+    for (runs()) |r| if (r.marker) {
+        any = true;
+        if (r.x < col.x - 0.5 or r.x + r.w > col.right() + 0.5) return false;
+    };
+    return any;
+}
+
+fn wideInColumnRtl(app: *App) bool {
+    return markersInColumn(app, gw.rtl_ordered_wide);
+}
+
+fn wideInColumnLtr(app: *App) bool {
+    if (!markersInColumn(app, gw.ltr_ordered_wide)) return false;
+    // E o texto de "10." e o de "1000." começam no mesmo x.
+    const t = gw.ltr_ordered_wide;
+    const a = runAt(lineStart(t, 0) + 4, false) orelse return false;
+    const b = runAt(lineStart(t, 1) + 6, false) orelse return false;
+    return @abs(a.x - b.x) < 0.5;
+}
+
 fn wideNumbersLtr(app: *App) bool {
     if (!watchMsg(app, gw.ltr_ordered_wide)) return false;
     const t = gw.ltr_ordered_wide;
@@ -811,6 +838,8 @@ pub const ops_theme = [_]Op{
     .{ .wait = 1700 },
     expect("\"12. نص\": o número da lista sai \".12\", não \".21\" (e \".10\", \".123\")", wideNumbers),
     expect("\"1000. World\": número largo da lista em português, como está", wideNumbersLtr),
+    expect("número largo da lista em árabe não passa da borda direita da coluna", wideInColumnRtl),
+    expect("número largo da lista em português não passa da borda esquerda da coluna", wideInColumnLtr),
     .{ .shot = "rtl9-numeros" },
     run(jumpX),
     expect("o embed do X aparece", jumped),
