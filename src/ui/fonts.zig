@@ -39,6 +39,7 @@ const match_em: c_uint = 1 << 10; // ImGuiFreeTypeLoaderFlags_LarperMatchEm
 extern var larper_glyph_missing: ?*const fn (c_uint) callconv(.c) void;
 extern fn larper_font_source_to(font: *c.ImFont, data: *const anyopaque, font_no: c_int, pos: c_int) void;
 extern var larper_glyph_plain: ?*const fn (c_uint) callconv(.c) c_uint;
+extern var larper_glyph_invisible: ?*const fn (c_uint) callconv(.c) bool;
 var wanted: [groups]bool = @splat(false);
 var tried_once: [groups]bool = @splat(false);
 var missing_buf: [32]u32 = undefined;
@@ -84,6 +85,13 @@ fn blockToSearch(cp: u32) ?font_blocks.Block {
 /// Nenhuma fonte tem esta letra: a estilizada (𝐫𝐞𝐠𝐫𝐚𝐬) vira a comum, em vez de "?".
 fn onGlyphPlain(cp: c_uint) callconv(.c) c_uint {
     return plain_letters.of(cp) orelse 0;
+}
+
+/// Não ocupa lugar na linha: o seletor de variação do emoji (o U+FE0F de ⚠️ e ✔️), o ZWJ, as
+/// marcas de direção e afins. Uma fonte que dá avanço a ele (ou nenhuma que o tenha, e aí o
+/// avanço do "?") abria um espaço do lado do emoji, que no árabe aparecia antes dele.
+fn onGlyphInvisible(cp: c_uint) callconv(.c) bool {
+    return plain_letters.zeroWidth(cp);
 }
 
 /// Pede as fontes reserva da escrita de `cp` como o desenho pede quando nenhuma fonte tem a
@@ -198,6 +206,7 @@ pub const Fonts = struct {
         var f: Fonts = .{ .gpa = gpa, .atlas = atlas };
         larper_glyph_missing = onGlyphMissing;
         larper_glyph_plain = onGlyphPlain;
+        larper_glyph_invisible = onGlyphInvisible;
         if (resolve("emoji", 80, 0)) |m| {
             defer std.heap.c_allocator.free(m.path);
             f.emoji = f.mapPath(m.path) catch null;

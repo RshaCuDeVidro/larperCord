@@ -6117,6 +6117,9 @@ static void ImFontAtlas_FontHookRemapCodepoint(ImFontAtlas* atlas, ImFont* font,
 extern "C" { void (*larper_glyph_missing)(unsigned int) = nullptr; }
 // [larperCord] A letra comum por trás de uma estilizada (𝐫𝐞𝐠𝐫𝐚𝐬), ou 0.
 extern "C" { unsigned int (*larper_glyph_plain)(unsigned int) = nullptr; }
+// [larperCord] Invisível de formatação (seletor de variação, ZWJ, marca de direção...): não
+// ocupa lugar nem desenha nada, tenha a fonte um desenho com avanço para ele ou não.
+extern "C" { bool (*larper_glyph_invisible)(unsigned int) = nullptr; }
 
 static ImFontGlyph* ImFontBaked_BuildLoadGlyph(ImFontBaked* baked, ImWchar codepoint, float* only_load_advance_x)
 {
@@ -6128,6 +6131,20 @@ static ImFontGlyph* ImFontBaked_BuildLoadGlyph(ImFontBaked* baked, ImWchar codep
         if (baked->FallbackGlyphIndex == -1 && baked->LoadNoFallback == 0)
             ImFontAtlasBuildSetupFontBakedFallback(baked);
         return NULL;
+    }
+
+    // [larperCord] Invisível de formatação: largura zero, sem desenho, em qualquer fonte.
+    if (larper_glyph_invisible != nullptr && larper_glyph_invisible((unsigned int)codepoint))
+    {
+        if (only_load_advance_x != NULL)
+        {
+            *only_load_advance_x = 0.0f;
+            ImFontAtlasBakedAddFontGlyphAdvancedX(atlas, baked, NULL, codepoint, 0.0f);
+            return NULL;
+        }
+        ImFontGlyph glyph_buf;
+        glyph_buf.Codepoint = codepoint;
+        return ImFontAtlasBakedAddFontGlyph(atlas, baked, NULL, &glyph_buf);
     }
 
     // User remapping hooks

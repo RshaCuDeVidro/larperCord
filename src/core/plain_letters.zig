@@ -72,6 +72,17 @@ pub fn invisible(cp: u32) bool {
         (cp >= 0xFE00 and cp <= 0xFE0F) or (cp >= 0xE0000 and cp <= 0xE01EF);
 }
 
+/// Invisíveis de formatação que não ocupam lugar (o Default_Ignorable_Code_Point do Unicode,
+/// sem os preenchimentos do hangul, que muita gente usa como espaço visível): hífen opcional,
+/// marcas de direção (a do árabe também), ZWJ e ZWNJ, seletores de variação, letras das
+/// bandeiras escondidas.
+pub fn zeroWidth(cp: u32) bool {
+    return switch (cp) {
+        0xAD, 0x034F, 0x061C, 0x180B...0x180F, 0x200B...0x200F, 0x202A...0x202E, 0x2060...0x206F, 0xFE00...0xFE0F, 0xFEFF, 0x1BCA0...0x1BCA3, 0x1D173...0x1D17A, 0xE0000...0xE0FFF => true,
+        else => false,
+    };
+}
+
 pub const Script = struct { first: u32, last: u32, pt: []const u8, en: []const u8 };
 
 const scripts = [_]Script{
@@ -142,6 +153,11 @@ test "invisíveis não contam e a escrita tem nome" {
     // Forma ligada (lam-alef) e letra solta: a mesma escrita, um nome só nas Configurações.
     try std.testing.expect(scriptOf(0xFEFB) == scriptOf(0x0644));
     try std.testing.expect(scriptOf(0xFB2A) == scriptOf(0x05E9));
+}
+
+test "invisíveis de formatação não ocupam lugar; letras e espaços, sim" {
+    for ([_]u32{ 0xFE0F, 0xFE0E, 0x200D, 0x200C, 0x200F, 0x061C, 0x2066, 0xFEFF, 0xAD, 0xE0067, 0xE0100, 0x180E }) |cp| try std.testing.expect(zeroWidth(cp));
+    for ([_]u32{ ' ', 'a', 0x0627, 0x3164, 0x00A0, 0x2003, 0x26A0, 0x1F3FB }) |cp| try std.testing.expect(!zeroWidth(cp));
 }
 
 test "o resto continua igual" {
