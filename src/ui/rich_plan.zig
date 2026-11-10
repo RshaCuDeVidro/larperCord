@@ -200,7 +200,7 @@ pub const Plan = struct {
             }
         }
         if (len == 0) return false;
-        const rtl = bidi.paragraphLevels(cps[0..len], levels[0..len]) orelse return false;
+        const rtl = paragraphLevels(cps[0..len], levels[0..len]) orelse return false;
         // Os trechos: cada pedaço quebrado onde o nível muda.
         const runs_before = p.runs;
         var c: usize = 0;
@@ -385,6 +385,34 @@ var levels: [bidi.max_line]bidi.Level = undefined;
 var owner: [bidi.max_line]u16 = undefined;
 var boff: [bidi.max_line]u16 = undefined;
 const gap_mark = std.math.maxInt(u16);
+/// Os níveis dos últimos parágrafos curtos: a mesma mensagem é planejada a cada quadro, e o
+/// texto dela não muda (a largura da coluna não muda os níveis, só a quebra das linhas).
+const LevelsCached = struct { len: u16 = 0, rtl: bool = false, cps: [levels_cache_len]bidi.Char = undefined, levels: [levels_cache_len]bidi.Level = undefined };
+const levels_cache_len = 256;
+var levels_cache: [16]LevelsCached = @splat(.{});
+/// Quantas vezes um parágrafo passou pelo FriBidi (os testes conferem o cache).
+pub var analyses: usize = 0;
+
+fn paragraphLevels(list: []const bidi.Char, out: []bidi.Level) ?bool {
+    if (list.len > levels_cache_len) {
+        analyses += 1;
+        return bidi.paragraphLevels(list, out);
+    }
+    const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(list));
+    const e = &levels_cache[@intCast(h % levels_cache.len)];
+    if (e.len == list.len and std.mem.eql(bidi.Char, e.cps[0..list.len], list)) {
+        @memcpy(out[0..list.len], e.levels[0..list.len]);
+        return e.rtl;
+    }
+    analyses += 1;
+    const rtl = bidi.paragraphLevels(list, out) orelse return null;
+    e.len = @intCast(list.len);
+    e.rtl = rtl;
+    @memcpy(e.cps[0..list.len], list);
+    @memcpy(e.levels[0..list.len], out[0..list.len]);
+    return rtl;
+}
+
 /// Os itens de uma linha (ver `Plan.placeLine`): no máximo todos os trechos e um espaço por
 /// pedaço. Fora da pilha, como os outros buffers.
 var items: [Plan.max_runs + Plan.max]Plan.Item = undefined;
@@ -680,6 +708,19 @@ test "bloco de código não sai do lugar no meio do árabe" {
     try expectNear(350, p.xAt(0, 0));
     try expectNear(295, p.xAt(1, 0));
     try expectNear(350, p.xAt(3, 0));
+}
+
+test "o mesmo parágrafo no quadro seguinte não passa pelo FriBidi de novo" {
+    const p = &test_plan;
+    planText(p, "شكرا جزيلا يا صديقي العزيز", 1000, .{});
+    p.resolve(1000, fakeWidth);
+    const n = analyses;
+    const x0 = p.xAt(0, 0);
+    // Outra largura: outra quebra, mesmos níveis.
+    planText(p, "شكرا جزيلا يا صديقي العزيز", 1000, .{});
+    p.resolve(800, fakeWidth);
+    try std.testing.expectEqual(n, analyses);
+    try expectNear(x0 - 200, p.xAt(0, 0));
 }
 
 test "o trecho fica dentro do texto mesmo se ele encolheu entre medir e desenhar" {
