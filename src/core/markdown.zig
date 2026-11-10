@@ -373,6 +373,15 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
                 continue;
             }
         }
+        // `\.`, `\*`, `\_`, `\\`…: o caractere aparece como está, sem a barra, e não marca nada
+        // (nem itálico, nem código, nem menção). Como no Discord: vale para qualquer coisa que
+        // não seja letra, número ou espaço. Dentro de código, a barra fica (o código vem antes).
+        if (rest[0] == '\\' and rest.len > 1) if (escapedLen(rest[1..])) |n| {
+            try Flush.run(&out, gpa, s, run_start, i, flags);
+            run_start = i + 1;
+            i += 1 + n;
+            continue;
+        };
         // Emoji personalizado (o que ficou em bloco de código passa direto).
         while (next_ref < refs.len and refs[next_ref].at < i) next_ref += 1;
         if (next_ref < refs.len and refs[next_ref].at == i) {
@@ -504,6 +513,20 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
     try Flush.run(&out, gpa, s, run_start, s.len, flags);
     markJumbo(out.items);
     return out.toOwnedSlice(gpa);
+}
+
+/// Quantos bytes o caractere no começo de `rest` ocupa, se uma barra antes dele o escapa:
+/// tudo menos letra e número ASCII e espaço (a regra do markdown do Discord).
+fn escapedLen(rest: []const u8) ?usize {
+    const b = rest[0];
+    if (b < 0x80) return if (std.ascii.isAlphanumeric(b) or std.ascii.isWhitespace(b)) null else 1;
+    const n = std.unicode.utf8ByteSequenceLength(b) catch return null;
+    if (n > rest.len) return null;
+    const cp = std.unicode.utf8Decode(rest[0..n]) catch return null;
+    return switch (cp) {
+        0x85, 0xA0, 0x1680, 0x2000...0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF => null,
+        else => n,
+    };
 }
 
 /// `_` e `*` só contam como itálico na borda de uma palavra, para não
@@ -661,6 +684,45 @@ test "link com texto" {
     const bare = try parse(a, "https://a.b");
     defer a.free(bare);
     try std.testing.expectEqualStrings("https://a.b", bare[0].target());
+}
+
+/// O texto que aparece: os trechos juntos (o marcador de lista conta como o texto dele).
+fn shown(buf: []u8, spans: []const Span) []const u8 {
+    var n: usize = 0;
+    for (spans) |sp| {
+        @memcpy(buf[n..][0..sp.text.len], sp.text);
+        n += sp.text.len;
+    }
+    return buf[0..n];
+}
+
+test "barra invertida: o caractere aparece sem a barra, fora do código" {
+    const a = std.testing.allocator;
+    var buf: [256]u8 = undefined;
+    const x = try parse(a, "غلقه مؤقتا\\. في غضون 12\\~24 ساعة\\.\\.\\.");
+    defer a.free(x);
+    try std.testing.expectEqualStrings("غلقه مؤقتا. في غضون 12~24 ساعة...", shown(&buf, x));
+    // Nada que a barra escapa marca estilo, código, menção ou lista.
+    const marks = try parse(a, "\\*não\\* \\_nem\\_ \\`isto\\` \\<@42> \\|\\|x\\|\\| \\> \\\\ ¯\\\\\\_(ツ)\\_/¯");
+    defer a.free(marks);
+    try std.testing.expectEqualStrings("*não* _nem_ `isto` <@42> ||x|| > \\ ¯\\_(ツ)_/¯", shown(&buf, marks));
+    for (marks) |sp| {
+        try std.testing.expect(!sp.flags.italic and !sp.flags.code and !sp.flags.spoiler);
+        try std.testing.expect(sp.mention == .none);
+    }
+    // No começo da linha também: nem título, nem citação, nem lista.
+    const line = try parse(a, "\\# não\n\\> nem\n\\- isto\n1\\. nem isto");
+    defer a.free(line);
+    try std.testing.expectEqualStrings("# não\n> nem\n- isto\n1. nem isto", shown(&buf, line));
+    for (line) |sp| try std.testing.expect(sp.flags.head == 0 and !sp.flags.quote and !sp.flags.list);
+    // Letra, número e espaço não se escapam; dentro do código a barra fica.
+    const kept = try parse(a, "C:\\Users\\n0 \\ fim `a\\.b` ```\nx\\*y\n```");
+    defer a.free(kept);
+    try std.testing.expectEqualStrings("C:\\Users\\n0 \\ fim ", kept[0].text);
+    try std.testing.expectEqualStrings("a\\.b", kept[1].text);
+    try std.testing.expect(kept[1].flags.code);
+    try std.testing.expectEqualStrings("x\\*y", kept[3].text);
+    try std.testing.expect(kept[3].flags.block);
 }
 
 test "spoiler e riscado" {
