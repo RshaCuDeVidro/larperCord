@@ -462,6 +462,8 @@ pub const Action = union(enum) {
     toggle_deafen,
     /// Volume individual de alguém na call (0 = mudo, 1 = normal, 2 = dobro).
     set_voice_volume: struct { user: Id, volume: f32 },
+    /// "Silenciar para mim": não mexe no volume guardado (core/volumes.zig).
+    set_voice_mute: struct { user: Id, mute: bool },
     /// Abre/fecha o mixer de voz (a lista de quem está na call com volumes).
     toggle_voice_mixer,
     /// Call na DM ou grupo: começa (ou entra na que já existe), atende e

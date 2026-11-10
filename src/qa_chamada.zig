@@ -151,6 +151,29 @@ fn membersShown(app: *App) bool {
     const k = std.fmt.bufPrint(&b, "call-member:{d}", .{rec}) catch return false;
     return qa.find("call-member:1000") != null and qa.find(k) != null and app.store.channel(dm0).?.voice_members.items.len == 2;
 }
+/// O rosto de quem está do outro lado, no cabeçalho.
+fn tPeerFace(_: *App, b: []u8) []const u8 {
+    const rec = gw.dmRecipient(dm0) orelse return "";
+    return std.fmt.bufPrint(b, "call-member:{d}", .{rec}) catch "";
+}
+/// Menu da pessoa aberto: o volume dela entra só para os outros da call.
+fn faceMenu(app: *App, uid: Id, volume: bool) bool {
+    const m = switch (app.st.popup) {
+        .menu => |m| m,
+        else => return false,
+    };
+    if (m.kind != .user or m.id != uid or qa.find("menu:Perfil") == null) return false;
+    return (qa.find("menu:Volume do usuário") != null) == volume and (qa.find("menu:Silenciar para mim") != null) == volume;
+}
+fn peerFaceMenu(app: *App) bool {
+    return faceMenu(app, gw.dmRecipient(dm0) orelse return false, true);
+}
+fn ownFaceMenu(app: *App) bool {
+    return faceMenu(app, me, false);
+}
+fn noPopup(app: *App) bool {
+    return app.st.popup == .none;
+}
 fn ringingOut(_: *App) bool {
     return chamada.out_channel == dm0 and chamada.out_ringing == 1 and qa.find("call-ringing-out") != null;
 }
@@ -244,6 +267,15 @@ pub const ops = [_]Op{
     expect("pede para tocar para quem está na DM", rangDm0),
     expect("chamando quem está do outro lado", ringingOut),
     expectLong("quem está na call aparece na conversa", membersShown),
+    .{ .rclick = .{ .dyn = tPeerFace } },
+    expect("botão direito no rosto de quem está na call: o menu com o volume dela", peerFaceMenu),
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    .{ .rclick = .{ .mark = "call-member:1000" } },
+    expect("no próprio rosto: o menu sem volume", ownFaceMenu),
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("Esc fecha o menu", noPopup),
+    // O mouse sai do rosto: sem a dica do nome no print.
+    .{ .hover = .{ .mark = "composer" } },
     run(clearToast),
     .{ .wait = 250 },
     shot("chamada-dm"),

@@ -62,8 +62,7 @@ fn join(app: *App, ch: Id) void {
     chamada.out_channel = ch;
     chamada.out_ringing = 0;
     app.cmd(.{ .join_voice = .{ .guild = 0, .channel = ch, .mute = st.muted, .deaf = st.deafened } });
-    var vit = st.voice_volumes.iterator();
-    while (vit.next()) |e| app.cmd(.{ .voice_volume = .{ .user = e.key_ptr.*, .volume = e.value_ptr.* } });
+    app.sendVoiceGains();
 }
 
 fn stopRing() void {

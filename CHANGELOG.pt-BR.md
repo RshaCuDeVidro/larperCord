@@ -34,6 +34,9 @@
 - A letra ہ do urdu aparece em vez de `?`, e as Configurações não dizem mais que falta fonte para o árabe quando o DejaVu Sans o tem.
 - As bandeiras da Inglaterra, da Escócia e do País de Gales, e alguns caracteres invisíveis raros, não custam mais cerca de 5,5 MB de memória para cada fonte e tamanho.
 
+**Chamadas**
+- O menu do botão direito de quem está na sua call tem o Volume do usuário, de 0 a 200% (100% é o normal), e Silenciar para mim, a partir do pedido de mdvtnk (#17). Ele aparece onde a pessoa estiver: no canal de voz, na lista de membros, numa mensagem, numa call de DM. É o mesmo ajuste do mixer da call, então os dois andam juntos e fica salvo. Silenciar mantém o volume dela, então tirar o silêncio volta para o mesmo nível, no menu e no mixer.
+
 **Limitações conhecidas**
 - Árabe e hebraico digitados na caixa de mensagem ainda vão da esquerda para a direita. A mensagem aparece certa depois de enviada.
 - Escritas que precisam de composição, como devanágari, bengali, tailandês ou khmer, mostram as letras de verdade uma a uma, sem as ligaduras nem os sinais de vogal reposicionados.

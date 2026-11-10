@@ -119,7 +119,13 @@ fn faces(ctx: *d.Ctx, dl: *c.ImDrawList, ch: *const types.Channel, list: []const
         if (speaking) c.ImDrawList_AddCircleEx(dl, d.v(cx, cy), face / 2 + 1.5, ctx.col(.online).u(), 0, 2, 0);
         const r: d.Rect = .{ .x = cx - face / 2, .y = cy - face / 2, .w = face, .h = face };
         qa.mark(r, "call-member:{d}", .{uid});
-        if (ctx.hovering(r)) d.tip(ctx, r, if (ctx.store.user(uid)) |u| u.name else "?", true);
+        // Clique abre o perfil e o botão direito o menu (com o volume dela), como na
+        // lista de canais. Só na parte que aparece: o rosto da esquerda cobre o começo.
+        const hr: d.Rect = if (i == 0) r else .{ .x = cx - face_step + face / 2, .y = r.y, .w = face_step, .h = face };
+        const hb = d.hit(ctx, 960 + i, hr);
+        if (hb.clicked) ctx.popup(.{ .profile = .{ .user = uid, .x = r.right() - 300, .y = r.bottom() + 8 } });
+        if (hb.right) ctx.popup(.{ .menu = .{ .kind = .user, .id = uid, .x = ctx.mouse.x, .y = ctx.mouse.y } });
+        d.tip(ctx, hr, if (ctx.store.user(uid)) |u| u.name else "?", hb.hovered);
     }
     // O espaço já foi reservado em `headerSpace`.
     if (callingOut(ctx, ch)) {

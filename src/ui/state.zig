@@ -177,8 +177,8 @@ pub const State = struct {
     voice_status: @import("../core/event.zig").VoiceStatus = .disconnected,
     /// Mixer aberto na barra de voz.
     voice_mixer: bool = false,
-    /// Volume individual de cada pessoa na call (0..2).
-    voice_volumes: std.AutoHashMapUnmanaged(Id, f32) = .empty,
+    /// Volume de cada pessoa na call (0..2) e o "Silenciar para mim", separados.
+    volumes: @import("../core/volumes.zig").Volumes = .{},
     voice_save_ms: i64 = 0,
     /// Ping da call (heartbeat do gateway de voz); 0 = ainda não mediu.
     voice_ping_ms: u32 = 0,

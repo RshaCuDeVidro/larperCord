@@ -110,6 +110,10 @@ pub const sent = struct {
     pub var stop_rings: A = .init(0);
     pub var op4: [256]u8 = undefined;
     pub var op4_len: A = .init(0);
+    /// O último volume mandado para o motor de voz: de quem e o ganho em milésimos
+    /// (zero com o "Silenciar para mim").
+    pub var gain_user: A = .init(0);
+    pub var gain_milli: A = .init(0);
     pub var stop_body: [64]u8 = undefined;
     pub var stop_body_len: A = .init(0);
     /// Pedidos de mensagem e grupos: quantos e o último ("PUT /channels/…").
@@ -813,7 +817,10 @@ pub const Gateway = struct {
                     if (g.voice) |vc| vc.setFlags(f.mute, f.deaf);
                     g.emit(.{ .voice_state = .{ .channel = g.voice_channel, .user = me_id, .flags = .{ .self_mute = f.mute, .self_deaf = f.deaf } } });
                 },
-                .voice_volume => {},
+                .voice_volume => |v| {
+                    sent.gain_milli.store(@intFromFloat(@round(std.math.clamp(v.volume, 0, 2) * 1000)), .release);
+                    sent.gain_user.store(v.user, .release);
+                },
                 .call_ring => |ch| {
                     _ = sent.rings.fetchAdd(1, .monotonic);
                     sent.ring_channel.store(ch, .release);

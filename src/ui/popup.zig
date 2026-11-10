@@ -218,6 +218,32 @@ fn movable(ctx: *d.Ctx, uid: Id) ?*const @import("../core/store.zig").ChannelSta
     return cs;
 }
 
+/// Volume e "silenciar para mim" no menu de quem está na call com a gente (os
+/// outros ids do menu e do ui/conta_menu.zig não usam estes).
+const id_volume: u8 = 38;
+const id_mute_local: u8 = 39;
+const volume_row_h: f32 = 54;
+
+/// A pessoa está na call em que estamos (e não somos nós): como no Discord, o menu
+/// dela ganha o volume, onde quer que ela apareça.
+fn inMyCall(ctx: *d.Ctx, uid: Id) bool {
+    if (uid == ctx.store.me) return false;
+    const vc = ctx.st.voice orelse return false;
+    const cs = ctx.store.channel(vc) orelse return false;
+    return std.mem.indexOfScalar(Id, cs.voice_members.items, uid) != null;
+}
+
+/// Volume no ponto `x` de um controle de 0 a 200%, em passos de 1%.
+fn volumeAt(x: f32, tr: d.Rect) f32 {
+    const t = std.math.clamp((x - tr.x) / tr.w, 0, 1);
+    return @round(t * 200) / 100;
+}
+
+/// O volume como o menu e o mixer mostram (100 = normal).
+pub fn volumePct(vol: f32) u32 {
+    return @intFromFloat(@round(std.math.clamp(vol, 0, 2) * 100));
+}
+
 /// Para onde dá para mover: os outros canais de voz do mesmo servidor.
 fn voiceTargets(ctx: *d.Ctx, uid: Id, buf: []Id) []Id {
     const cs = movable(ctx, uid) orelse return buf[0..0];
@@ -328,8 +354,17 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
             add(&items, &n, .{ .label = "Mencionar", .en = "Mention", .id = 21 });
             const hook = if (ctx.store.user(id)) |u| u.webhook else false;
             if (id != ctx.store.me and !hook) add(&items, &n, .{ .label = "Mensagem", .en = "Message", .id = 22 });
+            // Na call com a gente: o volume dela e o silenciar só para nós. São os do
+            // mixer (os mesmos valores, gravados nas configurações).
+            const voice_items = inMyCall(ctx, id);
+            if (voice_items) {
+                add(&items, &n, .{ .label = "Volume do usuário", .en = "User Volume", .id = id_volume, .sep = true });
+                add(&items, &n, .{ .label = "Silenciar para mim", .en = "Mute for Me", .id = id_mute_local, .on = ctx.st.volumes.isMuted(id) });
+            }
             // Amizade, ignorar e bloquear vão para a conta (ui/conta_menu.zig).
+            const conta_at = n;
             n += conta_menu.userItems(ctx, id, items[n..]);
+            if (voice_items and n > conta_at) items[conta_at].sep = true;
             add(&items, &n, .{ .label = "Copiar nome de usuário", .en = "Copy Username", .id = 24, .sep = true });
             if (dev and !hook) add(&items, &n, .{ .label = "Copiar ID do usuário", .en = "Copy User ID", .id = 25 });
             if (movable(ctx, id) != null) {
@@ -462,6 +497,8 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
     var seps: f32 = 0;
     for (items[0..n]) |it| {
         if (it.sep) seps += 9;
+        // O volume é uma linha mais alta (o nome em cima, o controle embaixo).
+        if (kind == .user and it.id == id_volume) seps += volume_row_h - row_h;
     }
     const mw: f32 = 220;
     // Menu do usuário: as contas embaixo (o menu cresce para cima).
@@ -513,6 +550,11 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
         if (it.sep) {
             d.line(idl, r.x + 10, yy + 4, r.right() - 10, yy + 4, ctx.col(.border), 1);
             yy += 9;
+        }
+        if (kind == .user and it.id == id_volume) {
+            volumeRow(ctx, idl, .{ .x = r.x + 6, .y = yy, .w = r.w - 12, .h = volume_row_h - 2 }, id, it);
+            yy += volume_row_h;
+            continue;
         }
         const ir: d.Rect = .{ .x = r.x + 6, .y = yy, .w = r.w - 12, .h = row_h - 2 };
         const hb = d.hit(ctx, i, ir);
@@ -581,6 +623,43 @@ fn guildColors(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, r: d.Rect, y: f32) voi
             return close(ctx);
         }
     }
+}
+
+/// "Volume do usuário" no menu: 0 a 200%, com o 100% (o normal) marcado no meio.
+/// O mesmo valor e a mesma ação do mixer, então os dois andam juntos. Arrastando, o
+/// controle segue o mouse mesmo fora do menu, e soltar não fecha nada: o fundo do
+/// popup só fecha com um clique nele. Silenciada, o controle fica apagado e
+/// continua mostrando o volume para onde ela volta.
+fn volumeRow(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, it: Item) void {
+    const fam = ctx.ui;
+    qa.mark(r, "menu:{s}", .{it.label});
+    const tr: d.Rect = .{ .x = r.x + 12, .y = r.y + 34, .w = r.w - 24, .h = 6 };
+    const hr: d.Rect = .{ .x = tr.x - 8, .y = tr.y - 11, .w = tr.w + 16, .h = 28 };
+    const hb = d.hit(ctx, 400, hr);
+    qa.mark(hr, "menu-volume:{d}", .{uid});
+    var vol = ctx.st.volumes.volume(uid);
+    if (hb.held) {
+        const v = volumeAt(ctx.mouse.x, tr);
+        if (v != vol) ctx.act(.{ .set_voice_volume = .{ .user = uid, .volume = v } });
+        vol = v;
+    }
+    const off = vol <= 0.001 or ctx.st.volumes.isMuted(uid);
+    _ = d.textClipped(dl, fam.get(.medium), 14, r.x + 10, r.y + 7, ctx.col(.text).mix(ctx.col(.muted), 0.15), i18n.tr(it.label, it.en), r.w - 66);
+    var buf: [16]u8 = undefined;
+    const pct = volumePct(vol);
+    const pt = std.fmt.bufPrint(&buf, "{d}%", .{pct}) catch "";
+    const pw = d.width(fam.get(.semibold), 13, pt);
+    const pr: d.Rect = .{ .x = r.right() - 10 - pw, .y = r.y + 8, .w = pw, .h = 16 };
+    d.text(dl, fam.get(.semibold), 13, pr.x, pr.y, if (off) ctx.col(.faint) else ctx.col(.muted), pt);
+    qa.mark(pr, "menu-volume-pct:{d}:{d}", .{ uid, pct });
+    const k = std.math.clamp(vol / 2.0, 0, 1);
+    d.rect(dl, tr, ctx.col(.overlay).mix(ctx.col(.text), if (hb.hovered or hb.held) 0.16 else 0.11), 3);
+    // 100% = sem mudança.
+    d.line(dl, tr.x + tr.w / 2, tr.y - 3, tr.x + tr.w / 2, tr.bottom() + 3, ctx.col(.faint), 1);
+    d.rect(dl, .{ .x = tr.x, .y = tr.y, .w = tr.w * k, .h = tr.h }, if (off) ctx.col(.faint) else ctx.col(.accent), 3);
+    const kr: d.Rect = .{ .x = tr.x + tr.w * k - 5, .y = tr.y - 4, .w = 10, .h = 14 };
+    d.shadow(dl, kr, 3, 4, ctx.col(.shadow));
+    d.rect(dl, kr, d.Rgba.white, 3);
 }
 
 fn copyFmt(ctx: *d.Ctx, comptime fmt: []const u8, args: anytype) void {
@@ -703,6 +782,8 @@ fn choose(ctx: *d.Ctx, kind: state.MenuKind, id: Id, item: u8, r: d.Rect) void {
             auto.addToken(std.fmt.bufPrint(&sb, "@{s}", .{u.name}) catch "", std.fmt.bufPrint(&rb, "<@{d}>", .{id}) catch "");
         },
         22 => ctx.act(.{ .open_dm = id }),
+        // Como o botão do mixer: o volume guardado fica, tirar o silêncio volta a ele.
+        id_mute_local => ctx.act(.{ .set_voice_mute = .{ .user = id, .mute = !st.volumes.isMuted(id) } }),
         24 => if (ctx.store.user(id)) |u| copyFmt(ctx, "{s}", .{u.name}),
         28 => st.popup = .{ .menu = .{ .kind = .voice_move, .id = id, .x = r.x + r.w - 8, .y = r.y + r.h - 70 } },
         29 => if (movable(ctx, id)) |cs| ctx.act(.{ .move_member = .{ .guild = cs.info.guild, .user = id, .channel = null } }),
@@ -774,8 +855,9 @@ pub fn selectionText(ctx: *d.Ctx) ?[]u8 {
 
 // --- Mixer da call ----------------------------------------------------------
 
-/// Volume individual de cada pessoa na call. Um "card" flutuante com sliders;
-/// zero silencia só aquela pessoa, sem mexer no volume do sistema.
+/// Volume individual de cada pessoa na call. Um "card" flutuante com sliders e o
+/// botão de silenciar só aquela pessoa (o volume guardado fica), sem mexer no
+/// volume do sistema.
 fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
     const vc = ctx.st.voice orelse return;
     const cs = ctx.store.channel(vc) orelse return;
@@ -838,36 +920,40 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         const vf_text = if (vf.deaf) i18n.tr("surdo pelo servidor", "server deafened") else if (vf.serverMuted()) i18n.tr("mudo pelo servidor", "server muted") else if (vf.self_deaf) i18n.tr("surdo", "deafened") else if (vf.self_mute) i18n.tr("mudo", "muted") else "";
         d.text(dl, ctx.ui.get(.regular), 10, rowr.x + 46, rowr.y + 23, if (speaking) ctx.col(.online) else if (vf.deaf or vf.serverMuted()) ctx.col(.danger) else ctx.col(.faint), if (speaking) i18n.tr("falando", "speaking") else vf_text);
 
-        const vol = ctx.st.voice_volumes.get(uid) orelse 1.0;
+        const vol = ctx.st.volumes.volume(uid);
+        const local_mute = ctx.st.volumes.isMuted(uid);
+        const off = vol <= 0.001 or local_mute;
         const tr: d.Rect = .{ .x = rowr.x + 140, .y = rowr.y + rowr.h / 2 - 2, .w = 92, .h = 6 };
         const hr: d.Rect = .{ .x = tr.x - 6, .y = tr.y - 9, .w = tr.w + 12, .h = 24 };
         const hb = d.hit(ctx, 7200 +% @as(usize, @truncate(uid)), hr);
         qa.mark(hr, "voice-volume:{d}", .{uid});
-        if (hb.held) {
-            const t = std.math.clamp((ctx.mouse.x - tr.x) / tr.w, 0, 1);
-            ctx.act(.{ .set_voice_volume = .{ .user = uid, .volume = t * 2.0 } });
-        }
+        if (hb.held) ctx.act(.{ .set_voice_volume = .{ .user = uid, .volume = volumeAt(ctx.mouse.x, tr) } });
         const k = std.math.clamp(vol / 2.0, 0, 1);
         d.rect(dl, tr, ctx.col(.sidebar).mix(ctx.col(.text), 0.1), 3);
         d.line(dl, tr.x + tr.w / 2, tr.y - 2, tr.x + tr.w / 2, tr.y + tr.h + 2, ctx.col(.faint).alpha(0.7), 1);
-        d.rect(dl, .{ .x = tr.x, .y = tr.y, .w = tr.w * k, .h = tr.h }, if (vol <= 0.001) ctx.col(.faint) else ctx.col(.accent), 3);
+        d.rect(dl, .{ .x = tr.x, .y = tr.y, .w = tr.w * k, .h = tr.h }, if (off) ctx.col(.faint) else ctx.col(.accent), 3);
         const kx = tr.x + tr.w * k;
         d.rect(dl, .{ .x = kx - 5, .y = tr.y - 4, .w = 10, .h = 14 }, d.Rgba.white, 3);
 
         var buf: [16]u8 = undefined;
-        const pct = std.fmt.bufPrint(&buf, "{d}%", .{@as(u32, @intFromFloat(vol * 100))}) catch "";
-        d.text(dl, ctx.ui.get(.semibold), 11, tr.right() + 8, tr.y - 4, if (vol <= 0.001) ctx.col(.faint) else ctx.col(.muted), pct);
+        // O mesmo número do menu da pessoa (volumePct).
+        const p = volumePct(vol);
+        const pct = std.fmt.bufPrint(&buf, "{d}%", .{p}) catch "";
+        d.text(dl, ctx.ui.get(.semibold), 11, tr.right() + 8, tr.y - 4, if (off) ctx.col(.faint) else ctx.col(.muted), pct);
+        qa.mark(.{ .x = tr.right() + 8, .y = tr.y - 4, .w = 30, .h = 14 }, "voice-volume-pct:{d}:{d}", .{ uid, p });
 
         const mr: d.Rect = .{ .x = rowr.right() - 30, .y = rowr.y + 7, .w = 26, .h = 26 };
         const mh = d.hit(ctx, 7300 +% @as(usize, @truncate(uid)), mr);
         qa.mark(mr, "voice-mute:{d}", .{uid});
         if (mh.hovered) d.rect(dl, mr, ctx.col(.hover), 6);
-        const ink = if (vol <= 0.001) ctx.col(.faint) else ctx.col(.muted).mix(ctx.col(.text), if (mh.hovered) 0.5 else 0.15);
+        const ink = if (off) ctx.col(.faint) else ctx.col(.muted).mix(ctx.col(.text), if (mh.hovered) 0.5 else 0.15);
         icons.speaker(dl, mr.x + 13, mr.y + 13, ink.u());
-        if (vol <= 0.001) d.line(dl, mr.x + 6, mr.y + 20, mr.x + 20, mr.y + 6, ctx.col(.danger), 1.8);
-        if (mh.clicked) {
-            ctx.act(.{ .set_voice_volume = .{ .user = uid, .volume = if (vol <= 0.001) 1.0 else 0.0 } });
+        if (local_mute) {
+            d.line(dl, mr.x + 6, mr.y + 20, mr.x + 20, mr.y + 6, ctx.col(.danger), 1.8);
+            qa.mark(mr, "voice-muted:{d}", .{uid});
         }
+        // O mesmo "Silenciar para mim" do menu da pessoa.
+        if (mh.clicked) ctx.act(.{ .set_voice_mute = .{ .user = uid, .mute = !local_mute } });
         yy += row;
     }
     if (count > shown) {
