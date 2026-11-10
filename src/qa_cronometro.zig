@@ -341,9 +341,18 @@ fn wide(app: *App) void {
     app.st.settings.width_channels = 0;
 }
 
+/// Nos temas de linha alta (papel, escritorio, cupertino) os canais de voz ficam
+/// abaixo da dobra, e o tempo só se desenha com a linha na tela: rola até eles.
+fn listMark(app: *App, _: []u8) []const u8 {
+    return if (themeHasList(app)) "channel:500005" else "";
+}
+
 pub const ops_theme = [_]Op{
     s("tempo da call no tema"),
     run(openGuild0),
+    .{ .wait = 300 },
+    .{ .hover = .{ .dyn = listMark } },
+    run(wheelDown),
     .{ .wait = 300 },
     expect("o tempo aparece ao lado da call, sem cobrir o nome", themeOk),
     .{ .shot = "tempo-call" },
