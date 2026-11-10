@@ -1608,9 +1608,14 @@ fn inputCallback(data: [*c]c.ImGuiInputTextCallbackData) callconv(.c) c_int {
         st.input_sync = false;
         c.ImGuiInputTextCallbackData_DeleteChars(data, 0, data.*.BufTextLen);
         c.ImGuiInputTextCallbackData_InsertChars(data, 0, &st.input, null);
-        // O autocompletar pediu o cursor logo depois do que entrou.
-        if (autocomplete.pending_cursor) |p| {
-            autocomplete.pending_cursor = null;
+    }
+    // O autocompletar pediu o cursor logo depois do que entrou. O seletor de emoji e o
+    // clique na lista tiram o foco da caixa: o texto novo entra com ela solta (ver
+    // `composer`), e o ImGui, ao dar o foco de volta a um texto diferente, põe o cursor
+    // no começo. O pedido espera a caixa voltar; um clique nela, nesse quadro, decide.
+    if (autocomplete.pending_cursor) |p| {
+        autocomplete.pending_cursor = null;
+        if (!c.ImGui_IsMouseClicked(0)) {
             const at: c_int = @intCast(@min(p, @as(usize, @intCast(data.*.BufTextLen))));
             data.*.CursorPos = at;
             data.*.SelectionStart = at;
