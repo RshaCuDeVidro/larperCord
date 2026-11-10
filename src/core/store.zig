@@ -12,6 +12,7 @@ const polls_mod = @import("polls.zig");
 const envio = @import("envio.zig");
 const thread_edit = @import("thread_edit.zig");
 const mencao = @import("mencao.zig");
+const dm_order = @import("dm_order.zig");
 const Id = types.Id;
 
 /// LARPER_READ_DEBUG: conta no log por que cada canal ficou não lido (só IDs).
@@ -762,6 +763,39 @@ pub const Store = struct {
         }
     }
 
+    /// Uma DM teve atividade nova: sobe na lista até o lugar dela (core/dm_order.zig).
+    fn raiseDm(s: *Store, id: Id) void {
+        const list = s.guild_channels.getPtr(0) orelse return;
+        const at = std.mem.indexOfScalar(Id, list.items, id) orelse return;
+        const cs = s.channel(id) orelse return;
+        const K = struct {
+            fn of(st: *const Store, x: Id) Id {
+                return if (st.channel(x)) |c| dm_order.activity(&c.info) else 0;
+            }
+        };
+        _ = dm_order.raise(list.items, at, dm_order.activity(&cs.info), @as(*const Store, s), K.of);
+    }
+
+    fn dmToFront(s: *Store, id: Id) void {
+        const list = s.guild_channels.getPtr(0) orelse return;
+        _ = dm_order.toFront(list.items, std.mem.indexOfScalar(Id, list.items, id) orelse return);
+    }
+
+    /// Mensagem numa DM que a lista não tem (nova sem CHANNEL_CREATE, ou fechada
+    /// antes e reaberta pela mensagem): entra uma provisória com quem escreveu,
+    /// para a mensagem não se perder. O canal inteiro (nome do grupo, todos que
+    /// estão nele, pedido de mensagem) vem logo depois (`fetch_channel`).
+    fn noteDmMessage(s: *Store, ch_id: Id, author: Id, group: bool) !void {
+        if (s.channels.contains(ch_id)) return;
+        // Mandada por nós de outro aparelho: a outra pessoa só vem com o canal.
+        const other: Id = if (author != s.me) author else 0;
+        const name = if (s.users.get(other)) |u| u.name else "";
+        const owned = try ev_alloc.dupe(u8, name);
+        const recipients: []Id = if (group and other != 0) ev_alloc.dupe(Id, &.{other}) catch &.{} else &.{};
+        try s.mergeChannel(.{ .id = ch_id, .guild = 0, .name = owned, .topic = "", .recipient = other, .recipients = recipients, .group = group });
+        s.raiseDm(ch_id);
+    }
+
     /// CHANNEL_RECIPIENT_ADD/REMOVE: alguém entrou ou saiu de um grupo. A
     /// resposta do pedido e o evento do gateway dizem o mesmo: repetir não muda
     /// nada. Tirarem a gente é perder o grupo.
@@ -1110,6 +1144,9 @@ pub const Store = struct {
                 for (r.users) |u| try s.mergeUser(u);
                 for (r.guilds) |g| try s.mergeGuild(g);
                 for (r.channels) |ch| try s.mergeChannel(ch);
+                // As DMs na ordem do READY (o gateway já pôs a mais recente em
+                // cima). Numa reconexão, o que chegou enquanto estava fora conta.
+                if (s.guild_channels.getPtr(0)) |dms| dm_order.adopt(s.gpa, dms.items, r.channels) catch {};
                 // READY é o retrato atual da conta: refaz os estados de voz
                 // em vez de empilhar em cima do que sobrou da sessão anterior.
                 var vit = s.channels.valueIterator();
@@ -1331,7 +1368,14 @@ pub const Store = struct {
                 }
             },
             .guild_delete => |id| s.removeGuild(id),
-            .channel_upsert => |ch| try s.mergeChannel(ch),
+            .channel_upsert => |ch| {
+                const before: ?Id = if (s.channel(ch.id)) |cs| dm_order.activity(&cs.info) else null;
+                try s.mergeChannel(ch);
+                // DM nova (alguém começou a conversa, ou uma fechada voltou) ou
+                // com mensagem mais nova: sobe. Renomear um grupo não mexe.
+                if (s.channel(ch.id)) |cs| if (dm_order.isDm(&cs.info) and (before == null or dm_order.activity(&cs.info) > before.?)) s.raiseDm(ch.id);
+            },
+            .dm_message => |dm| try s.noteDmMessage(dm.channel, dm.author, dm.group),
             .channel_delete => |id| s.removeChannel(id),
             .recipient => |r| try s.recipientChange(r.channel, r.user, r.add),
             .read => |r| s.applyAck(r.channel, r.message, r.manual),
@@ -2151,6 +2195,8 @@ pub const Store = struct {
         _ = now_ms;
         const prev_last = cs.info.last_message;
         cs.info.last_message = @max(prev_last, m.id);
+        // Mensagem nova numa DM, de quem for (a nossa também): vai para o topo da lista.
+        if (cs.info.last_message > prev_last and dm_order.isDm(&cs.info)) s.raiseDm(cs.info.id);
         // Falar é ter lido: o Discord marca sozinho quando mandamos.
         if (m.author == s.me and m.id != 0) {
             cs.read_id = @max(cs.read_id, m.id);
@@ -2313,6 +2359,8 @@ pub const Store = struct {
             .spans = try markdown.parse(s.gpa, owned),
             .pending = true,
         });
+        // A DM sobe na hora, como no Discord (a confirmação acerta o lugar).
+        if (dm_order.isDm(&cs.info)) s.dmToFront(channel_id);
         s.trim(cs);
         cs.version +%= 1;
         s.rev +%= 1;

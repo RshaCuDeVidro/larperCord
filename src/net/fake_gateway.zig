@@ -97,6 +97,9 @@ pub const sent = struct {
     pub var subscribes: A = .init(0);
     pub var sub_channel: A = .init(0);
     pub var create_dms: A = .init(0);
+    /// GET /channels/{id}: a DM que apareceu só por uma mensagem, e qual foi a última.
+    pub var fetch_channels: A = .init(0);
+    pub var fetch_channel: A = .init(0);
     /// Mensagens que o "servidor" aceitou e recusou pelo modo lento.
     pub var messages: A = .init(0);
     pub var slowmode_refusals: A = .init(0);
@@ -769,6 +772,11 @@ pub const Gateway = struct {
                     g.emit(.{ .presence_update = .{ .user = me_id, .status = ss.status } });
                 },
                 .set_activity => |sa| g.setActivity(sa.app, sa.activity),
+                .fetch_channel => |id| {
+                    _ = sent.fetch_channels.fetchAdd(1, .monotonic);
+                    sent.fetch_channel.store(id, .release);
+                    if (try fetchedDm(id)) |ch| g.emit(.{ .channel_upsert = ch });
+                },
                 .create_dm => |u| {
                     _ = sent.create_dms.fetchAdd(1, .monotonic);
                     const seed = for (users) |x| {
@@ -1945,6 +1953,17 @@ const channel_tree = [_]ChannelSeed{
 };
 
 const reaction_pool = [_][]const u8{ "😂", "👍", "❤️", "🔥", "💀", "😭", "🎉", "👀" };
+
+/// O que GET /channels/{id} responderia: uma DM da demonstração (a que foi
+/// fechada e voltou).
+fn fetchedDm(id: Id) !?types.Channel {
+    const u = dmRecipient(id) orelse return null;
+    if (id == request_dm or id == spam_dm) return null;
+    const seed = for (users) |x| {
+        if (x.id == u) break x;
+    } else return null;
+    return .{ .id = id, .guild = 0, .name = try alloc.dupe(u8, seed.name), .topic = try alloc.dupe(u8, ""), .recipient = u };
+}
 
 /// DMs: canal 900_000 + i conversa com users[i + 1].
 pub fn dmId(i: usize) Id {
