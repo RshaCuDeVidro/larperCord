@@ -438,10 +438,15 @@ fn pushToTalk(p: anytype, key: *S.Text) void {
         d.text(p.dl, p.font(.regular), 13, r.right() - 12 - d.width(p.font(.regular), 13, hint), d.centerY(r, 13), ctx.col(.faint), hint);
     }
     p.y += 50;
-    p.note(if (ptt_global.supported)
-        i18n.tr("Funciona também com outra janela em foco, e o outro programa continua recebendo a tecla.", "Also works while another window is focused, and that app still gets the key.")
-    else
-        i18n.tr("Só funciona com a janela do larperCord em foco: fora dela o programa não vê a tecla.", "Only works while the larperCord window is focused: outside it the app can't see the key."));
+    if (!ptt_global.supported) {
+        p.note(i18n.tr("Só funciona com a janela do larperCord em foco: fora dela o programa não vê a tecla.", "Only works while the larperCord window is focused: outside it the app can't see the key."));
+    } else if (binding != .none and !capturing) {
+        // No Windows, só as teclas que dá para ler de fora (platform/ptt_global.zig).
+        p.note(if (ptt_global.vkOf(binding) != 0)
+            i18n.tr("Funciona também com outra janela em foco, e o outro programa continua recebendo a tecla.", "Also works while another window is focused, and that app still gets the key.")
+        else
+            i18n.tr("Esta tecla só funciona com a janela do larperCord em foco. Para usar com outra janela em foco, escolha outra, como uma letra, F13 a F24 ou um botão lateral do mouse.", "This key only works while the larperCord window is focused. To use it while another window is focused, pick another one, like a letter, F13 to F24 or a side mouse button."));
+    }
     p.note(i18n.tr("O envio segue por um instante depois de soltar, para não cortar a última palavra.", "Sending continues for a moment after you release, so the last word isn't cut."));
 }
 

@@ -1406,6 +1406,7 @@
 "This is the start of #{s}." "これが#{s}の始まりです。"
 "This is the start of the thread {s}" "スレッド「{s}」の始まりです"
 "This item can only be answered in the official Discord app." "この項目は公式のDiscordアプリでのみ回答できます。"
+"This key only works while the larperCord window is focused. To use it while another window is focused, pick another one, like a letter, F13 to F24 or a side mouse button." "このキーはlarperCordのウィンドウがアクティブなときだけ動作します。ほかのウィンドウがアクティブなときも使うには、文字キー、F13〜F24、マウスのサイドボタンなど別のキーを選んでください。"
 "This search got too long." "検索文字列が長すぎます。"
 "This server didn't show onboarding questions to this account." "このサーバーはこのアカウントにオンボーディングの質問を表示しませんでした。"
 "This server has no onboarding questions right now." "このサーバーには現在オンボーディングの質問がありません。"
