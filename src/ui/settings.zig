@@ -657,6 +657,8 @@ fn page(p: *Page, previews: []const Preview) void {
                     ctx.act(.save_settings);
                 }
             }
+            p.divider();
+            @import("settings_timer.zig").section(p);
         },
         .acessibilidade => {
             p.title(i18n.tr("Acessibilidade", "Accessibility"));

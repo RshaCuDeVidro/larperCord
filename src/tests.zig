@@ -53,6 +53,7 @@ test {
     _ = @import("core/limites.zig");
     _ = @import("core/debounce.zig");
     _ = @import("net/gw_budget.zig");
+    _ = @import("core/voice_timer.zig");
     _ = @import("net/voz_movido.zig");
     _ = @import("net/limits_json.zig");
     _ = @import("core/conta.zig");

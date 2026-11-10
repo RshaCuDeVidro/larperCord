@@ -83,6 +83,12 @@ pub const Settings = struct {
     accent: u8 = 0,
     /// Cantos: 0 = os do tema, 1 = retos, 2 = suaves, 3 = redondos.
     corners: u8 = 0,
+    /// O tempo da call ao lado de cada canal de voz (ui/voice_timer.zig): ligado, o
+    /// formato (um de core/voice_timer.zig `presets`, ou `custom_index` com o
+    /// `voice_timer_pattern` da pessoa).
+    voice_timer: bool = true,
+    voice_timer_format: u8 = 0,
+    voice_timer_pattern: Text = .{},
 
     // Chat
     show_spoilers: bool = false,
@@ -740,6 +746,35 @@ test "comandos de LSP vão e voltam, com aspas e barras" {
         try std.testing.expect(!lspOn(&fresh, i).*);
         try std.testing.expectEqual(@as(usize, 0), lspCmd(&fresh, i).slice().len);
     }
+}
+
+test "tempo das calls: ligado por padrão, formato e padrão da pessoa vão e voltam" {
+    const kdl = @import("../theme/kdl.zig");
+    const fresh: Settings = .{};
+    try std.testing.expect(fresh.voice_timer);
+    try std.testing.expectEqual(@as(u8, 0), fresh.voice_timer_format);
+    var s: Settings = .{};
+    s.voice_timer = false;
+    s.voice_timer_format = 10;
+    s.voice_timer_pattern.set("{ss}:{mm}:{H} \"call\" {x}");
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(std.testing.allocator);
+    try write(&s, "classico", &out, std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const nodes = try kdl.parse(arena.allocator(), out.items, null);
+    var back: Settings = .{};
+    apply(&back, &nodes[0]);
+    try std.testing.expect(!back.voice_timer);
+    try std.testing.expectEqual(@as(u8, 10), back.voice_timer_format);
+    try std.testing.expectEqualStrings("{ss}:{mm}:{H} \"call\" {x}", back.voice_timer_pattern.slice());
+    // Arquivo antigo: ligado, no primeiro formato.
+    const old = try kdl.parse(arena.allocator(), "settings compact=#true\n", null);
+    var older: Settings = .{};
+    apply(&older, &old[0]);
+    try std.testing.expect(older.voice_timer);
+    try std.testing.expectEqual(@as(u8, 0), older.voice_timer_format);
+    try std.testing.expectEqual(@as(usize, 0), older.voice_timer_pattern.len);
 }
 
 test "campos pelo índice (paleta de comandos)" {
