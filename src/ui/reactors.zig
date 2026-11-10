@@ -63,11 +63,11 @@ pub fn drawEmoji(ctx: *d.Ctx, dl: *c.ImDrawList, r: *const types.Reaction, x: f3
         d.text(dl, ctx.ui.get(.medium), fs, x, cy - d.fontPx(fs) / 2, ctx.col(.text).mix(ctx.col(.muted), 0.3), shown);
         return d.width(ctx.ui.get(.medium), fs, shown);
     }
+    // No meio do quadrado pelo desenho de verdade, seja qual for a fonte de emoji.
     const pick = @import("emoji_picker.zig");
     const g = pick.drawable(r.text());
-    const es = pick.fitSize(ctx.ui.get(.regular), g.slice(), size * 0.85, size);
-    d.text(dl, ctx.ui.get(.regular), es, x, cy - es * 0.67, d.Rgba.white, g.slice());
-    return @min(d.width(ctx.ui.get(.regular), es, g.slice()), size);
+    _ = pick.drawCentered(dl, ctx.ui.get(.regular), g.slice(), size * 0.85, .{ .x = x, .y = cy - size / 2, .w = size, .h = size }, d.Rgba.white);
+    return size;
 }
 
 fn frame(ctx: *d.Ctx, x: f32, y: f32) struct { r: d.Rect, dl: *c.ImDrawList } {

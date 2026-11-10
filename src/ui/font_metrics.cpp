@@ -66,3 +66,37 @@ extern "C" void larper_font_source_exclude(ImFont* font, const void* data, int f
 extern "C" bool larper_font_draws(ImFont* font, float size, unsigned int c) {
     return font->GetFontBaked(size)->FindGlyphNoFallback((ImWchar)c) != NULL;
 }
+
+// A caixa das letras de `s` desenhadas em (0, 0) no tamanho `size` (x0, y0, x1, y1 em
+// `out`), com as mesmas contas do ImFont::RenderText. Cada fonte de emoji põe o desenho
+// num lugar da linha (a do Windows fica mais larga e mais baixa que a do Linux): quem
+// centraliza um emoji usa esta caixa, não a largura nem a altura da linha. Sem nenhuma
+// letra visível, devolve false.
+extern "C" bool larper_text_ink(ImFont* font, float size, const char* s, const char* e, float* out) {
+    ImFontBaked* baked = font->GetFontBaked(size);
+    if (baked == NULL || baked->Size <= 0.0f) return false;
+    const float scale = size / baked->Size;
+    float x = 0.0f;
+    bool any = false;
+    while (s < e) {
+        unsigned int c = (unsigned char)*s;
+        if (c < 0x80) s += 1;
+        else s += ImTextCharFromUtf8(&c, s, e);
+        if (c < 32) continue;
+        const ImFontGlyph* g = baked->FindGlyph((ImWchar)c);
+        if (g == NULL) continue;
+        if (g->Visible) {
+            const float x0 = x + g->X0 * scale, x1 = x + g->X1 * scale;
+            const float y0 = g->Y0 * scale, y1 = g->Y1 * scale;
+            if (!any) {
+                out[0] = x0; out[1] = y0; out[2] = x1; out[3] = y1;
+                any = true;
+            } else {
+                out[0] = ImMin(out[0], x0); out[1] = ImMin(out[1], y0);
+                out[2] = ImMax(out[2], x1); out[3] = ImMax(out[3], y1);
+            }
+        }
+        x += g->AdvanceX * scale;
+    }
+    return any;
+}

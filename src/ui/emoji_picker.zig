@@ -119,6 +119,39 @@ pub fn fitSize(font: *c.ImFont, s: []const u8, size: f32, room: f32) f32 {
     return if (tw > room) @max(size * room / tw, 9) else size;
 }
 
+extern fn larper_text_ink(font: *c.ImFont, size: f32, s: [*]const u8, e: [*]const u8, out: *[4]f32) bool;
+
+/// A caixa do desenho de `s` no tamanho (em pixels) `px`, a partir do ponto em que o
+/// texto é desenhado. Sem nada visível, a da largura e da linha.
+pub fn inkBox(font: *c.ImFont, px: f32, s: []const u8) d.Rect {
+    var ink: [4]f32 = undefined;
+    if (s.len > 0 and larper_text_ink(font, px, s.ptr, s.ptr + s.len, &ink)) return .{ .x = ink[0], .y = ink[1], .w = ink[2] - ink[0], .h = ink[3] - ink[1] };
+    const b: [*]const u8 = s.ptr;
+    const w = c.ImFont_CalcTextSizeAEx(font, px, std.math.floatMax(f32), 0, b, b + s.len, null).x;
+    return .{ .x = 0, .y = 0, .w = w, .h = px };
+}
+
+/// Desenha o emoji `s` no meio de `box`, no tamanho `size` ou no menor que couber nela.
+/// O meio é o do desenho de verdade: cada fonte de emoji põe o desenho num lugar da
+/// linha e com uma largura (a do Windows fica mais larga e mais baixa que a do Linux),
+/// e centrar pela largura e pela altura da linha deixava o emoji torto. Devolve onde o
+/// desenho ficou.
+pub fn drawCentered(dl: *c.ImDrawList, font: *c.ImFont, s: []const u8, size: f32, box: d.Rect, color: d.Rgba) d.Rect {
+    var px = d.fontPx(size);
+    var ink = inkBox(font, px, s);
+    var tries: u8 = 0;
+    while (tries < 3 and px > 6 and ink.w > 0 and ink.h > 0) : (tries += 1) {
+        const k = @min(box.w / ink.w, box.h / ink.h);
+        if (k >= 1) break;
+        px = @max(6, @floor(px * k));
+        ink = inkBox(font, px, s);
+    }
+    const x = @round(box.x + box.w / 2 - (ink.x + ink.w / 2));
+    const y = @round(box.y + box.h / 2 - (ink.y + ink.h / 2));
+    if (s.len > 0 and color.a > 0.001) c.ImDrawList_AddTextImFontPtrEx(dl, font, px, d.v(x, y), color.u(), s.ptr, s.ptr + s.len, 0, null);
+    return .{ .x = x + ink.x, .y = y + ink.y, .w = ink.w, .h = ink.h };
+}
+
 /// Quantos emojis Unicode aparecem no seletor (o QA confere).
 pub fn shownCount() usize {
     return cat_start[emoji_data.categories.len];

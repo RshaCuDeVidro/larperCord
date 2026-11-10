@@ -176,6 +176,43 @@ fn reactedViaPicker(app: *App) bool {
     return a.me and a.count == 1 and app.st.popup == .none;
 }
 
+// --- Emoji no meio do chip --------------------------------------------------------
+
+/// Os do relato (✅ 🟢 👍), um coração com seletor de variação e uma bandeira (dois
+/// desenhos lado a lado), na última mensagem do canal.
+const centered_emoji = [_][]const u8{ "✅", "🟢", "👍", "❤️", "🇧🇷" };
+
+fn lastMessage(app: *App) ?*StoredMessage {
+    const cs = channel(app) orelse return null;
+    if (cs.messages.items.len == 0) return null;
+    return &cs.messages.items[cs.messages.items.len - 1];
+}
+fn addUnicodeReactions(app: *App) void {
+    const m = lastMessage(app) orelse return;
+    for (centered_emoji) |e| app.store.apply(.{ .reaction = .{ .channel = geral, .id = m.msg.id, .emoji = types.Reaction.init(e), .user = 1003, .add = true } }, 0) catch {};
+}
+/// O meio do desenho de cada emoji Unicode fica no meio do lugar dele no chip (meio pixel
+/// de folga: a posição é arredondada para o pixel). Antes, a posição saía de contas da
+/// largura e da linha, e a fonte de emoji decidia onde o desenho caía.
+fn emojiCentered(app: *App) bool {
+    const m = lastMessage(app) orelse return false;
+    var seen: usize = 0;
+    var b1: [56]u8 = undefined;
+    var b2: [56]u8 = undefined;
+    for (m.reactionSlice(), 0..) |*r, i| {
+        if (r.custom != 0) continue;
+        const ink = qa.find(std.fmt.bufPrint(&b1, "chip-ink:{d}:{d}", .{ m.msg.id, i }) catch return false) orelse return false;
+        const slot = qa.find(std.fmt.bufPrint(&b2, "chip-emoji:{d}:{d}", .{ m.msg.id, i }) catch return false) orelse return false;
+        const dx = (ink.x + ink.w / 2) - (slot.x + slot.w / 2);
+        const dy = (ink.y + ink.h / 2) - (slot.y + slot.h / 2);
+        if (@abs(dx) > 0.5 or @abs(dy) > 0.5) return false;
+        // E cabe no lugar (sequências encolhem).
+        if (ink.w > slot.w + 0.01 or ink.h > slot.h + 0.01) return false;
+        seen += 1;
+    }
+    return seen >= centered_emoji.len;
+}
+
 // --- Modo economia ----------------------------------------------------------------
 
 fn saverOn(app: *App) void {
@@ -449,6 +486,13 @@ pub const ops = [_]Op{
     expect("aba Servidores mostra os emojis", serversTab),
     dyn(tPickCafe),
     expect("reagir pelo seletor com emoji personalizado", reactedViaPicker),
+
+    s("emoji no meio do chip"),
+    .{ .run = addUnicodeReactions },
+    .{ .run = scrollToEmoji },
+    .{ .wait = 150 },
+    .{ .expect = .{ .name = "emoji Unicode no meio do chip da reação (✅ 🟢 👍 ❤️ 🇧🇷)", .check = emojiCentered, .timeout_ms = 2000 } },
+    .{ .shot = "61b-emoji-reacao-centrada" },
 
     s("modo economia"),
     .{ .run = saverOn },
