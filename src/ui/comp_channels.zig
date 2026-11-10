@@ -664,12 +664,28 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
     d.tip(ctx, lr, i18n.tr("Configurações de voz · botão direito: dispositivos", "Voice settings · right-click: devices"), lh.hovered);
     if (tty) {
         const fs = ctx.th.font_size - 2;
+        const bold = fam.get(.bold);
+        const col = if (!connected) ctx.col(.idle) else qcol;
         var pb: [16]u8 = undefined;
         const ps = if (connected and ping > 0) (std.fmt.bufPrint(&pb, " {d}ms", .{ping}) catch "") else "";
-        const t = i18n.fmt(&buf, "♪ {s}{s}  [mixer] [sair]", "♪ {s}{s}  [mixer] [leave]", .{ cs.info.name, ps });
-        d.text(ctx.dl, fam.get(.bold), fs, r.x + 10, r.y + 3, if (!connected) ctx.col(.idle) else qcol, t);
-        const leave_r: d.Rect = .{ .x = r.right() - 44, .y = r.y, .w = 44, .h = 22 };
-        const mix_r: d.Rect = .{ .x = r.right() - 104, .y = r.y, .w = 58, .h = 22 };
+        const t = std.fmt.bufPrint(&buf, "♪ {s}{s}", .{ cs.info.name, ps }) catch "♪";
+        // [mixer] e [sair] logo depois do nome, cada um medido com a fonte e o tamanho
+        // em que é desenhado: a área de clique fica em cima do rótulo em qualquer
+        // escala e com qualquer nome. Nome comprido corta, os dois continuam à vista.
+        const mix_t = i18n.tr("[mixer]", "[mixer]");
+        const leave_t = i18n.tr("[sair]", "[leave]");
+        const sp = d.width(bold, fs, " ");
+        const mix_w = d.width(bold, fs, mix_t);
+        const leave_w = d.width(bold, fs, leave_t);
+        const x0 = r.x + 10;
+        const btns_w = sp * 2 + mix_w + sp + leave_w;
+        const name_w = d.textClipped(ctx.dl, bold, fs, x0, r.y + 3, col, t, @max(r.right() - 8 - x0 - btns_w, 24));
+        const mix_x = x0 + name_w + sp * 2;
+        const leave_x = mix_x + mix_w + sp;
+        d.text(ctx.dl, bold, fs, mix_x, r.y + 3, col, mix_t);
+        d.text(ctx.dl, bold, fs, leave_x, r.y + 3, col, leave_t);
+        const leave_r: d.Rect = .{ .x = leave_x - sp / 2, .y = r.y, .w = leave_w + sp, .h = 22 };
+        const mix_r: d.Rect = .{ .x = mix_x - sp / 2, .y = r.y, .w = mix_w + sp, .h = 22 };
         qa.mark(leave_r, "hangup", .{});
         if (d.hitRaw(ctx, leave_r).clicked) ctx.act(.leave_voice);
         qa.mark(mix_r, "voice-mixer", .{});

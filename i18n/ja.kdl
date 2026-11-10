@@ -1690,7 +1690,6 @@
 "● connected" "● 接続済み"
 "● demo" "● デモ"
 "◐  Idle" "◐  退席中"
-"♪ {s}{s}  [mixer] [leave]" "♪ {s}{s}  [ミキサー] [切断]"
 "⚡ {d}.{d:0>2} ms/frame" "⚡ {d}.{d:0>2} ms/フレーム"
 "✕ failed" "✕ 失敗"
 "🍓 You picked: **{s}**" "🍓 あなたの選択: **{s}**"
@@ -1703,3 +1702,5 @@
 "📣 <@{s}>, someone called you here." "📣 <@{s}>、ここで誰かがあなたを呼んでいます。"
 "🔒 Ticket closed." "🔒 チケットをクローズしました。"
 "🔗 {s}" "🔗 {s}"
+"[mixer]" "[ミキサー]"
+"[leave]" "[切断]"
