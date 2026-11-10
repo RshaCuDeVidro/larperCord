@@ -317,6 +317,70 @@ pub fn pttFromEvent(b: Binding, ev: union(enum) { key: struct { code: u16, down:
     };
 }
 
+/// A tecla do atalho no Windows, para a thread de voz ler com o GetAsyncKeyState
+/// mesmo sem foco (platform/ptt_global.zig). `.layout`: tecla de caractere
+/// (letras, números, pontuação), cujo código virtual depende do layout do
+/// teclado e só o Windows sabe.
+pub const WinKey = union(enum) { vk: u8, layout, none };
+
+pub fn winKey(b: Binding) WinKey {
+    return switch (b) {
+        .none => .none,
+        .mouse => |m| switch (m) {
+            1 => .{ .vk = 0x01 }, // VK_LBUTTON
+            2 => .{ .vk = 0x04 }, // VK_MBUTTON
+            3 => .{ .vk = 0x02 }, // VK_RBUTTON
+            4 => .{ .vk = 0x05 }, // VK_XBUTTON1
+            5 => .{ .vk = 0x06 }, // VK_XBUTTON2
+            else => .none,
+        },
+        // Scancodes do SDL (os do USB HID).
+        .key => |k| switch (k) {
+            // Letras, números, pontuação, a tecla a mais do ISO e a "/?" do ABNT2.
+            4...39, 45...56, 100, 135 => .layout,
+            40, 88 => .{ .vk = 0x0D }, // Enter e o do teclado numérico
+            41 => .{ .vk = 0x1B },
+            42 => .{ .vk = 0x08 },
+            43 => .{ .vk = 0x09 },
+            44 => .{ .vk = 0x20 },
+            57 => .{ .vk = 0x14 },
+            58...69 => .{ .vk = @intCast(0x70 + (k - 58)) }, // F1..F12
+            70 => .{ .vk = 0x2C },
+            71 => .{ .vk = 0x91 },
+            72 => .{ .vk = 0x13 },
+            73 => .{ .vk = 0x2D },
+            74 => .{ .vk = 0x24 },
+            75 => .{ .vk = 0x21 },
+            76 => .{ .vk = 0x2E },
+            77 => .{ .vk = 0x23 },
+            78 => .{ .vk = 0x22 },
+            79 => .{ .vk = 0x27 },
+            80 => .{ .vk = 0x25 },
+            81 => .{ .vk = 0x28 },
+            82 => .{ .vk = 0x26 },
+            83 => .{ .vk = 0x90 },
+            84 => .{ .vk = 0x6F },
+            85 => .{ .vk = 0x6A },
+            86 => .{ .vk = 0x6D },
+            87 => .{ .vk = 0x6B },
+            89...97 => .{ .vk = @intCast(0x61 + (k - 89)) }, // 1..9 do teclado numérico
+            98 => .{ .vk = 0x60 },
+            99 => .{ .vk = 0x6E },
+            101 => .{ .vk = 0x5D },
+            104...115 => .{ .vk = @intCast(0x7C + (k - 104)) }, // F13..F24
+            224 => .{ .vk = 0xA2 }, // Ctrl, Shift, Alt e Windows, esquerdos e direitos
+            225 => .{ .vk = 0xA0 },
+            226 => .{ .vk = 0xA4 },
+            227 => .{ .vk = 0x5B },
+            228 => .{ .vk = 0xA3 },
+            229 => .{ .vk = 0xA1 },
+            230 => .{ .vk = 0xA5 },
+            231 => .{ .vk = 0x5C },
+            else => .none,
+        },
+    };
+}
+
 // --- Dispositivos ----------------------------------------------------------
 
 pub const max_name = 255;
@@ -1014,6 +1078,27 @@ test "atalho: só a tecla certa muda o estado; perder o foco solta" {
     try t_eq(@as(?bool, true), pttFromEvent(m, .{ .mouse = .{ .button = 4, .down = true } }));
     try t_eq(@as(?bool, null), pttFromEvent(m, .{ .mouse = .{ .button = 5, .down = true } }));
     try t_eq(@as(?bool, null), pttFromEvent(.none, .{ .key = .{ .code = 44, .down = true } }));
+}
+
+test "atalho no Windows: código virtual fixo, do layout ou nenhum" {
+    try t_eq(WinKey{ .vk = 0x20 }, winKey(.{ .key = 44 })); // espaço
+    try t_eq(WinKey{ .vk = 0x70 }, winKey(.{ .key = 58 })); // F1
+    try t_eq(WinKey{ .vk = 0x7B }, winKey(.{ .key = 69 })); // F12
+    try t_eq(WinKey{ .vk = 0x7C }, winKey(.{ .key = 104 })); // F13
+    try t_eq(WinKey{ .vk = 0x87 }, winKey(.{ .key = 115 })); // F24
+    try t_eq(WinKey{ .vk = 0x61 }, winKey(.{ .key = 89 })); // 1 do numérico
+    try t_eq(WinKey{ .vk = 0x60 }, winKey(.{ .key = 98 })); // 0 do numérico
+    try t_eq(WinKey{ .vk = 0xA2 }, winKey(.{ .key = 224 })); // Ctrl esquerdo
+    try t_eq(WinKey{ .vk = 0x5C }, winKey(.{ .key = 231 })); // Windows direito
+    try t_eq(WinKey{ .vk = 0x05 }, winKey(.{ .mouse = 4 })); // botão lateral
+    try t_eq(WinKey{ .vk = 0x06 }, winKey(.{ .mouse = 5 }));
+    try t_eq(WinKey.layout, winKey(.{ .key = 4 })); // A
+    try t_eq(WinKey.layout, winKey(.{ .key = 39 })); // 0
+    try t_eq(WinKey.layout, winKey(.{ .key = 56 })); // /
+    try t_eq(WinKey.layout, winKey(.{ .key = 135 })); // "/?" do ABNT2
+    try t_eq(WinKey.none, winKey(.{ .key = 129 })); // volume: não dá para ler
+    try t_eq(WinKey.none, winKey(.{ .mouse = 9 }));
+    try t_eq(WinKey.none, winKey(.none));
 }
 
 test "dispositivo salvo: acha pelo nome, volta ao padrão se sumiu" {

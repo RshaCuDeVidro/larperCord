@@ -878,7 +878,7 @@ const Worker = struct {
         var pcm: [frame_samples * channels]i16 = undefined;
         const have = !blocked and w.mic.read(&pcm);
         const ptt = sh.ptt.load(.monotonic);
-        const key = sh.ptt_down.load(.monotonic);
+        const key = voz_audio.pttKey();
         // Aperte para falar com a tecla solta: o microfone segue sendo lido (o
         // som velho não pode sair quando a tecla descer), mas nada é tratado.
         const idle = w.talk.pttIdle(now, ptt, key);

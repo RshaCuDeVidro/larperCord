@@ -22,6 +22,7 @@ const arq = @import("../core/som_arquivo.zig");
 const ruido = @import("../core/ruido.zig");
 const S = @import("../ui/settings_state.zig");
 const fsutil = @import("../platform/fsutil.zig");
+const ptt_global = @import("../platform/ptt_global.zig");
 
 const alloc = std.heap.c_allocator;
 
@@ -78,6 +79,8 @@ pub const Shared = struct {
     /// A tecla do aperte para falar está apertada (eventos do SDL, janela em foco).
     ptt_down: Atomic(bool) = .init(false),
     binding: Atomic(u32) = .init(0),
+    /// O código virtual da tecla no Windows, para ler sem foco (0 = não dá).
+    ptt_vk: Atomic(u8) = .init(0),
     /// Imposto pelo servidor (VOICE_STATE_UPDATE).
     server_mute: Atomic(bool) = .init(false),
     server_deaf: Atomic(bool) = .init(false),
@@ -183,7 +186,9 @@ pub fn apply(set: *const S.Settings) void {
     }
     if (!std.mem.eql(u8, set.voice_key.slice(), ui_binding.slice())) {
         ui_binding = set.voice_key;
-        sh.binding.store(voz.Binding.parse(set.voice_key.slice()).encode(), .monotonic);
+        const b = voz.Binding.parse(set.voice_key.slice());
+        sh.binding.store(b.encode(), .monotonic);
+        sh.ptt_vk.store(ptt_global.vkOf(b), .monotonic);
         sh.ptt_down.store(false, .monotonic);
     }
     const mic_changed = !std.mem.eql(u8, set.voice_mic.slice(), ui_mic.slice());
@@ -258,6 +263,13 @@ pub fn onSdlEvent(e: *const c.SDL_Event) bool {
 
 fn setPtt(v: ?bool) void {
     if (v) |down| sh.ptt_down.store(down, .monotonic);
+}
+
+/// A tecla do aperte para falar, na thread de voz: os eventos do SDL com a janela
+/// em foco e, no Windows, também com outra janela em foco.
+pub fn pttKey() bool {
+    if (!sh.ptt.load(.monotonic)) return false;
+    return sh.ptt_down.load(.monotonic) or ptt_global.down(sh.ptt_vk.load(.monotonic));
 }
 
 // --- Dispositivos -----------------------------------------------------------

@@ -2,6 +2,9 @@
 
 ## 0.6.5
 
+**Voz**
+- No Windows, o aperte para falar funciona com outra janela em foco, como um jogo, a pedido do helpik1 (#14). O app lê a tecla sem gancho de teclado, e o outro programa continua recebendo a tecla. No Linux ainda precisa da janela do larperCord em foco.
+
 **Texto em qualquer idioma**
 - Interface em russo, traduzida pelo pIat0n (#15, #16). Escolha "Русский" em Configurações → Idioma, ou o app segue um sistema em russo. As datas usam os nomes dos meses e dos dias da semana em russo.
 

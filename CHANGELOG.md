@@ -2,6 +2,9 @@
 
 ## 0.6.5
 
+**Voice**
+- On Windows, push-to-talk works while another window is focused, like a game, from helpik1's request (#14). The app reads the key without a keyboard hook, and the other app still gets it. On Linux it still needs the larperCord window focused.
+
 **Text in any language**
 - Russian interface, translated by pIat0n (#15, #16). Pick "Русский" in Settings → Language, or the app follows a Russian system. Dates use Russian month and weekday names.
 
