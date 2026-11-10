@@ -318,10 +318,16 @@ pub fn pttFromEvent(b: Binding, ev: union(enum) { key: struct { code: u16, down:
 }
 
 /// A tecla do atalho no Windows, para a thread de voz ler com o GetAsyncKeyState
-/// mesmo sem foco (platform/ptt_global.zig). `.layout`: tecla de caractere
-/// (letras, números, pontuação), cujo código virtual depende do layout do
-/// teclado e só o Windows sabe.
-pub const WinKey = union(enum) { vk: u8, layout, none };
+/// mesmo sem foco (platform/ptt_global.zig). `.scan`: tecla de caractere
+/// (letras, números, pontuação), pela posição física (scancode do conjunto 1,
+/// o do teclado PS/2); o código virtual dela depende do layout e vem do
+/// MapVirtualKeyW. Pelo caractere (VkKeyScanW) não dá: ele devolve a primeira
+/// tecla que digita aquele caractere com qualquer modificador, e no ABNT2 a
+/// "/?" viraria o Q (AltGr+Q também dá "/").
+pub const WinKey = union(enum) { vk: u8, scan: u16, none };
+
+/// Scancode do conjunto 1 de cada letra, A a Z (o SDL numera de 4 a 29).
+const scan_letters = [26]u16{ 0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19, 0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D, 0x15, 0x2C };
 
 pub fn winKey(b: Binding) WinKey {
     return switch (b) {
@@ -336,8 +342,22 @@ pub fn winKey(b: Binding) WinKey {
         },
         // Scancodes do SDL (os do USB HID).
         .key => |k| switch (k) {
-            // Letras, números, pontuação, a tecla a mais do ISO e a "/?" do ABNT2.
-            4...39, 45...56, 100, 135 => .layout,
+            4...29 => .{ .scan = scan_letters[k - 4] },
+            30...39 => .{ .scan = 0x02 + (k - 30) }, // 1..9, 0
+            45 => .{ .scan = 0x0C }, // - _
+            46 => .{ .scan = 0x0D }, // = +
+            47 => .{ .scan = 0x1A }, // [ {
+            48 => .{ .scan = 0x1B }, // ] }
+            49, 50 => .{ .scan = 0x2B }, // \ | (e a mesma posição no ISO)
+            51 => .{ .scan = 0x27 }, // ; :  (o Ç do ABNT2)
+            52 => .{ .scan = 0x28 }, // ' "
+            53 => .{ .scan = 0x29 }, // ` ~
+            54 => .{ .scan = 0x33 }, // , <
+            55 => .{ .scan = 0x34 }, // . >
+            56 => .{ .scan = 0x35 }, // / ?
+            100 => .{ .scan = 0x56 }, // a tecla a mais do ISO, ao lado do Shift esquerdo
+            135 => .{ .scan = 0x73 }, // a "/?" do ABNT2 (ろ no JIS)
+            137 => .{ .scan = 0x7D }, // ¥ do JIS
             40, 88 => .{ .vk = 0x0D }, // Enter e o do teclado numérico
             41 => .{ .vk = 0x1B },
             42 => .{ .vk = 0x08 },
@@ -1092,10 +1112,16 @@ test "atalho no Windows: código virtual fixo, do layout ou nenhum" {
     try t_eq(WinKey{ .vk = 0x5C }, winKey(.{ .key = 231 })); // Windows direito
     try t_eq(WinKey{ .vk = 0x05 }, winKey(.{ .mouse = 4 })); // botão lateral
     try t_eq(WinKey{ .vk = 0x06 }, winKey(.{ .mouse = 5 }));
-    try t_eq(WinKey.layout, winKey(.{ .key = 4 })); // A
-    try t_eq(WinKey.layout, winKey(.{ .key = 39 })); // 0
-    try t_eq(WinKey.layout, winKey(.{ .key = 56 })); // /
-    try t_eq(WinKey.layout, winKey(.{ .key = 135 })); // "/?" do ABNT2
+    try t_eq(WinKey{ .scan = 0x1E }, winKey(.{ .key = 4 })); // A
+    try t_eq(WinKey{ .scan = 0x10 }, winKey(.{ .key = 20 })); // Q
+    try t_eq(WinKey{ .scan = 0x2C }, winKey(.{ .key = 29 })); // Z
+    try t_eq(WinKey{ .scan = 0x02 }, winKey(.{ .key = 30 })); // 1
+    try t_eq(WinKey{ .scan = 0x0B }, winKey(.{ .key = 39 })); // 0
+    try t_eq(WinKey{ .scan = 0x27 }, winKey(.{ .key = 51 })); // Ç do ABNT2
+    try t_eq(WinKey{ .scan = 0x35 }, winKey(.{ .key = 56 })); // /
+    try t_eq(WinKey{ .scan = 0x56 }, winKey(.{ .key = 100 })); // a do ISO
+    try t_eq(WinKey{ .scan = 0x73 }, winKey(.{ .key = 135 })); // "/?" do ABNT2, não o Q
+    try t_eq(WinKey{ .scan = 0x7D }, winKey(.{ .key = 137 })); // ¥ do JIS
     try t_eq(WinKey.none, winKey(.{ .key = 129 })); // volume: não dá para ler
     try t_eq(WinKey.none, winKey(.{ .mouse = 9 }));
     try t_eq(WinKey.none, winKey(.none));
