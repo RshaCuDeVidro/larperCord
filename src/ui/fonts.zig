@@ -214,6 +214,9 @@ pub const Fonts = struct {
     cjk_n: usize = 0,
     /// Já procurou as fontes reserva de cada grupo (pode não ter achado nenhuma).
     tried: [groups]bool = @splat(false),
+    /// O sistema tem fonte para o grupo, mesmo que ela não tenha entrado como reserva por já
+    /// estar no atlas (o DejaVu Sans dos símbolos, que costuma ser a do árabe).
+    found: [groups]bool = @splat(false),
     /// A escrita do idioma da interface: vence a do sistema (ver `preferLanguage`).
     script_pref: ?usize = null,
     /// Fontes reserva de qualquer outra escrita (tailandês, devanágari, etíope...), achadas no
@@ -273,6 +276,7 @@ pub const Fonts = struct {
                 const m = f.resolveScript(scripts[i]) orelse continue;
                 defer std.heap.c_allocator.free(m.path);
                 const data = f.mapPath(m.path) catch continue;
+                f.found[gi] = true;
                 // A mesma dos símbolos (DejaVu Sans): já está inteira em todas as faces.
                 if (f.symbols) |sym| if (sym.data.ptr == data.ptr and sym.index == m.index) continue;
                 const seen = for (f.cjk[0..f.cjk_n]) |o| {
@@ -394,8 +398,9 @@ pub const Fonts = struct {
         return f.tried[@intFromEnum(g)];
     }
 
-    /// Alguma fonte reserva deste grupo entrou.
+    /// O grupo tem fonte: uma reserva entrou, ou a que o sistema deu já estava no atlas.
     pub fn hasGroup(f: *const Fonts, g: Group) bool {
+        if (f.found[@intFromEnum(g)]) return true;
         for (f.cjk[0..f.cjk_n]) |o| if (o.ranges == rangesOf(g)) return true;
         return false;
     }
