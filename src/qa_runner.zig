@@ -2868,8 +2868,8 @@ const ops_bandeja_desligada = [_]Op{ expect("pronto", ready), click("guild:50000
 const ops_bandeja_reinicio = [_]Op{expect("pronto", ready)} ++ qa_bandeja.ops_restart;
 const ops_lsp_real = [_]Op{expect("pronto", ready)} ++ lsp_ops_real;
 
-const ops_voice = [_]Op{
-    s("voz"),
+const qa_volume = @import("qa_volume.zig");
+const ops_voice = [_]Op{ s("voz"), expect("pronto", ready) } ++ qa_volume.fora ++ [_]Op{
     click("channel:500014"),
     expect("entrar na call", inVoice),
     click("voice-mixer"),
@@ -2882,9 +2882,10 @@ const ops_voice = [_]Op{
     expect("voltar a ouvir", userAudible),
     click("voice-mixer-close"),
     expect("fechar o mixer", notMixerOpen),
+} ++ qa_volume.na_call ++ [_]Op{
     click("hangup"),
     expect("sair da call", notInVoice),
-};
+} ++ qa_volume.depois;
 
 fn notMixerOpen(app: *App) bool {
     return app.st.popup == .none;
