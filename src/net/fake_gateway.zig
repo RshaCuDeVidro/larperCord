@@ -96,6 +96,9 @@ pub const sent = struct {
     /// Pedidos de lista de membros (op 14) e o canal do último.
     pub var subscribes: A = .init(0);
     pub var sub_channel: A = .init(0);
+    /// Pedidos do começo das calls (op 43) e o servidor do último.
+    pub var channel_infos: A = .init(0);
+    pub var channel_info_guild: A = .init(0);
     pub var create_dms: A = .init(0);
     /// GET /channels/{id}: a DM que apareceu só por uma mensagem, e qual foi a última.
     pub var fetch_channels: A = .init(0);
@@ -197,6 +200,9 @@ pub const Gateway = struct {
     search_indexed: bool = false,
     voice: ?*voice_mod.Voice = null,
     voice_channel: ?Id = null,
+    /// A call que começou quando entramos num canal de voz vazio (o AFK): acaba
+    /// quando saímos, com o VOICE_CHANNEL_START_TIME_UPDATE de cada ponta.
+    own_session: ?struct { channel: Id, start_s: i64 } = null,
     /// Calls de DM da demonstração: quem vai atender a que fizemos (e
     /// quando), quem está do outro lado e a conversa que toca para nós.
     call_answer: ?struct { channel: Id, user: Id, at_ms: i64 } = null,
@@ -726,6 +732,21 @@ pub const Gateway = struct {
                     sent.sub_channel.store(sg.channel, .monotonic);
                     try g.memberList(sg.guild);
                 },
+                // Op 43: o CHANNEL_INFO com os canais de voz do servidor que têm call.
+                .channel_info => |gid| {
+                    _ = sent.channel_infos.fetchAdd(1, .monotonic);
+                    sent.channel_info_guild.store(gid, .release);
+                    var list: std.ArrayList(ev.VoiceStart) = .empty;
+                    if (gid >= guildId(0) and (gid - guildId(0)) % 1000 == 0 and (gid - guildId(0)) / 1000 < guilds.len) {
+                        const gi: usize = @intCast((gid - guildId(0)) / 1000);
+                        for (13..16) |ci| {
+                            const vc = channelId(gi, ci);
+                            const st = g.demoVoiceStart(vc);
+                            if (st != 0) try list.append(alloc, .{ .channel = vc, .start_s = st });
+                        }
+                    }
+                    g.emit(.{ .channel_info = .{ .guild = gid, .starts = try list.toOwnedSlice(alloc) } });
+                },
                 .relationship => |r| {
                     @import("fake_conta.zig").noteRelationship(r.user, r.from);
                     g.emit(.{ .relationship = .{ .user = r.user, .kind = if (r.accept) .friend else .none } });
@@ -794,6 +815,17 @@ pub const Gateway = struct {
                     if (call_json.voiceState(&sent.op4, v.guild, v.channel, v.mute, v.deaf)) |p| sent.op4_len.store(p.len, .release);
                     if (g.voice_channel) |old| if (v.channel != old) g.leaveDemoCall(old);
                     g.emit(.{ .voice_state = .{ .channel = v.channel, .user = me_id, .flags = .{ .self_mute = v.mute, .self_deaf = v.deaf } } });
+                    // Saímos do canal em que só nós estávamos: a call dele acaba. Entrando
+                    // num canal sem call, ela começa agora.
+                    if (g.own_session) |os| if (v.channel != os.channel) {
+                        g.own_session = null;
+                        g.emit(.{ .voice_start = .{ .guild = guildOfChannel(os.channel), .channel = os.channel, .start_s = 0 } });
+                    };
+                    if (v.channel) |ch| if (v.guild != 0 and g.demoVoiceStart(ch) == 0) {
+                        const now_s = @divFloor(nowMs(), 1000);
+                        g.own_session = .{ .channel = ch, .start_s = now_s };
+                        g.emit(.{ .voice_start = .{ .guild = v.guild, .channel = ch, .start_s = now_s } });
+                    };
                     // Atendemos a que tocava: o Discord tira a gente do `ringing`.
                     if (v.channel) |ch| if (ch == g.ringing_me) {
                         g.ringing_me = 0;
@@ -1384,6 +1416,20 @@ pub const Gateway = struct {
         info.roles[info.n_roles] = role_ids[2];
         info.n_roles += 1;
         return info;
+    }
+
+    /// Quando começou a call de um canal de voz da demonstração (s Unix; 0 = sem
+    /// call). A do primeiro servidor está em 16:42:14 ao abrir; a do segundo, em
+    /// mais de um dia. No AFK, só a que começou quando entramos.
+    fn demoVoiceStart(g: *const Gateway, ch: Id) i64 {
+        if (g.own_session) |os| if (os.channel == ch) return os.start_s;
+        if (ch < guildId(0)) return 0;
+        const gi: i64 = @intCast((ch - guildId(0)) / 1000);
+        if (gi >= guilds.len) return 0;
+        const t0 = @divFloor(g.epoch_ms, 1000);
+        if (ch == channelId(@intCast(gi), 13)) return t0 - 60134 - gi * 34079;
+        if (ch == channelId(@intCast(gi), 14)) return t0 - 2272 - gi * 389;
+        return 0;
     }
 
     /// Saímos da call de uma DM da demonstração: o outro lado sai junto e a

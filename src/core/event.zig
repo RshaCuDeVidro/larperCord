@@ -69,6 +69,9 @@ pub const Ban = struct { user: Id, motivo: []const u8 = "" };
 /// GET /guilds/{id}/bans (a lista passa para quem recebe).
 pub const Bans = struct { req: u32, guild: Id, ok: bool, list: []Ban = &.{} };
 
+/// Um canal de voz com call e quando ela começou (s Unix), do CHANNEL_INFO.
+pub const VoiceStart = struct { channel: Id, start_s: i64 };
+
 pub const Event = union(enum) {
     ready: Ready,
     invite_joined: InviteJoined,
@@ -171,6 +174,12 @@ pub const Event = union(enum) {
     voice_audio: struct { mic_ok: bool, out_ok: bool },
     /// CALL_CREATE / CALL_UPDATE / CALL_DELETE de uma DM ou grupo.
     call: Call,
+    /// CHANNEL_INFO (resposta ao op 43): os canais de voz do servidor que têm call
+    /// agora; os que não vieram não têm. A lista é alocada e passa para o Store.
+    channel_info: struct { guild: Id, starts: []VoiceStart },
+    /// VOICE_CHANNEL_START_TIME_UPDATE: a call de um canal começou (`start_s`, s
+    /// Unix) ou acabou (0).
+    voice_start: struct { guild: Id, channel: Id, start_s: i64 },
     latency: u32,
     /// Os emojis de um servidor, todos de uma vez (READY, GUILD_CREATE,
     /// GUILD_EMOJIS_UPDATE). O Store assume a lista e os nomes.
@@ -354,6 +363,9 @@ pub const Command = union(enum) {
     /// `channel` é sempre um canal de verdade (o pai, se for thread); `thread`
     /// pede também a lista de quem está nela.
     subscribe_guild: struct { guild: Id, channel: Id, thread: Id = 0 },
+    /// Quando começou a call de cada canal de voz de um servidor (op 43, Request
+    /// Channel Info): chega como `channel_info`. Uma vez por servidor e sessão.
+    channel_info: Id,
     /// Aceita um pedido de amizade (true) ou remove/recusa/cancela (false).
     /// `from`: de onde foi o clique (o `X-Context-Properties`, core/conta.zig).
     relationship: struct { user: Id, accept: bool, from: @import("conta.zig").Origin },

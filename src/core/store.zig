@@ -119,6 +119,9 @@ pub const ChannelState = struct {
     seen_ms: i64 = 0,
     typing: std.ArrayList(Typing) = .empty,
     voice_members: std.ArrayList(Id) = .empty,
+    /// Canal de voz: quando a call começou (s Unix; 0 = sem call, ou ainda não
+    /// se sabe). Vem do CHANNEL_INFO e do VOICE_CHANNEL_START_TIME_UPDATE.
+    voice_start_s: i64 = 0,
     /// Muda sempre que a lista de mensagens muda (invalida offsets na UI).
     version: u32 = 0,
     /// Marcador de leitura: a última mensagem quando o canal foi lido
@@ -345,6 +348,9 @@ pub const Store = struct {
     my_roles: std.AutoHashMapUnmanaged(Id, []Id) = .empty,
     /// Servidores onde o nosso membro está pendente: falta passar pelas regras (core/entrada.zig).
     pending_guilds: std.AutoHashMapUnmanaged(Id, void) = .empty,
+    /// Servidores cujo começo das calls já foi pedido nesta sessão (op 43), e se o
+    /// CHANNEL_INFO já chegou (ver `askChannelInfo`).
+    info_asked: std.AutoHashMapUnmanaged(Id, bool) = .empty,
     /// Ícone (hash) de cada aplicação; "" = não tem ou não deu.
     app_icons: std.AutoHashMapUnmanaged(Id, []const u8) = .empty,
     /// Menções recentes (GET /users/@me/mentions), da mais nova para a mais
@@ -452,6 +458,7 @@ pub const Store = struct {
         while (mri.next()) |r| ev_alloc.free(r.*);
         s.my_roles.deinit(s.gpa);
         s.pending_guilds.deinit(s.gpa);
+        s.info_asked.deinit(s.gpa);
         s.suppress.deinit(s.gpa);
         for (s.recent_mentions.items) |*m| s.freeMessage(m);
         s.recent_mentions.deinit(s.gpa);
@@ -1051,6 +1058,18 @@ pub const Store = struct {
         s.rev +%= 1;
     }
 
+    /// Pedir agora o começo das calls de `guild` (op 43)? Uma vez por servidor e
+    /// sessão: true marca como pedido e quem chama manda. Servidor sem canal de voz
+    /// nunca pede (e não procura de novo a cada quadro).
+    pub fn askChannelInfo(s: *Store, gid: Id) bool {
+        if (gid == 0 or s.info_asked.contains(gid)) return false;
+        const has_voice = for (s.channelsOf(gid)) |id| {
+            if (s.channel(id)) |cs| if (cs.info.kind == .voice) break true;
+        } else false;
+        s.info_asked.put(s.gpa, gid, !has_voice) catch return false;
+        return has_voice;
+    }
+
     pub fn channelsOf(s: *const Store, guild_id: Id) []const Id {
         return if (s.guild_channels.get(guild_id)) |l| l.items else &.{};
     }
@@ -1114,7 +1133,7 @@ pub const Store = struct {
     pub fn apply(s: *Store, ev: Event, now_ms: i64) !void {
         // O que chega o tempo todo e não aparece na caixa de entrada não conta.
         switch (ev) {
-            .typing_start, .presence_update, .voice_state, .voice_member_flags, .voice_speaking, .voice_ping, .voice_audio, .voice_status, .call, .latency, .status, .net_fail, .notice, .member_list, .profile, .relationship, .note, .app_icon, .pins, .pins_changed, .invite, .read, .thread_members, .thread_joined, .thread_open, .threads_page, .conta => {},
+            .typing_start, .presence_update, .voice_state, .voice_member_flags, .voice_speaking, .voice_ping, .voice_audio, .voice_status, .call, .channel_info, .voice_start, .latency, .status, .net_fail, .notice, .member_list, .profile, .relationship, .note, .app_icon, .pins, .pins_changed, .invite, .read, .thread_members, .thread_joined, .thread_open, .threads_page, .conta => {},
             else => s.rev +%= 1,
         }
         switch (ev) {
@@ -1150,8 +1169,13 @@ pub const Store = struct {
                 // READY é o retrato atual da conta: refaz os estados de voz
                 // em vez de empilhar em cima do que sobrou da sessão anterior.
                 var vit = s.channels.valueIterator();
-                while (vit.next()) |cs| cs.*.voice_members.clearRetainingCapacity();
+                while (vit.next()) |cs| {
+                    cs.*.voice_members.clearRetainingCapacity();
+                    cs.*.voice_start_s = 0;
+                }
                 s.voice_flags.clearRetainingCapacity();
+                // O começo das calls também: cada servidor pede de novo ao aparecer.
+                s.info_asked.clearRetainingCapacity();
                 for (r.voice) |pair| {
                     if (s.channel(pair[0])) |cs| {
                         if (std.mem.indexOfScalar(Id, cs.voice_members.items, pair[1]) == null) {
@@ -1306,6 +1330,20 @@ pub const Store = struct {
             // A call da DM acabou: ninguém mais está nela (por garantia, se
             // algum VOICE_STATE_UPDATE de saída se perdeu).
             .call => |cl| if (cl.ended) if (s.channel(cl.channel)) |cs| cs.voice_members.clearRetainingCapacity(),
+            .channel_info => |ci| {
+                defer ev_alloc.free(ci.starts);
+                s.info_asked.put(s.gpa, ci.guild, true) catch {};
+                // A resposta é o retrato do servidor: o canal que não veio não tem call.
+                for (s.channelsOf(ci.guild)) |id| if (s.channel(id)) |cs| {
+                    cs.voice_start_s = 0;
+                };
+                for (ci.starts) |vs| if (s.channel(vs.channel)) |cs| if (cs.info.guild == ci.guild and cs.info.kind == .voice) {
+                    cs.voice_start_s = vs.start_s;
+                };
+            },
+            .voice_start => |vs| if (s.channel(vs.channel)) |cs| if (cs.info.kind == .voice) {
+                cs.voice_start_s = vs.start_s;
+            },
             .voice_speaking => |v| {
                 if (v.speaking) {
                     try s.speaking.put(s.gpa, v.user, now_ms + 4000);
@@ -1315,7 +1353,22 @@ pub const Store = struct {
                 if (v.status == .disconnected) s.speaking.clearRetainingCapacity();
             },
             .latency => |l| s.latency_ms = l,
-            .status => |st| s.connection = st,
+            .status => |st| {
+                s.connection = st;
+                // Voltou depois de uma queda (RESUMED): o RESUME repete o que o Discord
+                // mandou enquanto estava fora, mas um op 43 escrito bem na hora da
+                // queda pode não ter chegado. O que não teve resposta é pedido de novo.
+                if (st == .ready) {
+                    var it = s.info_asked.iterator();
+                    var stale: [16]Id = undefined;
+                    var n: usize = 0;
+                    while (it.next()) |e| if (!e.value_ptr.* and n < stale.len) {
+                        stale[n] = e.key_ptr.*;
+                        n += 1;
+                    };
+                    for (stale[0..n]) |g| _ = s.info_asked.remove(g);
+                }
+            },
             .net_fail => {},
             .notice => |n| ev_alloc.free(n),
             .send_failed => |f| if (s.pendingByNonce(f.channel, f.nonce)) |m| {
@@ -1359,6 +1412,9 @@ pub const Store = struct {
                 for (gc.channels) |ch| {
                     if (s.channel(ch.id)) |cs| cs.voice_members.clearRetainingCapacity();
                 }
+                // Servidor que voltou (ou em que acabamos de entrar): o começo das
+                // calls é pedido de novo quando ele aparecer.
+                _ = s.info_asked.remove(gc.guild.id);
                 for (gc.voice) |pair| {
                     if (s.channel(pair[0])) |cs| {
                         if (std.mem.indexOfScalar(Id, cs.voice_members.items, pair[1]) == null) {
@@ -1367,7 +1423,10 @@ pub const Store = struct {
                     }
                 }
             },
-            .guild_delete => |id| s.removeGuild(id),
+            .guild_delete => |id| {
+                s.removeGuild(id);
+                _ = s.info_asked.remove(id);
+            },
             .channel_upsert => |ch| {
                 const before: ?Id = if (s.channel(ch.id)) |cs| dm_order.activity(&cs.info) else null;
                 try s.mergeChannel(ch);
@@ -2948,6 +3007,62 @@ test "voz: mudar mudo/surdo não muda o lugar na lista; sair esquece" {
     // Quem já estava na call ao conectar.
     try s.apply(.{ .voice_member_flags = .{ .user = 6, .flags = .{ .self_mute = true } } }, 0);
     try std.testing.expect(s.voiceFlags(6).self_mute);
+}
+
+test "começo das calls: pedido uma vez por servidor e sessão, retrato e atualizações" {
+    const gpa = std.testing.allocator;
+    var s: Store = .{ .gpa = gpa };
+    defer s.deinit();
+    const c_alloc = std.heap.c_allocator;
+    const readyEv = struct {
+        fn f() !Event {
+            const ca = std.heap.c_allocator;
+            const chans = try ca.alloc(types.Channel, 4);
+            chans[0] = .{ .id = 10, .guild = 1, .name = try ca.dupe(u8, "a"), .topic = try ca.dupe(u8, ""), .kind = .voice };
+            chans[1] = .{ .id = 11, .guild = 1, .name = try ca.dupe(u8, "b"), .topic = try ca.dupe(u8, ""), .kind = .voice };
+            chans[2] = .{ .id = 12, .guild = 1, .name = try ca.dupe(u8, "c"), .topic = try ca.dupe(u8, "") };
+            chans[3] = .{ .id = 20, .guild = 2, .name = try ca.dupe(u8, "d"), .topic = try ca.dupe(u8, "") };
+            return .{ .ready = .{ .me = 1, .users = try ca.alloc(types.User, 0), .guilds = try ca.alloc(types.Guild, 0), .channels = chans, .voice = try ca.alloc([2]Id, 0) } };
+        }
+    }.f;
+    try s.apply(try readyEv(), 0);
+    // Uma vez só; servidor sem canal de voz nunca pede.
+    try std.testing.expect(s.askChannelInfo(1));
+    try std.testing.expect(!s.askChannelInfo(1));
+    try std.testing.expect(!s.askChannelInfo(2));
+    try std.testing.expect(!s.askChannelInfo(2));
+    try std.testing.expect(!s.askChannelInfo(0));
+    // A resposta: só o canal 10 tem call; o 11 tinha e não veio, então acabou.
+    s.channel(11).?.voice_start_s = 5;
+    const starts = try c_alloc.alloc(event.VoiceStart, 3);
+    starts[0] = .{ .channel = 10, .start_s = 1_762_780_000 };
+    starts[1] = .{ .channel = 12, .start_s = 1_762_780_000 }; // canal de texto: ignorado
+    starts[2] = .{ .channel = 20, .start_s = 1_762_780_000 }; // de outro servidor: ignorado
+    try s.apply(.{ .channel_info = .{ .guild = 1, .starts = starts } }, 0);
+    try std.testing.expectEqual(@as(i64, 1_762_780_000), s.channel(10).?.voice_start_s);
+    try std.testing.expectEqual(@as(i64, 0), s.channel(11).?.voice_start_s);
+    try std.testing.expectEqual(@as(i64, 0), s.channel(12).?.voice_start_s);
+    try std.testing.expectEqual(@as(i64, 0), s.channel(20).?.voice_start_s);
+    // Começou no 11, acabou no 10.
+    try s.apply(.{ .voice_start = .{ .guild = 1, .channel = 11, .start_s = 1_762_790_000 } }, 0);
+    try s.apply(.{ .voice_start = .{ .guild = 1, .channel = 10, .start_s = 0 } }, 0);
+    try std.testing.expectEqual(@as(i64, 0), s.channel(10).?.voice_start_s);
+    try std.testing.expectEqual(@as(i64, 1_762_790_000), s.channel(11).?.voice_start_s);
+    // Voltou de uma queda (RESUMED): o que já tinha resposta não pede de novo.
+    try s.apply(.{ .status = .ready }, 0);
+    try std.testing.expect(!s.askChannelInfo(1));
+    // Sessão nova (READY): esquece o começo e pede de novo.
+    try s.apply(try readyEv(), 0);
+    try std.testing.expectEqual(@as(i64, 0), s.channel(11).?.voice_start_s);
+    try std.testing.expect(s.askChannelInfo(1));
+    // Caiu antes da resposta: ao voltar, pede de novo.
+    try s.apply(.{ .status = .reconnecting }, 0);
+    try s.apply(.{ .status = .ready }, 0);
+    try std.testing.expect(s.askChannelInfo(1));
+    try std.testing.expect(!s.askChannelInfo(1));
+    // O servidor sumiu e voltou (GUILD_DELETE, GUILD_CREATE): pede de novo.
+    try s.apply(.{ .guild_delete = 1 }, 0);
+    try std.testing.expect(!s.info_asked.contains(1));
 }
 
 test "call de DM: quem está nela e o fim da call" {

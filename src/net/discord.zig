@@ -38,6 +38,7 @@ const read_json = @import("read_state_json.zig");
 const voice_mod = @import("voice.zig");
 const voz_movido = @import("voz_movido.zig");
 const call_json = @import("call_json.zig");
+const voice_info = @import("voice_info_json.zig");
 const thread_json = @import("thread_json.zig");
 const user_json = @import("user_json.zig");
 const envio_json = @import("envio_json.zig");
@@ -657,7 +658,7 @@ pub const Gateway = struct {
         switch (g.outbox.push(it)) {
             .queued, .coalesced => {},
             .merged => if (debug_log.isOn()) std.log.info("gateway: fila do op 4 cheia; o último estado de voz ficou no lugar do anterior", .{}),
-            .replaced_oldest => if (debug_log.isOn()) std.log.info("gateway: op 14 de muitos servidores na fila; o mais antigo deu lugar ao novo", .{}),
+            .replaced_oldest => if (debug_log.isOn()) std.log.info("gateway: op 14 ou 43 de muitos servidores na fila; o mais antigo deu lugar ao novo", .{}),
         }
         g.flushOutbox();
     }
@@ -699,6 +700,12 @@ pub const Gateway = struct {
                 var buf: [360]u8 = undefined;
                 const payload = std.fmt.bufPrint(&buf, "{{\"op\":14,\"d\":{{\"guild_id\":\"{d}\",\"typing\":true,\"threads\":true,\"activities\":true,\"members\":[],\"channels\":{{\"{d}\":[[0,99]]}},\"thread_member_lists\":[{s}]}}}}", .{ l.guild, l.channel, lists }) catch return true;
                 return g.writeWs(payload);
+            },
+            // Quando começou a call de cada canal de voz (net/voice_info_json.zig).
+            .channel_info => |gid| {
+                var buf: [160]u8 = undefined;
+                const p = voice_info.request(&buf, gid) orelse return true;
+                return g.writeWs(p);
             },
             .voice => |v| {
                 // Numa DM ou grupo (`guild` 0) o guild_id vai null (net/call_json.zig).
@@ -1502,6 +1509,17 @@ pub const Gateway = struct {
                     g.voice_channel = 0;
                 }
             }
+            return;
+        }
+        // O começo da call de cada canal de voz (o tempo ao lado do canal).
+        if (std.mem.eql(u8, t, "CHANNEL_INFO")) {
+            const ci = (voice_info.channelInfo(alloc, d) catch return) orelse return;
+            g.emit(.{ .channel_info = .{ .guild = ci.guild, .starts = ci.starts } });
+            return;
+        }
+        if (std.mem.eql(u8, t, "VOICE_CHANNEL_START_TIME_UPDATE")) {
+            const su = voice_info.startUpdate(d) orelse return;
+            g.emit(.{ .voice_start = .{ .guild = su.guild, .channel = su.channel, .start_s = su.start_s } });
             return;
         }
         if (std.mem.eql(u8, t, "VOICE_SERVER_UPDATE")) {
@@ -2831,7 +2849,7 @@ pub const Gateway = struct {
     /// Comando que é escrito no WebSocket (não passa pelo REST).
     fn usesGateway(cmd: ev.Command) bool {
         return switch (cmd) {
-            .subscribe_guild, .set_status, .set_activity, .join_voice, .voice_flags => true,
+            .subscribe_guild, .channel_info, .set_status, .set_activity, .join_voice, .voice_flags => true,
             // Os eventos da interação vão para a sessão do READY (session_id).
             .interaction => |ic| ic == .send,
             else => false,
@@ -4120,6 +4138,7 @@ pub const Gateway = struct {
                 if (sg.guild == g.sub_guild and sg.channel == g.sub_channel and sg.thread == g.sub_thread) return;
                 g.subscribe(sg.guild, sg.channel, sg.thread);
             },
+            .channel_info => |gid| g.queueOp(.{ .channel_info = gid }),
             .relationship => |r| {
                 const path = std.fmt.bufPrint(&path_buf, "/users/@me/relationships/{d}", .{r.user}) catch return;
                 // De onde foi o clique, como o cliente oficial manda.
