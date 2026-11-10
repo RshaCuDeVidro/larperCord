@@ -49,7 +49,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     while (it.next()) |arg| {
         if (std.mem.eql(u8, arg, "--lang")) {
             const l = it.next() orelse break;
-            opts.lang = if (std.mem.startsWith(u8, l, "pt")) .pt else if (std.mem.startsWith(u8, l, "ja")) .ja else .en;
+            opts.lang = if (std.mem.startsWith(u8, l, "pt")) .pt else if (std.mem.startsWith(u8, l, "ja")) .ja else if (std.mem.startsWith(u8, l, "ru")) .ru else .en;
         } else if (std.mem.eql(u8, arg, "--mode")) {
             const m = it.next() orelse break;
             opts.mode = if (std.mem.eql(u8, m, "light") or std.mem.eql(u8, m, "claro")) .light else .dark;
@@ -78,6 +78,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         .pt => 1,
         .en => 2,
         .ja => 3,
+        .ru => 4,
     };
     a.opts.mode = null;
     a.opts.lang = null;

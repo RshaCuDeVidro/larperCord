@@ -34,7 +34,7 @@ const usage =
     \\  --qa              roda o teste automático da interface (prints em qa-out/)
     \\  --demo            usa os dados de demonstração mesmo com token
     \\  --login           mostra a tela de login (ignora o token salvo)
-    \\  --lang IDIOMA     pt, en ou ja (ignora as configurações)
+    \\  --lang IDIOMA     pt, en, ja ou ru (ignora as configurações)
     \\  --no-live         desliga as mensagens automáticas do modo demonstração
     \\  --stats           mostra a linha do tempo da abertura e o custo de cada quadro
     \\  --voice-test G C  entra no canal de voz C do servidor G por 25 s
@@ -70,11 +70,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
             opts.live = false;
             if (@import("c").SDL_getenv("SDL_VIDEO_DRIVER") == null) _ = @import("c").SDL_setenv_unsafe("SDL_VIDEO_DRIVER", "offscreen", 1);
         } else if (std.mem.eql(u8, arg, "--lang")) {
-            const l = it.next() orelse return fail("--lang precisa de pt, en ou ja");
+            const l = it.next() orelse return fail("--lang precisa de pt, en, ja ou ru");
             opts.lang = if (std.mem.startsWith(u8, l, "pt"))
                 .pt
             else if (std.mem.startsWith(u8, l, "ja"))
                 .ja
+            else if (std.mem.startsWith(u8, l, "ru"))
+                .ru
             else
                 .en;
         } else if (std.mem.eql(u8, arg, "--login")) {

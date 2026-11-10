@@ -1,11 +1,11 @@
-//! Idioma da interface: português, inglês ou japonês.
+//! Idioma da interface: português, inglês, japonês ou russo.
 //!
 //! O português e o inglês ficam no lugar em que o texto é usado:
 //!
 //!     tr("Entrar", "Sign in")
 //!     fmt(&buf, "Respondendo a {s}", "Replying to {s}", .{nome})
 //!
-//! Os outros idiomas vêm de um arquivo por idioma (i18n/ja.kdl, embutido no
+//! Os outros idiomas vêm de um arquivo por idioma (i18n/ja.kdl, i18n/ru.kdl, embutidos no
 //! executável), com o texto em inglês como chave. O que não está no arquivo
 //! aparece em inglês (nunca em português): adicionar ou corrigir uma tradução
 //! não mexe no código. tools/i18n_strings.py lista os textos e confere o arquivo.
@@ -17,12 +17,13 @@ const std = @import("std");
 const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
 
-pub const Lang = enum(u8) { pt, en, ja };
+pub const Lang = enum(u8) { pt, en, ja, ru };
 
 var lang: std.atomic.Value(Lang) = .init(.pt);
 
-/// O arquivo de tradução do japonês (i18n/ja.kdl).
+/// Os arquivos de tradução embutidos (i18n/ja.kdl, i18n/ru.kdl).
 pub const ja_source = @embedFile("i18n_ja");
+pub const ru_source = @embedFile("i18n_ru");
 
 /// Lê um arquivo de tradução a mais (larpercord/i18n/<idioma>.kdl na pasta de
 /// configurações), que vale por cima do embutido: dá para testar uma tradução
@@ -30,8 +31,8 @@ pub const ja_source = @embedFile("i18n_ja");
 pub var read_extra: ?*const fn (gpa: std.mem.Allocator, code: []const u8) ?[]const u8 = null;
 
 pub fn set(l: Lang) void {
-    // Monta antes de publicar o idioma: quem lê `.ja` já acha a tabela pronta.
-    if (l == .ja) ja_table.build();
+    // Monta antes de publicar o idioma: quem lê o idioma já acha a tabela pronta.
+    if (tableOf(l)) |t| t.build();
     lang.store(l, .release);
 }
 
@@ -49,28 +50,31 @@ pub fn ja() bool {
 }
 
 pub fn tr(pt: []const u8, english: []const u8) []const u8 {
-    return switch (lang.load(.acquire)) {
+    const l = lang.load(.acquire);
+    return switch (l) {
         .pt => pt,
         .en => english,
-        .ja => ja_table.get(english) orelse english,
+        .ja, .ru => tableOf(l).?.get(english) orelse english,
     };
 }
 
 pub fn trZ(pt: [:0]const u8, english: [:0]const u8) [:0]const u8 {
-    return switch (lang.load(.acquire)) {
+    const l = lang.load(.acquire);
+    return switch (l) {
         .pt => pt,
         .en => english,
-        .ja => ja_table.get(english) orelse english,
+        .ja, .ru => tableOf(l).?.get(english) orelse english,
     };
 }
 
 /// Sem espaço, corta o texto (nunca no meio de um caractere) em vez de sumir.
 pub fn fmt(buf: []u8, comptime pt: []const u8, comptime english: []const u8, args: anytype) []const u8 {
     var wr = std.Io.Writer.fixed(buf);
-    switch (lang.load(.acquire)) {
+    const l = lang.load(.acquire);
+    switch (l) {
         .pt => wr.print(pt, args) catch {},
         .en => wr.print(english, args) catch {},
-        .ja => translated(&wr, ja_table.get(english), english, args) catch {},
+        .ja, .ru => translated(&wr, tableOf(l).?.get(english), english, args) catch {},
     }
     const out = wr.buffered();
     if (out.len < buf.len) return out;
@@ -86,13 +90,14 @@ pub fn fmt(buf: []u8, comptime pt: []const u8, comptime english: []const u8, arg
 
 /// Sem espaço, devolve "" (como o bufPrintSentinel).
 pub fn fmtZ(buf: []u8, comptime pt: []const u8, comptime english: []const u8, args: anytype) [:0]const u8 {
-    switch (lang.load(.acquire)) {
+    const l = lang.load(.acquire);
+    switch (l) {
         .pt => return std.fmt.bufPrintSentinel(buf, pt, args, 0) catch "",
         .en => return std.fmt.bufPrintSentinel(buf, english, args, 0) catch "",
-        .ja => {
+        .ja, .ru => {
             if (buf.len == 0) return "";
             var wr = std.Io.Writer.fixed(buf[0 .. buf.len - 1]);
-            translated(&wr, ja_table.get(english), english, args) catch return "";
+            translated(&wr, tableOf(l).?.get(english), english, args) catch return "";
             buf[wr.end] = 0;
             return buf[0..wr.end :0];
         },
@@ -100,14 +105,15 @@ pub fn fmtZ(buf: []u8, comptime pt: []const u8, comptime english: []const u8, ar
 }
 
 pub fn allocPrint(gpa: std.mem.Allocator, comptime pt: []const u8, comptime english: []const u8, args: anytype) ![]u8 {
-    switch (lang.load(.acquire)) {
+    const l = lang.load(.acquire);
+    switch (l) {
         .pt => return std.fmt.allocPrint(gpa, pt, args),
         .en => return std.fmt.allocPrint(gpa, english, args),
-        .ja => {
+        .ja, .ru => {
             var aw: std.Io.Writer.Allocating = .init(gpa);
             defer aw.deinit();
             // O escritor que aloca só falha sem memória.
-            translated(&aw.writer, ja_table.get(english), english, args) catch return error.OutOfMemory;
+            translated(&aw.writer, tableOf(l).?.get(english), english, args) catch return error.OutOfMemory;
             return aw.toOwnedSlice();
         },
     }
@@ -329,9 +335,21 @@ const Table = struct {
 
 var table_arena: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
 var ja_table: Table = .{ .code = "ja", .source = ja_source };
+var ru_table: Table = .{ .code = "ru", .source = ru_source };
+
+/// A tabela de um idioma que vem de arquivo (null: português e inglês, que
+/// estão no código).
+fn tableOf(l: Lang) ?*Table {
+    return switch (l) {
+        .pt, .en => null,
+        .ja => &ja_table,
+        .ru => &ru_table,
+    };
+}
 
 /// Idioma do sistema: português se a primeira preferência for "pt", japonês
-/// se for "ja", inglês em qualquer outro caso.
+/// se for "ja", russo se for "ru", inglês em qualquer outro caso. No Windows o
+/// SDL lê os idiomas da interface do usuário.
 pub fn system() Lang {
     var count: c_int = 0;
     const list = c.SDL_GetPreferredLocales(&count) orelse return .en;
@@ -341,18 +359,20 @@ pub fn system() Lang {
             const s = std.mem.span(l);
             if (std.mem.startsWith(u8, s, "pt")) return .pt;
             if (std.mem.startsWith(u8, s, "ja")) return .ja;
+            if (std.mem.startsWith(u8, s, "ru")) return .ru;
         }
     };
     return .en;
 }
 
 /// `language` das configurações: 0 = seguir o sistema, 1 = português,
-/// 2 = inglês, 3 = japonês.
+/// 2 = inglês, 3 = japonês, 4 = russo.
 pub fn fromSetting(v: u8) Lang {
     return switch (v) {
         1 => .pt,
         2 => .en,
         3 => .ja,
+        4 => .ru,
         else => system(),
     };
 }
@@ -466,35 +486,49 @@ test "fmt, fmtZ e allocPrint traduzidos" {
     try testing.expectEqualStrings("Broken y", e);
 }
 
-// O arquivo embutido precisa abrir, sem chave repetida, e cada tradução de texto
-// de formato com os marcadores certos (faltar tradução não é erro).
-test "i18n/ja.kdl: arquivo válido e marcadores certos" {
-    var a: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer a.deinit();
-    var diag: kdl.Diagnostic = .{};
-    const list = parseFile(a.allocator(), ja_source, &diag) catch |e| {
-        std.debug.print("i18n/ja.kdl:{d}: {s}\n", .{ diag.line, diag.message });
-        return e;
-    };
-    try testing.expect(list.len > 0);
-    var seen: std.StringHashMapUnmanaged(u32) = .empty;
+// Cada arquivo embutido precisa abrir, sem chave repetida, e cada tradução de
+// texto de formato com os marcadores certos (faltar tradução não é erro).
+test "i18n/*.kdl embutidos: arquivo válido e marcadores certos" {
     var bad: usize = 0;
-    for (list) |e| {
-        const gop = try seen.getOrPut(a.allocator(), e.key);
-        if (gop.found_existing) {
-            std.debug.print("i18n/ja.kdl:{d}: chave repetida (a primeira na linha {d}): {s}\n", .{ e.line, gop.value_ptr.*, e.key });
-            bad += 1;
-        } else gop.value_ptr.* = e.line;
-        // Os textos com marcadores {…} só podem ser de formato: no inglês de um
-        // tr() não há chaves (tools/i18n_strings.py --check confere de novo).
-        const p = parseFormat(e.key) orelse continue;
-        if (p.n == 0 and std.mem.indexOfAny(u8, e.value, "{}") == null) continue;
-        if (badTemplate(e.value, e.key)) {
-            std.debug.print("i18n/ja.kdl:{d}: marcadores não batem com o inglês: {s} -> {s}\n", .{ e.line, e.key, e.value });
-            bad += 1;
+    for ([_]*const Table{ &ja_table, &ru_table }) |t| {
+        var a: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer a.deinit();
+        var diag: kdl.Diagnostic = .{};
+        const list = parseFile(a.allocator(), t.source, &diag) catch |e| {
+            std.debug.print("i18n/{s}.kdl:{d}: {s}\n", .{ t.code, diag.line, diag.message });
+            return e;
+        };
+        try testing.expect(list.len > 0);
+        var seen: std.StringHashMapUnmanaged(u32) = .empty;
+        for (list) |e| {
+            const gop = try seen.getOrPut(a.allocator(), e.key);
+            if (gop.found_existing) {
+                std.debug.print("i18n/{s}.kdl:{d}: chave repetida (a primeira na linha {d}): {s}\n", .{ t.code, e.line, gop.value_ptr.*, e.key });
+                bad += 1;
+            } else gop.value_ptr.* = e.line;
+            // Os textos com marcadores {…} só podem ser de formato: no inglês de um
+            // tr() não há chaves (tools/i18n_strings.py --check confere de novo).
+            const p = parseFormat(e.key) orelse continue;
+            if (p.n == 0 and std.mem.indexOfAny(u8, e.value, "{}") == null) continue;
+            if (badTemplate(e.value, e.key)) {
+                std.debug.print("i18n/{s}.kdl:{d}: marcadores não batem com o inglês: {s} -> {s}\n", .{ t.code, e.line, e.key, e.value });
+                bad += 1;
+            }
         }
     }
     try testing.expectEqual(@as(usize, 0), bad);
+}
+
+test "russo: tabela do arquivo e fallback em inglês" {
+    const old = current();
+    defer set(old);
+    set(.ru);
+    try testing.expect(en());
+    try testing.expect(!ja());
+    try testing.expectEqualStrings("Язык", tr("Idioma", "Language"));
+    try testing.expectEqualStrings("Sign in to nowhere", tr("Entrar em lugar nenhum", "Sign in to nowhere"));
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("Сегодня в 03:39", fmt(&buf, "Hoje às {s}", "Today at {s}", .{"03:39"}));
 }
 
 test "arquivo de tradução: erros" {

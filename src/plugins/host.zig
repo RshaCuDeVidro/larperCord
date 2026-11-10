@@ -63,6 +63,7 @@ pub fn init(app: *App) void {
                 .pt => "pt",
                 .en => "en",
                 .ja => "ja",
+                .ru => "ru",
             };
         }
     }.f;

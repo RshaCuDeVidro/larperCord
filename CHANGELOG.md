@@ -1,5 +1,10 @@
 # What changed in each version
 
+## 0.6.5
+
+**Text in any language**
+- Russian interface, translated by pIat0n (#15, #16). Pick "Русский" in Settings → Language, or the app follows a Russian system. Dates use Russian month and weekday names.
+
 ## 0.6.4
 
 **Conversations**
