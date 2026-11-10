@@ -6053,13 +6053,20 @@ static bool ImFontAtlasBuildAcceptCodepointForSource(ImFontConfig* src, ImWchar 
 // código, então um único emoji (U+1F600) custava 128 mil entradas (1,2 MB, com a folga do
 // ImVector) para cada fonte+tamanho. Os emoji ficam logo depois do começo do BMP; o resto
 // só anda para abrir espaço. Vale para IndexLookup e IndexAdvanceX.
+// [larperCord] As letras escondidas das bandeiras e os seletores de variação do plano 14
+// (U+E0000..E01FF) vêm logo depois dos emoji: no lugar de sempre, um só deles esticava as
+// tabelas até U+E0100 (uns 5,5 MB por fonte+tamanho).
 static inline unsigned int ImFontBaked_Slot(unsigned int c)
 {
     if (c < 0x3000) IM_LIKELY
         return c;
     if (c < 0x1F000)
-        return c + 0x1000;
-    return c < 0x20000 ? 0x3000 + (c - 0x1F000) : c;
+        return c + 0x1200;
+    if (c < 0x20000)
+        return 0x3000 + (c - 0x1F000);
+    if (c < 0xE0000)
+        return c + 0x200;
+    return c < 0xE0200 ? 0x4000 + (c - 0xE0000) : c;
 }
 
 static void ImFontBaked_BuildGrowIndex(ImFontBaked* baked, int new_size)

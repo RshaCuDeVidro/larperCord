@@ -2821,6 +2821,11 @@ pub const rtl_question = "مساء الخير what is the problem؟";
 pub const rtl_dash = "12- السلام عليكم";
 pub const rtl_ordered_latin = "1. Hello";
 pub const rtl_ordered = "1. السلام عليكم";
+/// Números de dois e três algarismos: num parágrafo RTL saem ".10", ".12", ".123".
+pub const rtl_ordered_wide = "10. مرحبا\n12. السلام عليكم\n123. نص قصير";
+pub const ltr_ordered_wide = "10. Hello\n1000. World";
+/// Código em árabe: sai pela primeira letra forte, e a seleção acompanha.
+pub const rtl_code = "`مرحبا بالعالم`";
 pub const rtl_period = "1.يمنع تجاهل الإدارة. إن طلب منك مشرف التوقف عن نقاش موضوع معين، أو نقل الحديث لقناة معينة، فلا تتعمد تجاهله.";
 pub const rtl_warning = "⚠️ جميع الانتهاكات المتكررة قد تؤدي إلى 🔨 حظر دائم 🔨";
 pub const rtl_urdu = "اردو: یہ ہماری کتاب ہے، اور وہ بھی۔";
@@ -2858,6 +2863,9 @@ fn demoRtlRules(msgs: []types.Message) !void {
         .{ .back = 9, .text = "", .author = plain_bot_user },
         .{ .back = 10, .text = rtl_urdu, .author = 1006 },
         .{ .back = 11, .text = "https://x.com/EternalDreamAR/status/2112831450412417505", .author = webhook_user },
+        .{ .back = 12, .text = rtl_ordered_wide, .author = 1005 },
+        .{ .back = 13, .text = ltr_ordered_wide, .author = 1005 },
+        .{ .back = 14, .text = rtl_code, .author = 1006 },
     };
     for (slots) |s| {
         const m = &msgs[n - s.back];

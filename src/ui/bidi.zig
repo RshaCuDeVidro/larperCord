@@ -166,6 +166,8 @@ const Cached = struct {
     hash: u64 = 0,
     /// Como a direção foi decidida (ver `Dir`): a mesma palavra sai diferente em cada uma.
     dir: Dir = .auto,
+    /// Só letras RTL e as marcas delas: o trecho RTL (`visualRun`) sai igual, e usa esta.
+    all_rtl: bool = false,
     in_len: u8 = 0,
     out_len: u8 = 0,
     in: [cache_in]u8 = undefined,
@@ -197,6 +199,13 @@ pub fn visual(s: []const u8) ?[]const u8 {
 pub fn visualRun(s: []const u8, rtl: bool) ?[]const u8 {
     if (!rtl) return if (hasRtl(s)) cached(s, .ltr) else null;
     if (!hasRtl(s) and !rtlWork(s)) return null;
+    // A palavra só de letras RTL (o caso comum) já foi convertida para medir (`visual`): sai
+    // igual, e não ocupa outro lugar no cache.
+    if (s.len <= cache_in) {
+        const h = std.hash.Wyhash.hash(@intFromEnum(Dir.auto), s);
+        const e = &cache[@intCast(h % cache.len)];
+        if (e.all_rtl and e.dir == .auto and e.in_len == s.len and e.hash == h and std.mem.eql(u8, e.in[0..s.len], s)) return e.out[0..e.out_len];
+    }
     return cached(s, .rtl);
 }
 
@@ -223,14 +232,23 @@ fn cached(s: []const u8, dir: Dir) ?[]const u8 {
     if (e.in_len == s.len and e.hash == h and e.dir == dir and std.mem.eql(u8, e.in[0..s.len], s)) return e.out[0..e.out_len];
     const v = convert(s, dir) orelse return null;
     if (v.len <= cache_out) {
-        e.* = .{ .hash = h, .dir = dir, .in_len = @intCast(s.len), .out_len = @intCast(v.len) };
+        e.* = .{ .hash = h, .dir = dir, .all_rtl = dir == .auto and converted_all_rtl, .in_len = @intCast(s.len), .out_len = @intCast(v.len) };
         @memcpy(e.in[0..s.len], s);
         @memcpy(e.out[0..v.len], v);
     }
     return v;
 }
 
+/// Quantas vezes um texto passou pelo FriBidi (os testes conferem o cache).
+pub var converts: usize = 0;
+/// A última conversão foi de uma linha só, toda de letras RTL (e as marcas delas).
+var converted_all_rtl = false;
+var line_all_rtl = false;
+
 fn convert(s: []const u8, dir: Dir) ?[]const u8 {
+    converts += 1;
+    converted_all_rtl = false;
+    defer converted_all_rtl = converted_all_rtl and std.mem.indexOfScalar(u8, s, '\n') == null;
     var n: usize = 0;
     var it = std.mem.splitScalar(u8, s, '\n');
     var first = true;
@@ -241,7 +259,9 @@ fn convert(s: []const u8, dir: Dir) ?[]const u8 {
             n += 1;
         }
         first = false;
+        line_all_rtl = false;
         n = (if (dir == .rtl) rtlLine(ln, n) else line(ln, n, if (dir == .ltr) par_ltr else par_on)) orelse return null;
+        converted_all_rtl = line_all_rtl;
     }
     return out[0..n];
 }
@@ -254,6 +274,7 @@ fn line(ln: []const u8, at: usize, base_in: ParType) ?usize {
     fribidi_get_bidi_types(&cps, l, &types);
     var base: ParType = base_in;
     if (base_in != par_ltr and allRtl(types[0..len])) {
+        line_all_rtl = true;
         // Palavra só de letras RTL (o caso comum, palavra por palavra numa mensagem): todas no
         // nível 1, sem precisar montar as listas do algoritmo.
         @memset(levels[0..len], 1);
@@ -278,6 +299,12 @@ fn rtlLine(ln: []const u8, at: usize) ?usize {
     if (len == 0) return at;
     const l: Index = @intCast(len);
     fribidi_get_bidi_types(&cps, l, &types);
+    // Número ou letra da esquerda para a direita não fica no nível ímpar: o trecho tem mais de
+    // um nível ("12." de um item de lista num parágrafo RTL), e quem resolve é o algoritmo
+    // inteiro, com a direção do parágrafo da direita para a esquerda (".12", não ".21").
+    for (types[0..len]) |t| {
+        if (t & mask_number != 0 or (t & mask_strong != 0 and t & mask_rtl == 0)) return line(ln, at, par_rtl);
+    }
     // Onde começa cada pedaço, antes de moldar (a forma moldada não muda a classe).
     var cl: Clusters = .{};
     for (0..len) |i| starts[i] = cl.starts(cps[i], types[i]);
@@ -551,6 +578,22 @@ test "níveis do parágrafo: a direção é a da primeira letra forte" {
     try std.testing.expectEqual(@as(?bool, false), levelsOf("123 !?", &lv));
 }
 
+test "palavra só de letras RTL: o trecho RTL usa a conversão da medida, sem outra no cache" {
+    const w = "كتابة";
+    var a: [32]u8 = undefined;
+    const v = visual(w).?;
+    @memcpy(a[0..v.len], v);
+    const n = converts;
+    const b = visualRun(w, true).?;
+    try std.testing.expectEqual(n, converts);
+    try std.testing.expectEqualStrings(a[0..v.len], b);
+    // Com o que não é letra (o parêntese), a conversão é a dela.
+    _ = visual("(نص)").?;
+    const m = converts;
+    _ = visualRun("(نص)", true).?;
+    try std.testing.expectEqual(m + 1, converts);
+}
+
 test "pedaço num nível só: espelho, ordem e emoji inteiro" {
     // Todo RTL: igual à linha inteira.
     var a: [64]u8 = undefined;
@@ -565,12 +608,23 @@ test "pedaço num nível só: espelho, ordem e emoji inteiro" {
     try std.testing.expect(visualRun("✔️", true) == null);
     try std.testing.expect(visualRun("👍🏽", true) == null);
     try std.testing.expect(visualRun("👩‍💻", true) == null);
-    // Dois emojis num trecho RTL trocam de lugar, mas cada um fica inteiro.
-    try std.testing.expectEqualStrings("🇵🇹🇧🇷", visualRun("🇧🇷🇵🇹", true).?);
+    // Dois emojis num trecho RTL trocam de lugar, mas cada um fica inteiro. (As letras das
+    // bandeiras são da esquerda para a direita no Unicode: duas bandeiras ficam na ordem.)
+    try std.testing.expectEqualStrings("🇧🇷🇵🇹", visualRun("🇧🇷🇵🇹", true) orelse "🇧🇷🇵🇹");
     // (O ZWJ não vai para a tela: o ImGui desenha um emoji de cada vez.)
     try std.testing.expectEqualStrings("👩💻👍🏽", visualRun("👍🏽👩‍💻", true).?);
     // As marcas do árabe continuam depois da letra delas.
     try std.testing.expectEqualStrings(visual("مَرْحَبًا").?, visualRun("مَرْحَبًا", true).?);
+    // O número de um item de lista numerada num parágrafo RTL: o ponto à esquerda, os
+    // algarismos na ordem deles (não ".21").
+    try std.testing.expectEqualStrings(".1", visualRun("1.", true).?);
+    try std.testing.expectEqualStrings(".10", visualRun("10.", true).?);
+    try std.testing.expectEqualStrings(".12", visualRun("12.", true).?);
+    try std.testing.expectEqualStrings(".123", visualRun("123.", true).?);
+    try std.testing.expectEqualStrings(".١٢", visualRun("١٢.", true).?);
+    try std.testing.expectEqualStrings("abc )", visualRun("( abc", true).?);
+    try std.testing.expect(visualRun("12.", false) == null);
+    try std.testing.expect(visualRun("1000.", false) == null);
     // Nível par: o número e o latino como estão.
     try std.testing.expect(visualRun("12", false) == null);
     try std.testing.expect(visualRun("problem", false) == null);

@@ -509,6 +509,97 @@ fn orderedRtl(app: *App) bool {
     return mk.rtl and markerRightOfText(mk);
 }
 
+fn jumpWide(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_ordered_wide));
+}
+
+/// O marcador da linha que começa no byte `off` foi desenhado como `want`.
+fn markerShows(off: usize, want: []const u8) bool {
+    const mk = runAt(off, true) orelse return false;
+    return std.mem.eql(u8, mk.shown[0..mk.shown_len], want);
+}
+
+/// A linha `n` (contando do 0) de `text` começa neste byte.
+fn lineStart(text: []const u8, n: usize) usize {
+    var at: usize = 0;
+    for (0..n) |_| at = std.mem.indexOfScalarPos(u8, text, at, '\n').? + 1;
+    return at;
+}
+
+/// "10.", "12." e "123." num parágrafo RTL saem ".10", ".12" e ".123", à direita do texto;
+/// em português, "10." e "1000." como estão.
+fn wideNumbers(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_ordered_wide)) return false;
+    const t = gw.rtl_ordered_wide;
+    if (!markerShows(lineStart(t, 0), ".10") or !markerShows(lineStart(t, 1), ".12") or !markerShows(lineStart(t, 2), ".123")) return false;
+    for (0..3) |n| if (!markerRightOfText(runAt(lineStart(t, n), true).?)) return false;
+    return true;
+}
+
+/// O marcador de cada item da mensagem fica dentro da coluna do texto: o número largo empurra
+/// o item para dentro em vez de passar da borda (a esquerda, ou a direita num parágrafo RTL).
+fn markersInColumn(app: *App, text: []const u8) bool {
+    if (!watchMsg(app, text)) return false;
+    const m = rulesMsg(app, text) orelse return false;
+    const col = colOf(m.msg.id) orelse return false;
+    var any = false;
+    for (runs()) |r| if (r.marker) {
+        any = true;
+        if (r.x < col.x - 0.5 or r.x + r.w > col.right() + 0.5) return false;
+    };
+    return any;
+}
+
+fn wideInColumnRtl(app: *App) bool {
+    return markersInColumn(app, gw.rtl_ordered_wide);
+}
+
+fn wideInColumnLtr(app: *App) bool {
+    if (!markersInColumn(app, gw.ltr_ordered_wide)) return false;
+    // E o texto de "10." e o de "1000." começam no mesmo x.
+    const t = gw.ltr_ordered_wide;
+    const a = runAt(lineStart(t, 0) + 4, false) orelse return false;
+    const b = runAt(lineStart(t, 1) + 6, false) orelse return false;
+    return @abs(a.x - b.x) < 0.5;
+}
+
+fn jumpCode(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_code));
+}
+
+fn tCode(app: *App, buf: []u8) []const u8 {
+    const m = rulesMsg(app, gw.rtl_code) orelse return "";
+    return std.fmt.bufPrint(buf, "msgtext:{d}", .{m.msg.id}) catch "";
+}
+
+/// Arrastar da ponta direita do código em árabe até o meio pega o começo dele (o texto do
+/// código sai da direita para a esquerda, e a seleção acompanha).
+fn codeSelectedFromStart(app: *App) bool {
+    const m = rulesMsg(app, gw.rtl_code) orelse return false;
+    const sel = &app.st.selection;
+    if (sel.a_id != m.msg.id or sel.b_id != m.msg.id) return false;
+    const lo = @min(sel.a_off, sel.b_off);
+    const hi = @max(sel.a_off, sel.b_off);
+    return lo == 1 and hi > 1 and hi + 1 < m.msg.content.len;
+}
+
+/// U+E0100 (seletor de variação do plano 14) e as letras escondidas das bandeiras não
+/// esticam as tabelas por caractere da fonte (ImFontBaked_Slot): num tamanho que nada mais
+/// usa, elas ficam do tamanho das do começo do Unicode e dos emoji.
+fn planeFourteenSmall(app: *App) bool {
+    const f = app.fonts.families.items[0].get(.regular);
+    _ = d.width(f, 37, "\u{E0100}\u{E0067}");
+    const n = larper_font_index_size(f, d.fontPx(37));
+    return n > 0 and n <= 0x4200;
+}
+extern fn larper_font_index_size(font: *c.ImFont, size: f32) c_int;
+
+fn wideNumbersLtr(app: *App) bool {
+    if (!watchMsg(app, gw.ltr_ordered_wide)) return false;
+    const t = gw.ltr_ordered_wide;
+    return markerShows(lineStart(t, 0), "10.") and markerShows(lineStart(t, 1), "1000.");
+}
+
 /// "- مرحبا\n- مرحبا 😃": os dois "•" à direita do texto, e o emoji à esquerda da palavra.
 fn bulletsRtl(app: *App) bool {
     if (!watchMsg(app, gw.rtl_list)) return false;
@@ -773,6 +864,21 @@ pub const ops_theme = [_]Op{
     .{ .shot = "rtl9-apagada" },
     run(dropDeleted),
     expect("a apagada sai", deletedGone),
+    run(jumpWide),
+    expect("a lista com números de dois e três algarismos aparece", jumped),
+    .{ .wait = 1700 },
+    expect("\"12. نص\": o número da lista sai \".12\", não \".21\" (e \".10\", \".123\")", wideNumbers),
+    expect("\"1000. World\": número largo da lista em português, como está", wideNumbersLtr),
+    expect("número largo da lista em árabe não passa da borda direita da coluna", wideInColumnRtl),
+    expect("número largo da lista em português não passa da borda esquerda da coluna", wideInColumnLtr),
+    .{ .shot = "rtl9-numeros" },
+    run(jumpCode),
+    expect("o código em árabe aparece", jumped),
+    .{ .wait = 1700 },
+    .{ .drag = .{ .from = .{ .dyn_at = .{ .f = tCode, .fx = 0.97, .fy = 0.5 } }, .to = .{ .dyn_at = .{ .f = tCode, .fx = 0.5, .fy = 0.5 } } } },
+    expect("arrastar da ponta direita do código em árabe até o meio pega o começo dele", codeSelectedFromStart),
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("U+E0100 e as letras das bandeiras não esticam as tabelas da fonte", planeFourteenSmall),
     run(jumpX),
     expect("o embed do X aparece", jumped),
     .{ .wait = 1700 },

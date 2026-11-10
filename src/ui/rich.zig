@@ -302,9 +302,23 @@ fn planWidth(font: ?*const anyopaque, size: f32, s: []const u8) f32 {
 /// mensagem ou a descrição de um embed), para o qa_rtl.zig conferir a ordem visual. `off` é o
 /// byte do trecho no texto; o marcador de lista guarda onde o desenho dele ficou.
 pub var qa_watch: ?[*]const u8 = null;
-pub const QaRun = struct { off: u32, len: u32, x: f32, y: f32, w: f32, rtl: bool, marker: bool };
+pub const QaRun = struct { off: u32, len: u32, x: f32, y: f32, w: f32, rtl: bool, marker: bool, shown: [16]u8 = undefined, shown_len: u8 = 0 };
 pub var qa_runs: [256]QaRun = undefined;
 pub var qa_runs_n: usize = 0;
+
+/// O número da lista fica na margem terminando pouco antes do texto (ver `markerGlyph`), no
+/// lugar do "•": o mais largo da mensagem que passaria da margem do nível dele (e, num
+/// parágrafo RTL, da borda direita da coluna) diz quanto os itens numerados vão para dentro.
+fn numberExtra(o: Opts, spans: []const md.Span) f32 {
+    var extra: f32 = 0;
+    for (spans) |*sp| {
+        if (!sp.flags.number) continue;
+        const font = fontFor(o, sp);
+        const size = o.size * scaleOf(sp);
+        extra = @max(extra, d.width(font, size, sp.text) - d.width(font, size, "•") - size);
+    }
+    return extra;
+}
 
 /// Largura de uma palavra. Uma enorme ("kkkk…"): se o começo já não cabe na
 /// linha, não precisa medir o resto (ela vai em pedaços de qualquer jeito).
@@ -356,6 +370,11 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
     if (watched) qa_runs_n = 0;
     // O pedaço anterior terminou com espaço (o que entra no parágrafo entre os dois).
     var prev_space = false;
+    // Recuo a mais dos itens de lista numerada: o número largo ("100.", "1000.") não cabe na
+    // margem de sempre, e os itens numerados (com as linhas que quebram) vão um pouco para
+    // dentro, todos juntos, como no Discord (o texto de "10." e de "1000." começa no mesmo x).
+    const number_extra = numberExtra(o, spans);
+    var item_numbered = false;
     var piece: usize = 0;
     // Com o plano: a faixa da tela que o texto ocupa, se alguma linha foi para a direita (e
     // alguma não), e a primeira e a última linha.
@@ -391,6 +410,7 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 x = 0;
                 y += cur_h + o.line_h * @as(f32, @floatFromInt(@min(word.breaks, 3) - 1));
                 line_start = true;
+                item_numbered = false;
             } else if (x > indent and x + w > wrap) {
                 x = 0;
                 y += cur_h;
@@ -398,7 +418,8 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
             }
             if (line_start) {
                 cur_h = lineHeight(o, sp);
-                indent = indentOf(o, sp);
+                if (sp.flags.number) item_numbered = true;
+                indent = indentOf(o, sp) + (if (sp.flags.list and item_numbered) number_extra else 0);
                 x = indent;
             }
             var rest: []const u8 = "";
@@ -438,7 +459,7 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
             }
             for (0..@max(n_runs, 1)) |ri| {
                 const r: Plan.Run = if (n_runs > 0) planned.?.run(piece, ri) else .{ .from = 0, .to = s.len, .w = w, .x = x, .rtl = false };
-                const rs = if (atomic) s else s[r.from..r.to];
+                const rs = if (atomic) s else r.slice(s);
                 const dir: bidi.Dir = if (r.rtl) .rtl else if (vline != null) .ltr else .auto;
                 const px = r.x;
                 if (planned != null) {
@@ -449,7 +470,14 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 if (watched and qa_runs_n < qa_runs.len) {
                     const at: u32 = @intCast(@intFromPtr(word.text.ptr) - @intFromPtr(o.base.?) + (if (atomic) 0 else r.from));
                     const g = if (marker) markerGlyph(sp, font, size, s, x0 + px, r.w, dir) else MarkerGlyph{ .x = x0 + px, .w = r.w };
-                    qa_runs[qa_runs_n] = .{ .off = at, .len = @intCast(if (atomic) word.text.len else rs.len), .x = g.x, .y = y0 + y, .w = g.w, .rtl = r.rtl, .marker = marker };
+                    var q: QaRun = .{ .off = at, .len = @intCast(if (atomic) word.text.len else rs.len), .x = g.x, .y = y0 + y, .w = g.w, .rtl = r.rtl, .marker = marker };
+                    // O marcador como foi desenhado (o número da lista numerada, na direção dele).
+                    if (marker) {
+                        const v = bidi.visualRun(s, dir == .rtl) orelse s;
+                        q.shown_len = @intCast(@min(v.len, q.shown.len));
+                        @memcpy(q.shown[0..q.shown_len], v[0..q.shown_len]);
+                    }
+                    qa_runs[qa_runs_n] = q;
                     qa_runs_n += 1;
                 }
                 if (dl) |l| {
@@ -474,7 +502,10 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                     // A seleção vem por cima: o fundo do código não pode cobri-la.
                     const sel_pad = if (sp.flags.block) pad + 4 + ol.code_gutter else pad;
                     const last_run = ri + 1 >= n_runs;
-                    if (o.base) |base| select(l, th_col, base, if (atomic) word.text else rs, word.space_after and last_run, sp, font, size, sel_pad, x0 + px, y0 + y, r.w, space_w, ol, line_start and ri == 0, vline != null and vline.?.last and last_run, vline, x0, r.rtl and !atomic);
+                    // Código e linha de bloco não se quebram por nível: saem pela primeira letra
+                    // forte deles, e a seleção acompanha.
+                    const mirror = if (sp.flags.code or sp.flags.block) bidi.baseRtl(word.text) else r.rtl and !atomic;
+                    if (o.base) |base| select(l, th_col, base, if (atomic) word.text else rs, word.space_after and last_run, sp, font, size, sel_pad, x0 + px, y0 + y, r.w, space_w, ol, line_start and ri == 0, vline != null and vline.?.last and last_run, vline, x0, mirror);
                     if (block_top and o.ctx != null) copy = .{ .sp = sp, .x = x0 + px, .y = y0 + y, .at_top = y == 0 };
                 }
             }

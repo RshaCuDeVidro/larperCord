@@ -478,7 +478,20 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
                 f.bold = true;
                 label = label[2 .. label.len - 2];
             }
-            try out.append(gpa, .{ .text = label, .url = ml.url, .flags = f });
+            // `[a\_b](url)`: o caractere escapado sem a barra, como no resto do texto. O texto
+            // do link vira um trecho por pedaço entre as barras, todos do mesmo link.
+            var from: usize = 0;
+            var k: usize = 0;
+            while (k < label.len) {
+                if (label[k] == '\\' and k + 1 < label.len) if (escapedLen(label[k + 1 ..])) |n| {
+                    if (k > from) try out.append(gpa, .{ .text = label[from..k], .url = ml.url, .flags = f });
+                    from = k + 1;
+                    k += 1 + n;
+                    continue;
+                };
+                k += 1;
+            }
+            if (label.len > from) try out.append(gpa, .{ .text = label[from..], .url = ml.url, .flags = f });
             i += ml.len;
             run_start = i;
             continue;
@@ -726,6 +739,19 @@ test "barra invertida: o caractere aparece sem a barra, fora do código" {
     try std.testing.expect(kept[1].flags.code);
     try std.testing.expectEqualStrings("x\\*y", kept[3].text);
     try std.testing.expect(kept[3].flags.block);
+}
+
+test "barra invertida no texto de um link com texto também some" {
+    const a = std.testing.allocator;
+    var buf: [128]u8 = undefined;
+    const sp = try parse(a, "[a\\_b](https://x.y) e [\\*x\\*](https://z.w)");
+    defer a.free(sp);
+    try std.testing.expectEqualStrings("a_b e *x*", shown(&buf, sp));
+    for (sp) |s| {
+        if (std.mem.eql(u8, s.text, " e ")) continue;
+        try std.testing.expect(s.flags.link and !s.flags.italic);
+        try std.testing.expect(std.mem.startsWith(u8, s.url, "https://"));
+    }
 }
 
 test "número de lista numerada é o marcador do item" {

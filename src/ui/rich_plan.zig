@@ -75,7 +75,20 @@ pub const Plan = struct {
     gap_hi: [max]f32 = undefined,
 
     pub const Line = struct { lo: f32, hi: f32, rtl: bool, right: bool, last: bool, gap_lo: f32, gap_hi: f32 };
-    pub const Run = struct { from: usize, to: usize, w: f32, x: f32, rtl: bool };
+    pub const Run = struct {
+        from: usize,
+        to: usize,
+        w: f32,
+        x: f32,
+        rtl: bool,
+
+        /// O texto do trecho dentro de `s`, o texto do pedaço como a passada que desenha o vê.
+        /// Os índices vêm da passada que mediu: se o texto mudou entre as duas, fica no que há.
+        pub fn slice(r: Run, s: []const u8) []const u8 {
+            const to = @min(r.to, s.len);
+            return s[@min(r.from, to)..to];
+        }
+    };
 
     pub fn reset(p: *Plan) void {
         p.n = 0;
@@ -187,7 +200,7 @@ pub const Plan = struct {
             }
         }
         if (len == 0) return false;
-        const rtl = bidi.paragraphLevels(cps[0..len], levels[0..len]) orelse return false;
+        const rtl = paragraphLevels(cps[0..len], levels[0..len]) orelse return false;
         // Os trechos: cada pedaço quebrado onde o nível muda.
         const runs_before = p.runs;
         var c: usize = 0;
@@ -227,7 +240,7 @@ pub const Plan = struct {
         while (a < to) {
             var b = a + 1;
             while (b < to and !p.lineStarts(b)) b += 1;
-            p.placeLine(a, b, rtl, edge);
+            if (!p.placeLine(a, b, rtl, edge)) return p.undo(runs_before, from, to);
             a = b;
         }
         return true;
@@ -260,15 +273,14 @@ pub const Plan = struct {
     }
 
     /// Um item da linha: um trecho, ou o espaço antes de um pedaço (`gap_of`).
-    const Item = struct { run: u16 = 0, gap_of: u16 = no_gap, w: f32, level: bidi.Level };
+    pub const Item = struct { run: u16 = 0, gap_of: u16 = no_gap, w: f32, level: bidi.Level };
     const no_gap = std.math.maxInt(u16);
 
     /// A linha `a..b` na ordem visual: os trechos e os espaços entre os pedaços, cada um no
     /// nível dele, invertidos do nível mais alto ao menor ímpar (L2). Parágrafo RTL: a linha
     /// termina na borda direita, menos o recuo da lista, que vai para a direita com o marcador
     /// (o espelho de onde ela começaria num parágrafo da esquerda para a direita).
-    fn placeLine(p: *Plan, a: usize, b: usize, rtl: bool, edge: f32) void {
-        var items: [max_runs]Item = undefined;
+    fn placeLine(p: *Plan, a: usize, b: usize, rtl: bool, edge: f32) bool {
         var n: usize = 0;
         var first: ?usize = null;
         var prev: ?usize = null;
@@ -276,6 +288,9 @@ pub const Plan = struct {
             const pc = &p.pc[k];
             if (pc.fixed) continue;
             if (first == null) first = k;
+            // Um item por trecho e um por espaço: cabe sempre (`items` tem lugar para todos os
+            // trechos e um espaço por pedaço), mas a conta fica conferida.
+            if (n + 1 + p.run_n[k] > items.len) return false;
             if (prev) |q| if (pc.space) {
                 items[n] = .{ .gap_of = @intCast(k), .w = @max(0, pc.x - (p.pc[q].x + p.pc[q].w)), .level = p.gap_level[k] };
                 n += 1;
@@ -287,7 +302,10 @@ pub const Plan = struct {
                 n += 1;
             }
         }
-        const fk = first orelse return p.placeMarkers(a, b, rtl, edge, 0);
+        const fk = first orelse {
+            p.placeMarkers(a, b, rtl, edge, 0);
+            return true;
+        };
         var hi_lv: bidi.Level = 0;
         var lo_odd: bidi.Level = std.math.maxInt(bidi.Level);
         for (items[0..n]) |it| {
@@ -343,6 +361,7 @@ pub const Plan = struct {
         }
         p.last[last_k] = true;
         p.placeMarkers(a, b, rtl, edge, quote);
+        return true;
     }
 
     /// O marcador da lista num parágrafo RTL vai para o lado direito do texto: o mesmo lugar,
@@ -366,6 +385,37 @@ var levels: [bidi.max_line]bidi.Level = undefined;
 var owner: [bidi.max_line]u16 = undefined;
 var boff: [bidi.max_line]u16 = undefined;
 const gap_mark = std.math.maxInt(u16);
+/// Os níveis dos últimos parágrafos curtos: a mesma mensagem é planejada a cada quadro, e o
+/// texto dela não muda (a largura da coluna não muda os níveis, só a quebra das linhas).
+const LevelsCached = struct { len: u16 = 0, rtl: bool = false, cps: [levels_cache_len]bidi.Char = undefined, levels: [levels_cache_len]bidi.Level = undefined };
+const levels_cache_len = 256;
+var levels_cache: [16]LevelsCached = @splat(.{});
+/// Quantas vezes um parágrafo passou pelo FriBidi (os testes conferem o cache).
+pub var analyses: usize = 0;
+
+fn paragraphLevels(list: []const bidi.Char, out: []bidi.Level) ?bool {
+    if (list.len > levels_cache_len) {
+        analyses += 1;
+        return bidi.paragraphLevels(list, out);
+    }
+    const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(list));
+    const e = &levels_cache[@intCast(h % levels_cache.len)];
+    if (e.len == list.len and std.mem.eql(bidi.Char, e.cps[0..list.len], list)) {
+        @memcpy(out[0..list.len], e.levels[0..list.len]);
+        return e.rtl;
+    }
+    analyses += 1;
+    const rtl = bidi.paragraphLevels(list, out) orelse return null;
+    e.len = @intCast(list.len);
+    e.rtl = rtl;
+    @memcpy(e.cps[0..list.len], list);
+    @memcpy(e.levels[0..list.len], out[0..list.len]);
+    return rtl;
+}
+
+/// Os itens de uma linha (ver `Plan.placeLine`): no máximo todos os trechos e um espaço por
+/// pedaço. Fora da pilha, como os outros buffers.
+var items: [Plan.max_runs + Plan.max]Plan.Item = undefined;
 
 fn decode(s: []const u8, i: *usize) bidi.Char {
     const b = s[i.*];
@@ -660,6 +710,26 @@ test "bloco de código não sai do lugar no meio do árabe" {
     try expectNear(350, p.xAt(3, 0));
 }
 
+test "o mesmo parágrafo no quadro seguinte não passa pelo FriBidi de novo" {
+    const p = &test_plan;
+    planText(p, "شكرا جزيلا يا صديقي العزيز", 1000, .{});
+    p.resolve(1000, fakeWidth);
+    const n = analyses;
+    const x0 = p.xAt(0, 0);
+    // Outra largura: outra quebra, mesmos níveis.
+    planText(p, "شكرا جزيلا يا صديقي العزيز", 1000, .{});
+    p.resolve(800, fakeWidth);
+    try std.testing.expectEqual(n, analyses);
+    try expectNear(x0 - 200, p.xAt(0, 0));
+}
+
+test "o trecho fica dentro do texto mesmo se ele encolheu entre medir e desenhar" {
+    const r: Plan.Run = .{ .from = 3, .to = 9, .w = 0, .x = 0, .rtl = false };
+    try std.testing.expectEqualStrings("defghi", r.slice("abcdefghij"));
+    try std.testing.expectEqualStrings("de", r.slice("abcde"));
+    try std.testing.expectEqualStrings("", r.slice("ab"));
+}
+
 test "menção e emoji inteiros entram no parágrafo como um caractere da classe deles" {
     const p = &test_plan;
     p.reset();
@@ -671,4 +741,28 @@ test "menção e emoji inteiros entram no parágrafo como um caractere da classe
     try expectNear(260, p.xAt(0, 0));
     try std.testing.expect(p.xAt(1, 0) < 260 and p.xAt(2, 0) < p.xAt(1, 0));
     try std.testing.expectEqual(@as(usize, 1), p.runCount(1));
+}
+
+test "um pedaço que muda de nível a cada caractere não estoura a linha (2047 RLM/LRM e mais um)" {
+    // Mensagem do Nitro (4000 caracteres) ou descrição de embed (4096): cada caractere vira um
+    // trecho, e a linha tem um item por trecho mais um por espaço.
+    const p = &test_plan;
+    var buf: [2048 * 3]u8 = undefined;
+    var n: usize = 0;
+    for (0..2047) |i| n += std.unicode.utf8Encode(if (i % 2 == 0) 0x200F else 0x200E, buf[n..]) catch unreachable;
+    p.reset();
+    p.add(.{ .x = 0, .y = 0, .w = 0, .text = buf[0..n], .para = true, .line = true });
+    p.add(.{ .x = 4, .y = 0, .w = 10, .text = "x", .space = true });
+    p.resolve(400, fakeWidth);
+    try std.testing.expect(p.runCount(1) == 1);
+    // Mais trechos do que cabem: o parágrafo fica na ordem lógica, sem passar do limite.
+    var big: [4000 * 3]u8 = undefined;
+    n = 0;
+    for (0..4000) |i| n += std.unicode.utf8Encode(if (i % 2 == 0) 0x200F else 0x200E, big[n..]) catch unreachable;
+    p.reset();
+    p.add(.{ .x = 0, .y = 0, .w = 0, .text = big[0..n], .para = true, .line = true });
+    p.add(.{ .x = 4, .y = 0, .w = 10, .text = "مرحبا", .space = true });
+    p.resolve(400, fakeWidth);
+    try std.testing.expect(p.lineOf(1) == null);
+    try std.testing.expectEqual(@as(f32, 4), p.xAt(1, -1));
 }
