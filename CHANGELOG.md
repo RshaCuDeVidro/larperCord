@@ -1,5 +1,36 @@
 # What changed in each version
 
+## 0.6.4
+
+**Conversations**
+- The DM list keeps the most recent conversation on top, live: a message you get or send moves its DM up right away.
+- A new DM shows up at the top, even when only its message arrives, and a DM you closed comes back when a new message arrives in it.
+
+**Messages**
+- After you pick an emoji, from the picker or the `:` list, the cursor stays right after it instead of jumping to the start of the box.
+- Reaction emoji sit in the middle of their chip, with any emoji font.
+- Backslash escapes are hidden like in Discord: `\.`, `\*`, `\_`, `\~` and `\\` show just the character, outside code, in messages and embeds.
+- "1. Hello" keeps its space after the number.
+- In the bubble layout (Bolhas, Cupertino), "(deleted)" from the message log no longer covers right-aligned text.
+
+**Media and GIFs**
+- Long GIFs, like Klipy's, play on their own again, not only while the mouse is over them. This broke in 0.6.2.
+- Embed images that Discord's media proxy won't resize, like X/Twitter card images, now load from the original. With the debug log on, it says why an image failed.
+
+**Text in any language**
+- More Arabic and Hebrew fixes, from majd-tqe's report (#9). Embed titles, authors and field names that start in Arabic or Hebrew end at the right edge of the card, like the description.
+- A line that starts with a number, like "1." or "12-", is right to left, with the number and its dot or dash in the right order.
+- Brackets are mirrored, and "؟" and other punctuation land in the right place when the sentence has English in it.
+- Bullet and numbered list markers sit on the right.
+- The extra space before some emoji, like ⚠️ and ✔️, is gone.
+- The Urdu letter ہ shows instead of `?`, and Settings no longer lists Arabic as missing a font when DejaVu Sans has it.
+
+**Known limitations**
+- Arabic and Hebrew you type in the message box still go left to right. The message shows correctly once it's sent.
+- Scripts that need shaping, like Devanagari, Bengali, Thai or Khmer, show their real letters one by one, without conjuncts or reordered vowel signs.
+- The single Windows `.exe` is opt-in, for people who build it with `-Dsingle-exe=true`. Releases still ship the `.exe` with its DLLs.
+- App commands in the right-click menu, files in bot forms and recording voice messages aren't supported yet.
+
 ## 0.6.3
 
 **Calls**

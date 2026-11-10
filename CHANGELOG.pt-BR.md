@@ -1,5 +1,36 @@
 # O que mudou em cada versão
 
+## 0.6.4
+
+**Conversas**
+- A lista de DMs mantém a conversa mais recente em cima, ao vivo: uma mensagem que você recebe ou manda sobe a DM na hora.
+- Uma DM nova aparece no topo, mesmo quando só a mensagem dela chega, e uma DM que você fechou volta quando chega uma mensagem nova nela.
+
+**Mensagens**
+- Depois de escolher um emoji, pelo seletor ou pela lista do `:`, o cursor fica logo depois dele em vez de pular para o começo da caixa.
+- O emoji das reações fica no meio do chip, com qualquer fonte de emoji.
+- As barras invertidas do markdown somem como no Discord: `\.`, `\*`, `\_`, `\~` e `\\` mostram só o caractere, fora do código, nas mensagens e nos embeds.
+- "1. Hello" mantém o espaço depois do número.
+- No layout de balões (Bolhas, Cupertino), o "(apagada)" do registro de mensagens não cobre mais o texto alinhado à direita.
+
+**Mídia e GIFs**
+- GIFs longos, como os do Klipy, voltam a tocar sozinhos, não só com o mouse em cima. Isso quebrou na 0.6.2.
+- Imagens de embed que o proxy de mídia do Discord não reduz, como as dos cartões do X/Twitter, agora carregam pela original. Com o log de depuração ligado, ele diz por que uma imagem falhou.
+
+**Texto em qualquer idioma**
+- Mais correções no árabe e no hebraico, a partir do relato de majd-tqe (#9). Título, autor e nome de campo de embed que começam em árabe ou hebraico terminam na borda direita do cartão, como a descrição.
+- Uma linha que começa com número, como "1." ou "12-", fica da direita para a esquerda, com o número e o ponto ou o traço na ordem certa.
+- Parênteses saem espelhados, e o "؟" e as outras pontuações ficam no lugar certo quando a frase tem inglês no meio.
+- Os marcadores de lista, com bolinha ou número, ficam à direita.
+- O espaço a mais antes de alguns emojis, como ⚠️ e ✔️, sumiu.
+- A letra ہ do urdu aparece em vez de `?`, e as Configurações não dizem mais que falta fonte para o árabe quando o DejaVu Sans o tem.
+
+**Limitações conhecidas**
+- Árabe e hebraico digitados na caixa de mensagem ainda vão da esquerda para a direita. A mensagem aparece certa depois de enviada.
+- Escritas que precisam de composição, como devanágari, bengali, tailandês ou khmer, mostram as letras de verdade uma a uma, sem as ligaduras nem os sinais de vogal reposicionados.
+- O `.exe` único do Windows é opcional, para quem compila com `-Dsingle-exe=true`. As releases continuam com o `.exe` e as DLLs.
+- Comandos de apps no botão direito, arquivos nos formulários de bots e gravar mensagens de voz ainda não têm suporte.
+
 ## 0.6.3
 
 **Chamadas**
