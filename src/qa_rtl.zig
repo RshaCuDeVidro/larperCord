@@ -366,6 +366,69 @@ fn shortGone(app: *App) bool {
     return app.store.find(cs, short_id) == null;
 }
 
+// --- Issue #9: o que um leitor de árabe mandou -----------------------------------------
+
+/// Uma mensagem do #regras de "os larpers" (net/fake_gateway.zig, `demoRtlRules`) pelo texto.
+fn rulesMsg(app: *App, text: []const u8) ?*const StoredMessage {
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return null;
+    for (cs.messages.items) |*m| if (std.mem.eql(u8, m.msg.content, text)) return m;
+    return null;
+}
+
+/// A mensagem cujo embed tem esta descrição.
+fn rulesEmbedMsg(app: *App, description: []const u8) ?*const StoredMessage {
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return null;
+    for (cs.messages.items) |*m| {
+        for (m.msg.embeds) |e| if (std.mem.eql(u8, e.description, description)) return m;
+    }
+    return null;
+}
+
+fn toRules(app: *App) void {
+    app.handle(.{ .open_message = .{ .channel = gw.rtl_rules_channel, .id = 0 } });
+    app.st.scrollOf(gw.rtl_rules_channel).stick_bottom = true;
+}
+
+fn rulesReady(app: *App) bool {
+    if (app.st.activeChannel() != gw.rtl_rules_channel) return false;
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return false;
+    return cs.history == .loaded;
+}
+
+/// Leva a conversa até a mensagem (o destaque do pulo some em 1,6 s; o print espera).
+fn jumpTo(app: *App, m: ?*const StoredMessage) void {
+    if (m) |x| app.st.jump = x.msg.id;
+}
+
+fn jumpX(app: *App) void {
+    jumpTo(app, rulesEmbedMsg(app, gw.rtl_x_description));
+}
+fn jumpBot(app: *App) void {
+    jumpTo(app, rulesEmbedMsg(app, gw.rtl_bot_description));
+}
+fn jumpRulesEmbed(app: *App) void {
+    jumpTo(app, rulesEmbedMsg(app, gw.rtl_rules_embed));
+}
+fn jumpRulesText(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_rules_text));
+}
+fn jumpUrdu(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_urdu));
+}
+
+fn jumped(app: *App) bool {
+    return app.st.jump == 0;
+}
+
+fn tOrdered(app: *App, buf: []u8) []const u8 {
+    const m = rulesMsg(app, gw.rtl_ordered) orelse return "";
+    return std.fmt.bufPrint(buf, "msgtext:{d}", .{m.msg.id}) catch "";
+}
+
+fn toBottom(app: *App) void {
+    app.st.scrollOf(gw.rtl_rules_channel).stick_bottom = true;
+}
+
 fn goHome(app: *App) void {
     if (home != 0) app.handle(.{ .open_message = .{ .channel = home, .id = 0 } });
 }
@@ -439,6 +502,29 @@ pub const ops_theme = [_]Op{
     run(compactBack),
     run(dropShort),
     expect("a mensagem curta sai", shortGone),
+    // Issue #9: os casos do leitor de árabe, cada um num print (comparar com o Discord).
+    run(toRules),
+    expect("o #regras com os casos do issue #9 abre", rulesReady),
+    .{ .wait = 400 },
+    .{ .hover = .{ .dyn_at = .{ .f = tOrdered, .fx = 0.5, .fy = -60 } } },
+    .{ .shot = "rtl9-lista" },
+    run(jumpX),
+    expect("o embed do X aparece", jumped),
+    .{ .wait = 1700 },
+    .{ .shot = "rtl9-x" },
+    run(jumpBot),
+    expect("o embed do bot aparece", jumped),
+    .{ .wait = 1700 },
+    .{ .shot = "rtl9-bot" },
+    run(jumpRulesEmbed),
+    expect("o embed das regras aparece", jumped),
+    .{ .wait = 1700 },
+    .{ .shot = "rtl9-regras" },
+    run(jumpRulesText),
+    expect("as regras com marcador aparecem", jumped),
+    .{ .wait = 1700 },
+    .{ .shot = "rtl9-avisos" },
+    run(toBottom),
     run(goHome),
     expect("volta para o canal de antes", atHome),
 };
