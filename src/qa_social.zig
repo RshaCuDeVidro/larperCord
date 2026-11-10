@@ -134,6 +134,133 @@ fn left(app: *App) bool {
         !markFor("channel:{d}", group);
 }
 
+// --- Lista de DMs: a mais recente em cima, ao vivo ---------------------------
+
+/// A primeira conversa da lista (fora pedidos e spam).
+fn topDm(app: *App) Id {
+    for (app.store.channelsOf(0)) |id| if (app.store.channel(id)) |cs| if (cs.info.request == .none) return id;
+    return 0;
+}
+fn rowY(id: Id) ?f32 {
+    var b: [64]u8 = undefined;
+    const r = qa.find(std.fmt.bufPrint(&b, "channel:{d}", .{id}) catch return null) orelse return null;
+    return r.y;
+}
+/// Primeira da lista e desenhada acima de todas as outras linhas.
+fn onTop(app: *App, id: Id) bool {
+    if (topDm(app) != id) return false;
+    const y = rowY(id) orelse return false;
+    for (app.store.channelsOf(0)) |other| if (other != id) if (rowY(other)) |oy| if (oy <= y) return false;
+    return true;
+}
+fn push(app: *App, e: @import("core/event.zig").Event) void {
+    app.events.push(e);
+    platform.Window.wake(app.win.wake_type, .gateway);
+}
+var dm_seq: u64 = 0;
+/// Uma mensagem chegando numa DM (`dm` = o que o gateway de verdade manda antes,
+/// para MESSAGE_CREATE sem servidor). Retorna o ID dela.
+fn incomingDm(app: *App, ch: Id, author: Id, dm: bool, is_group: bool) Id {
+    dm_seq += 1;
+    const id = types.makeSnowflake(gw.nowMs(), 0x3c000 + dm_seq);
+    const content = std.heap.c_allocator.dupe(u8, "e aí, sumido") catch return 0;
+    if (dm) push(app, .{ .dm_message = .{ .channel = ch, .author = author, .group = is_group } });
+    push(app, .{ .message_create = .{ .id = id, .channel = ch, .author = author, .timestamp = @divTrunc(gw.nowMs(), 1000), .content = content } });
+    return id;
+}
+
+const received_dm = gw.dmId(4);
+fn injectReceived(app: *App) void {
+    _ = incomingDm(app, received_dm, 1005, true, false);
+}
+fn receivedOnTop(app: *App) bool {
+    return onTop(app, received_dm);
+}
+
+const sent_dm = gw.dmId(2);
+var sends0: u64 = 0;
+fn noteSends(_: *App) void {
+    sends0 = gw.sent.messages.load(.monotonic);
+}
+fn sentOnTop(app: *App) bool {
+    const cs = app.store.channel(sent_dm) orelse return false;
+    var confirmed = false;
+    for (cs.messages.items) |*m| if (!m.pending and m.msg.author == app.store.me and std.mem.eql(u8, m.msg.content, "subindo a conversa")) {
+        confirmed = true;
+    };
+    return gw.sent.messages.load(.monotonic) > sends0 and confirmed and onTop(app, sent_dm);
+}
+
+var new_dm: Id = 0;
+fn injectNewDm(app: *App) void {
+    new_dm = types.makeSnowflake(gw.nowMs(), 0x3d001);
+    const name = std.heap.c_allocator.dupe(u8, "gustavo") catch return;
+    push(app, .{ .channel_upsert = .{ .id = new_dm, .guild = 0, .name = name, .topic = "", .recipient = 1008 } });
+}
+fn newDmOnTop(app: *App) bool {
+    return new_dm != 0 and onTop(app, new_dm);
+}
+
+var fetches0: u64 = 0;
+var unknown_dm: Id = 0;
+fn injectUnknownDm(app: *App) void {
+    // Uma DM antiga, fechada há um mês: só a mensagem chega.
+    unknown_dm = types.makeSnowflake(gw.nowMs() - 30 * 86_400_000, 0x3d002);
+    gw.qa_dm.group.store(0, .release);
+    gw.qa_dm.user.store(1010, .release);
+    gw.qa_dm.channel.store(unknown_dm, .release);
+    fetches0 = gw.sent.fetch_channels.load(.monotonic);
+    _ = incomingDm(app, unknown_dm, 1010, true, false);
+}
+fn fetchedOnce(id: Id) bool {
+    return gw.sent.fetch_channels.load(.monotonic) == fetches0 + 1 and gw.sent.fetch_channel.load(.acquire) == id;
+}
+fn unknownOnTop(app: *App) bool {
+    const cs = app.store.channel(unknown_dm) orelse return false;
+    return cs.info.recipient == 1010 and cs.info.unread and cs.messages.items.len == 1 and fetchedOnce(unknown_dm) and onTop(app, unknown_dm);
+}
+
+var unknown_group: Id = 0;
+fn injectUnknownGroup(app: *App) void {
+    unknown_group = types.makeSnowflake(gw.nowMs() - 86_400_000, 0x3d003);
+    gw.qa_dm.group.store(1, .release);
+    gw.qa_dm.group_with.store(1008, .release);
+    gw.qa_dm.user.store(1007, .release);
+    gw.qa_dm.channel.store(unknown_group, .release);
+    fetches0 = gw.sent.fetch_channels.load(.monotonic);
+    _ = incomingDm(app, unknown_group, 1007, true, true);
+}
+fn groupFetched(app: *App) bool {
+    const cs = app.store.channel(unknown_group) orelse return false;
+    return cs.info.group and std.mem.eql(u8, cs.info.name, gw.qa_group_name) and cs.info.recipients.len == 2 and
+        fetchedOnce(unknown_group) and onTop(app, unknown_group);
+}
+
+const closed_dm = gw.dmId(1);
+fn closeDm(app: *App) void {
+    push(app, .{ .channel_delete = closed_dm });
+}
+fn dmClosed(app: *App) bool {
+    return app.store.channel(closed_dm) == null and rowY(closed_dm) == null;
+}
+var reopen_msg: Id = 0;
+fn reopenDm(app: *App) void {
+    fetches0 = gw.sent.fetch_channels.load(.monotonic);
+    reopen_msg = incomingDm(app, closed_dm, 1002, true, false);
+}
+fn reopened(app: *App) bool {
+    const cs = app.store.channel(closed_dm) orelse return false;
+    return cs.info.recipient == 1002 and fetchedOnce(closed_dm) and onTop(app, closed_dm);
+}
+fn deleteLast(app: *App) void {
+    push(app, .{ .message_delete = .{ .channel = closed_dm, .id = reopen_msg } });
+}
+fn stillOnTop(app: *App) bool {
+    const cs = app.store.channel(closed_dm) orelse return false;
+    for (cs.messages.items) |*m| if (m.msg.id == reopen_msg and !m.deleted) return false;
+    return onTop(app, closed_dm);
+}
+
 pub const ops = [_]Op{
     s("pedidos de mensagem: fora das conversas e sem notificar"),
     run(openFirstDm),
@@ -184,4 +311,28 @@ pub const ops = [_]Op{
     .{ .shot = "grupo-sair" },
     .{ .click = .{ .dyn = tLeaveConfirm } },
     expect("confirmar manda DELETE /channels/{id} e o grupo some", left),
+
+    s("lista de DMs: a mais recente em cima, ao vivo"),
+    run(injectReceived),
+    expect("mensagem recebida sobe a DM para o topo", receivedOnTop),
+    click("channel:900002"),
+    run(noteSends),
+    click("composer"),
+    .{ .text = "subindo a conversa" },
+    .{ .key = .{ .key = c.ImGuiKey_Enter } },
+    expect("mensagem enviada também sobe a DM (e fica lá depois de confirmada)", sentOnTop),
+    run(injectNewDm),
+    expect("DM nova (CHANNEL_CREATE) aparece no topo", newDmOnTop),
+    run(injectUnknownDm),
+    expect("só a mensagem de uma DM que a lista não tem: ela aparece no topo e o canal é pedido", unknownOnTop),
+    run(injectUnknownGroup),
+    expect("grupo só pela mensagem: aparece no topo e o canal pedido traz o nome e quem está nele", groupFetched),
+    .{ .shot = "dms-ordem" },
+    run(closeDm),
+    expect("DM fechada em outro aparelho sai da lista", dmClosed),
+    run(reopenDm),
+    expect("mensagem nova reabre a DM fechada, no topo", reopened),
+    run(deleteLast),
+    .{ .wait = 200 },
+    expect("apagar a última mensagem não reordena", stillOnTop),
 };

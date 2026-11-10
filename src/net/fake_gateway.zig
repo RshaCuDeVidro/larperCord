@@ -1954,9 +1954,32 @@ const channel_tree = [_]ChannelSeed{
 
 const reaction_pool = [_][]const u8{ "😂", "👍", "❤️", "🔥", "💀", "😭", "🎉", "👀" };
 
+/// Conversas que o QA inventa (QA_SUITE=social): o Discord não mandou
+/// CHANNEL_CREATE, só a mensagem, e a interface pede o canal. `user` 0 = não há.
+/// Com `group`, um grupo dela com `group_with`, chamado `qa_group_name`.
+pub const qa_dm = struct {
+    const A = sys.Atomic(u64);
+    pub var channel: A = .init(0);
+    pub var user: A = .init(0);
+    pub var group: A = .init(0);
+    pub var group_with: A = .init(0);
+};
+pub const qa_group_name = "planos de sábado";
+
 /// O que GET /channels/{id} responderia: uma DM da demonstração (a que foi
-/// fechada e voltou).
+/// fechada e voltou) ou a que o QA inventou.
 fn fetchedDm(id: Id) !?types.Channel {
+    if (id == qa_dm.channel.load(.acquire) and qa_dm.user.load(.acquire) != 0) {
+        const u = qa_dm.user.load(.acquire);
+        if (qa_dm.group.load(.acquire) != 0) {
+            const others = [_]Id{ u, qa_dm.group_with.load(.acquire) };
+            return .{ .id = id, .guild = 0, .name = try alloc.dupe(u8, qa_group_name), .topic = try alloc.dupe(u8, ""), .recipient = u, .recipients = try alloc.dupe(Id, &others), .group = true, .owner = u };
+        }
+        const seed = for (users) |x| {
+            if (x.id == u) break x;
+        } else return null;
+        return .{ .id = id, .guild = 0, .name = try alloc.dupe(u8, seed.name), .topic = try alloc.dupe(u8, ""), .recipient = u };
+    }
     const u = dmRecipient(id) orelse return null;
     if (id == request_dm or id == spam_dm) return null;
     const seed = for (users) |x| {

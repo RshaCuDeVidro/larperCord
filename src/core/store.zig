@@ -3203,3 +3203,121 @@ test "membro pendente: entra e sai do conjunto só pelo campo que veio" {
     try s.apply(.{ .entrada = .{ .pending = .{ .guild = 7, .pending = false } } }, 0);
     try std.testing.expect(!s.isPending(7));
 }
+
+fn testDm(id: Id, recipient: Id, last: Id) !types.Channel {
+    const c_alloc = std.heap.c_allocator;
+    return .{ .id = id, .guild = 0, .name = try c_alloc.dupe(u8, "dm"), .topic = try c_alloc.dupe(u8, ""), .recipient = recipient, .last_message = last };
+}
+
+fn testMsg(id: Id, channel: Id, author: Id) !types.Message {
+    return .{ .id = id, .channel = channel, .author = author, .timestamp = 0, .content = try std.heap.c_allocator.dupe(u8, "oi") };
+}
+
+test "lista de DMs: mensagem nova (recebida ou nossa) sobe; apagar e renomear não mexem" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    const chans = try c_alloc.alloc(types.Channel, 4);
+    chans[0] = try testDm(10, 2, 400);
+    chans[1] = try testDm(11, 3, 300);
+    chans[2] = .{ .id = 50, .guild = 5, .name = try c_alloc.dupe(u8, "geral"), .topic = try c_alloc.dupe(u8, ""), .last_message = 900 };
+    chans[3] = try testDm(12, 4, 200);
+    try s.apply(.{ .ready = .{ .me = 1, .users = try c_alloc.alloc(types.User, 0), .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Recebida na do fim: topo.
+    try s.apply(.{ .message_create = try testMsg(500, 12, 4) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 12, 10, 11 }, s.channelsOf(0));
+    // Mensagem num servidor não mexe nas DMs.
+    try s.apply(.{ .message_create = try testMsg(950, 50, 2) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 12, 10, 11 }, s.channelsOf(0));
+    // A nossa: sobe na hora (pendente) e a confirmação mantém lá.
+    try s.addPending(11, "eu", 77, 0, 0, &.{});
+    try std.testing.expectEqualSlices(Id, &.{ 11, 12, 10 }, s.channelsOf(0));
+    var mine = try testMsg(600, 11, 1);
+    mine.nonce = 77;
+    try s.apply(.{ .message_create = mine }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 11, 12, 10 }, s.channelsOf(0));
+    // A nossa de outro aparelho (sem pendente) também sobe.
+    try s.apply(.{ .message_create = try testMsg(700, 10, 1) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Apagar a última não reordena (o Discord também não).
+    try s.apply(.{ .message_delete = .{ .channel = 10, .id = 700 } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Mensagem velha chegando atrasada (ID menor que a última): fica onde está.
+    try s.apply(.{ .message_create = try testMsg(450, 12, 4) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // CHANNEL_UPDATE sem mensagem nova (nome, ícone): não sobe.
+    try s.apply(.{ .channel_upsert = try testDm(12, 4, 0) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+}
+
+test "lista de DMs: conversa nova entra no topo; só a mensagem traz a provisória" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    const users = try c_alloc.alloc(types.User, 1);
+    users[0] = .{ .id = 8, .name = try c_alloc.dupe(u8, "gustavo") };
+    const chans = try c_alloc.alloc(types.Channel, 2);
+    chans[0] = try testDm(types.makeSnowflake(1_700_000_002_000, 0), 2, types.makeSnowflake(1_700_000_005_000, 0));
+    chans[1] = try testDm(types.makeSnowflake(1_700_000_001_000, 0), 3, types.makeSnowflake(1_700_000_004_000, 0));
+    const a = chans[0].id;
+    const b = chans[1].id;
+    try s.apply(.{ .ready = .{ .me = 1, .users = users, .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    // CHANNEL_CREATE de uma DM nova, ainda sem mensagem: vale quando foi criada.
+    const fresh = types.makeSnowflake(1_700_000_009_000, 0);
+    try s.apply(.{ .channel_upsert = try testDm(fresh, 5, 0) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ fresh, a, b }, s.channelsOf(0));
+    // Reaberta (CHANNEL_CREATE de uma antiga, com a última mensagem dela): no lugar dela.
+    const old = types.makeSnowflake(1_699_000_000_000, 0);
+    try s.apply(.{ .channel_upsert = try testDm(old, 6, types.makeSnowflake(1_700_000_004_500, 0)) }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ fresh, a, old, b }, s.channelsOf(0));
+    // Só a mensagem, de uma DM que a lista não tem: provisória com quem escreveu, no topo.
+    const unknown = types.makeSnowflake(1_699_500_000_000, 0);
+    try s.apply(.{ .dm_message = .{ .channel = unknown, .author = 8 } }, 0);
+    try s.apply(.{ .message_create = try testMsg(types.makeSnowflake(1_700_000_010_000, 0), unknown, 8) }, 0);
+    try std.testing.expectEqual(unknown, s.channelsOf(0)[0]);
+    const cs = s.channel(unknown).?;
+    try std.testing.expectEqual(@as(Id, 8), cs.info.recipient);
+    try std.testing.expectEqualStrings("gustavo", cs.info.name);
+    try std.testing.expect(cs.info.unread and cs.messages.items.len == 1);
+    // A segunda mensagem não recria nada; o canal inteiro (GET) completa sem mexer na ordem.
+    try s.apply(.{ .dm_message = .{ .channel = unknown, .author = 8 } }, 0);
+    try std.testing.expectEqual(@as(usize, 1), s.channel(unknown).?.messages.items.len);
+    try s.apply(.{ .channel_upsert = try testDm(unknown, 8, 0) }, 0);
+    try std.testing.expectEqual(unknown, s.channelsOf(0)[0]);
+    try std.testing.expect(s.channel(unknown).?.messages.items.len == 1);
+    // Grupo só pela mensagem: provisória de grupo com quem escreveu.
+    const grp = types.makeSnowflake(1_699_600_000_000, 0);
+    try s.apply(.{ .dm_message = .{ .channel = grp, .author = 8, .group = true } }, 0);
+    try std.testing.expect(s.channel(grp).?.info.group);
+    try std.testing.expectEqualSlices(Id, &.{8}, s.channel(grp).?.info.recipients);
+    // Mandada por nós de outro aparelho: sem a outra pessoa até o canal chegar.
+    const ours = types.makeSnowflake(1_699_700_000_000, 0);
+    try s.apply(.{ .dm_message = .{ .channel = ours, .author = 1 } }, 0);
+    try std.testing.expectEqual(@as(Id, 0), s.channel(ours).?.info.recipient);
+    // Fechada em outro aparelho (CHANNEL_DELETE) e reaberta por uma mensagem.
+    try s.apply(.{ .channel_delete = a }, 0);
+    try std.testing.expect(std.mem.indexOfScalar(Id, s.channelsOf(0), a) == null);
+    try s.apply(.{ .dm_message = .{ .channel = a, .author = 8 } }, 0);
+    try s.apply(.{ .message_create = try testMsg(types.makeSnowflake(1_700_000_020_000, 0), a, 8) }, 0);
+    try std.testing.expectEqual(a, s.channelsOf(0)[0]);
+}
+
+test "lista de DMs: o READY de uma reconexão traz a ordem nova" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    var chans = try c_alloc.alloc(types.Channel, 3);
+    chans[0] = try testDm(10, 2, 400);
+    chans[1] = try testDm(11, 3, 300);
+    chans[2] = try testDm(12, 4, 200);
+    try s.apply(.{ .ready = .{ .me = 1, .users = try c_alloc.alloc(types.User, 0), .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 10, 11, 12 }, s.channelsOf(0));
+    // Fora do ar, 12 recebeu mensagem: o READY novo já vem com ela em cima.
+    chans = try c_alloc.alloc(types.Channel, 3);
+    chans[0] = try testDm(12, 4, 800);
+    chans[1] = try testDm(10, 2, 400);
+    chans[2] = try testDm(11, 3, 300);
+    try s.apply(.{ .ready = .{ .me = 1, .users = try c_alloc.alloc(types.User, 0), .guilds = try c_alloc.alloc(types.Guild, 0), .channels = chans, .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualSlices(Id, &.{ 12, 10, 11 }, s.channelsOf(0));
+}
