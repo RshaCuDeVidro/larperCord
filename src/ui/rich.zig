@@ -150,7 +150,7 @@ const Words = struct {
                 return it.take(.{ .text = s[start..nl], .span = sp, .space_after = false });
             }
             // Inteiro (o endereço não quebra); link com texto quebra como texto.
-            if (sp.flags.bullet or sp.flags.code or (sp.flags.link and sp.url.len == 0) or sp.mention != .none or sp.emoji != 0) {
+            if (isMarker(sp) or sp.flags.code or (sp.flags.link and sp.url.len == 0) or sp.mention != .none or sp.emoji != 0) {
                 if (it.pos > 0) {
                     it.si += 1;
                     it.pos = 0;
@@ -177,6 +177,17 @@ const Words = struct {
         return null;
     }
 };
+
+/// O marcador de um item de lista: o "•" (de `-` ou `*`) ou o número (`1.`).
+fn isMarker(sp: *const md.Span) bool {
+    return sp.flags.bullet or sp.flags.number;
+}
+
+/// Um trecho que não se quebra nem muda de ordem por dentro: menção, emoji personalizado,
+/// código, link solto, marcador de lista e linha de bloco de código.
+fn isAtomic(sp: *const md.Span) bool {
+    return isMarker(sp) or sp.flags.code or sp.flags.block or (sp.flags.link and sp.url.len == 0) or sp.mention != .none or sp.emoji != 0;
+}
 
 fn fontFor(o: Opts, sp: *const md.Span) *c.ImFont {
     const f = sp.flags;
@@ -263,8 +274,9 @@ fn relativeText(buf: []u8, unix: i64) []const u8 {
     return (if (delta < 0) f(buf, "há {d} {s}", .{ n, name }) else f(buf, "em {d} {s}", .{ n, name })) catch "?";
 }
 
-/// Ordem visual das palavras de um texto com árabe ou hebraico (ver `rich_plan`).
-const Plan = @import("rich_plan.zig").Plan;
+/// Ordem visual de um texto com árabe ou hebraico (ver `rich_plan`).
+const rich_plan = @import("rich_plan.zig");
+const Plan = rich_plan.Plan;
 
 var plan: Plan = .{};
 
@@ -274,10 +286,25 @@ fn anyRtl(spans: []const md.Span) bool {
     return false;
 }
 
-fn classFor(sp: *const md.Span, s: []const u8) bidi.Class {
-    if (sp.mention != .none or sp.emoji != 0 or sp.flags.bullet) return .neutral;
-    return bidi.classOf(s);
+/// O caractere com que um trecho inteiro entra no parágrafo (ver `rich_plan.Piece`): o emoji
+/// é neutro; menção, código e link, da direção da primeira letra forte do que aparece.
+fn standOf(sp: *const md.Span, shown: []const u8) bidi.Char {
+    if (sp.emoji != 0 or isMarker(sp)) return 0xFFFC;
+    return bidi.classOf(shown).stand();
 }
+
+fn planWidth(font: ?*const anyopaque, size: f32, s: []const u8) f32 {
+    const f: *c.ImFont = @ptrCast(@alignCast(@constCast(font orelse return 0)));
+    return d.width(f, size, s);
+}
+
+/// QA: onde foi desenhado cada trecho do texto que começa em `qa_watch` (o conteúdo de uma
+/// mensagem ou a descrição de um embed), para o qa_rtl.zig conferir a ordem visual. `off` é o
+/// byte do trecho no texto; o marcador de lista guarda onde o desenho dele ficou.
+pub var qa_watch: ?[*]const u8 = null;
+pub const QaRun = struct { off: u32, len: u32, x: f32, y: f32, w: f32, rtl: bool, marker: bool };
+pub var qa_runs: [256]QaRun = undefined;
+pub var qa_runs_n: usize = 0;
 
 /// Largura de uma palavra. Uma enorme ("kkkk…"): se o começo já não cabe na
 /// linha, não precisa medir o resto (ela vai em pedaços de qualquer jeito).
@@ -322,9 +349,13 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
         po.plan = &plan;
         plan.reset();
         _ = layout(null, store, th_col, spans, x0, y0, wrap, po, mouse);
-        plan.resolve(if (o_in.align_w > 0) o_in.align_w else wrap);
+        plan.resolve(if (o_in.align_w > 0) o_in.align_w else wrap, planWidth);
         break :blk &plan;
     } else null;
+    const watched = qa.on() and dl != null and o_in.base != null and qa_watch != null and o_in.base.? == qa_watch.?;
+    if (watched) qa_runs_n = 0;
+    // O pedaço anterior terminou com espaço (o que entra no parágrafo entre os dois).
+    var prev_space = false;
     var piece: usize = 0;
     // Com o plano: a faixa da tela que o texto ocupa, se alguma linha foi para a direita (e
     // alguma não), e a primeira e a última linha.
@@ -346,12 +377,15 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
             };
             const font = fontFor(o, sp);
             const as_image = sp.emoji != 0 and emoji_images;
+            const marker = isMarker(sp);
+            const atomic = isAtomic(sp);
             var s = if (sp.flags.bullet or sp.mention != .none or sp.emoji != 0) label(store, sp, &buf) else word.text;
             const scaled = o.size * scaleOf(sp);
             const size = if (sp.flags.code) scaled - 1.5 else scaled;
             const pad: f32 = if (sp.flags.code) 5 else if (sp.mention != .none) 3 else 0;
-            // Linha do bloco de código ocupa a largura toda (cortada se passar).
-            var w = if (sp.flags.block) wrap else if (as_image) o.emoji_box + 2 else wordWidth(font, size, s, wrap) + pad * 2;
+            // Linha do bloco de código ocupa a largura toda (cortada se passar). O número da
+            // lista numerada ocupa o lugar do "•": o texto dos dois tipos de item começa junto.
+            var w = if (sp.flags.block) wrap else if (as_image) o.emoji_box + 2 else if (sp.flags.number) d.width(font, size, "•") else wordWidth(font, size, s, wrap) + pad * 2;
             if (word.breaks > 0 and !(x == 0 and y == 0 and line_start)) {
                 // Uma linha nova por \n (linhas em branco contam, até 3).
                 x = 0;
@@ -368,7 +402,7 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 x = indent;
             }
             var rest: []const u8 = "";
-            if (w > wrap - indent and !sp.flags.block and sp.mention == .none and sp.emoji == 0 and word.text.len > 1) {
+            if (w > wrap - indent and !sp.flags.block and !marker and sp.mention == .none and sp.emoji == 0 and word.text.len > 1) {
                 var fit = d.fitBytes(font, size, word.text, wrap - indent - pad * 2);
                 // Nem um caractere cabe (coluna estreitíssima): anda um assim mesmo.
                 if (fit == 0) fit = @min(std.unicode.utf8ByteSequenceLength(word.text[0]) catch 1, word.text.len);
@@ -378,43 +412,73 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 s = word.text;
                 w = d.width(font, size, s) + pad * 2;
             }
-            if (o.plan) |p| p.add(x, y, w, classFor(sp, s), word.breaks > 0, line_start, sp.flags.bullet or sp.flags.block);
-            // Onde o pedaço vai na tela: na ordem visual, se a linha tem texto RTL.
-            const px = if (planned) |p| p.xAt(piece, x) else x;
+            if (o.plan) |p| p.add(.{
+                .x = x,
+                .y = y,
+                .w = w,
+                .text = if (atomic) "" else s,
+                .stand = if (atomic) standOf(sp, s) else 0xFFFC,
+                .font = font,
+                .size = size,
+                .para = word.breaks > 0,
+                .line = line_start,
+                .fixed = marker or sp.flags.block,
+                .marker = marker,
+                .space = prev_space,
+                .quote = if (sp.flags.quote) o.size else 0,
+            });
+            // Onde o pedaço vai na tela: na ordem visual, se a linha tem texto RTL, em um ou
+            // mais trechos (a palavra se quebra onde o nível do algoritmo muda).
             const vline: ?Plan.Line = if (planned) |p| p.lineOf(piece) else null;
-            piece += 1;
+            const n_runs = if (planned) |p| p.runCount(piece) else 0;
             if (planned != null) {
                 if (vline != null and vline.?.right) any_right = true else any_left = true;
-                if (piece == 1) first_right = vline != null and vline.?.right;
-                vis_lo = @min(vis_lo, px);
-                vis_hi = @max(vis_hi, px + w);
+                if (piece == 0) first_right = vline != null and vline.?.right;
                 last_line = vline;
-                if (qa.on() and o.msg_id != 0) qa_lines.add(o.msg_id, x0 + px, y0 + y, w, cur_h);
             }
-            if (dl) |l| {
-                const block_top = sp.flags.block and word.text.ptr == sp.text.ptr;
-                if (block_top) {
-                    syn = .normal;
-                    code_line = 0;
-                    // Uma linha só não precisa de número.
-                    const lines = std.mem.count(u8, sp.text, "\n") + 1;
-                    var nb: [12]u8 = undefined;
-                    gutter = if (lines > 1) d.width(font, size, std.fmt.bufPrint(&nb, "{d}", .{lines}) catch "") + 10 else 0;
+            for (0..@max(n_runs, 1)) |ri| {
+                const r: Plan.Run = if (n_runs > 0) planned.?.run(piece, ri) else .{ .from = 0, .to = s.len, .w = w, .x = x, .rtl = false };
+                const rs = if (atomic) s else s[r.from..r.to];
+                const dir: bidi.Dir = if (r.rtl) .rtl else if (vline != null) .ltr else .auto;
+                const px = r.x;
+                if (planned != null) {
+                    vis_lo = @min(vis_lo, px);
+                    vis_hi = @max(vis_hi, px + r.w);
+                    if (qa.on() and o.msg_id != 0 and !marker) qa_lines.add(o.msg_id, x0 + px, y0 + y, r.w, cur_h);
                 }
-                if (sp.flags.block) code_line += 1;
-                var ol = o;
-                ol.line_h = cur_h;
-                if (sp.flags.block and gutter > 0) {
-                    ol.code_line = code_line;
-                    ol.code_gutter = gutter;
+                if (watched and qa_runs_n < qa_runs.len) {
+                    const at: u32 = @intCast(@intFromPtr(word.text.ptr) - @intFromPtr(o.base.?) + (if (atomic) 0 else r.from));
+                    const g = if (marker) markerGlyph(sp, font, size, s, x0 + px, r.w, dir) else MarkerGlyph{ .x = x0 + px, .w = r.w };
+                    qa_runs[qa_runs_n] = .{ .off = at, .len = @intCast(if (atomic) word.text.len else rs.len), .x = g.x, .y = y0 + y, .w = g.w, .rtl = r.rtl, .marker = marker };
+                    qa_runs_n += 1;
                 }
-                if (line_start and sp.flags.quote) d.rect(l, .{ .x = x0, .y = y0 + y, .w = 3, .h = cur_h }, th_col.c(.faint).alpha(o.color.a), 1.5);
-                drawWord(l, th_col, sp, font, size, s, x0 + px, y0 + y, w, pad, ol, mouse, &syn);
-                // A seleção vem por cima: o fundo do código não pode cobri-la.
-                const sel_pad = if (sp.flags.block) pad + 4 + ol.code_gutter else pad;
-                if (o.base) |base| select(l, th_col, base, word, sp, font, size, sel_pad, x0 + px, y0 + y, w, space_w, ol, line_start, vline, x0);
-                if (block_top and o.ctx != null) copy = .{ .sp = sp, .x = x0 + px, .y = y0 + y, .at_top = y == 0 };
+                if (dl) |l| {
+                    const block_top = sp.flags.block and word.text.ptr == sp.text.ptr;
+                    if (block_top) {
+                        syn = .normal;
+                        code_line = 0;
+                        // Uma linha só não precisa de número.
+                        const lines = std.mem.count(u8, sp.text, "\n") + 1;
+                        var nb: [12]u8 = undefined;
+                        gutter = if (lines > 1) d.width(font, size, std.fmt.bufPrint(&nb, "{d}", .{lines}) catch "") + 10 else 0;
+                    }
+                    if (sp.flags.block) code_line += 1;
+                    var ol = o;
+                    ol.line_h = cur_h;
+                    if (sp.flags.block and gutter > 0) {
+                        ol.code_line = code_line;
+                        ol.code_gutter = gutter;
+                    }
+                    if (line_start and ri == 0 and sp.flags.quote) d.rect(l, .{ .x = x0, .y = y0 + y, .w = 3, .h = cur_h }, th_col.c(.faint).alpha(o.color.a), 1.5);
+                    drawWord(l, th_col, sp, font, size, rs, x0 + px, y0 + y, r.w, pad, ol, mouse, &syn, dir);
+                    // A seleção vem por cima: o fundo do código não pode cobri-la.
+                    const sel_pad = if (sp.flags.block) pad + 4 + ol.code_gutter else pad;
+                    const last_run = ri + 1 >= n_runs;
+                    if (o.base) |base| select(l, th_col, base, if (atomic) word.text else rs, word.space_after and last_run, sp, font, size, sel_pad, x0 + px, y0 + y, r.w, space_w, ol, line_start and ri == 0, vline != null and vline.?.last and last_run, vline, x0, r.rtl and !atomic);
+                    if (block_top and o.ctx != null) copy = .{ .sp = sp, .x = x0 + px, .y = y0 + y, .at_top = y == 0 };
+                }
             }
+            piece += 1;
             line_start = false;
             x += w;
             max_w = @max(max_w, x);
@@ -422,11 +486,13 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 x = 0;
                 y += cur_h;
                 line_start = true;
+                prev_space = false;
                 word = word_in;
                 word.text = rest;
                 word.breaks = 0;
                 continue :pieces;
             }
+            prev_space = word.space_after;
             if (word.space_after) x += space_w;
             break;
         }
@@ -495,27 +561,28 @@ pub fn offsetAt(font: *c.ImFont, size: f32, t: []const u8, px: f32) u32 {
     return @intCast(t.len);
 }
 
-/// Desenha o fundo da seleção e responde à sonda do mouse. `vline`: a linha está na ordem
-/// visual (ver `Plan`), e o x das palavras não cresce junto com o texto. `x0`: onde o texto começa.
-fn select(dl: *c.ImDrawList, th: anytype, base: [*]const u8, word: Word, sp: *const md.Span, font: *c.ImFont, size: f32, pad: f32, x: f32, y: f32, w: f32, space_w: f32, o: Opts, line_start: bool, vline: ?Plan.Line, x0: f32) void {
-    const start: u32 = @intCast(@intFromPtr(word.text.ptr) - @intFromPtr(base));
-    const end: u32 = start + @as(u32, @intCast(word.text.len));
-    const atomic = sp.flags.bullet or sp.mention != .none or sp.emoji != 0;
-    // Palavra RTL sai de trás para frente: o começo dela fica à direita.
-    const mirror = !atomic and bidi.baseRtl(word.text);
+/// Desenha o fundo da seleção e responde à sonda do mouse, para um trecho (`text`, uma fatia
+/// do conteúdo que começa em `base`). `vline`: a linha está na ordem visual (ver `Plan`), e o x
+/// dos trechos não cresce junto com o texto; `line_start`/`line_end`, o trecho começa ou
+/// termina a linha no texto; `mirror`, ele sai de trás para frente (o começo fica à direita).
+/// `x0`: onde o texto começa.
+fn select(dl: *c.ImDrawList, th: anytype, base: [*]const u8, text: []const u8, space_after: bool, sp: *const md.Span, font: *c.ImFont, size: f32, pad: f32, x: f32, y: f32, w: f32, space_w: f32, o: Opts, line_start: bool, line_end: bool, vline: ?Plan.Line, x0: f32, mirror: bool) void {
+    const start: u32 = @intCast(@intFromPtr(text.ptr) - @intFromPtr(base));
+    const end: u32 = start + @as(u32, @intCast(text.len));
+    const atomic = isMarker(sp) or sp.mention != .none or sp.emoji != 0;
     if (o.sel_from < o.sel_to and start < o.sel_to and end > o.sel_from) {
         var hx0 = x;
         var hx1 = x + w;
         if (!atomic and mirror) {
             const right = x + w - pad;
-            if (o.sel_from > start) hx1 = right - d.width(font, size, word.text[0 .. o.sel_from - start]);
-            if (o.sel_to < end) hx0 = right - d.width(font, size, word.text[0 .. o.sel_to - start]);
+            if (o.sel_from > start) hx1 = right - d.width(font, size, text[0 .. o.sel_from - start]);
+            if (o.sel_to < end) hx0 = right - d.width(font, size, text[0 .. o.sel_to - start]);
         } else if (!atomic) {
-            if (o.sel_from > start) hx0 = x + pad + d.width(font, size, word.text[0 .. o.sel_from - start]);
-            if (o.sel_to < end) hx1 = x + pad + d.width(font, size, word.text[0 .. o.sel_to - start]);
+            if (o.sel_from > start) hx0 = x + pad + d.width(font, size, text[0 .. o.sel_from - start]);
+            if (o.sel_to < end) hx1 = x + pad + d.width(font, size, text[0 .. o.sel_to - start]);
         }
         const sel_col = th.c(.accent).alpha(0.32);
-        if (word.space_after and o.sel_to > end) {
+        if (space_after and o.sel_to > end) {
             // Linha na ordem visual: o espaço até a próxima palavra do texto pode estar de
             // qualquer lado.
             if (vline) |vl| {
@@ -526,26 +593,41 @@ fn select(dl: *c.ImDrawList, th: anytype, base: [*]const u8, word: Word, sp: *co
     }
     if (o.probe) |pr| if (pr.y >= y and pr.y < y + o.line_h) {
         if (vline) |vl| {
-            // Só vale a palavra sob o mouse (com meio espaço de cada lado).
+            // Só vale o trecho sob o mouse (com meio espaço de cada lado).
             if (pr.x >= x - space_w / 2 and pr.x < x + w + space_w / 2) {
                 const tw = @max(0, w - pad * 2);
                 const rel = std.math.clamp(pr.x - x - pad, 0, tw);
-                pr.out = if (atomic) (if (pr.x < x + w / 2) start else end) else if (mirror) start + offsetAt(font, size, word.text, tw - rel) else start + offsetAt(font, size, word.text, rel);
+                pr.out = if (atomic) (if (pr.x < x + w / 2) start else end) else if (mirror) start + offsetAt(font, size, text, tw - rel) else start + offsetAt(font, size, text, rel);
             } else {
-                // Fora das palavras: antes do começo da linha (à direita, se ela é RTL) vale o
+                // Fora dos trechos: antes do começo da linha (à direita, se ela é RTL) vale o
                 // começo; depois do fim, o fim.
                 const left = pr.x < x0 + vl.lo;
                 const right = pr.x >= x0 + vl.hi;
                 if (line_start and (if (vl.rtl) right else left)) pr.out = start;
-                if (vl.last and (if (vl.rtl) left else right)) pr.out = end;
+                if (line_end and (if (vl.rtl) left else right)) pr.out = end;
             }
         } else if (pr.x >= x) {
-            pr.out = if (pr.x >= x + w) end else if (atomic) (if (pr.x < x + w / 2) start else end) else start + offsetAt(font, size, word.text, pr.x - x - pad);
+            pr.out = if (pr.x >= x + w) end else if (atomic) (if (pr.x < x + w / 2) start else end) else start + offsetAt(font, size, text, pr.x - x - pad);
         } else if (line_start) pr.out = start;
     };
 }
 
-fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont, size: f32, s: []const u8, x: f32, y: f32, w: f32, pad: f32, o: Opts, mouse: c.ImVec2, syn: *syntax.State) void {
+/// Onde o desenho do marcador de lista fica, num pedaço em `x` de largura `w` (a do "•"). Da
+/// esquerda para a direita, na margem antes do texto: o "•" recuado, o número terminando
+/// pouco antes do texto. Num parágrafo RTL (`dir` .rtl) o pedaço já foi para a direita do
+/// texto, e o desenho é o espelho disso.
+const MarkerGlyph = struct { x: f32, w: f32 };
+
+fn markerGlyph(sp: *const md.Span, font: *c.ImFont, size: f32, s: []const u8, x: f32, w: f32, dir: bidi.Dir) MarkerGlyph {
+    const gw = if (sp.flags.number) d.widthRun(font, size, s, dir) else w;
+    const mirrored = dir == .rtl;
+    if (sp.flags.number) return .{ .x = if (mirrored) x + size * 0.3 else x + w - size * 0.3 - gw, .w = gw };
+    return .{ .x = if (mirrored) x + size * 0.9 else x - size * 0.9, .w = gw };
+}
+
+/// `dir`: a direção do trecho, se o algoritmo do parágrafo já resolveu (ver `Plan`); `auto`
+/// decide pela primeira letra forte, como num texto sem RTL.
+fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont, size: f32, s: []const u8, x: f32, y: f32, w: f32, pad: f32, o: Opts, mouse: c.ImVec2, syn: *syntax.State, dir: bidi.Dir) void {
     const lh = o.line_h;
     const ty = y + (lh - size * 1.2) / 2;
     const r: d.Rect = .{ .x = x, .y = y + 1, .w = w, .h = lh - 2 };
@@ -619,7 +701,7 @@ fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont,
     }
     if (sp.flags.link) {
         const lc = if (o.on_accent) o.color else th.c(.link);
-        d.text(dl, font, size, x, ty, lc, s);
+        d.textDir(dl, font, size, x, ty, lc, s, dir);
         qa.mark(r, "link:{s}", .{s[0..@min(s.len, 48)]});
         const over = r.contains(mouse.x, mouse.y) and c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_RootAndChildWindows);
         if (o.underline_links or over) d.line(dl, x, ty + size * 1.12, x + w, ty + size * 1.12, lc.alpha(0.5), 1);
@@ -636,13 +718,14 @@ fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont,
         }
         return;
     }
-    if (sp.flags.bullet) {
-        d.text(dl, font, size, x - size * 0.9, ty, o.color, s);
+    if (isMarker(sp)) {
+        const g = markerGlyph(sp, font, size, s, x, w, dir);
+        d.textDir(dl, font, size, g.x, ty, o.color, s, if (dir == .rtl) .rtl else .ltr);
         return;
     }
     var color = if (sp.flags.bold or sp.flags.head != 0) o.color.mix(th.c(.text), if (o.on_accent) 0 else 0.4) else o.color;
     if (sp.flags.sub) color = if (o.on_accent) color.alpha(color.a * 0.75) else th.c(.muted).alpha(o.color.a);
-    d.text(dl, font, size, x, ty, color, s);
+    d.textDir(dl, font, size, x, ty, color, s, dir);
     if (sp.flags.strike) d.line(dl, x, ty + size * 0.62, x + w, ty + size * 0.62, color, 1.2);
 }
 

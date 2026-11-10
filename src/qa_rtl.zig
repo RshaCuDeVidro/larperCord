@@ -80,7 +80,7 @@ fn shaped(_: *App) bool {
 /// árabe que o normal tem) pede as reservas como o desenho pediria, e a conferência espera
 /// o próximo quadro: depois disso, ou a letra está lá, ou a escrita já foi procurada e falha.
 fn noQuestionMarks(app: *App) bool {
-    for ([_][]const u8{ gw.rtl_arabic, gw.rtl_hebrew, mixed_rtl }) |t| {
+    for ([_][]const u8{ gw.rtl_arabic, gw.rtl_hebrew, mixed_rtl, gw.rtl_urdu }) |t| {
         const v = bidi.visual(t) orelse return false;
         var it = (std.unicode.Utf8View.init(v) catch return false).iterator();
         while (it.nextCodepoint()) |cp| {
@@ -95,9 +95,13 @@ fn noQuestionMarks(app: *App) bool {
     return true;
 }
 
+/// O sistema não tem fonte com esta letra: nem a reserva da escrita dela, nem (procurada
+/// pelo bloco, como o heh goal do urdu que o DejaVu não tem) uma fonte só para o bloco.
 fn noSystemFont(app: *App, cp: u32) bool {
     const g = fonts.groupOf(cp) orelse return false;
-    return app.fonts.triedGroup(g) and !app.fonts.hasGroup(g);
+    if (app.fonts.triedGroup(g) and !app.fonts.hasGroup(g)) return true;
+    const b = fonts.blockOf(cp) orelse return false;
+    return app.fonts.triedBlock(b) and !app.fonts.hasBlock(b);
 }
 
 /// Arrastar do começo da frase (à direita) até depois do fim dela, à esquerda, pega a
@@ -366,6 +370,318 @@ fn shortGone(app: *App) bool {
     return app.store.find(cs, short_id) == null;
 }
 
+// --- Issue #9: o que um leitor de árabe mandou -----------------------------------------
+
+/// Uma mensagem do #regras de "os larpers" (net/fake_gateway.zig, `demoRtlRules`) pelo texto.
+fn rulesMsg(app: *App, text: []const u8) ?*const StoredMessage {
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return null;
+    for (cs.messages.items) |*m| if (std.mem.eql(u8, m.msg.content, text)) return m;
+    return null;
+}
+
+/// A mensagem cujo embed tem esta descrição.
+fn rulesEmbedMsg(app: *App, description: []const u8) ?*const StoredMessage {
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return null;
+    for (cs.messages.items) |*m| {
+        for (m.msg.embeds) |e| if (std.mem.eql(u8, e.description, description)) return m;
+    }
+    return null;
+}
+
+fn toRules(app: *App) void {
+    app.handle(.{ .open_message = .{ .channel = gw.rtl_rules_channel, .id = 0 } });
+    app.st.scrollOf(gw.rtl_rules_channel).stick_bottom = true;
+}
+
+fn rulesReady(app: *App) bool {
+    if (app.st.activeChannel() != gw.rtl_rules_channel) return false;
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return false;
+    return cs.history == .loaded;
+}
+
+/// Leva a conversa até a mensagem (o destaque do pulo some em 1,6 s; o print espera).
+fn jumpTo(app: *App, m: ?*const StoredMessage) void {
+    if (m) |x| app.st.jump = x.msg.id;
+}
+
+fn jumpX(app: *App) void {
+    jumpTo(app, rulesEmbedMsg(app, gw.rtl_x_description));
+}
+fn jumpBot(app: *App) void {
+    jumpTo(app, rulesEmbedMsg(app, gw.rtl_bot_description));
+}
+fn jumpRulesEmbed(app: *App) void {
+    jumpTo(app, rulesEmbedMsg(app, gw.rtl_rules_embed));
+}
+fn jumpRulesText(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_rules_text));
+}
+fn jumpUrdu(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_urdu));
+}
+
+fn jumped(app: *App) bool {
+    return app.st.jump == 0;
+}
+
+fn tOrdered(app: *App, buf: []u8) []const u8 {
+    const m = rulesMsg(app, gw.rtl_ordered) orelse return "";
+    return std.fmt.bufPrint(buf, "msgtext:{d}", .{m.msg.id}) catch "";
+}
+
+// Onde cada trecho foi desenhado (ui/rich.zig, `qa_watch`): a ordem visual de verdade.
+
+const rich = @import("ui/rich.zig");
+const d = @import("ui/draw.zig");
+
+/// Passa a anotar os trechos do texto que começa em `ptr` (vale a partir do próximo quadro).
+fn watch(ptr: ?[*]const u8) void {
+    rich.qa_watch = ptr;
+    rich.qa_runs_n = 0;
+}
+
+fn watching(ptr: [*]const u8) bool {
+    return rich.qa_watch != null and rich.qa_watch.? == ptr;
+}
+
+fn runs() []const rich.QaRun {
+    return rich.qa_runs[0..rich.qa_runs_n];
+}
+
+/// O trecho que começa no byte `off` do texto vigiado (o marcador: `marker`).
+fn runAt(off: usize, marker: bool) ?rich.QaRun {
+    for (runs()) |r| if (r.off == off and r.marker == marker) return r;
+    return null;
+}
+
+/// O trecho que contém o byte `off`.
+fn runWith(off: usize) ?rich.QaRun {
+    for (runs()) |r| if (!r.marker and off >= r.off and off < r.off + r.len) return r;
+    return null;
+}
+
+fn sameLine(a: rich.QaRun, b: rich.QaRun) bool {
+    return @abs(a.y - b.y) < 1;
+}
+
+fn watchMsg(app: *App, text: []const u8) bool {
+    const m = rulesMsg(app, text) orelse return false;
+    if (!watching(m.msg.content.ptr)) {
+        watch(m.msg.content.ptr);
+        return false;
+    }
+    return rich.qa_runs_n > 0;
+}
+
+fn watchEmbed(app: *App, description: []const u8) ?[]const u8 {
+    const m = rulesEmbedMsg(app, description) orelse return null;
+    const e = m.msg.embeds[0].description;
+    if (!watching(e.ptr)) {
+        watch(e.ptr);
+        return null;
+    }
+    return if (rich.qa_runs_n > 0) e else null;
+}
+
+/// "1. Hello": o número fica na margem e o texto começa depois dele, com espaço.
+fn orderedLatin(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_ordered_latin)) return false;
+    const mk = runAt(0, true) orelse return false;
+    const hello = runAt(3, false) orelse return false;
+    return mk.x + mk.w + 2 <= hello.x;
+}
+
+/// O marcador `mk` está à direita de todo o texto da linha dele, e o texto termina perto dele.
+fn markerRightOfText(mk: rich.QaRun) bool {
+    var any = false;
+    for (runs()) |r| {
+        if (r.marker or !sameLine(r, mk)) continue;
+        any = true;
+        if (r.x + r.w > mk.x + 0.5) return false;
+    }
+    return any;
+}
+
+/// "1. السلام عليكم": item numerado em árabe, o número à direita do texto (como ".1").
+fn orderedRtl(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_ordered)) return false;
+    const mk = runAt(0, true) orelse return false;
+    return mk.rtl and markerRightOfText(mk);
+}
+
+/// "- مرحبا\n- مرحبا 😃": os dois "•" à direita do texto, e o emoji à esquerda da palavra.
+fn bulletsRtl(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_list)) return false;
+    const second = std.mem.indexOfScalar(u8, gw.rtl_list, '\n').? + 1;
+    const a = runAt(0, true) orelse return false;
+    const b = runAt(second, true) orelse return false;
+    if (!markerRightOfText(a) or !markerRightOfText(b)) return false;
+    const word = runAt(second + 2, false) orelse return false;
+    const emoji = runWith(std.mem.indexOf(u8, gw.rtl_list, "😃").?) orelse return false;
+    return emoji.x + emoji.w <= word.x + 0.5;
+}
+
+/// "12- السلام عليكم": parágrafo RTL (o número não decide a direção), o 12 na ponta direita e
+/// o traço à esquerda dele.
+fn dashLeft(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_dash)) return false;
+    const num = runAt(0, false) orelse return false;
+    const dash = runAt(2, false) orelse return false;
+    for (runs()) |r| if (r.x > num.x) return false;
+    return dash.x + dash.w <= num.x + 0.5 and rightAlignedRules(app, gw.rtl_dash);
+}
+
+fn rightAlignedRules(app: *App, text: []const u8) bool {
+    const m = rulesMsg(app, text) orelse return false;
+    return linesRight(m.msg.id, 0);
+}
+
+/// "مساء الخير what is the problem؟": o "؟" grudado no inglês vai para o fim da frase árabe,
+/// a ponta esquerda da linha.
+fn questionLast(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_question)) return false;
+    const q = runWith(std.mem.indexOf(u8, gw.rtl_question, "؟").?) orelse return false;
+    if (!q.rtl) return false;
+    for (runs()) |r| if (r.x < q.x) return false;
+    return rightAlignedRules(app, gw.rtl_question);
+}
+
+/// "السلام عليكم (تجربة)": o trecho dos parênteses sai espelhado (na tela, "(" à esquerda e
+/// ")" à direita da palavra, abrindo para ela).
+fn parensMirrored(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_parens)) return false;
+    const off = std.mem.indexOfScalar(u8, gw.rtl_parens, '(').?;
+    const r = runAt(off, false) orelse return false;
+    if (!r.rtl) return false;
+    const v = bidi.visualRun(gw.rtl_parens[r.off..][0..r.len], true) orelse return false;
+    return v[0] == '(' and v[v.len - 1] == ')';
+}
+
+/// O embed do bot: "( ✔️ )" no meio do árabe: o "(" do texto fica à direita do emoji, o ")"
+/// à esquerda, os dois espelhados.
+fn botParens(app: *App) bool {
+    const e = watchEmbed(app, gw.rtl_bot_description) orelse return false;
+    const open_at = std.mem.indexOf(u8, e, "( ").?;
+    const open = runAt(open_at, false) orelse return false;
+    const emoji = runAt(open_at + 2, false) orelse return false;
+    const close = runAt(std.mem.indexOf(u8, e, " )").? + 1, false) orelse return false;
+    return open.rtl and close.rtl and open.x > emoji.x and emoji.x > close.x;
+}
+
+/// As regras em itálico: "1.يمنع" é RTL, o 1 na ponta direita e o ponto logo à esquerda dele;
+/// toda linha termina na mesma borda direita, também a da citação (a barra fica à esquerda).
+fn rulesPeriod(app: *App) bool {
+    const e = watchEmbed(app, gw.rtl_rules_embed) orelse return false;
+    const at = std.mem.indexOf(u8, e, gw.rtl_period).?;
+    const one = runAt(at, false) orelse return false;
+    const dot = runAt(at + 1, false) orelse return false;
+    if (!sameLine(one, dot) or dot.x + dot.w > one.x + 0.5) return false;
+    var edge: f32 = 0;
+    for (runs()) |r| edge = @max(edge, r.x + r.w);
+    if (@abs(one.x + one.w - edge) > 1) return false;
+    const q = std.mem.indexOf(u8, e, "3.").?;
+    const three = runAt(q, false) orelse return false;
+    return @abs(three.x + three.w - edge) <= 1;
+}
+
+/// O texto de uma linha de um embed (autor, título, nome de campo) termina na borda direita da
+/// coluna, quando começa por letra RTL.
+fn embedTextRight(ptr: [*]const u8) bool {
+    var b: [48]u8 = undefined;
+    const t = qa.find(std.fmt.bufPrint(&b, "embed-text:{x}", .{@intFromPtr(ptr)}) catch return false) orelse return false;
+    const col = qa.find(std.fmt.bufPrint(&b, "embed-col:{x}", .{@intFromPtr(ptr)}) catch return false) orelse return false;
+    return near(t.right(), col.right()) and t.x > col.x + 4;
+}
+
+fn botTitleRight(app: *App) bool {
+    const m = rulesEmbedMsg(app, gw.rtl_bot_description) orelse return false;
+    const e = m.msg.embeds[0];
+    return embedTextRight(e.title.ptr) and embedTextRight(e.fields[0].name.ptr);
+}
+
+fn xAuthorRight(app: *App) bool {
+    const m = rulesEmbedMsg(app, gw.rtl_x_description) orelse return false;
+    return embedTextRight(m.msg.embeds[0].author.ptr);
+}
+
+/// A barra invertida do markdown (`\.`, `\~`) não aparece: o que vai para a tela não tem
+/// nenhuma, e o "12~24" fica inteiro.
+fn noBackslash(app: *App) bool {
+    const m = rulesEmbedMsg(app, gw.rtl_x_description) orelse return false;
+    if (m.embed_spans.len == 0) return false;
+    var tilde = false;
+    for (m.embed_spans[0]) |sp| {
+        if (std.mem.indexOfScalar(u8, sp.text, '\\') != null) return false;
+        if (std.mem.indexOf(u8, sp.text, "~24") != null) tilde = true;
+    }
+    return tilde;
+}
+
+/// Invisíveis de formatação não ocupam lugar em fonte nenhuma: o seletor de variação do ✔️ e do
+/// ⚠️ (que abria um espaço do lado do emoji), a marca de direção do árabe e afins.
+fn invisiblesZero(app: *App) bool {
+    for (app.fonts.families.items) |fam| {
+        const f = fam.get(.regular);
+        if (@abs(d.width(f, 14, "✔\u{FE0F}") - d.width(f, 14, "✔")) > 0.01) return false;
+        if (@abs(d.width(f, 14, "⚠\u{FE0F}") - d.width(f, 14, "⚠")) > 0.01) return false;
+        if (d.width(f, 14, "\u{061C}\u{2066}\u{2069}\u{180E}\u{E0100}\u{00AD}\u{200D}") > 0.01) return false;
+    }
+    return true;
+}
+
+fn unwatch(_: *App) void {
+    watch(null);
+}
+
+// --- "(apagada)" numa mensagem RTL -------------------------------------------------------
+
+var deleted_id: types.Id = 0;
+var log_before = false;
+
+/// Uma mensagem em árabe de outra pessoa, apagada com o registro de mensagens ligado: fica na
+/// tela com o "(apagada)" antes da linha dela.
+fn pushDeleted(app: *App) void {
+    log_before = app.st.settings.message_log;
+    app.st.settings.message_log = true;
+    app.store.keep_log = true;
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return;
+    const items = cs.messages.items;
+    if (items.len == 0) return;
+    const content = std.heap.c_allocator.dupe(u8, gw.rtl_parens) catch return;
+    deleted_id = types.makeSnowflake(gw.nowMs(), 0x3e100);
+    app.events.push(.{ .message_create = .{ .id = deleted_id, .channel = gw.rtl_rules_channel, .author = 1003, .timestamp = items[items.len - 1].msg.timestamp + 30, .content = content } });
+    app.events.push(.{ .message_delete = .{ .channel = gw.rtl_rules_channel, .id = deleted_id } });
+    @import("platform/window.zig").Window.wake(app.win.wake_type, .gateway);
+    app.st.scrollOf(gw.rtl_rules_channel).stick_bottom = true;
+}
+
+/// O "(apagada)" está na tela e não fica em cima de nenhuma linha do texto (no balão, que se
+/// alarga para caber os dois).
+fn deletedClear(_: *App) bool {
+    const lbl = markOf("edited:{d}", deleted_id) orelse return false;
+    var n: usize = 0;
+    while (lineOf(deleted_id, n)) |l| : (n += 1) {
+        if (overlaps(lbl, l)) return false;
+    }
+    return n > 0;
+}
+
+fn dropDeleted(app: *App) void {
+    app.events.push(.{ .message_delete = .{ .channel = gw.rtl_rules_channel, .id = deleted_id, .local = true } });
+    @import("platform/window.zig").Window.wake(app.win.wake_type, .gateway);
+    app.st.settings.message_log = log_before;
+    app.store.keep_log = log_before;
+}
+
+fn deletedGone(app: *App) bool {
+    const cs = app.store.channel(gw.rtl_rules_channel) orelse return false;
+    return app.store.find(cs, deleted_id) == null;
+}
+
+fn toBottom(app: *App) void {
+    app.st.scrollOf(gw.rtl_rules_channel).stick_bottom = true;
+}
+
 fn goHome(app: *App) void {
     if (home != 0) app.handle(.{ .open_message = .{ .channel = home, .id = 0 } });
 }
@@ -439,6 +755,47 @@ pub const ops_theme = [_]Op{
     run(compactBack),
     run(dropShort),
     expect("a mensagem curta sai", shortGone),
+    // Issue #9: os casos do leitor de árabe, cada um num print (comparar com o Discord).
+    run(toRules),
+    expect("o #regras com os casos do issue #9 abre", rulesReady),
+    .{ .wait = 400 },
+    .{ .hover = .{ .dyn_at = .{ .f = tOrdered, .fx = 0.5, .fy = -60 } } },
+    expect("\"1. Hello\": o número na margem e o texto depois dele, com espaço", orderedLatin),
+    expect("\"1. السلام عليكم\": item numerado em árabe, com o número à direita do texto", orderedRtl),
+    expect("lista com marcador em árabe: o • à direita do texto e o emoji à esquerda da palavra", bulletsRtl),
+    expect("\"12- السلام\": parágrafo RTL, o traço à esquerda do número", dashLeft),
+    expect("o ؟ depois do inglês vai para o fim da frase árabe", questionLast),
+    expect("os parênteses de \"(تجربة)\" saem espelhados", parensMirrored),
+    expect("invisíveis de formatação (o FE0F do ✔️) não abrem espaço do lado do emoji", invisiblesZero),
+    .{ .shot = "rtl9-lista" },
+    run(pushDeleted),
+    expect("uma mensagem em árabe apagada fica com o \"(apagada)\" fora do texto", deletedClear),
+    .{ .shot = "rtl9-apagada" },
+    run(dropDeleted),
+    expect("a apagada sai", deletedGone),
+    run(jumpX),
+    expect("o embed do X aparece", jumped),
+    .{ .wait = 1700 },
+    expect("o autor em árabe do embed do X termina na borda direita", xAuthorRight),
+    expect("a barra invertida do markdown (\\. e \\~) não aparece na descrição", noBackslash),
+    .{ .shot = "rtl9-x" },
+    run(jumpBot),
+    expect("o embed do bot aparece", jumped),
+    .{ .wait = 1700 },
+    expect("o título e o nome do campo em árabe terminam na borda direita do embed", botTitleRight),
+    expect("o emoji entre parênteses no meio do árabe: \"( ✔️ )\" na ordem certa", botParens),
+    .{ .shot = "rtl9-bot" },
+    run(jumpRulesEmbed),
+    expect("o embed das regras aparece", jumped),
+    .{ .wait = 1700 },
+    expect("\"1.يمنع\": RTL, o ponto à esquerda do 1 e toda linha (também a citada) na borda direita", rulesPeriod),
+    .{ .shot = "rtl9-regras" },
+    run(jumpRulesText),
+    expect("as regras com marcador aparecem", jumped),
+    .{ .wait = 1700 },
+    .{ .shot = "rtl9-avisos" },
+    run(unwatch),
+    run(toBottom),
     run(goHome),
     expect("volta para o canal de antes", atHome),
 };

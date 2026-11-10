@@ -2669,6 +2669,7 @@ fn buildHistory(channel: Id, now_ms: i64) ![]types.Message {
         try set(&msgs[n - 6], try i18n.allocPrint(alloc, "vejam <#{d}> e falem com <@1001>; o outro canal: https://ptb.discord.com/channels/{d}/{d}", "check <#{d}> and talk to <@1001>; the other channel: https://ptb.discord.com/channels/{d}/{d}", .{ channelId(0, 4), guildId(0), channelId(0, 5) }));
     }
     if (channel == rtl_channel) try demoRtlMessages(msgs);
+    if (channel == rtl_rules_channel) try demoRtlRules(msgs);
     if (channel == scripts_channel) for (scripts_texts, 1..) |text, back| {
         const m = &msgs[n - back];
         alloc.free(m.content);
@@ -2805,6 +2806,102 @@ fn demoRtlMessages(msgs: []types.Message) !void {
         .has_color = true,
     };
     msgs[n - 6].embeds = e;
+}
+
+/// #regras de "os larpers": o que um leitor de árabe mandou no issue #9, como chegou. Lista
+/// numerada e com marcador, número com ponto ou traço antes do texto, parênteses, árabe com
+/// inglês no meio e o "؟" no fim, emoji no meio do árabe, barra invertida do markdown
+/// (`\.`, `\~`), urdu (o heh goal, U+06C1) e os embeds: o de um post do X, o de um bot com
+/// título em árabe e as regras em itálico, uma delas citada. O QA confere ordem, alinhamento e
+/// fonte (qa_rtl.zig).
+pub const rtl_rules_channel: Id = channelId(3, 1);
+pub const rtl_list = "- مرحبا\n- مرحبا 😃";
+pub const rtl_parens = "السلام عليكم (تجربة)";
+pub const rtl_question = "مساء الخير what is the problem؟";
+pub const rtl_dash = "12- السلام عليكم";
+pub const rtl_ordered_latin = "1. Hello";
+pub const rtl_ordered = "1. السلام عليكم";
+pub const rtl_period = "1.يمنع تجاهل الإدارة. إن طلب منك مشرف التوقف عن نقاش موضوع معين، أو نقل الحديث لقناة معينة، فلا تتعمد تجاهله.";
+pub const rtl_warning = "⚠️ جميع الانتهاكات المتكررة قد تؤدي إلى 🔨 حظر دائم 🔨";
+pub const rtl_urdu = "اردو: یہ ہماری کتاب ہے، اور وہ بھی۔";
+pub const rtl_rules_text = "• 11- لا تكرر نفس الرسائل أو ترسل رسائل قصيرة بغرض \"جمع نقاط XP للمستويات\"، بما في ذلك المنشورات غير الجادة بهدف كسب XP.\n" ++
+    "• 12- يُمنع تمامًا مشاركة روابط تحتوي على مشاهد مفاجئة (JumpScare/Screamer) في أي قناة.\n" ++
+    "• 13- لا تحاول دفع الآخرين لكسر القواعد، ستتعرض لنفس العقوبة.\n\n" ++
+    "أي محاولة للتحايل على هذه القواعد ستؤدي أيضًا إلى الحظر.\n\n" ++ rtl_warning;
+/// O embed do post do X (o Discord mostra `\.` e `12\~24` como `.` e `12~24`).
+pub const rtl_x_author = "الحلم المتجدد للتعريب ✨ (@EternalDreamAR)";
+pub const rtl_x_description = "الموقع قيد الصيانة، ولهذا قررنا غلقه مؤقتا\\.\n\n" ++
+    "كل محتويات الموقع بخير وفريق الإدارة بخير\\.\n" ++
+    "الإجراء احتياط لا أكثر\\.\n" ++
+    "نرجو أن نعود لأنشطتنا المعتادة في غضون 12\\~24 ساعة إن شاء الله\\.\n\n" ++
+    "إن أردتم دعم الفريق\\.\\.\\.";
+pub const rtl_bot_title = "هل توافق على القوانين؟";
+pub const rtl_bot_description = "يرجى ضغط الزر الأخضر ( ✔️ ) إن قرأت القوانين ووافقت عليها كي تتمكن من تصفح باقي قنوات السيرفر والمشاركة فيها.";
+pub const rtl_rules_embed = "https://discord.com/guidelines\n\n" ++
+    "*" ++ rtl_period ++ "*\n" ++
+    "*2.يمنع شتم الأعضاء، مضايقتهم، تهديدهم، أو إزعاجهم على العام أو على الخاص بالرسائل أو المنشنات.*\n" ++
+    "> *3.يمنع النقاش في الدين، السياسة، المذاهب، الميولات. ليس مكان هذه النقاشات هنا.*\n\n" ++
+    "يحتفظ الإشراف بحق حذف رسائل / حظر من يشاء دون تبرير إن رأى أنه أثر على جو الألفة، بث السلبية الزائدة في هذا السرفر أو اتضح أنه لا ينوي على خير.";
+
+fn demoRtlRules(msgs: []types.Message) !void {
+    const n = msgs.len;
+    const Slot = struct { back: usize, text: []const u8, author: Id = 1004 };
+    const slots = [_]Slot{
+        .{ .back = 1, .text = rtl_ordered },
+        .{ .back = 2, .text = rtl_ordered_latin },
+        .{ .back = 3, .text = rtl_dash },
+        .{ .back = 4, .text = rtl_question, .author = 1005 },
+        .{ .back = 5, .text = rtl_parens, .author = 1005 },
+        .{ .back = 6, .text = rtl_list, .author = 1005 },
+        .{ .back = 7, .text = "", .author = plain_bot_user },
+        .{ .back = 8, .text = rtl_rules_text, .author = 1006 },
+        .{ .back = 9, .text = "", .author = plain_bot_user },
+        .{ .back = 10, .text = rtl_urdu, .author = 1006 },
+        .{ .back = 11, .text = "https://x.com/EternalDreamAR/status/2112831450412417505", .author = webhook_user },
+    };
+    for (slots) |s| {
+        const m = &msgs[n - s.back];
+        freeOne(m.*);
+        m.content = try alloc.dupe(u8, s.text);
+        m.attachments = &.{};
+        m.embeds = &.{};
+        m.mention_roles = &.{};
+        m.reply_to = 0;
+        m.author = s.author;
+    }
+    {
+        // O bot das regras: título em árabe e um emoji entre parênteses na descrição.
+        const fields = try alloc.alloc(types.EmbedField, 2);
+        fields[0] = .{ .name = try alloc.dupe(u8, "القوانين"), .value = try alloc.dupe(u8, "اقرأ القوانين قبل المشاركة") };
+        fields[1] = .{ .name = try alloc.dupe(u8, "الأعضاء"), .value = try alloc.dupe(u8, "1,234 عضو") };
+        const e = try alloc.alloc(types.Embed, 1);
+        e[0] = .{
+            .author = try alloc.dupe(u8, "EDA ✨"),
+            .title = try alloc.dupe(u8, rtl_bot_title),
+            .description = try alloc.dupe(u8, rtl_bot_description),
+            .fields = fields,
+            .color = 0x00FF00,
+            .has_color = true,
+        };
+        msgs[n - 7].embeds = e;
+    }
+    {
+        const e = try alloc.alloc(types.Embed, 1);
+        e[0] = .{ .description = try alloc.dupe(u8, rtl_rules_embed), .color = 0xFF5555, .has_color = true };
+        msgs[n - 9].embeds = e;
+    }
+    {
+        const e = try alloc.alloc(types.Embed, 1);
+        e[0] = .{
+            .author = try alloc.dupe(u8, rtl_x_author),
+            .url = try alloc.dupe(u8, "https://x.com/EternalDreamAR/status/2112831450412417505"),
+            .description = try alloc.dupe(u8, rtl_x_description),
+            .footer = try alloc.dupe(u8, "X"),
+            .color = 0x1DA1F2,
+            .has_color = true,
+        };
+        msgs[n - 11].embeds = e;
+    }
 }
 
 /// Quem vota e reage na demonstração além do pessoal de sempre: pessoas

@@ -5,6 +5,7 @@ const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
+const bidi = @import("bidi.zig");
 const poll_card = @import("poll_card.zig");
 const rich = @import("rich.zig");
 const att = @import("attachments.zig");
@@ -142,9 +143,9 @@ pub fn appendText(ctx: *d.Ctx, out: *std.ArrayList(u8), m: *const StoredMessage,
                 const p0: u32 = @intCast(@intFromPtr(sp.text.ptr) - @intFromPtr(t.ptr));
                 const p1 = p0 + @as(u32, @intCast(sp.text.len));
                 if (p1 <= r[0] or p0 >= r[1]) continue;
-                if (sp.mention != .none or sp.emoji != 0 or sp.flags.bullet) {
+                if (sp.mention != .none or sp.emoji != 0 or sp.flags.bullet or sp.flags.number) {
                     self.out.appendSlice(g, rich.label(self.ctx.store, sp, &buf)) catch {};
-                    if (sp.flags.bullet) self.out.append(g, ' ') catch {};
+                    if (sp.flags.bullet or sp.flags.number) self.out.append(g, ' ') catch {};
                 } else self.out.appendSlice(g, t[@max(p0, r[0])..@min(p1, r[1])]) catch {};
                 if (sp.flags.block) self.out.append(g, '\n') catch {};
             }
@@ -364,21 +365,34 @@ fn opts(ctx: *d.Ctx, size: f32) rich.Opts {
     };
 }
 
-/// Texto de uma linha só (título, autor, rodapé…), selecionável.
-fn plainText(ctx: *d.Ctx, dl: ?*c.ImDrawList, font: *c.ImFont, size: f32, x: f32, y: f32, line: f32, col: d.Rgba, text: []const u8, max: f32, s: *Sel) void {
-    if (text.len == 0) return;
-    if (dl) |l| {
-        if (s.range(text.len)) |r| {
-            const x0 = x + d.width(font, size, text[0..r[0]]);
-            const x1 = @min(x + d.width(font, size, text[0..r[1]]), x + max);
-            if (x1 > x0) d.rect(l, .{ .x = x0, .y = y, .w = x1 - x0, .h = line }, ctx.col(.accent).alpha(0.32), 0);
-        }
-        if (s.probe) |p| if (p.y >= y and p.y < y + line and p.x >= x and p.x < x + max) {
-            p.out = s.off + rich.offsetAt(font, size, text, p.x - x);
-        };
-        _ = d.textClipped(l, font, size, x, y, col, text, max);
+/// Texto de uma linha só (título, autor, nome do campo, rodapé…), selecionável. Começando
+/// por letra RTL (árabe, hebraico), termina na borda direita da coluna, como a descrição.
+/// Devolve onde ele ficou na tela (`x`, `w`).
+fn plainText(ctx: *d.Ctx, dl: ?*c.ImDrawList, font: *c.ImFont, size: f32, x: f32, y: f32, line: f32, col: d.Rgba, text: []const u8, max: f32, s: *Sel) struct { x: f32, w: f32 } {
+    if (text.len == 0) return .{ .x = x, .w = 0 };
+    defer s.off += @intCast(text.len + 1);
+    // Medindo, só a altura importa.
+    const l = dl orelse return .{ .x = x, .w = 0 };
+    const full = @min(d.width(font, size, text), max);
+    const rtl = bidi.baseRtl(text);
+    const tx = if (rtl) x + max - full else x;
+    // O pedaço selecionado (ou sob o mouse) é medido a partir do começo do texto: à direita,
+    // num texto RTL.
+    const right = tx + full;
+    if (s.range(text.len)) |r| {
+        const a = d.width(font, size, text[0..r[0]]);
+        const b = d.width(font, size, text[0..r[1]]);
+        const x0 = if (rtl) @max(tx, right - b) else tx + a;
+        const x1 = if (rtl) right - a else @min(tx + b, x + max);
+        if (x1 > x0) d.rect(l, .{ .x = x0, .y = y, .w = x1 - x0, .h = line }, ctx.col(.accent).alpha(0.32), 0);
     }
-    s.off += @intCast(text.len + 1);
+    if (s.probe) |p| if (p.y >= y and p.y < y + line and p.x >= x and p.x < x + max) {
+        p.out = s.off + rich.offsetAt(font, size, text, if (rtl) right - p.x else p.x - tx);
+    };
+    qa.mark(.{ .x = tx, .y = y, .w = full, .h = line }, "embed-text:{x}", .{@intFromPtr(text.ptr)});
+    qa.mark(.{ .x = x, .y = y, .w = max, .h = line }, "embed-col:{x}", .{@intFromPtr(text.ptr)});
+    _ = d.textClipped(l, font, size, tx, y, col, text, max);
+    return .{ .x = tx, .w = full };
 }
 
 /// Texto com markdown, selecionável. Devolve a altura.
@@ -585,19 +599,19 @@ fn card(ctx: *d.Ctx, dl: ?*c.ImDrawList, e: *const types.Embed, spans: []const [
     var y = y0 + 10;
 
     if (e.provider.len > 0) {
-        plainText(ctx, dl, fam.get(.regular), 12, ix, y, 18, ctx.col(.muted).alpha(alpha), e.provider, tw, sel);
+        _ = plainText(ctx, dl, fam.get(.regular), 12, ix, y, 18, ctx.col(.muted).alpha(alpha), e.provider, tw, sel);
         y += 18;
     }
     if (e.author.len > 0) {
-        plainText(ctx, dl, fam.get(.semibold), 13.5, ix, y, 20, ctx.col(.text).alpha(alpha), e.author, tw, sel);
+        _ = plainText(ctx, dl, fam.get(.semibold), 13.5, ix, y, 20, ctx.col(.text).alpha(alpha), e.author, tw, sel);
         y += 20;
     }
     if (e.title.len > 0) {
         const linked = e.url.len > 0;
         const col = if (linked) ctx.col(.link) else ctx.col(.text);
-        plainText(ctx, dl, fam.get(.semibold), 15, ix, y, 22, col.alpha(alpha), e.title, tw, sel);
+        const at = plainText(ctx, dl, fam.get(.semibold), 15, ix, y, 22, col.alpha(alpha), e.title, tw, sel);
         if (dl) |l| if (linked) {
-            const tr: d.Rect = .{ .x = ix, .y = y, .w = @min(tw, d.width(fam.get(.semibold), 15, e.title)), .h = 20 };
+            const tr: d.Rect = .{ .x = at.x, .y = y, .w = at.w, .h = 20 };
             const over = tr.contains(ctx.mouse.x, ctx.mouse.y) and c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_RootAndChildWindows);
             if (over) {
                 d.line(l, tr.x, tr.bottom() - 1, tr.right(), tr.bottom() - 1, col.alpha(0.6), 1);
@@ -615,7 +629,7 @@ fn card(ctx: *d.Ctx, dl: ?*c.ImDrawList, e: *const types.Embed, spans: []const [
         if (th > 0) y += th + 4;
     }
     for (e.fields, 0..) |f, si| {
-        plainText(ctx, dl, fam.get(.bold), 13, ix, y, 19, ctx.col(.text).alpha(alpha), f.name, tw, sel);
+        _ = plainText(ctx, dl, fam.get(.bold), 13, ix, y, 19, ctx.col(.text).alpha(alpha), f.name, tw, sel);
         y += 19;
         const th = richText(ctx, dl, if (si + 1 < spans.len) spans[si + 1] else &.{}, f.value, ix, y, tw, 13.5, sel);
         if (th > 0) y += th + 6;
@@ -635,7 +649,7 @@ fn card(ctx: *d.Ctx, dl: ?*c.ImDrawList, e: *const types.Embed, spans: []const [
     }
     if (e.footer.len > 0) {
         y += 2;
-        plainText(ctx, dl, fam.get(.regular), 12, ix, y, 18, ctx.col(.muted).alpha(alpha), e.footer, w - 4 - pad * 2, sel);
+        _ = plainText(ctx, dl, fam.get(.regular), 12, ix, y, 18, ctx.col(.muted).alpha(alpha), e.footer, w - 4 - pad * 2, sel);
         y += 18;
     }
     if (has_thumb) {

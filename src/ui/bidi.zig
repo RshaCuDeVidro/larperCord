@@ -3,7 +3,9 @@
 //! cada linha que tem uma letra RTL passa pelo GNU FriBidi (third_party/fribidi): o árabe vira
 //! as formas de apresentação ligadas (inicial, medial, final, lam-alef) e a linha fica na ordem
 //! visual do algoritmo bidirecional do Unicode. O texto continua guardado na ordem lógica: só o
-//! que vai para a tela muda, e copiar ou selecionar seguem o original.
+//! que vai para a tela muda, e copiar ou selecionar seguem o original. Numa mensagem, o
+//! parágrafo inteiro passa pelo algoritmo (`paragraphLevels`, ver ui/rich_plan.zig) e cada
+//! trecho de um nível só sai na direção que ele resolveu (`visualRun`).
 //!
 //! Texto sem letra RTL (quase tudo) passa direto: uma varredura dos bytes, sem alocar nada.
 //! Os buffers são fixos e só da thread da interface; nem as listas do FriBidi chamam o malloc
@@ -12,11 +14,11 @@ const std = @import("std");
 
 // --- FriBidi (lib/fribidi-*.h) ----------------------------------------------------------
 
-const Char = u32;
+pub const Char = u32;
 const Index = c_int;
 const CharType = u32;
 const ParType = u32;
-const Level = i8;
+pub const Level = i8;
 const ArabicProp = u8;
 const BracketType = u32;
 const Flags = u32;
@@ -28,6 +30,7 @@ extern fn fribidi_get_par_embedding_levels_ex(bidi_types: [*]const CharType, bra
 extern fn fribidi_get_joining_types(str: [*]const Char, len: Index, jtypes: [*]ArabicProp) void;
 extern fn fribidi_join_arabic(bidi_types: [*]const CharType, len: Index, embedding_levels: [*]const Level, ar_props: [*]ArabicProp) void;
 extern fn fribidi_shape(flags: Flags, embedding_levels: [*]const Level, len: Index, ar_props: [*]ArabicProp, str: [*]Char) void;
+extern fn fribidi_get_mirror_char(ch: Char, mirrored_ch: *Char) c_int;
 extern fn fribidi_reorder_line(flags: Flags, bidi_types: [*]const CharType, len: Index, off: Index, base_dir: ParType, embedding_levels: [*]Level, visual_str: ?[*]Char, map: ?[*]Index) Level;
 
 // fribidi-bidi-types.h e fribidi-flags.h
@@ -40,6 +43,7 @@ const mask_nsm: u32 = 0x80000;
 const strong_rtl = mask_strong | mask_letter | mask_rtl;
 const par_on: ParType = 0x40; // FRIBIDI_PAR_ON: a direção vem da primeira letra forte
 const par_rtl: ParType = strong_rtl; // FRIBIDI_PAR_RTL
+const par_ltr: ParType = mask_strong | mask_letter; // FRIBIDI_PAR_LTR
 const flag_shape_mirroring: Flags = 0x1;
 const flag_reorder_nsm: Flags = 0x2;
 const flag_shape_arab_pres: Flags = 0x100;
@@ -146,8 +150,9 @@ pub fn baseRtl(s: []const u8) bool {
 
 // --- Uma linha na ordem de desenho ------------------------------------------------------
 
-/// Letras por linha convertida (uma linha maior fica como veio).
-const max_line = 2048;
+/// Letras por linha convertida (uma linha maior fica como veio) e por parágrafo de uma
+/// mensagem (ver `paragraphLevels`: um maior fica na ordem lógica).
+pub const max_line = 4096;
 var cps: [max_line]Char = undefined;
 var types: [max_line]CharType = undefined;
 var brackets: [max_line]BracketType = undefined;
@@ -159,6 +164,8 @@ var out: [16 * 1024]u8 = undefined;
 /// quadro (ui/rich.zig), e achar aqui custa um hash em vez do FriBidi de novo.
 const Cached = struct {
     hash: u64 = 0,
+    /// Como a direção foi decidida (ver `Dir`): a mesma palavra sai diferente em cada uma.
+    dir: Dir = .auto,
     in_len: u8 = 0,
     out_len: u8 = 0,
     in: [cache_in]u8 = undefined,
@@ -168,25 +175,62 @@ const cache_in = 48;
 const cache_out = 64;
 var cache: [128]Cached = @splat(.{});
 
+/// De onde vem a direção de um texto convertido: da primeira letra forte de cada linha
+/// (`auto`), ou de fora, para um pedaço de linha que o algoritmo do parágrafo inteiro já
+/// resolveu (ver `visualRun`).
+pub const Dir = enum(u8) { auto, ltr, rtl };
+
 /// `s` como deve ir para a tela: cada linha com letra RTL moldada e na ordem visual, as
 /// outras iguais. Null quando não há nada a mudar (desenhe `s` mesmo) ou não coube. O
 /// resultado vale até a próxima chamada.
 pub fn visual(s: []const u8) ?[]const u8 {
     if (!hasRtl(s)) return null;
-    if (s.len > cache_in) return convert(s);
-    const h = std.hash.Wyhash.hash(0, s);
+    return cached(s, .auto);
+}
+
+/// Um pedaço de uma linha que está todo num nível só do algoritmo do parágrafo (ui/rich.zig
+/// quebra cada palavra onde o nível muda): `rtl`, nível ímpar, sai de trás para frente com os
+/// parênteses espelhados e o árabe moldado; nível par, como está (moldado, se tiver árabe).
+/// Um emoji com tom de pele, bandeira ou sequência com ZWJ não se desfaz: fica inteiro no
+/// lugar dele. Null quando não há nada a mudar: um caractere só, sem espelho (o ponto, o
+/// traço, um emoji), nem passa pelo FriBidi.
+pub fn visualRun(s: []const u8, rtl: bool) ?[]const u8 {
+    if (!rtl) return if (hasRtl(s)) cached(s, .ltr) else null;
+    if (!hasRtl(s) and !rtlWork(s)) return null;
+    return cached(s, .rtl);
+}
+
+/// Texto sem letra RTL num trecho da direita para a esquerda: só muda se tiver mais de um
+/// pedaço (caractere com as marcas e os complementos de emoji dele) ou algo com espelho.
+fn rtlWork(s: []const u8) bool {
+    var i: usize = 0;
+    var clusters: usize = 0;
+    var cl: Clusters = .{};
+    while (i < s.len) {
+        const cp = decode(s, &i);
+        var m: Char = 0;
+        if (fribidi_get_mirror_char(cp, &m) != 0) return true;
+        if (cl.starts(cp, fribidi_get_bidi_type(cp))) clusters += 1;
+        if (clusters > 1) return true;
+    }
+    return false;
+}
+
+fn cached(s: []const u8, dir: Dir) ?[]const u8 {
+    if (s.len > cache_in) return convert(s, dir);
+    const h = std.hash.Wyhash.hash(@intFromEnum(dir), s);
     const e = &cache[@intCast(h % cache.len)];
-    if (e.in_len == s.len and e.hash == h and std.mem.eql(u8, e.in[0..s.len], s)) return e.out[0..e.out_len];
-    const v = convert(s) orelse return null;
+    if (e.in_len == s.len and e.hash == h and e.dir == dir and std.mem.eql(u8, e.in[0..s.len], s)) return e.out[0..e.out_len];
+    const v = convert(s, dir) orelse return null;
     if (v.len <= cache_out) {
-        e.* = .{ .hash = h, .in_len = @intCast(s.len), .out_len = @intCast(v.len) };
+        e.* = .{ .hash = h, .dir = dir, .in_len = @intCast(s.len), .out_len = @intCast(v.len) };
         @memcpy(e.in[0..s.len], s);
         @memcpy(e.out[0..v.len], v);
     }
     return v;
 }
 
-fn convert(s: []const u8) ?[]const u8 {
+fn convert(s: []const u8, dir: Dir) ?[]const u8 {
     var n: usize = 0;
     var it = std.mem.splitScalar(u8, s, '\n');
     var first = true;
@@ -197,19 +241,19 @@ fn convert(s: []const u8) ?[]const u8 {
             n += 1;
         }
         first = false;
-        n = line(ln, n) orelse return null;
+        n = (if (dir == .rtl) rtlLine(ln, n) else line(ln, n, if (dir == .ltr) par_ltr else par_on)) orelse return null;
     }
     return out[0..n];
 }
 
 /// Escreve a linha `ln` em `out[at..]`; devolve onde parou, ou null se `out` encheu.
-fn line(ln: []const u8, at: usize) ?usize {
+fn line(ln: []const u8, at: usize, base_in: ParType) ?usize {
     const len = load(ln) orelse return copy(ln, at);
     if (len == 0) return at;
     const l: Index = @intCast(len);
     fribidi_get_bidi_types(&cps, l, &types);
-    var base: ParType = par_on;
-    if (allRtl(types[0..len])) {
+    var base: ParType = base_in;
+    if (base_in != par_ltr and allRtl(types[0..len])) {
         // Palavra só de letras RTL (o caso comum, palavra por palavra numa mensagem): todas no
         // nível 1, sem precisar montar as listas do algoritmo.
         @memset(levels[0..len], 1);
@@ -225,6 +269,60 @@ fn line(ln: []const u8, at: usize) ?usize {
     if (fribidi_reorder_line(flags, &types, l, 0, base, &levels, &cps, null) == 0) return copy(ln, at);
     return emit(cps[0..len], at);
 }
+
+/// Um trecho todo no mesmo nível ímpar: o árabe moldado, o que tem espelho espelhado e os
+/// pedaços (letra com as marcas dela, emoji com os complementos) do último para o primeiro,
+/// cada um com a ordem de dentro (regras L2 e L3 do UAX #9, sem desfazer um emoji).
+fn rtlLine(ln: []const u8, at: usize) ?usize {
+    const len = load(ln) orelse return copy(ln, at);
+    if (len == 0) return at;
+    const l: Index = @intCast(len);
+    fribidi_get_bidi_types(&cps, l, &types);
+    // Onde começa cada pedaço, antes de moldar (a forma moldada não muda a classe).
+    var cl: Clusters = .{};
+    for (0..len) |i| starts[i] = cl.starts(cps[i], types[i]);
+    @memset(levels[0..len], 1);
+    fribidi_get_joining_types(&cps, l, &props);
+    fribidi_join_arabic(&types, l, &levels, &props);
+    fribidi_shape(flags, &levels, l, &props, &cps);
+    var n = at;
+    var end = len;
+    while (end > 0) {
+        var start = end - 1;
+        while (start > 0 and !starts[start]) start -= 1;
+        n = emit(cps[start..end], n) orelse return null;
+        end = start;
+    }
+    return n;
+}
+var starts: [max_line]bool = undefined;
+
+/// Os pedaços que não se separam ao inverter um trecho: a letra com as marcas que vão em cima
+/// dela, e o emoji com o seletor de variação, o ZWJ e o que vem depois dele, o tom de pele, a
+/// tecla (1️⃣) e as letras escondidas; uma bandeira são duas letras regionais.
+const Clusters = struct {
+    prev: u32 = 0,
+    /// A última letra regional abriu um par (a próxima fecha a bandeira).
+    ri_open: bool = false,
+
+    fn starts(c: *Clusters, cp: u32, t: CharType) bool {
+        const prev = c.prev;
+        c.prev = cp;
+        const ri = cp >= 0x1F1E6 and cp <= 0x1F1FF;
+        if (ri) {
+            const closes = c.ri_open and prev >= 0x1F1E6 and prev <= 0x1F1FF;
+            c.ri_open = !closes;
+            return !closes;
+        }
+        c.ri_open = false;
+        if (prev == 0) return true;
+        if (t & mask_nsm != 0 or prev == 0x200D or cp == 0x200D) return false;
+        return switch (cp) {
+            0xFE00...0xFE0F, 0x20E3, 0x1F3FB...0x1F3FF, 0xE0020...0xE007F, 0xE0100...0xE01EF => false,
+            else => true,
+        };
+    }
+};
 
 /// Só letras fortes RTL e marcas que vão em cima delas, começando por uma letra.
 fn allRtl(list: []const CharType) bool {
@@ -252,7 +350,7 @@ fn copy(ln: []const u8, at: usize) ?usize {
 
 /// Invisíveis que não vão para a tela: o ImGui não os conhece e desenharia o "?".
 fn invisible(cp: u32) bool {
-    return cp == fill or (cp >= 0x200B and cp <= 0x200F) or (cp >= 0x202A and cp <= 0x202E) or (cp >= 0x2060 and cp <= 0x206F);
+    return cp == fill or cp == 0x061C or (cp >= 0x200B and cp <= 0x200F) or (cp >= 0x202A and cp <= 0x202E) or (cp >= 0x2060 and cp <= 0x206F);
 }
 
 fn emit(list: []const Char, at: usize) ?usize {
@@ -268,8 +366,8 @@ fn emit(list: []const Char, at: usize) ?usize {
 
 // --- Palavras de uma mensagem -----------------------------------------------------------
 
-/// O que uma palavra é para a ordem da linha (ui/rich.zig desenha palavra por palavra: cada
-/// uma se molda sozinha em `visual`, e a ordem entre elas sai daqui).
+/// A direção de um pedaço que entra no parágrafo como um caractere só (menção, emoji, código,
+/// link solto: ui/rich_plan.zig), pela primeira letra forte dele.
 pub const Class = enum(u8) {
     /// Pontuação, emoji, menção: segue as vizinhas.
     neutral,
@@ -281,7 +379,7 @@ pub const Class = enum(u8) {
     arabic_number,
 
     /// Um caractere que o FriBidi classifica igual à palavra toda.
-    fn stand(c: Class) Char {
+    pub fn stand(c: Class) Char {
         return switch (c) {
             .neutral => 0xFFFC,
             .ltr => 'a',
@@ -314,61 +412,21 @@ pub fn classOf(s: []const u8) Class {
     return num;
 }
 
-/// Algum dos pedaços é RTL? (Só aí a linha precisa de outra ordem.)
-pub fn anyRtl(cls: []const Class) bool {
-    for (cls) |c| if (c == .rtl or c == .arabic) return true;
-    return false;
-}
-
-var owner: [max_line]u16 = undefined;
-var map: [max_line]Index = undefined;
-
-/// Ordem visual das palavras de um parágrafo: `cls[i]` é a classe da palavra `i`, `gap[i]` diz
-/// se há espaço entre ela e a anterior e `starts[i]`, se ela abre uma linha (a quebra já foi
-/// feita com as larguras moldadas). Escreve em `order`, linha por linha, os índices da
-/// esquerda para a direita, e devolve a direção do parágrafo (true: da direita para a
-/// esquerda). Null se não deu: o parágrafo fica na ordem lógica.
-pub fn orderWords(cls: []const Class, gap: []const bool, starts: []const bool, order: []u16) ?bool {
-    const n = cls.len;
-    if (n == 0 or n > order.len or n > std.math.maxInt(u16)) return null;
-    // Um caractere por palavra e um espaço onde havia espaço (na quebra de linha, nenhum).
-    var len: usize = 0;
-    var line_off: [max_line]u16 = undefined;
-    var lines: usize = 0;
-    for (cls, 0..) |c, i| {
-        if (len + 2 > max_line) return null;
-        if (i == 0 or starts[i]) {
-            line_off[lines] = @intCast(len);
-            lines += 1;
-        } else if (gap[i]) {
-            cps[len] = ' ';
-            owner[len] = std.math.maxInt(u16);
-            len += 1;
-        }
-        cps[len] = c.stand();
-        owner[len] = @intCast(i);
-        len += 1;
-    }
+/// Os níveis do algoritmo bidirecional (UAX #9) de um parágrafo inteiro, na ordem lógica:
+/// `list` são os caracteres (um pedaço que não se divide, como uma menção, entra como um
+/// caractere só, da classe dele: ver `Class.stand`) e `lv` recebe o nível de cada um, com o
+/// par de parênteses resolvido junto (N0). A direção do parágrafo vem da primeira letra forte
+/// (P2 e P3): número, pontuação, espaço, emoji e marcador de lista não decidem. Devolve se ele
+/// é da direita para a esquerda, ou null se não deu.
+pub fn paragraphLevels(list: []const Char, lv: []Level) ?bool {
+    const len = list.len;
+    if (len == 0 or len > max_line or lv.len < len) return null;
     const l: Index = @intCast(len);
-    fribidi_get_bidi_types(&cps, l, &types);
-    @memset(brackets[0..len], 0);
+    fribidi_get_bidi_types(list.ptr, l, &types);
+    fribidi_get_bracket_types(list.ptr, l, &types, &brackets);
     var base: ParType = par_on;
     arena_used = 0;
-    if (fribidi_get_par_embedding_levels_ex(&types, &brackets, l, &base, &levels) == 0) return null;
-    for (map[0..len], 0..) |*m, i| m.* = @intCast(i);
-    var k: usize = 0;
-    for (0..lines) |li| {
-        const from = line_off[li];
-        const to = if (li + 1 < lines) line_off[li + 1] else len;
-        if (fribidi_reorder_line(flags, &types, @intCast(to - from), from, base, &levels, null, &map) == 0) return null;
-        for (map[from..to]) |m| {
-            const w = owner[@intCast(m)];
-            if (w == std.math.maxInt(u16)) continue;
-            order[k] = w;
-            k += 1;
-        }
-    }
-    if (k != n) return null;
+    if (fribidi_get_par_embedding_levels_ex(&types, &brackets, l, &base, lv.ptr) == 0) return null;
     return base & mask_rtl != 0;
 }
 
@@ -433,7 +491,7 @@ test "atalho da palavra toda RTL dá o mesmo que o algoritmo inteiro" {
         var with_space: [64]u8 = undefined;
         @memcpy(with_space[0..w.len], w);
         with_space[w.len] = ' ';
-        const full = convert(with_space[0 .. w.len + 1]).?;
+        const full = convert(with_space[0 .. w.len + 1], .auto).?;
         try std.testing.expectEqualStrings(full[1..], a[0..fast.len]);
     }
 }
@@ -464,22 +522,56 @@ test "classe das palavras" {
     try std.testing.expect(!baseRtl("abc שלום"));
 }
 
-test "ordem das palavras numa linha" {
-    var order: [8]u16 = undefined;
-    // "السلام عليكم ورحمة الله": tudo árabe, a linha inteira ao contrário.
-    try std.testing.expectEqual(@as(?bool, true), orderWords(&.{ .arabic, .arabic, .arabic, .arabic }, &.{ false, true, true, true }, &.{ true, false, false, false }, &order));
-    try std.testing.expectEqualSlices(u16, &.{ 3, 2, 1, 0 }, order[0..4]);
-    // "abc שלום עולם def": só o trecho hebraico vira.
-    try std.testing.expectEqual(@as(?bool, false), orderWords(&.{ .ltr, .rtl, .rtl, .ltr }, &.{ false, true, true, true }, &.{ true, false, false, false }, &order));
-    try std.testing.expectEqualSlices(u16, &.{ 0, 2, 1, 3 }, order[0..4]);
-    // "عمري 25 سنة": o número fica no meio, na ordem dele.
-    try std.testing.expectEqual(@as(?bool, true), orderWords(&.{ .arabic, .number, .arabic }, &.{ false, true, true }, &.{ true, false, false }, &order));
-    try std.testing.expectEqualSlices(u16, &.{ 2, 1, 0 }, order[0..3]);
-    // Parágrafo RTL quebrado em duas linhas: a direção é a do parágrafo, não a de cada linha.
-    try std.testing.expectEqual(@as(?bool, true), orderWords(&.{ .rtl, .rtl, .ltr, .ltr, .rtl }, &.{ false, true, true, true, true }, &.{ true, false, true, false, false }, &order));
-    try std.testing.expectEqualSlices(u16, &.{ 1, 0, 4, 2, 3 }, order[0..5]);
-    // "ouvindo agora: فيروز - كيفك إنت 🎶": o traço entre dois trechos árabes vai com eles, e o
-    // emoji do fim fica no fim do parágrafo da esquerda para a direita.
-    try std.testing.expectEqual(@as(?bool, false), orderWords(&.{ .ltr, .ltr, .arabic, .neutral, .arabic, .arabic, .neutral }, &.{ false, true, true, true, true, true, true }, &.{ true, false, false, false, false, false, false }, &order));
-    try std.testing.expectEqualSlices(u16, &.{ 0, 1, 5, 4, 3, 2, 6 }, order[0..7]);
+fn levelsOf(text: []const u8, lv: []Level) ?bool {
+    var list: [256]Char = undefined;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) : (n += 1) list[n] = decode(text, &i);
+    return paragraphLevels(list[0..n], lv[0..n]);
+}
+
+test "níveis do parágrafo: a direção é a da primeira letra forte" {
+    var lv: [128]Level = undefined;
+    // O "؟" no fim de uma frase árabe com inglês no meio fica com o árabe (nível 1), não com
+    // o inglês (2), mesmo grudado nele.
+    const q = "مساء الخير what is the problem؟";
+    try std.testing.expectEqual(@as(?bool, true), levelsOf(q, &lv));
+    try std.testing.expectEqual(@as(Level, 1), lv[0]);
+    try std.testing.expectEqual(@as(Level, 2), lv[11]); // w
+    try std.testing.expectEqual(@as(Level, 2), lv[29]); // m
+    try std.testing.expectEqual(@as(Level, 1), lv[30]); // ؟
+    // Número, ponto, traço e marcador antes do texto não decidem a direção.
+    for ([_][]const u8{ "1.يمنع تجاهل الإدارة.", "12- السلام عليكم", "• 11- لا تكرر", "(12) שלום" }) |t| {
+        try std.testing.expectEqual(@as(?bool, true), levelsOf(t, &lv));
+    }
+    // "12- السلام": o 12 fica no nível 2 e o traço no 1 (vai para a esquerda do número).
+    _ = levelsOf("12- السلام", &lv);
+    try std.testing.expectEqualSlices(Level, &.{ 2, 2, 1, 1 }, lv[0..4]);
+    try std.testing.expectEqual(@as(?bool, false), levelsOf("abc שלום", &lv));
+    try std.testing.expectEqual(@as(?bool, false), levelsOf("123 !?", &lv));
+}
+
+test "pedaço num nível só: espelho, ordem e emoji inteiro" {
+    // Todo RTL: igual à linha inteira.
+    var a: [64]u8 = undefined;
+    const whole = visual("(تجربة)").?;
+    @memcpy(a[0..whole.len], whole);
+    try std.testing.expectEqualStrings(a[0..whole.len], visualRun("(تجربة)", true).?);
+    // Parêntese sozinho num trecho RTL sai espelhado; ponto, traço e um emoji, como estão.
+    try std.testing.expectEqualStrings(")", visualRun("(", true).?);
+    try std.testing.expectEqualStrings("]!", visualRun("![", true).?);
+    try std.testing.expect(visualRun(".", true) == null);
+    try std.testing.expect(visualRun("-", true) == null);
+    try std.testing.expect(visualRun("✔️", true) == null);
+    try std.testing.expect(visualRun("👍🏽", true) == null);
+    try std.testing.expect(visualRun("👩‍💻", true) == null);
+    // Dois emojis num trecho RTL trocam de lugar, mas cada um fica inteiro.
+    try std.testing.expectEqualStrings("🇵🇹🇧🇷", visualRun("🇧🇷🇵🇹", true).?);
+    // (O ZWJ não vai para a tela: o ImGui desenha um emoji de cada vez.)
+    try std.testing.expectEqualStrings("👩💻👍🏽", visualRun("👍🏽👩‍💻", true).?);
+    // As marcas do árabe continuam depois da letra delas.
+    try std.testing.expectEqualStrings(visual("مَرْحَبًا").?, visualRun("مَرْحَبًا", true).?);
+    // Nível par: o número e o latino como estão.
+    try std.testing.expect(visualRun("12", false) == null);
+    try std.testing.expect(visualRun("problem", false) == null);
 }

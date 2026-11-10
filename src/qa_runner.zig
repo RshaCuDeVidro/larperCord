@@ -2844,6 +2844,13 @@ const ops = [_]Op{
 
 /// Cenários curtos para isolar um problema: QA_SCENE=ctrl|nome|card
 /// Só a leitura, as fixadas e os links, no tema que estiver (QA_SUITE=leitura).
+/// Só o texto da direita para a esquerda, no tema que estiver (QA_SUITE=rtl): a mesma parte
+/// da bateria por tema, para conferir o árabe sem rodar a bateria inteira.
+const ops_rtl = [_]Op{
+    s("início"),
+    expect("app conecta e carrega o histórico", ready),
+} ++ @import("qa_rtl.zig").ops_theme;
+
 const ops_leitura = [_]Op{
     s("início"),
     expect("app conecta e carrega o histórico", ready),
@@ -3262,6 +3269,7 @@ fn script() []const Op {
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "login")) return &ops_login;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "voice")) return &ops_voice;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "leitura")) return &ops_leitura;
+    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "rtl")) return &ops_rtl;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "voz")) return &ops_voz;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "chamada")) return &ops_chamada;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "lsp")) return &ops_lsp;

@@ -134,7 +134,7 @@ fn textOpts(ctx: *const d.Ctx, g: Geo, self_bubble: bool) rich.Opts {
 fn textH(g: Geo, m: *const StoredMessage, t: rich.Measure) f32 {
     if (m.msg.content.len == 0 and (m.msg.attachments.len > 0 or m.msg.embeds.len > 0)) return 0;
     var h = t.h;
-    if (m.msg.edited and t.last_x + editedW(g) > g.wrap) h += g.line_h;
+    if ((m.msg.edited or m.deleted) and t.last_x + markW(g, m) > g.wrap) h += g.line_h;
     return h;
 }
 
@@ -171,6 +171,16 @@ fn editedLabel() []const u8 {
 
 fn editedW(g: Geo) f32 {
     return d.width(g.fam.get(.regular), 11, editedLabel()) + 6;
+}
+
+/// O rótulo depois do texto: "(apagada)" no registro de mensagens, senão "(editado)".
+fn markLabel(m: *const StoredMessage) []const u8 {
+    return if (m.deleted) i18n.tr("(apagada)", "(deleted)") else editedLabel();
+}
+
+/// O lugar que o rótulo ocupa depois do texto (com o espaço antes dele).
+fn markW(g: Geo, m: *const StoredMessage) f32 {
+    return d.width(g.fam.get(.regular), 11, markLabel(m)) + 6;
 }
 
 fn measure(ctx: *d.Ctx, g: Geo, m: *StoredMessage, flags: u8) f32 {
@@ -222,7 +232,9 @@ fn measure(ctx: *d.Ctx, g: Geo, m: *StoredMessage, flags: u8) f32 {
     m.layout_w = g.wrap;
     m.layout_variant = key;
     m.height = h;
-    m.natural_w = @max(@max(t.w, if (m.msg.edited) t.last_x + editedW(g) else 0), att.blockWidth(m.msg.attachments, g.wrap));
+    // O balão cabe o texto e o rótulo depois dele: "(editado)" ou, no registro, "(apagada)"
+    // (numa linha alinhada à direita, ele fica antes dela, à esquerda, dentro do balão).
+    m.natural_w = @max(@max(t.w, if (m.msg.edited or m.deleted) t.last_x + markW(g, m) else 0), att.blockWidth(m.msg.attachments, g.wrap));
     if (m.msg.embeds.len > 0) m.natural_w = @max(m.natural_w, @min(g.wrap, 520));
     if (emb.hasInvite(m)) m.natural_w = @max(m.natural_w, @min(g.wrap, emb.invite_w));
     if (m.msg.thread != 0) m.natural_w = @max(m.natural_w, @min(g.wrap, threads.card_w));
@@ -1557,11 +1569,11 @@ fn textMarks(m: *const StoredMessage, x: f32, y: f32, col_w: f32, t: rich.Measur
 /// O "(editado)" ou "(apagada)" depois do texto. Devolve onde ele ficou na tela.
 fn editedMark(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *const StoredMessage, x: f32, y: f32, t: rich.Measure) ?d.Rect {
     if (!m.msg.edited and !m.deleted) return null;
-    const ew = editedW(g);
+    const ew = markW(g, m);
     const wraps = t.last_x + ew > g.wrap;
     // Registro de mensagens: "(apagada)" em vermelho, e o texto original
     // de uma editada aparece com o mouse em cima do "(editado)".
-    const lbl = if (m.deleted) i18n.tr("(apagada)", "(deleted)") else editedLabel();
+    const lbl = markLabel(m);
     const lw = d.width(g.fam.get(.regular), 11, lbl);
     // Última linha alinhada à direita (árabe, hebraico): o rótulo vem antes dela, à esquerda,
     // ou embaixo, encostado na borda direita.
@@ -1571,6 +1583,7 @@ fn editedMark(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *const StoredMessage, x
     const ey = y + t.h - g.line_h + (if (wraps) g.line_h else 0);
     const col = if (m.deleted) ctx.col(.danger) else if (m.original != null) ctx.col(.muted) else ctx.col(.faint);
     const lr: d.Rect = .{ .x = ex, .y = ey, .w = lw, .h = g.line_h };
+    qa.mark(lr, "edited:{d}", .{m.msg.id});
     d.text(dl, g.fam.get(.regular), 11, ex, ey + (g.line_h - 13) / 2, col, lbl);
     if (m.original) |o| if (ctx.hovering(lr)) {
         var buf: [200]u8 = undefined;
