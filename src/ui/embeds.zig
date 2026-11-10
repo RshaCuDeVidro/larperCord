@@ -142,9 +142,9 @@ pub fn appendText(ctx: *d.Ctx, out: *std.ArrayList(u8), m: *const StoredMessage,
                 const p0: u32 = @intCast(@intFromPtr(sp.text.ptr) - @intFromPtr(t.ptr));
                 const p1 = p0 + @as(u32, @intCast(sp.text.len));
                 if (p1 <= r[0] or p0 >= r[1]) continue;
-                if (sp.mention != .none or sp.emoji != 0 or sp.flags.bullet) {
+                if (sp.mention != .none or sp.emoji != 0 or sp.flags.bullet or sp.flags.number) {
                     self.out.appendSlice(g, rich.label(self.ctx.store, sp, &buf)) catch {};
-                    if (sp.flags.bullet) self.out.append(g, ' ') catch {};
+                    if (sp.flags.bullet or sp.flags.number) self.out.append(g, ' ') catch {};
                 } else self.out.appendSlice(g, t[@max(p0, r[0])..@min(p1, r[1])]) catch {};
                 if (sp.flags.block) self.out.append(g, '\n') catch {};
             }

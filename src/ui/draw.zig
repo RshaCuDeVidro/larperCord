@@ -199,9 +199,32 @@ pub fn width(font: *c.ImFont, size: f32, s: []const u8) f32 {
     return c.ImFont_CalcTextSizeAEx(font, fontPx(size), std.math.floatMax(f32), 0, b, b + t.len, null).x;
 }
 
+/// A largura de um trecho numa direção já resolvida (ver `textDir`).
+pub fn widthRun(font: *c.ImFont, size: f32, s: []const u8, dir: bidi.Dir) f32 {
+    if (s.len == 0) return 0;
+    const t = visualDir(s, dir) orelse s;
+    const b: [*]const u8 = t.ptr;
+    return c.ImFont_CalcTextSizeAEx(font, fontPx(size), std.math.floatMax(f32), 0, b, b + t.len, null).x;
+}
+
+fn visualDir(s: []const u8, dir: bidi.Dir) ?[]const u8 {
+    return switch (dir) {
+        .auto => bidi.visual(s),
+        .ltr => bidi.visualRun(s, false),
+        .rtl => bidi.visualRun(s, true),
+    };
+}
+
 pub fn text(dl: *c.ImDrawList, font: *c.ImFont, size: f32, x: f32, y: f32, color: Rgba, s: []const u8) void {
+    textDir(dl, font, size, x, y, color, s, .auto);
+}
+
+/// Um pedaço de linha cuja direção o algoritmo do parágrafo inteiro já resolveu (ui/rich.zig):
+/// `rtl` sai de trás para frente e espelhado mesmo sem letra RTL (o "(" e o "؟" entre o árabe),
+/// `ltr` como está. `auto` decide pela primeira letra forte de cada linha.
+pub fn textDir(dl: *c.ImDrawList, font: *c.ImFont, size: f32, x: f32, y: f32, color: Rgba, s: []const u8, dir: bidi.Dir) void {
     if (s.len == 0 or color.a <= 0.001) return;
-    const t = bidi.visual(s) orelse s;
+    const t = visualDir(s, dir) orelse s;
     const b: [*]const u8 = t.ptr;
     const sz = fontPx(size);
     // Mantém o texto centrado na linha quando a escala muda.

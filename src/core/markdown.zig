@@ -26,7 +26,9 @@ pub const Flags = packed struct(u16) {
     nested: bool = false,
     /// Este trecho é o próprio marcador (`-` ou `*`): aparece como "•".
     bullet: bool = false,
-    _: u1 = 0,
+    /// Este trecho é o número de um item de lista numerada (`1.`): fica na margem, antes do
+    /// texto do item, como o "•" (ui/rich.zig).
+    number: bool = false,
 };
 
 pub const Mention = union(enum) {
@@ -367,6 +369,7 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
                 flags.nested = l.indent >= 2;
                 var f = flags;
                 f.bullet = l.bullet;
+                f.number = !l.bullet;
                 try out.append(gpa, .{ .text = rest[l.indent .. l.indent + l.mark], .flags = f });
                 i += l.len;
                 run_start = i;
@@ -723,6 +726,19 @@ test "barra invertida: o caractere aparece sem a barra, fora do código" {
     try std.testing.expect(kept[1].flags.code);
     try std.testing.expectEqualStrings("x\\*y", kept[3].text);
     try std.testing.expect(kept[3].flags.block);
+}
+
+test "número de lista numerada é o marcador do item" {
+    const a = std.testing.allocator;
+    const sp = try parse(a, "1. Hello\n12. السلام عليكم\n1.sem espaço não é lista");
+    defer a.free(sp);
+    try std.testing.expectEqualStrings("1.", sp[0].text);
+    try std.testing.expect(sp[0].flags.number and !sp[0].flags.bullet and sp[0].flags.list);
+    try std.testing.expectEqualStrings("Hello", sp[1].text);
+    try std.testing.expect(!sp[1].flags.number and sp[1].flags.list);
+    try std.testing.expectEqualStrings("12.", sp[3].text);
+    try std.testing.expect(sp[3].flags.number);
+    try std.testing.expect(!sp[sp.len - 1].flags.list and !sp[sp.len - 1].flags.number);
 }
 
 test "spoiler e riscado" {
