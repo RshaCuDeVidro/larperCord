@@ -1,16 +1,5 @@
 # What changed in each version
 
-## 0.6.5
-
-**Voice**
-- On Windows, push-to-talk works while another window is focused, like a game, from helpik1's request (#14). The app reads the key without a keyboard hook, and the other app still gets it. On Linux it still needs the larperCord window focused.
-
-**Text in any language**
-- Russian interface, translated by pIat0n (#15, #16). Pick "Русский" in Settings → Language, or the app follows a Russian system. Dates use Russian month and weekday names.
-
-**Tray**
-- On KDE and GNOME with Wayland, clicking the tray icon brings the window to the front when it's behind another window or minimized. Before, KDE only marked it as wanting attention and GNOME showed an "is ready" notice.
-
 ## 0.6.4
 
 **Conversations**
@@ -28,7 +17,15 @@
 - Long GIFs, like Klipy's, play on their own again, not only while the mouse is over them. This broke in 0.6.2.
 - Embed images that Discord's media proxy won't resize, like X/Twitter card images, now load from the original. With the debug log on, it says why an image failed.
 
+**Voice**
+- On Windows, push-to-talk works while another window is focused, like a game, from helpik1's request (#14). The app reads the key without a keyboard hook, and the other app still gets it. On Linux it still needs the larperCord window focused.
+
+**Tray**
+- On KDE and GNOME with Wayland, clicking the tray icon brings the window to the front when it's behind another window or minimized. Before, KDE only marked it as wanting attention and GNOME showed an "is ready" notice.
+
 **Text in any language**
+- Russian interface, translated by pIat0n (#15, #16). Pick "Русский" in Settings → Language, or the app follows a Russian system. Dates use Russian month and weekday names.
+- Discord timestamps show in Japanese and Russian, including relative ones like "3日前" and "3 дня назад", with Russian plural forms. Before they came out in English.
 - More Arabic and Hebrew fixes, from majd-tqe's report (#9). Embed titles, authors and field names that start in Arabic or Hebrew end at the right edge of the card, like the description.
 - A line that starts with a number, like "1." or "12-", is right to left, with the number and its dot or dash in the right order.
 - Brackets are mirrored, and "؟" and other punctuation land in the right place when the sentence has English in it.
