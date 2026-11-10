@@ -16,6 +16,12 @@ const days_en = [_][]const u8{ "Sunday", "Monday", "Tuesday", "Wednesday", "Thur
 const days_ja = [_][]const u8{ "日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日" };
 const days_ru = [_][]const u8{ "воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота" };
 
+/// O `<t:…>` em nanossegundos, como o SDL_Time conta: null depois de 2262, que
+/// não cabe num i64 (o Discord aceita até o ano 5138).
+pub fn sdlTime(unix: i64) ?i64 {
+    return std.math.mul(i64, unix, std.time.ns_per_s) catch null;
+}
+
 /// Os estilos de data e hora (t, T, d, D, f, F); `R` é `relative`.
 pub fn absolute(buf: []u8, style: u8, p: Parts, lang: Lang) []const u8 {
     var w = std.Io.Writer.fixed(buf);
@@ -147,6 +153,13 @@ test "relativo em japonês, inglês e português" {
     try t.expectEqualStrings("há 1 dia", relative(&buf, -86400, .pt));
     try t.expectEqualStrings("em 2 horas", relative(&buf, 2 * 3600, .pt));
     try t.expectEqualStrings("em 0 segundos", relative(&buf, 0, .pt));
+}
+
+test "<t:…> em nanossegundos: até 2262, depois null" {
+    try t.expectEqual(@as(?i64, 1_800_000_000 * std.time.ns_per_s), sdlTime(1_800_000_000));
+    try t.expectEqual(@as(?i64, null), sdlTime(9_999_999_999));
+    try t.expectEqual(@as(?i64, null), sdlTime(100_000_000_000));
+    try t.expect(sdlTime(@divTrunc(std.math.maxInt(i64), std.time.ns_per_s)) != null);
 }
 
 test "data e hora do <t:…> em cada idioma" {

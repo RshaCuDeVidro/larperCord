@@ -927,7 +927,9 @@ fn stampReadable(_: *App) bool {
             if (style == 'R' and (l == .ja or l == .ru) and (std.mem.indexOf(u8, t, " ago") != null or std.mem.startsWith(u8, t, "in "))) return false;
         }
     }
-    return true;
+    // Depois de 2262 a data por extenso não cabe no relógio do SDL: "?", sem estourar.
+    var far: [96]u8 = undefined;
+    return std.mem.eql(u8, rich.stampText(&far, 9_999_999_999 << 8 | 'F'), "?");
 }
 fn sendLink(app: *App) void {
     _ = inject(app, geral, 1001, "olha https://exemplo.com/pagina.");

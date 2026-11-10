@@ -250,13 +250,13 @@ pub const LocalTime = struct { year: i32, month: u8, day: u8, hour: u8, minute: 
 /// Segundos a somar ao UTC para ter a hora local nesse instante.
 pub fn utcOffset(unix_s: i64) i64 {
     var dt: c.SDL_DateTime = undefined;
-    _ = c.SDL_TimeToDateTime(unix_s * 1_000_000_000, &dt, true);
+    _ = c.SDL_TimeToDateTime(unix_s *| 1_000_000_000, &dt, true);
     return dt.utc_offset;
 }
 
 pub fn localTime(unix_s: i64) LocalTime {
     var dt: c.SDL_DateTime = undefined;
-    _ = c.SDL_TimeToDateTime(unix_s * 1_000_000_000, &dt, true);
+    _ = c.SDL_TimeToDateTime(unix_s *| 1_000_000_000, &dt, true);
     // Índice do dia no fuso local, para comparar "hoje"/"ontem".
     const offset: i64 = dt.utc_offset;
     return .{

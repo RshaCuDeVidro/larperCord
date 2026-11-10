@@ -217,7 +217,9 @@ pub fn stampText(buf: []u8, value: u64) []const u8 {
     const st = md.stampOf(value);
     if (st.style == 'R') return relativeText(buf, st.unix);
     var dt: c.SDL_DateTime = undefined;
-    if (!c.SDL_TimeToDateTime(st.unix * 1_000_000_000, &dt, true)) return "?";
+    // Depois de 2262 o SDL_Time não cabe: "?", e o relativo (R) continua valendo.
+    const ns = horario.sdlTime(st.unix) orelse return "?";
+    if (!c.SDL_TimeToDateTime(ns, &dt, true)) return "?";
     // Sem sinal: com largura, o formato poria um "+" na frente de um número com sinal.
     return horario.absolute(buf, st.style, .{
         .year = @intCast(dt.year),
