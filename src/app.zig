@@ -188,6 +188,9 @@ pub const App = struct {
     /// Muita memória acabou de ser solta (READY, rajada de imagens): o tique
     /// do relógio devolve ao sistema.
     trim_wanted: std.atomic.Value(bool) = .init(false),
+    /// O tique do relógio acordou só porque o minuto virou (sem RAM nova para
+    /// mostrar): se um quadro já saiu neste minuto, não precisa de outro.
+    minute_tick: std.atomic.Value(bool) = .init(false),
     /// Guardar o token quando o Discord aceitar (o "Lembrar" do login).
     save_token: bool = false,
     /// O proxy do Discord da última vez que o quadro olhou (net/proxy.zig `generation`).
@@ -858,6 +861,7 @@ pub const App = struct {
                 @atomicStore(u32, &app.stats.heap_free_kb, h.free_kb, .monotonic);
             };
         }
+        if (app.opts.stats) std.log.info("laço: {d} voltas", .{prof_turns.load(.monotonic)});
         const S = struct {
             var last_minute: i64 = 0;
         };
@@ -866,6 +870,7 @@ pub const App = struct {
         S.last_minute = minute;
         if (kb / 100 != prev / 100 or new_minute) {
             @atomicStore(u32, &app.stats.ram_kb, kb, .monotonic);
+            if (kb / 100 == prev / 100) app.minute_tick.store(true, .release);
             platform.Window.wake(app.win.wake_type, .tick);
         }
         return interval;
@@ -1177,6 +1182,15 @@ pub const App = struct {
 
     fn sendSubscribe(app: *App, sr: SubReq) void {
         app.cmd(.{ .subscribe_guild = .{ .guild = sr.guild, .channel = sr.channel, .thread = sr.thread } });
+    }
+
+    /// O tempo das calls (Aparência → Canais de voz): pede ao Discord quando começou
+    /// a call de cada canal de voz do servidor aberto (op 43), como o cliente oficial,
+    /// uma vez por servidor e sessão (core/store.zig `askChannelInfo`). Trocar de
+    /// canal não pede de novo; uma sessão nova (READY) sim. Desligado, nada sai.
+    fn askChannelInfo(app: *App) void {
+        if (!app.st.settings.voice_timer or !app.store.ready or app.store.connection != .ready) return;
+        if (app.store.askChannelInfo(app.st.guild)) app.cmd(.{ .channel_info = app.st.guild });
     }
 
     /// Dá para mandar neste canal agora? Não dando (castigo, permissão, modo
@@ -2566,6 +2580,11 @@ pub const App = struct {
     var prof_why: [7]u32 = @splat(0);
     var prof_events: [8]struct { t: u32 = 0, n: u32 = 0 } = @splat(.{});
     var prof_actions: std.enums.EnumArray(std.meta.Tag(ev.Action), u32) = .initFill(0);
+    /// --stats: quantas vezes o laço acordou (evento ou prazo), desde o começo. O tique do
+    /// relógio, que roda de 2 em 2 s na thread dele, escreve no registro: contar não acorda
+    /// ninguém. (No driver offscreen o SDL espera de 1 em 1 ms por dentro; isto conta só as
+    /// vezes em que a espera devolveu.)
+    var prof_turns: std.atomic.Value(u64) = .init(0);
 
     fn profEvent(t: u32) void {
         for (&prof_events) |*pe| if (pe.n == 0 or pe.t == t) {
@@ -2648,16 +2667,24 @@ pub const App = struct {
             var due = @min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due());
             if (bg_dirty) due = @min(due, last_frame_ms + bg_frame_ms);
             if (mouse.wanted()) due = @min(due, last_frame_ms + ritmo.MousePace.interval_ms);
-            const wait = due -| now();
+            // O tempo das calls (ui/voice_timer.zig) marca a virada do segundo ou do
+            // minuto no relógio: até lá, um sono só.
+            const t_wait = now();
+            const nap = anim.napFor(if (due == std.math.maxInt(i64)) null else due -| t_wait, if (anim.clock_wake_ms == std.math.maxInt(i64)) null else anim.clock_wake_ms -| t_wait);
+            due = @min(due, anim.clock_wake_ms);
+            const wait = due -| t_wait;
             var got = if (busy or wait <= 0)
                 c.SDL_PollEvent(&e)
-            else if (due != std.math.maxInt(i64))
-                c.SDL_WaitEventTimeout(&e, @intCast(anim.sleepFor(wait)))
+            else if (nap) |ms|
+                c.SDL_WaitEventTimeout(&e, @intCast(ms))
             else
                 c.SDL_WaitEvent(&e);
+            if (app.opts.stats) _ = prof_turns.fetchAdd(1, .monotonic);
             // Acordou só porque o teto da espera venceu (ver anim.sleepFor).
             const timed_out = !got and !busy and wait > 0;
             var input = false;
+            // O tique do minuto chegou sem nada novo para mostrar (ver `.tick`).
+            var tick_seen = false;
             while (got) {
                 if (e.type == app.win.wake_type) {
                     switch (@as(platform.Wake, @fromBackingInt(@intCast(e.user.code)))) {
@@ -2671,7 +2698,11 @@ pub const App = struct {
                             app.st.showToast(now(), false, "tema recarregado: {s}", "theme reloaded: {s}", .{app.themes.name()});
                         } else app.st.showToast(now(), true, "{s}", "{s}", .{app.themes.last_error orelse i18n.tr("erro no tema", "theme error")}),
                         .tick => {
-                            pending = @max(pending, 1);
+                            // O minuto virou e um quadro já saiu nele (o tempo das calls
+                            // acorda no minuto cheio): o que muda de minuto em minuto já
+                            // está na tela. Outro aviso no mesmo tique ainda redesenha.
+                            const minute_only = app.minute_tick.swap(false, .acq_rel);
+                            if (!minute_only or @divFloor(last_frame_ms, 60_000) != @divFloor(now(), 60_000)) pending = @max(pending, 1) else tick_seen = true;
                             // O relógio já acorda o app: aproveita para gravar o cache
                             // (umas poucas por vez; sobrando, volta no próximo tique).
                             if (now() - app.cache_flush_ms >= 60_000) {
@@ -2680,7 +2711,11 @@ pub const App = struct {
                             }
                             sys.toastExpire(now(), false);
                             // Por garantia: um aviso dos plugins pode ter se perdido com a fila cheia.
+                            // Se havia algo esperando, o quadro mostra.
+                            const plug_at = app.plugins.batch_at;
+                            const plug_n = app.plugins.batch.items.len;
                             app.plugins.drain();
+                            if (app.plugins.batch_at != plug_at or app.plugins.batch.items.len != plug_n) pending = @max(pending, 1);
                             // O painel sumiu com a janela escondida (fechou, travou):
                             // a janela volta em vez de ficar sem caminho de volta. Com a
                             // janela aberta não se pergunta: o ícone de "Fechar para a
@@ -2807,7 +2842,8 @@ pub const App = struct {
             if (updater.takeNotice()) app.st.showToast(now(), false, "atualização disponível: veja em Configurações → Atualizações", "update available: see Settings → Updates", .{});
             const now_ms = now();
             // Nada venceu ainda: não há por que redesenhar.
-            if (timed_out and pending == 0 and !bg_dirty and !mouse.wanted() and !was_active and now_ms < due) continue;
+            // Nem o tique do minuto com um quadro já desenhado neste minuto.
+            if ((timed_out or (tick_seen and !busy)) and pending == 0 and !bg_dirty and !mouse.wanted() and !was_active and now_ms < due) continue;
             const win_flags = c.SDL_GetWindowFlags(app.win.window);
             if (win_flags & hidden_flags != 0 and running and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null) {
                 bg_dirty = false;
@@ -2817,6 +2853,7 @@ pub const App = struct {
                 app.gate.redraw();
                 anim.active = false;
                 anim.next_wake_ms = std.math.maxInt(i64);
+                anim.clock_wake_ms = std.math.maxInt(i64);
                 app.images.next_frame_ms = std.math.maxInt(i64);
                 if (win_flags & (c.SDL_WINDOW_MINIMIZED | c.SDL_WINDOW_HIDDEN) == 0) {
                     hidden_since_ms = 0;
@@ -2835,9 +2872,9 @@ pub const App = struct {
             // Só coisa da rede ou o mouse passando, e o último quadro foi agora há pouco: espera.
             const soft_ms = if (mouse.wanted()) ritmo.MousePace.interval_ms else bg_frame_ms;
             if ((bg_dirty or mouse.wanted()) and pending == 0 and (!was_active or mouse.wanted()) and app.opts.shot == null and !app.opts.qa and
-                !app.login.visible() and now_ms - last_frame_ms < soft_ms and now_ms < @min(app.images.next_frame_ms, anim.next_wake_ms)) continue;
+                !app.login.visible() and now_ms - last_frame_ms < soft_ms and now_ms < @min(@min(app.images.next_frame_ms, anim.next_wake_ms), anim.clock_wake_ms)) continue;
             if (app.opts.stats) {
-                const why: usize = if (pending > 0) 0 else if (was_active) 1 else if (now_ms >= app.images.next_frame_ms) 2 else if (now_ms >= anim.next_wake_ms) 3 else if (mouse.wanted()) 4 else if (bg_dirty) 5 else 6;
+                const why: usize = if (pending > 0) 0 else if (was_active) 1 else if (now_ms >= app.images.next_frame_ms) 2 else if (now_ms >= anim.next_wake_ms or now_ms >= anim.clock_wake_ms) 3 else if (mouse.wanted()) 4 else if (bg_dirty) 5 else 6;
                 prof_why[why] += 1;
             }
             bg_dirty = false;
@@ -2845,6 +2882,7 @@ pub const App = struct {
             last_frame_ms = now_ms;
             anim.now_ms = now_ms;
             anim.next_wake_ms = std.math.maxInt(i64);
+            anim.clock_wake_ms = std.math.maxInt(i64);
             app.images.next_frame_ms = std.math.maxInt(i64);
             app.images.drawn_ms = now_ms;
             const t0 = c.SDL_GetTicksNS();
@@ -2920,6 +2958,7 @@ pub const App = struct {
             voz_audio.apply(set);
             lsp_ui.apply(set);
             app_presenca.frame(app);
+            app.askChannelInfo();
             voz_audio.setPageOpen(set.open and set.page == .voz and app.store.ready);
             plugin_host.frame(app);
             @import("ui/attachments.zig").hide_embeds = !set.show_embeds;
@@ -3219,11 +3258,12 @@ pub const App = struct {
         app.flushSubscribe();
         app.images.now_ms = now_ms;
         if (app.images.pump()) wl.bg_dirty = true;
-        const due = @min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due());
+        const due = @min(@min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due()), anim.clock_wake_ms);
         if (wl.pending == 0 and !wl.bg_dirty and !wl.was_active and !app.login.visible() and now_ms < due and wl.shot == null) return true;
         wl.bg_dirty = false;
         anim.now_ms = now_ms;
         anim.next_wake_ms = std.math.maxInt(i64);
+        anim.clock_wake_ms = std.math.maxInt(i64);
         app.images.next_frame_ms = std.math.maxInt(i64);
         app.images.drawn_ms = now_ms;
         const t0 = c.SDL_GetTicksNS();
