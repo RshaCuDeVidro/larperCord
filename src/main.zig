@@ -45,7 +45,7 @@ const usage =
     \\atalhos: Ctrl+K paleta · Ctrl+, configurações · F2 próximo tema
     \\         Ctrl+Tab abas · Alt+1..9 · Ctrl+W fecha aba
     \\
-;
+++ (if (sys.macos) "         no macOS, use Command no lugar de Ctrl, exceto Ctrl+Tab\n" else "");
 
 pub fn main(init: std.process.Init.Minimal) !void {
     sys.init();
@@ -68,7 +68,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
             if (!@import("ui/qa.zig").compiled) return fail("este build não tem o QA: compile com -Doptimize=debug ou -Dqa=true");
             opts.qa = true;
             opts.live = false;
-            if (@import("c").SDL_getenv("SDL_VIDEO_DRIVER") == null) _ = @import("c").SDL_setenv_unsafe("SDL_VIDEO_DRIVER", "offscreen", 1);
+            // No Linux e no Windows o QA roda no driver offscreen. No macOS fica a janela
+            // nativa: o driver offscreen do SDL não abre a janela lá (nem com o renderizador
+            // por software). O job do CI roda o QA na janela nativa do runner, que tem tela,
+            // com LARPER_RENDERER=software, porque a máquina virtual não tem Metal.
+            if (!sys.macos and @import("c").SDL_getenv("SDL_VIDEO_DRIVER") == null) _ = @import("c").SDL_setenv_unsafe("SDL_VIDEO_DRIVER", "offscreen", 1);
         } else if (std.mem.eql(u8, arg, "--lang")) {
             const l = it.next() orelse return fail("--lang precisa de pt, en ou ja");
             opts.lang = if (std.mem.startsWith(u8, l, "pt"))
@@ -95,10 +99,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
             const gid = std.fmt.parseInt(u64, g, 10) catch return fail("servidor inválido");
             const cid = std.fmt.parseInt(u64, ch, 10) catch return fail("canal inválido");
             return voiceTest(gid, cid);
-        } else if (@import("builtin").mode == .debug and !sys.windows and std.mem.eql(u8, arg, "--qa-lsp-server")) {
+        } else if (@import("builtin").mode == .debug and sys.linux and std.mem.eql(u8, arg, "--qa-lsp-server")) {
             // O servidor de linguagem de mentira do QA (src/qa_lsp_server.zig), só em debug.
             @import("qa_lsp_server.zig").run(it.next() orelse return fail("--qa-lsp-server precisa de um modo"));
-        } else if (!sys.windows and std.mem.eql(u8, arg, "--tray-helper")) {
+        } else if (sys.linux and std.mem.eql(u8, arg, "--tray-helper")) {
             // Só o próprio app chama (platform/tray.zig): é o processo do ícone da bandeja.
             const open = it.next() orelse return fail("--tray-helper precisa de dois rótulos");
             const quit = it.next() orelse return fail("--tray-helper precisa de dois rótulos");

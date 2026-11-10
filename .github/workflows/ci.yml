@@ -105,6 +105,69 @@ jobs:
           name: qa-out
           path: qa-out/
 
+  # macOS (experimental, Apple Silicon): as bibliotecas do Homebrew (docs/macos.md), os
+  # testes, um teste de fumaça (abre a demonstração, tira um print, confere o TLS) e o
+  # .app para quem tem um Mac baixar e testar. Enquanto o port for experimental, uma
+  # falha aqui não segura o resto.
+  macos:
+    # Usa as bibliotecas do Sequoia; macos-latest pode trazer dylibs que exigem Tahoe.
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - run: brew install sdl3 curl opus webp freetype fontconfig openssl@3 pkgconf
+      - run: sh tools/macos_build.sh
+      - run: zig build test
+      # A tela da máquina do CI (1024×768) é pequena para a bateria do QA, que espera uma
+      # janela de 1280×800: aqui só se prova que o app abre, desenha a demonstração e fala
+      # TLS com os certificados do macOS. O QA completo roda no Linux e no Windows. Janela
+      # nativa (o driver offscreen do SDL não abre janela no macOS) com o renderizador por
+      # software (a máquina virtual não tem Metal).
+      - name: Abre na demonstração
+        env:
+          LARPER_RENDERER: software
+        run: |
+          mkdir -p qa-out
+          ./zig-out/bin/larpercord --version
+          ./zig-out/bin/larpercord --help > /dev/null
+          ./zig-out/bin/larpercord --demo --shot qa-out/demo.png > qa-out/demo.log 2>&1 || { cat qa-out/demo.log; exit 1; }
+          test "$(stat -f %z qa-out/demo.png)" -gt 10000
+          ./zig-out/bin/larpercord --tls-check https://github.com/
+      # O .app com as dylibs dentro, assinado ad hoc. Em .tar.gz: o artefato do GitHub
+      # perde a permissão de execução dos arquivos.
+      - name: Pacote .app
+        if: always()
+        run: |
+          rm -rf dist && mkdir dist
+          python3 tools/macos_bundle.py dist/LarperCord.app
+          # O empacotador calcula o mínimo do executável e de todas as dylibs.
+          # Não publica um artefato que deixou de funcionar no macOS 15.0.
+          python3 - <<'PY'
+          import plistlib
+          with open("dist/LarperCord.app/Contents/Info.plist", "rb") as f:
+              minimum = plistlib.load(f)["LSMinimumSystemVersion"]
+          version = tuple(map(int, minimum.split(".")))
+          if (version + (0, 0, 0))[:3] > (15, 0, 0):
+              raise SystemExit(f"Bundle requires macOS {minimum}; expected 15.0 or earlier")
+          print(f"Bundle minimum macOS: {minimum}")
+          PY
+          tar -czf dist/larpercord-macos-arm64.tar.gz -C dist LarperCord.app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: larpercord-macos-arm64
+          path: dist/larpercord-macos-arm64.tar.gz
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-qa-out
+          path: qa-out/
+          if-no-files-found: ignore
+
   # O site: cada tema de themes/community/ com as regras do app e da galeria (metadados,
   # nome único, sem cópia de tema embutido) e o teste do criador de temas, que carrega cada
   # um como o app. Um tema quebrado num pull request falha aqui, antes de chegar ao Pages.
