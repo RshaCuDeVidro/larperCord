@@ -1,5 +1,10 @@
 # What changed in each version
 
+## 0.6.5
+
+**Calls**
+- The right-click menu of someone in your call has a User Volume slider, from 0 to 200% (100% is normal), and Mute for Me, from mdvtnk's request (#17). It shows wherever the person appears: the voice channel, the member list, a message, a DM call. It's the same setting as the call mixer, so the two stay in sync and it's saved.
+
 ## 0.6.4
 
 **Conversations**

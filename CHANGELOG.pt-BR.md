@@ -1,5 +1,10 @@
 # O que mudou em cada versão
 
+## 0.6.5
+
+**Chamadas**
+- O menu do botão direito de quem está na sua call tem o Volume do usuário, de 0 a 200% (100% é o normal), e Silenciar para mim, a partir do pedido de mdvtnk (#17). Ele aparece onde a pessoa estiver: no canal de voz, na lista de membros, numa mensagem, numa call de DM. É o mesmo ajuste do mixer da call, então os dois andam juntos e fica salvo.
+
 ## 0.6.4
 
 **Conversas**
