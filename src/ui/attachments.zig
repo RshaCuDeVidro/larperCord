@@ -134,7 +134,7 @@ fn image(ctx: *d.Ctx, dl: *c.ImDrawList, a: *const Attachment, r: d.Rect, scale:
     // Link de anexo vencido e já renovado: vale o novo.
     var url = if (a.still.len > 0 and !set.gif_hosts) a.still else res.resolve(a.url);
     // Sem tocar sozinho, o GIF anda com o mouse em cima (como no Discord).
-    const play = set.autoplay_gifs or hovered;
+    const play = ctx.st.autoplayGifs() or hovered;
     var look = ctx.images.getEx(url, r.w * scale, r.h * scale, play);
     if (look == .failed and a.still.len > 0 and url.ptr != a.still.ptr) {
         url = a.still;

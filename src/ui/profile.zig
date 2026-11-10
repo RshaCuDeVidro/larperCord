@@ -583,7 +583,7 @@ fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, pf: ?types.Profile
         var ub: [192]u8 = undefined;
         const url = bannerUrl(&ub, uid, p.banner);
         const scale = ctx.io.*.DisplayFramebufferScale.x;
-        switch (ctx.images.get(url, br.w * scale, br.w * scale)) {
+        switch (ctx.images.getEx(url, br.w * scale, br.w * scale, ctx.st.window_focused)) {
             .ready => |t| {
                 // Cobre a faixa cortando o excesso (sem distorcer).
                 const iw: f32 = @floatFromInt(t.w);

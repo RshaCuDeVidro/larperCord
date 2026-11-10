@@ -247,6 +247,13 @@ pub const State = struct {
         return if (s.tab < s.tabs.items.len) s.tabs.items[s.tab] else null;
     }
 
+    /// GIFs e emojis animados tocam sozinhos só com a janela em foco, como no
+    /// Discord: visível sem foco (outro monitor, atrás de um jogo) cada quadro
+    /// deles redesenharia o app inteiro. Com o mouse em cima, tocam mesmo assim.
+    pub fn autoplayGifs(s: *const State) bool {
+        return s.settings.autoplay_gifs and s.window_focused;
+    }
+
     pub fn scrollOf(s: *State, ch: Id) *Scroll {
         const gop = s.scroll.getOrPut(s.gpa, ch) catch @panic("OOM");
         if (!gop.found_existing) gop.value_ptr.* = .{};

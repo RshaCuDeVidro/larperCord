@@ -27,7 +27,7 @@ pub fn url(ctx: *const d.Ctx, buf: []u8, id: types.Id, animated: bool) []const u
 pub fn draw(ctx: *d.Ctx, dl: *c.ImDrawList, id: types.Id, animated: bool, r: d.Rect, alpha: f32, hovered: bool, always_play: bool) void {
     var ub: [128]u8 = undefined;
     const u = url(ctx, &ub, id, animated);
-    const play = animated and (hovered or (always_play and ctx.st.settings.autoplay_gifs));
+    const play = animated and (hovered or (always_play and ctx.st.autoplayGifs()));
     switch (ctx.images.getEx(u, request, request, play)) {
         .ready => |t| {
             // O emoji pode não ser quadrado: cabe inteiro, centrado.

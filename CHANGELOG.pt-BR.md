@@ -16,6 +16,7 @@
 **Mídia e GIFs**
 - GIFs longos, como os do Klipy, voltam a tocar sozinhos, não só com o mouse em cima. Isso quebrou na 0.6.2.
 - Imagens de embed que o proxy de mídia do Discord não reduz, como as dos cartões do X/Twitter, agora carregam pela original. Com o log de depuração ligado, ele diz por que uma imagem falhou.
+- GIFs e emojis animados param enquanto a janela do larperCord está sem foco, como no Discord, então a janela aberta em outro monitor ou atrás de um jogo não fica redesenhando por causa deles. Com o mouse em cima, continuam tocando. As imagens e miniaturas dos embeds de link agora também seguem "Reproduzir GIFs automaticamente"; antes tocavam sempre.
 
 **Chamadas**
 - Canais de voz com call mostram há quanto tempo ela está rolando, como no Discord (`16:42:14`). Escolha o formato, ou desligue, em Configurações → Aparência → Canais de voz. Também dá para escrever o seu com `{H}`, `{mm}`, `{ss}` e os outros campos. O app só acorda por isso com algum tempo na tela, e só quando o texto muda: uma vez por segundo com segundos, no máximo uma vez por minuto sem.

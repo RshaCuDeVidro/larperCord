@@ -265,6 +265,16 @@ fn klipyStill(app: *App) bool {
     const st = klipyStream(app) orelse return false;
     return st.shown == watch.shown and klipyBadge(app);
 }
+fn blur(app: *App) void {
+    app.qa_blur = true;
+}
+fn unblur(app: *App) void {
+    app.qa_blur = false;
+}
+/// Sem foco, nenhum GIF nem emoji animado marca o próximo quadro: o app não acorda por eles.
+fn blurredStill(app: *App) bool {
+    return klipyStill(app) and app.images.next_frame_ms == std.math.maxInt(i64);
+}
 
 pub const ops = [_]Op{
     s("mensagem de voz"),
@@ -353,4 +363,16 @@ pub const ops = [_]Op{
     expect("e cada quadro chega à tela, sem o selo", klipyHoverPlays),
     .{ .run = autoplayOn },
     .{ .hover = .{ .mark = "guild:500000" } },
+    // Como no Discord: tocar sozinho vale com a janela em foco.
+    .{ .run = blur },
+    .{ .wait = 100 },
+    .{ .run = watchStart },
+    .{ .wait = 500 },
+    .{ .run = watchStop },
+    expect("com a janela sem foco, o GIF para e nada marca o próximo quadro", blurredStill),
+    .{ .run = unblur },
+    .{ .wait = 100 },
+    .{ .run = watchStart },
+    .{ .expect = .{ .name = "com o foco de volta, o GIF volta a andar sozinho", .check = klipyAdvances, .timeout_ms = 4000 } },
+    .{ .run = watchStop },
 };

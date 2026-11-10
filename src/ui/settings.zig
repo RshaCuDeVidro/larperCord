@@ -671,7 +671,7 @@ fn page(p: *Page, previews: []const Preview) void {
         .chat => {
             p.title("Chat");
             p.heading(i18n.tr("Imagens", "Images"));
-            p.toggle(i18n.tr("Reproduzir GIFs automaticamente", "Automatically play GIFs"), i18n.tr("Desligado, o GIF anda quando o mouse passa por cima.", "When off, a GIF plays while you hover it."), &s.autoplay_gifs);
+            p.toggle(i18n.tr("Reproduzir GIFs automaticamente", "Automatically play GIFs"), i18n.tr("Com a janela em foco, como no Discord. Desligado, o GIF anda quando o mouse passa por cima.", "While the window is focused, like Discord. When off, a GIF plays while you hover it."), &s.autoplay_gifs);
             p.toggle(i18n.tr("Mostrar imagens de links", "Show images from links"), i18n.tr("Imagens e GIFs de links mandados na conversa.", "Images and GIFs from links posted in chat."), &s.show_embeds);
             p.toggle(i18n.tr("Modo economia", "Data saver"), i18n.tr("Imagens, fotos de perfil e anexos só baixam quando você clica. Bom em rede ruim.", "Images, profile pictures and attachments only download when you click. Good on bad networks."), &s.data_saver);
             @import("settings_video.zig").section(p);

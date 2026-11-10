@@ -130,7 +130,7 @@ pub fn avatar(ctx: *d.Ctx, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, user_
         const ds = size * 1.2;
         const dr: d.Rect = .{ .x = cx - ds / 2, .y = cy - ds / 2, .w = ds, .h = ds };
         const scale = ctx.io.*.DisplayFramebufferScale.x;
-        if (!no_pics) switch (ctx.images.getEx(deco_url, ds * scale, ds * scale, big)) {
+        if (!no_pics) switch (ctx.images.getEx(deco_url, ds * scale, ds * scale, big and ctx.st.window_focused)) {
             .ready => |t| c.ImDrawList_AddImageEx(dl, t.ref, d.v(dr.x, dr.y), d.v(dr.right(), dr.bottom()), d.v(0, 0), d.v(1, 1), d.Rgba.white.col(alpha)),
             else => {},
         };

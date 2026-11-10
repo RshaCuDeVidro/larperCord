@@ -16,6 +16,7 @@
 **Media and GIFs**
 - Long GIFs, like Klipy's, play on their own again, not only while the mouse is over them. This broke in 0.6.2.
 - Embed images that Discord's media proxy won't resize, like X/Twitter card images, now load from the original. With the debug log on, it says why an image failed.
+- GIFs and animated emoji stop while the larperCord window isn't focused, like Discord, so a window left open on another monitor or behind a game doesn't keep redrawing for them. Hovering one still plays it. Images and thumbnails in link embeds now follow "Automatically play GIFs" too; before, they always played.
 
 **Calls**
 - Voice channels with a call show how long it has been going, like Discord (`16:42:14`). Pick the format, or turn it off, in Settings → Appearance → Voice channels. You can also write your own with `{H}`, `{mm}`, `{ss}` and the other fields. The app only wakes up for it while a timer is on screen, and only when the text changes: once a second with seconds, at most once a minute without.

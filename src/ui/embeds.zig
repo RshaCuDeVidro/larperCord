@@ -439,7 +439,7 @@ fn blockThumb(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const types.EmbedMedia, tr: d
     const scale = ctx.io.*.DisplayFramebufferScale.x;
     const hb = d.hit(ctx, @truncate(@intFromPtr(it)), tr);
     qa.mark(tr, "embed-thumb", .{});
-    switch (ctx.images.get(it.url, tr.w * scale, tr.h * scale)) {
+    switch (ctx.images.getEx(it.url, tr.w * scale, tr.h * scale, ctx.st.autoplayGifs() or hb.hovered)) {
         .ready => |t| imageCover(dl, t, tr, alpha, 6, 0),
         else => d.rect(dl, tr, ctx.col(.text).alpha(0.05 * alpha), 6),
     }
@@ -484,7 +484,7 @@ fn mediaCell(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const types.EmbedMedia, r: d.R
     }
     const hb = d.hit(ctx, @truncate(@intFromPtr(it)), r);
     qa.mark(r, "embed-media", .{});
-    const play = ctx.st.settings.autoplay_gifs or hb.hovered;
+    const play = ctx.st.autoplayGifs() or hb.hovered;
     const look = ctx.images.getEx(it.url, r.w * scale, r.h * scale, play);
     const held_back = look == .failed and ctx.images.blocked(it.url);
     if (held_back) {
@@ -666,7 +666,8 @@ fn card(ctx: *d.Ctx, dl: ?*c.ImDrawList, e: *const types.Embed, spans: []const [
                 cover.draw(ctx, l, tr, kind, @intFromPtr(e) +% 1, msg_id, alpha);
             } else {
                 const scale = ctx.io.*.DisplayFramebufferScale.x;
-                switch (ctx.images.get(e.thumb, tr.w * scale, tr.h * scale)) {
+                const over = tr.contains(ctx.mouse.x, ctx.mouse.y);
+                switch (ctx.images.getEx(e.thumb, tr.w * scale, tr.h * scale, ctx.st.autoplayGifs() or over)) {
                     .ready => |t| {
                         // Cabe no quadrado sem distorcer.
                         const k = @min(tr.w / @as(f32, @floatFromInt(t.w)), tr.h / @as(f32, @floatFromInt(t.h)));
@@ -694,7 +695,7 @@ fn image(ctx: *d.Ctx, dl: *c.ImDrawList, e: *const types.Embed, r: d.Rect, alpha
         return;
     }
     const hb = d.hit(ctx, @truncate(@intFromPtr(e) +% 1), r);
-    const look = ctx.images.get(e.image, r.w * scale, r.h * scale);
+    const look = ctx.images.getEx(e.image, r.w * scale, r.h * scale, ctx.st.autoplayGifs() or hb.hovered);
     // Modo economia: o clique baixa a imagem.
     if (look == .failed and ctx.images.blocked(e.image)) {
         att.savedPlaceholder(ctx, dl, r, 0, alpha);
