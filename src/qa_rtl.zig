@@ -583,6 +583,17 @@ fn codeSelectedFromStart(app: *App) bool {
     return lo == 1 and hi > 1 and hi + 1 < m.msg.content.len;
 }
 
+/// U+E0100 (seletor de variação do plano 14) e as letras escondidas das bandeiras não
+/// esticam as tabelas por caractere da fonte (ImFontBaked_Slot): num tamanho que nada mais
+/// usa, elas ficam do tamanho das do começo do Unicode e dos emoji.
+fn planeFourteenSmall(app: *App) bool {
+    const f = app.fonts.families.items[0].get(.regular);
+    _ = d.width(f, 37, "\u{E0100}\u{E0067}");
+    const n = larper_font_index_size(f, d.fontPx(37));
+    return n > 0 and n <= 0x4200;
+}
+extern fn larper_font_index_size(font: *c.ImFont, size: f32) c_int;
+
 fn wideNumbersLtr(app: *App) bool {
     if (!watchMsg(app, gw.ltr_ordered_wide)) return false;
     const t = gw.ltr_ordered_wide;
@@ -867,6 +878,7 @@ pub const ops_theme = [_]Op{
     .{ .drag = .{ .from = .{ .dyn_at = .{ .f = tCode, .fx = 0.97, .fy = 0.5 } }, .to = .{ .dyn_at = .{ .f = tCode, .fx = 0.5, .fy = 0.5 } } } },
     expect("arrastar da ponta direita do código em árabe até o meio pega o começo dele", codeSelectedFromStart),
     .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("U+E0100 e as letras das bandeiras não esticam as tabelas da fonte", planeFourteenSmall),
     run(jumpX),
     expect("o embed do X aparece", jumped),
     .{ .wait = 1700 },
