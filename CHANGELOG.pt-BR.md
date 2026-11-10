@@ -17,6 +17,11 @@
 - GIFs longos, como os do Klipy, voltam a tocar sozinhos, não só com o mouse em cima. Isso quebrou na 0.6.2.
 - Imagens de embed que o proxy de mídia do Discord não reduz, como as dos cartões do X/Twitter, agora carregam pela original. Com o log de depuração ligado, ele diz por que uma imagem falhou.
 
+**Chamadas**
+- O menu do botão direito de quem está na sua call tem o Volume do usuário, de 0 a 200% (100% é o normal), e Silenciar para mim, a partir do pedido de mdvtnk (#17). Ele aparece onde a pessoa estiver: no canal de voz, na lista de membros, numa mensagem, numa call de DM. É o mesmo ajuste do mixer da call, então os dois andam juntos e fica salvo. Silenciar mantém o volume dela, então tirar o silêncio volta para o mesmo nível, no menu e no mixer.
+- Nos temas de estilo terminal (Terminal, Subsolo), [mixer] e [sair] na faixa de voz respondem onde estão escritos. A área de clique ficava num ponto fixo perto da borda direita e mudava com o nome do canal e o tamanho da fonte.
+- Quem você silenciou no botão do mixer antigo (volume em zero) aparece como Silenciar para mim, e tirar o silêncio volta para o volume normal.
+
 **Voz**
 - No Windows, o aperte para falar funciona com outra janela em foco, como um jogo, a pedido do helpik1 (#14). O app lê a tecla sem gancho de teclado, e o outro programa continua recebendo a tecla. No Linux ainda precisa da janela do larperCord em foco.
 
@@ -26,6 +31,7 @@
 **Texto em qualquer idioma**
 - Interface em russo, traduzida pelo pIat0n (#15, #16). Escolha "Русский" em Configurações → Idioma, ou o app segue um sistema em russo. As datas usam os nomes dos meses e dos dias da semana em russo.
 - Os horários do Discord aparecem em japonês e em russo, também os relativos, como "3日前" e "3 дня назад", com os plurais do russo. Antes saíam em inglês.
+- Em japonês, as datas voltam a sair na ordem certa (algumas apareciam dia/mês ou ano/dia/mês), e as sugestões `has:` e `before:` da busca funcionam em japonês e russo.
 - Mais correções no árabe e no hebraico, a partir do relato de majd-tqe (#9). Título, autor e nome de campo de embed que começam em árabe ou hebraico terminam na borda direita do cartão, como a descrição.
 - Uma linha que começa com número, como "1." ou "12-", fica da direita para a esquerda, com o número e o ponto ou o traço na ordem certa.
 - Parênteses saem espelhados, e o "؟" e as outras pontuações ficam no lugar certo quando a frase tem inglês no meio.
@@ -33,9 +39,6 @@
 - O espaço a mais antes de alguns emojis, como ⚠️ e ✔️, sumiu.
 - A letra ہ do urdu aparece em vez de `?`, e as Configurações não dizem mais que falta fonte para o árabe quando o DejaVu Sans o tem.
 - As bandeiras da Inglaterra, da Escócia e do País de Gales, e alguns caracteres invisíveis raros, não custam mais cerca de 5,5 MB de memória para cada fonte e tamanho.
-
-**Chamadas**
-- O menu do botão direito de quem está na sua call tem o Volume do usuário, de 0 a 200% (100% é o normal), e Silenciar para mim, a partir do pedido de mdvtnk (#17). Ele aparece onde a pessoa estiver: no canal de voz, na lista de membros, numa mensagem, numa call de DM. É o mesmo ajuste do mixer da call, então os dois andam juntos e fica salvo. Silenciar mantém o volume dela, então tirar o silêncio volta para o mesmo nível, no menu e no mixer.
 
 **Limitações conhecidas**
 - Árabe e hebraico digitados na caixa de mensagem ainda vão da esquerda para a direita. A mensagem aparece certa depois de enviada.

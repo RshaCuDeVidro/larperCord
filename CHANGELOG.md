@@ -17,6 +17,11 @@
 - Long GIFs, like Klipy's, play on their own again, not only while the mouse is over them. This broke in 0.6.2.
 - Embed images that Discord's media proxy won't resize, like X/Twitter card images, now load from the original. With the debug log on, it says why an image failed.
 
+**Calls**
+- The right-click menu of someone in your call has a User Volume slider, from 0 to 200% (100% is normal), and Mute for Me, from mdvtnk's request (#17). It shows wherever the person appears: the voice channel, the member list, a message, a DM call. It's the same setting as the call mixer, so the two stay in sync and it's saved. Muting keeps their volume, so unmuting brings back the same level, in the menu and in the mixer.
+- In the terminal-style themes (Terminal, Subsolo), [mixer] and [leave] in the voice bar now react where they're written. The clickable area used to sit at a fixed spot near the right edge, so it moved with the channel name and the font size.
+- Someone you muted with the old mixer button (volume at zero) now shows as Mute for Me, and unmuting brings them back at the normal volume.
+
 **Voice**
 - On Windows, push-to-talk works while another window is focused, like a game, from helpik1's request (#14). The app reads the key without a keyboard hook, and the other app still gets it. On Linux it still needs the larperCord window focused.
 
@@ -26,6 +31,7 @@
 **Text in any language**
 - Russian interface, translated by pIat0n (#15, #16). Pick "Русский" in Settings → Language, or the app follows a Russian system. Dates use Russian month and weekday names.
 - Discord timestamps show in Japanese and Russian, including relative ones like "3日前" and "3 дня назад", with Russian plural forms. Before they came out in English.
+- In Japanese, dates are in the right order again (some showed day/month or year/day/month), and the `has:` and `before:` search suggestions work in Japanese and Russian.
 - More Arabic and Hebrew fixes, from majd-tqe's report (#9). Embed titles, authors and field names that start in Arabic or Hebrew end at the right edge of the card, like the description.
 - A line that starts with a number, like "1." or "12-", is right to left, with the number and its dot or dash in the right order.
 - Brackets are mirrored, and "؟" and other punctuation land in the right place when the sentence has English in it.
@@ -33,9 +39,6 @@
 - The extra space before some emoji, like ⚠️ and ✔️, is gone.
 - The Urdu letter ہ shows instead of `?`, and Settings no longer lists Arabic as missing a font when DejaVu Sans has it.
 - The England, Scotland and Wales flags, and a few rare invisible characters, no longer cost about 5.5 MB of memory for each font and size.
-
-**Calls**
-- The right-click menu of someone in your call has a User Volume slider, from 0 to 200% (100% is normal), and Mute for Me, from mdvtnk's request (#17). It shows wherever the person appears: the voice channel, the member list, a message, a DM call. It's the same setting as the call mixer, so the two stay in sync and it's saved. Muting keeps their volume, so unmuting brings back the same level, in the menu and in the mixer.
 
 **Known limitations**
 - Arabic and Hebrew you type in the message box still go left to right. The message shows correctly once it's sent.
