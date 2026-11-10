@@ -40,6 +40,8 @@ QA_SUITE=presenca XDG_RUNTIME_DIR="$PWD/qa-out/run" run "presença" $bin --qa --
 QA_SUITE=moderacao run "moderação" $bin --qa --theme classico
 QA_SUITE=entrada run "entrada" $bin --qa --theme classico
 QA_SUITE=interacoes run "interações" $bin --qa --theme classico
+# Tempo da call nos canais de voz: op 43, formato, e quando o app acorda por ele.
+QA_SUITE=cronometro run "tempo da call" $bin --qa --theme classico
 # Fontes reserva (CJK) só quando um texto pede, e o mixer da call: fora da geral.
 QA_SUITE=escritas run "escritas" $bin --qa --theme classico
 # Sem fonte nenhuma no sistema (o fontconfig sem pasta de fontes): abre com a do ImGui.

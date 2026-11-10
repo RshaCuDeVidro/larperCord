@@ -18,6 +18,7 @@
 - Imagens de embed que o proxy de mídia do Discord não reduz, como as dos cartões do X/Twitter, agora carregam pela original. Com o log de depuração ligado, ele diz por que uma imagem falhou.
 
 **Chamadas**
+- Canais de voz com call mostram há quanto tempo ela está rolando, como no Discord (`16:42:14`). Escolha o formato, ou desligue, em Configurações → Aparência → Canais de voz. Também dá para escrever o seu com `{H}`, `{mm}`, `{ss}` e os outros campos. O app só acorda por isso com algum tempo na tela, e só quando o texto muda: uma vez por segundo com segundos, no máximo uma vez por minuto sem.
 - O menu do botão direito de quem está na sua call tem o Volume do usuário, de 0 a 200% (100% é o normal), e Silenciar para mim, a partir do pedido de mdvtnk (#17). Ele aparece onde a pessoa estiver: no canal de voz, na lista de membros, numa mensagem, numa call de DM. É o mesmo ajuste do mixer da call, então os dois andam juntos e fica salvo. Silenciar mantém o volume dela, então tirar o silêncio volta para o mesmo nível, no menu e no mixer.
 - Nos temas de estilo terminal (Terminal, Subsolo), [mixer] e [sair] na faixa de voz respondem onde estão escritos. A área de clique ficava num ponto fixo perto da borda direita e mudava com o nome do canal e o tamanho da fonte.
 - Quem você silenciou no botão do mixer antigo (volume em zero) aparece como Silenciar para mim, e tirar o silêncio volta para o volume normal.

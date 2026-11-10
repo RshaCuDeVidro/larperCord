@@ -8,7 +8,9 @@
 //!  - o resto para em 110 por janela: a folga até 120 é deles;
 //!  - presença (op 3) e lista de membros (op 14) se juntam: só o último pedido
 //!    de cada um (op 14: por servidor) sai quando houver vez;
-//!  - estado de voz (op 4) entra numa fila e sai na ordem, sem perder nenhum.
+//!  - estado de voz (op 4) entra numa fila e sai na ordem, sem perder nenhum;
+//!  - o começo das calls de um servidor (op 43) sai uma vez por servidor: o mesmo
+//!    servidor de novo, enquanto espera, não pede outra vez.
 //! Lógica pura: quem escreve no WebSocket é net/discord.zig.
 const std = @import("std");
 const types = @import("../core/types.zig");
@@ -107,7 +109,8 @@ pub const Voice = struct {
     }
 };
 /// O que espera vez. A presença sai com o status do momento (só o último vale).
-pub const Item = union(enum) { presence, lazy: Lazy, voice: Voice };
+/// `channel_info`: o servidor do op 43.
+pub const Item = union(enum) { presence, lazy: Lazy, voice: Voice, channel_info: Id };
 
 pub const Push = enum {
     queued,
@@ -130,6 +133,9 @@ pub const Outbox = struct {
     voice: [64]Voice = undefined,
     voice_head: usize = 0,
     voice_n: usize = 0,
+    /// Op 43 esperando, na ordem em que chegaram (um por servidor).
+    info: [8]Id = undefined,
+    info_n: usize = 0,
 
     pub fn push(o: *Outbox, it: Item) Push {
         switch (it) {
@@ -162,11 +168,22 @@ pub const Outbox = struct {
                 o.voice_n += 1;
                 return .queued;
             },
+            .channel_info => |g| {
+                if (std.mem.indexOfScalar(Id, o.info[0..o.info_n], g) != null) return .coalesced;
+                if (o.info_n == o.info.len) {
+                    std.mem.copyForwards(Id, o.info[0 .. o.info.len - 1], o.info[1..]);
+                    o.info[o.info.len - 1] = g;
+                    return .replaced_oldest;
+                }
+                o.info[o.info_n] = g;
+                o.info_n += 1;
+                return .queued;
+            },
         }
     }
 
     pub fn pending(o: *const Outbox) usize {
-        return o.voice_n + o.lazy_n + @intFromBool(o.presence);
+        return o.voice_n + o.lazy_n + o.info_n + @intFromBool(o.presence);
     }
 
     fn presenceOk(o: *Outbox, now_ms: i64) bool {
@@ -174,7 +191,7 @@ pub const Outbox = struct {
     }
 
     /// O próximo que pode sair agora (já contado no teto). Voz primeiro (é a
-    /// pessoa esperando a call), depois presença, depois listas de membros.
+    /// pessoa esperando a call), depois presença, listas de membros e o op 43.
     pub fn pop(o: *Outbox, now_ms: i64) ?Item {
         if (o.pending() == 0 or !o.budget.allows(now_ms)) return null;
         var it: Item = undefined;
@@ -190,6 +207,10 @@ pub const Outbox = struct {
             it = .{ .lazy = o.lazy[0] };
             std.mem.copyForwards(Lazy, o.lazy[0 .. o.lazy_n - 1], o.lazy[1..o.lazy_n]);
             o.lazy_n -= 1;
+        } else if (o.info_n > 0) {
+            it = .{ .channel_info = o.info[0] };
+            std.mem.copyForwards(Id, o.info[0 .. o.info_n - 1], o.info[1..o.info_n]);
+            o.info_n -= 1;
         } else return null;
         o.budget.note(now_ms);
         return it;
@@ -217,6 +238,12 @@ pub const Outbox = struct {
                 o.voice[o.voice_head] = v;
                 o.voice_n += 1;
             },
+            .channel_info => |g| {
+                if (std.mem.indexOfScalar(Id, o.info[0..o.info_n], g) != null or o.info_n == o.info.len) return;
+                std.mem.copyBackwards(Id, o.info[1 .. o.info_n + 1], o.info[0..o.info_n]);
+                o.info[0] = g;
+                o.info_n += 1;
+            },
         }
     }
 
@@ -233,7 +260,7 @@ pub const Outbox = struct {
     pub fn due(o: *Outbox, now_ms: i64) i64 {
         if (o.pending() == 0) return std.math.maxInt(i64);
         const free = o.budget.freeAt(now_ms);
-        if (o.voice_n > 0 or o.lazy_n > 0) return free;
+        if (o.voice_n > 0 or o.lazy_n > 0 or o.info_n > 0) return free;
         // Só a presença: espera também o limite dela.
         return if (o.presenceOk(now_ms)) free else @max(free, o.presence_sent.oldestExpires(presence_window_ms));
     }
@@ -250,6 +277,7 @@ pub const Outbox = struct {
     pub fn forgetPending(o: *Outbox) void {
         o.presence = false;
         o.lazy_n = 0;
+        o.info_n = 0;
         o.voice_n = 0;
         o.voice_head = 0;
     }
@@ -426,6 +454,35 @@ test "item devolvido: um pedido mais novo do mesmo servidor vence; voz volta par
     o.unpop(v);
     try t.expectEqual(@as(?Id, 20), o.pop(window_ms).?.voice.channel);
     try t.expectEqual(@as(?Id, 21), o.pop(window_ms).?.voice.channel);
+}
+
+test "op 43: um por servidor, depois do resto, e volta para a frente se não saiu" {
+    var o: Outbox = .{};
+    for (0..normal_limit) |_| o.budget.note(0);
+    try t.expectEqual(Push.queued, o.push(.{ .channel_info = 1 }));
+    try t.expectEqual(Push.coalesced, o.push(.{ .channel_info = 1 }));
+    try t.expectEqual(Push.queued, o.push(.{ .channel_info = 2 }));
+    _ = o.push(.{ .lazy = .{ .guild = 1, .channel = 10 } });
+    try t.expectEqual(@as(usize, 3), o.pending());
+    // Teto cheio: espera a janela, como os outros.
+    try t.expectEqual(@as(?Item, null), o.pop(1));
+    try t.expectEqual(window_ms, o.due(1));
+    try t.expectEqual(@as(Id, 1), o.pop(window_ms).?.lazy.guild);
+    const first = o.pop(window_ms).?;
+    try t.expectEqual(@as(Id, 1), first.channel_info);
+    // A escrita falhou: volta para a frente, sem duplicar.
+    o.unpop(first);
+    o.unpop(first);
+    try t.expectEqual(@as(usize, 2), o.pending());
+    try t.expectEqual(@as(Id, 1), o.pop(window_ms).?.channel_info);
+    try t.expectEqual(@as(Id, 2), o.pop(window_ms).?.channel_info);
+    try t.expectEqual(@as(?Item, null), o.pop(window_ms));
+    // Muitos servidores: o mais antigo dá lugar; sessão nova esquece.
+    for (0..9) |i| _ = o.push(.{ .channel_info = @intCast(100 + i) });
+    try t.expectEqual(o.info.len, o.info_n);
+    try t.expectEqual(@as(Id, 101), o.info[0]);
+    o.forgetPending();
+    try t.expectEqual(@as(usize, 0), o.pending());
 }
 
 test "o VOICE_STATE_UPDATE da conta confirma o op 4" {

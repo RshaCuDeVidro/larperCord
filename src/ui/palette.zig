@@ -118,6 +118,7 @@ const toggle_names = [_]struct { field: []const u8, pt: []const u8, en: []const 
     .{ .field = "show_avatars", .pt = "Mostrar avatares", .en = "Show avatars" },
     .{ .field = "clock_24h", .pt = "Relógio de 24 horas", .en = "24-hour clock" },
     .{ .field = "status_ring", .pt = "Status em anel", .en = "Status ring" },
+    .{ .field = "voice_timer", .pt = "Tempo da call nos canais de voz", .en = "Call timer on voice channels" },
     .{ .field = "show_member_list", .pt = "Lista de membros", .en = "Member list" },
     .{ .field = "show_status_bar", .pt = "Barra de status", .en = "Status bar" },
     .{ .field = "reduce_motion", .pt = "Reduzir movimento", .en = "Reduce motion" },

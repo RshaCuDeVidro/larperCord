@@ -20,6 +20,7 @@ const ev = @import("../core/event.zig");
 const voz = @import("../core/voz.zig");
 const dm_requests = @import("dm_requests.zig");
 const devices = @import("device_menu.zig");
+const voice_timer = @import("voice_timer.zig");
 const Id = types.Id;
 
 const Variant = enum { discord, tree, pills };
@@ -282,6 +283,10 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
     const pings = if (selected) 0 else ctx.st.filtros.count(ch.id);
     // Canal silenciado não fica aceso (como no Discord); menção continua contando.
     const lit = ch.unread and !muted_ch;
+    // O tempo da call, à direita (ui/voice_timer.zig): o nome corta antes dele e,
+    // sem lugar nem para o começo do nome, ele não aparece.
+    var tb: [96]u8 = undefined;
+    const timer = voice_timer.measure(ctx, cs, &tb, if (variant == .tree) fs - 2 else @max(fs - 3, 10));
 
     switch (variant) {
         .discord => {
@@ -293,7 +298,10 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
                 else => d.text(dl, fam.get(.medium), 20, rr.x + 10, rr.y + 3.5, ic, "#"),
             }
             const nf = if (lit and !selected) fam.get(.semibold) else fam.get(.medium);
-            _ = d.textClipped(dl, nf, fs, rr.x + 34, d.centerY(rr, fs), name_col, ch.name, rr.w - 42);
+            const name_x = rr.x + 34;
+            const name_w = timerBeside(ctx, dl, timer, rr, r, ch.id, name_x, rr.w - 42, rr.right() - 8 - (if (pings > 0) badgeWidth(fam, pings) + 6 else 0), 30);
+            const nw = d.textClipped(dl, nf, fs, name_x, d.centerY(rr, fs), name_col, ch.name, name_w);
+            if (timer != null) qa.mark(.{ .x = name_x, .y = rr.y + 2, .w = nw, .h = rr.h - 4 }, "vt-name:{d}", .{ch.id});
             if (lit and !selected)
                 d.rectFlags(dl, .{ .x = r.x, .y = rr.y + 12, .w = 4, .h = 8 }, ctx.col(.text), 4, c.ImDrawFlags_RoundRight);
             if (pings > 0) badgeAt(ctx, dl, fam, rr.right() - 6, rr.y + rr.h / 2, pings);
@@ -314,7 +322,10 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
                 },
             }
             const tc = if (on) ctx.col(.accent_text) else name_col;
-            _ = d.textClipped(dl, fam.get(if (lit or on) .semibold else .medium), fs - 1, pr.x + 42, d.centerY(pr, fs - 1), tc, ch.name, pr.w - 60);
+            const ind: f32 = if (pings > 0) badgeWidth(fam, pings) + 4 else if (lit and !on) 14 else 0;
+            const name_w = timerBeside(ctx, dl, timer, pr, r, ch.id, pr.x + 42, pr.w - 60, pr.right() - 14 - ind, 30);
+            const nw = d.textClipped(dl, fam.get(if (lit or on) .semibold else .medium), fs - 1, pr.x + 42, d.centerY(pr, fs - 1), tc, ch.name, name_w);
+            if (timer != null) qa.mark(.{ .x = pr.x + 42, .y = pr.y + 2, .w = nw, .h = pr.h - 4 }, "vt-name:{d}", .{ch.id});
             if (pings > 0) {
                 badgeAt(ctx, dl, fam, pr.right() - 8, pr.y + pr.h / 2, pings);
             } else if (lit and !on) d.circle(dl, pr.right() - 14, pr.y + pr.h / 2, 4, ctx.col(.accent));
@@ -326,10 +337,13 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
             const sigil = if (locked) "×" else if (ch.kind == .voice) "♪" else if (ch.kind == .forum) "≡" else "#";
             const t = std.fmt.bufPrint(&buf, "{s} {s} {s}", .{ branch, sigil, ch.name }) catch ch.name;
             const tc = if (selected) ctx.col(.accent_text) else name_col;
-            _ = d.textClipped(dl, fam.get(if (lit or selected) .bold else .regular), fs - 1, rr.x + 4, d.centerY(rr, fs - 1), tc, t, rr.w - 24);
+            var pb: [12]u8 = undefined;
+            const pt = std.fmt.bufPrint(&pb, "({d})", .{pings}) catch "";
+            const ind: f32 = if (pings > 0) d.width(fam.get(.bold), fs - 1, pt) + 6 else if (lit and !selected) 16 else 0;
+            const name_w = timerBeside(ctx, dl, timer, rr, r, ch.id, rr.x + 4, rr.w - 24, rr.right() - 6 - ind, 56);
+            const nw = d.textClipped(dl, fam.get(if (lit or selected) .bold else .regular), fs - 1, rr.x + 4, d.centerY(rr, fs - 1), tc, t, name_w);
+            if (timer != null) qa.mark(.{ .x = rr.x + 4, .y = rr.y + 2, .w = nw, .h = rr.h - 4 }, "vt-name:{d}", .{ch.id});
             if (pings > 0) {
-                var pb: [12]u8 = undefined;
-                const pt = std.fmt.bufPrint(&pb, "({d})", .{pings}) catch "";
                 d.text(dl, fam.get(.bold), fs - 1, rr.right() - 6 - d.width(fam.get(.bold), fs - 1, pt), d.centerY(rr, fs - 1), ctx.col(.danger), pt);
             } else if (lit and !selected) d.text(dl, fam.get(.bold), fs - 1, rr.right() - 14, d.centerY(rr, fs - 1), ctx.col(.accent), "●");
         },
@@ -373,6 +387,23 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
         if (cs.voice_members.items.len > 0) y2 += 4;
     }
     return y2;
+}
+
+/// O tempo da call encostado em `right`, se sobrar para o nome pelo menos
+/// `min_name` (o começo dele, cortado com "…"). Devolve até onde o nome pode ir.
+fn timerBeside(ctx: *d.Ctx, dl: *c.ImDrawList, timer: ?voice_timer.Timer, line: d.Rect, list: d.Rect, id: Id, name_x: f32, name_w: f32, right: f32, min_name: f32) f32 {
+    const t = timer orelse return name_w;
+    const room = right - t.w - 8 - name_x;
+    if (room < min_name) return name_w;
+    voice_timer.draw(ctx, dl, t, right, line, list, id);
+    return @min(name_w, room);
+}
+
+/// Largura do selo de menções de `badgeAt`.
+fn badgeWidth(fam: *d.Family, count: u16) f32 {
+    var buf: [8]u8 = undefined;
+    const t = std.fmt.bufPrint(&buf, "{d}", .{count}) catch "";
+    return d.width(fam.get(.bold), 11, t) + 10;
 }
 
 /// Mudo e surdo de alguém na lista da call; devolve a largura ocupada.

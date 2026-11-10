@@ -18,6 +18,7 @@
 - Embed images that Discord's media proxy won't resize, like X/Twitter card images, now load from the original. With the debug log on, it says why an image failed.
 
 **Calls**
+- Voice channels with a call show how long it has been going, like Discord (`16:42:14`). Pick the format, or turn it off, in Settings → Appearance → Voice channels. You can also write your own with `{H}`, `{mm}`, `{ss}` and the other fields. The app only wakes up for it while a timer is on screen, and only when the text changes: once a second with seconds, at most once a minute without.
 - The right-click menu of someone in your call has a User Volume slider, from 0 to 200% (100% is normal), and Mute for Me, from mdvtnk's request (#17). It shows wherever the person appears: the voice channel, the member list, a message, a DM call. It's the same setting as the call mixer, so the two stay in sync and it's saved. Muting keeps their volume, so unmuting brings back the same level, in the menu and in the mixer.
 - In the terminal-style themes (Terminal, Subsolo), [mixer] and [leave] in the voice bar now react where they're written. The clickable area used to sit at a fixed spot near the right edge, so it moved with the channel name and the font size.
 - Someone you muted with the old mixer button (volume at zero) now shows as Mute for Me, and unmuting brings them back at the normal volume.

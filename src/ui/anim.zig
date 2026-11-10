@@ -16,6 +16,33 @@ pub var now_ms: i64 = 0;
 /// desenhar a 60 quadros por segundo. Zerado a cada quadro.
 pub var next_wake_ms: i64 = std.math.maxInt(i64);
 
+/// Redesenho marcado num ponto do relógio (o tempo das calls na lista de canais,
+/// ui/voice_timer.zig, que muda na virada do segundo ou do minuto): o app dorme
+/// direto até lá, sem acordar a cada segundo como em `next_wake_ms`. Um pulo do
+/// relógio maior que isso muda o minuto, e o tique do minuto acorda o app de
+/// qualquer jeito. Zerado a cada quadro.
+pub var clock_wake_ms: i64 = std.math.maxInt(i64);
+
+pub fn atClock(t: i64) void {
+    clock_wake_ms = @min(clock_wake_ms, t);
+}
+
+/// A espera do SDL conta no relógio dele, e o prazo é do relógio de parede: acordando
+/// 1 ms antes da virada, o laço daria mais uma volta só para esperar esse 1 ms. Uns
+/// milissegundos depois da virada não aparecem num texto que muda de segundo em segundo.
+pub const clock_slack_ms: i64 = 3;
+
+/// Quanto dormir com os dois prazos: `wait_ms` até o próximo de `next_wake_ms` e
+/// dos outros (com o teto de `sleepFor`) e `clock_wait_ms` até o de `clock_wake_ms`,
+/// de uma vez (com a folga de `clock_slack_ms`). null = sem prazo (espera um evento).
+pub fn napFor(wait_ms: ?i64, clock_wait_ms: ?i64) ?i64 {
+    const a: ?i64 = if (wait_ms) |w| sleepFor(w) else null;
+    const b: ?i64 = if (clock_wait_ms) |w| @min(w + clock_slack_ms, std.math.maxInt(i32)) else null;
+    if (a == null) return b;
+    if (b == null) return a;
+    return @min(a.?, b.?);
+}
+
 /// Redesenha a cada `period_ms` enquanto quem chama continuar na tela.
 pub fn every(period_ms: i64) void {
     at(now_ms - @mod(now_ms, period_ms) + period_ms);
@@ -86,6 +113,25 @@ test "prazo longe não acorda o app a cada segundo" {
     try std.testing.expect(wakes <= 62);
     // Castigo de semanas: cabe no inteiro que o SDL recebe.
     try std.testing.expectEqual(@as(i64, std.math.maxInt(i32)), sleepFor(40 * 86_400_000));
+}
+
+test "prazo do relógio: dorme de uma vez até ele, sem o teto de 1 s" {
+    const k = clock_slack_ms;
+    // Só o cronômetro de minutos: um sono só até o minuto cheio (e a folga).
+    try std.testing.expectEqual(@as(?i64, 59_000 + k), napFor(null, 59_000));
+    // De hora em hora: também de uma vez.
+    try std.testing.expectEqual(@as(?i64, 3_540_000 + k), napFor(null, 3_540_000));
+    // Com um prazo comum perto, o teto dele vale.
+    try std.testing.expectEqual(@as(?i64, 1000), napFor(30_000, 59_000));
+    try std.testing.expectEqual(@as(?i64, 250), napFor(250, 59_000));
+    // O do relógio antes do teto do outro.
+    try std.testing.expectEqual(@as(?i64, 400 + k), napFor(30_000, 400));
+    // Prazo comum longe (status que vence em 3 h) e o do relógio daqui a 1 min.
+    try std.testing.expectEqual(@as(?i64, 60_000 + k), napFor(3 * 3_600_000, 60_000));
+    // Nenhum dos dois: espera evento. Muito longe: cabe no inteiro do SDL.
+    try std.testing.expectEqual(@as(?i64, null), napFor(null, null));
+    try std.testing.expectEqual(@as(?i64, 1000), napFor(1000, null));
+    try std.testing.expectEqual(@as(?i64, std.math.maxInt(i32)), napFor(null, 40 * 86_400_000));
 }
 
 test "passo menor que a precisão do f32 termina" {
