@@ -302,7 +302,7 @@ fn planWidth(font: ?*const anyopaque, size: f32, s: []const u8) f32 {
 /// mensagem ou a descrição de um embed), para o qa_rtl.zig conferir a ordem visual. `off` é o
 /// byte do trecho no texto; o marcador de lista guarda onde o desenho dele ficou.
 pub var qa_watch: ?[*]const u8 = null;
-pub const QaRun = struct { off: u32, len: u32, x: f32, y: f32, w: f32, rtl: bool, marker: bool };
+pub const QaRun = struct { off: u32, len: u32, x: f32, y: f32, w: f32, rtl: bool, marker: bool, shown: [16]u8 = undefined, shown_len: u8 = 0 };
 pub var qa_runs: [256]QaRun = undefined;
 pub var qa_runs_n: usize = 0;
 
@@ -449,7 +449,14 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                 if (watched and qa_runs_n < qa_runs.len) {
                     const at: u32 = @intCast(@intFromPtr(word.text.ptr) - @intFromPtr(o.base.?) + (if (atomic) 0 else r.from));
                     const g = if (marker) markerGlyph(sp, font, size, s, x0 + px, r.w, dir) else MarkerGlyph{ .x = x0 + px, .w = r.w };
-                    qa_runs[qa_runs_n] = .{ .off = at, .len = @intCast(if (atomic) word.text.len else rs.len), .x = g.x, .y = y0 + y, .w = g.w, .rtl = r.rtl, .marker = marker };
+                    var q: QaRun = .{ .off = at, .len = @intCast(if (atomic) word.text.len else rs.len), .x = g.x, .y = y0 + y, .w = g.w, .rtl = r.rtl, .marker = marker };
+                    // O marcador como foi desenhado (o número da lista numerada, na direção dele).
+                    if (marker) {
+                        const v = bidi.visualRun(s, dir == .rtl) orelse s;
+                        q.shown_len = @intCast(@min(v.len, q.shown.len));
+                        @memcpy(q.shown[0..q.shown_len], v[0..q.shown_len]);
+                    }
+                    qa_runs[qa_runs_n] = q;
                     qa_runs_n += 1;
                 }
                 if (dl) |l| {

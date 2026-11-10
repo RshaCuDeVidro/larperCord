@@ -509,6 +509,39 @@ fn orderedRtl(app: *App) bool {
     return mk.rtl and markerRightOfText(mk);
 }
 
+fn jumpWide(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_ordered_wide));
+}
+
+/// O marcador da linha que começa no byte `off` foi desenhado como `want`.
+fn markerShows(off: usize, want: []const u8) bool {
+    const mk = runAt(off, true) orelse return false;
+    return std.mem.eql(u8, mk.shown[0..mk.shown_len], want);
+}
+
+/// A linha `n` (contando do 0) de `text` começa neste byte.
+fn lineStart(text: []const u8, n: usize) usize {
+    var at: usize = 0;
+    for (0..n) |_| at = std.mem.indexOfScalarPos(u8, text, at, '\n').? + 1;
+    return at;
+}
+
+/// "10.", "12." e "123." num parágrafo RTL saem ".10", ".12" e ".123", à direita do texto;
+/// em português, "10." e "1000." como estão.
+fn wideNumbers(app: *App) bool {
+    if (!watchMsg(app, gw.rtl_ordered_wide)) return false;
+    const t = gw.rtl_ordered_wide;
+    if (!markerShows(lineStart(t, 0), ".10") or !markerShows(lineStart(t, 1), ".12") or !markerShows(lineStart(t, 2), ".123")) return false;
+    for (0..3) |n| if (!markerRightOfText(runAt(lineStart(t, n), true).?)) return false;
+    return true;
+}
+
+fn wideNumbersLtr(app: *App) bool {
+    if (!watchMsg(app, gw.ltr_ordered_wide)) return false;
+    const t = gw.ltr_ordered_wide;
+    return markerShows(lineStart(t, 0), "10.") and markerShows(lineStart(t, 1), "1000.");
+}
+
 /// "- مرحبا\n- مرحبا 😃": os dois "•" à direita do texto, e o emoji à esquerda da palavra.
 fn bulletsRtl(app: *App) bool {
     if (!watchMsg(app, gw.rtl_list)) return false;
@@ -773,6 +806,12 @@ pub const ops_theme = [_]Op{
     .{ .shot = "rtl9-apagada" },
     run(dropDeleted),
     expect("a apagada sai", deletedGone),
+    run(jumpWide),
+    expect("a lista com números de dois e três algarismos aparece", jumped),
+    .{ .wait = 1700 },
+    expect("\"12. نص\": o número da lista sai \".12\", não \".21\" (e \".10\", \".123\")", wideNumbers),
+    expect("\"1000. World\": número largo da lista em português, como está", wideNumbersLtr),
+    .{ .shot = "rtl9-numeros" },
     run(jumpX),
     expect("o embed do X aparece", jumped),
     .{ .wait = 1700 },

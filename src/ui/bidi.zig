@@ -278,6 +278,12 @@ fn rtlLine(ln: []const u8, at: usize) ?usize {
     if (len == 0) return at;
     const l: Index = @intCast(len);
     fribidi_get_bidi_types(&cps, l, &types);
+    // Número ou letra da esquerda para a direita não fica no nível ímpar: o trecho tem mais de
+    // um nível ("12." de um item de lista num parágrafo RTL), e quem resolve é o algoritmo
+    // inteiro, com a direção do parágrafo da direita para a esquerda (".12", não ".21").
+    for (types[0..len]) |t| {
+        if (t & mask_number != 0 or (t & mask_strong != 0 and t & mask_rtl == 0)) return line(ln, at, par_rtl);
+    }
     // Onde começa cada pedaço, antes de moldar (a forma moldada não muda a classe).
     var cl: Clusters = .{};
     for (0..len) |i| starts[i] = cl.starts(cps[i], types[i]);
@@ -565,12 +571,23 @@ test "pedaço num nível só: espelho, ordem e emoji inteiro" {
     try std.testing.expect(visualRun("✔️", true) == null);
     try std.testing.expect(visualRun("👍🏽", true) == null);
     try std.testing.expect(visualRun("👩‍💻", true) == null);
-    // Dois emojis num trecho RTL trocam de lugar, mas cada um fica inteiro.
-    try std.testing.expectEqualStrings("🇵🇹🇧🇷", visualRun("🇧🇷🇵🇹", true).?);
+    // Dois emojis num trecho RTL trocam de lugar, mas cada um fica inteiro. (As letras das
+    // bandeiras são da esquerda para a direita no Unicode: duas bandeiras ficam na ordem.)
+    try std.testing.expectEqualStrings("🇧🇷🇵🇹", visualRun("🇧🇷🇵🇹", true) orelse "🇧🇷🇵🇹");
     // (O ZWJ não vai para a tela: o ImGui desenha um emoji de cada vez.)
     try std.testing.expectEqualStrings("👩💻👍🏽", visualRun("👍🏽👩‍💻", true).?);
     // As marcas do árabe continuam depois da letra delas.
     try std.testing.expectEqualStrings(visual("مَرْحَبًا").?, visualRun("مَرْحَبًا", true).?);
+    // O número de um item de lista numerada num parágrafo RTL: o ponto à esquerda, os
+    // algarismos na ordem deles (não ".21").
+    try std.testing.expectEqualStrings(".1", visualRun("1.", true).?);
+    try std.testing.expectEqualStrings(".10", visualRun("10.", true).?);
+    try std.testing.expectEqualStrings(".12", visualRun("12.", true).?);
+    try std.testing.expectEqualStrings(".123", visualRun("123.", true).?);
+    try std.testing.expectEqualStrings(".١٢", visualRun("١٢.", true).?);
+    try std.testing.expectEqualStrings("abc )", visualRun("( abc", true).?);
+    try std.testing.expect(visualRun("12.", false) == null);
+    try std.testing.expect(visualRun("1000.", false) == null);
     // Nível par: o número e o latino como estão.
     try std.testing.expect(visualRun("12", false) == null);
     try std.testing.expect(visualRun("problem", false) == null);
