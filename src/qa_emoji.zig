@@ -176,6 +176,43 @@ fn reactedViaPicker(app: *App) bool {
     return a.me and a.count == 1 and app.st.popup == .none;
 }
 
+// --- Emoji no meio do chip --------------------------------------------------------
+
+/// Os do relato (✅ 🟢 👍), um coração com seletor de variação e uma bandeira (dois
+/// desenhos lado a lado), na última mensagem do canal.
+const centered_emoji = [_][]const u8{ "✅", "🟢", "👍", "❤️", "🇧🇷" };
+
+fn lastMessage(app: *App) ?*StoredMessage {
+    const cs = channel(app) orelse return null;
+    if (cs.messages.items.len == 0) return null;
+    return &cs.messages.items[cs.messages.items.len - 1];
+}
+fn addUnicodeReactions(app: *App) void {
+    const m = lastMessage(app) orelse return;
+    for (centered_emoji) |e| app.store.apply(.{ .reaction = .{ .channel = geral, .id = m.msg.id, .emoji = types.Reaction.init(e), .user = 1003, .add = true } }, 0) catch {};
+}
+/// O meio do desenho de cada emoji Unicode fica no meio do lugar dele no chip (meio pixel
+/// de folga: a posição é arredondada para o pixel). Antes, a posição saía de contas da
+/// largura e da linha, e a fonte de emoji decidia onde o desenho caía.
+fn emojiCentered(app: *App) bool {
+    const m = lastMessage(app) orelse return false;
+    var seen: usize = 0;
+    var b1: [56]u8 = undefined;
+    var b2: [56]u8 = undefined;
+    for (m.reactionSlice(), 0..) |*r, i| {
+        if (r.custom != 0) continue;
+        const ink = qa.find(std.fmt.bufPrint(&b1, "chip-ink:{d}:{d}", .{ m.msg.id, i }) catch return false) orelse return false;
+        const slot = qa.find(std.fmt.bufPrint(&b2, "chip-emoji:{d}:{d}", .{ m.msg.id, i }) catch return false) orelse return false;
+        const dx = (ink.x + ink.w / 2) - (slot.x + slot.w / 2);
+        const dy = (ink.y + ink.h / 2) - (slot.y + slot.h / 2);
+        if (@abs(dx) > 0.5 or @abs(dy) > 0.5) return false;
+        // E cabe no lugar (sequências encolhem).
+        if (ink.w > slot.w + 0.01 or ink.h > slot.h + 0.01) return false;
+        seen += 1;
+    }
+    return seen >= centered_emoji.len;
+}
+
 // --- Modo economia ----------------------------------------------------------------
 
 fn saverOn(app: *App) void {
@@ -248,6 +285,29 @@ fn serversTab(_: *App) bool {
 }
 fn localInserted(app: *App) bool {
     return std.mem.indexOf(u8, input(app), ":larper:") != null and app.st.popup == .none;
+}
+
+// --- Cursor depois do emoji -------------------------------------------------------
+
+fn composerFocused(app: *App) bool {
+    return @import("ui/vim.zig").composer_active and app.st.popup == .none;
+}
+fn tJoyCell(_: *App, b: []u8) []const u8 {
+    const joy = emoji_data.byCode("joy") orelse return "";
+    return std.fmt.bufPrint(b, "emoji:{d}", .{joy}) catch "";
+}
+/// O que se digita depois do emoji entra logo depois dele, não no começo da caixa.
+fn typedAfterLtr(app: *App) bool {
+    return std.mem.eql(u8, input(app), "abc😂x");
+}
+fn typedAfterArabic(app: *App) bool {
+    return std.mem.eql(u8, input(app), "مرحبا😂x");
+}
+fn typedAfterMiddle(app: *App) bool {
+    return std.mem.eql(u8, input(app), "ab😂xcd");
+}
+fn typedAfterList(app: *App) bool {
+    return std.mem.eql(u8, input(app), "ab 😂 x");
 }
 fn lockedStays(app: *App) bool {
     return app.st.popup == .emoji and app.st.toast.is_error and std.mem.indexOf(u8, app.st.toast.text(), "Nitro") != null;
@@ -427,6 +487,13 @@ pub const ops = [_]Op{
     dyn(tPickCafe),
     expect("reagir pelo seletor com emoji personalizado", reactedViaPicker),
 
+    s("emoji no meio do chip"),
+    .{ .run = addUnicodeReactions },
+    .{ .run = scrollToEmoji },
+    .{ .wait = 150 },
+    .{ .expect = .{ .name = "emoji Unicode no meio do chip da reação (✅ 🟢 👍 ❤️ 🇧🇷)", .check = emojiCentered, .timeout_ms = 2000 } },
+    .{ .shot = "61b-emoji-reacao-centrada" },
+
     s("modo economia"),
     .{ .run = saverOn },
     .{ .wait = 200 },
@@ -481,6 +548,47 @@ pub const ops = [_]Op{
     .{ .shot = "65b-emoji-nada" },
     key(c.ImGuiKey_Escape),
     expect("Esc fecha o seletor, mesmo com a busca em foco", pickerClosed),
+
+    s("cursor depois do emoji"),
+    .{ .run = clearInput },
+    click("composer"),
+    .{ .text = "abc" },
+    click("composer-emoji"),
+    expect("abre o seletor com texto na caixa", pickerOpen),
+    .{ .text = "joy" },
+    .{ .expect = .{ .name = "busca acha", .check = searchFound, .timeout_ms = 2000 } },
+    key(c.ImGuiKey_Enter),
+    expect("o emoji entra", joyInserted),
+    expect("a caixa volta a ter o foco", composerFocused),
+    .{ .text = "x" },
+    expect("o cursor fica logo depois do emoji (texto em inglês)", typedAfterLtr),
+    .{ .run = clearInput },
+    click("composer"),
+    .{ .text = "مرحبا" },
+    click("composer-emoji"),
+    expect("abre o seletor com texto em árabe", pickerOpen),
+    .{ .text = "joy" },
+    .{ .expect = .{ .name = "busca acha", .check = searchFound, .timeout_ms = 2000 } },
+    dyn(tJoyCell),
+    expect("o emoji entra pelo clique", joyInserted),
+    expect("a caixa volta a ter o foco", composerFocused),
+    .{ .text = "x" },
+    expect("o cursor fica logo depois do emoji (texto em árabe)", typedAfterArabic),
+    .{ .run = clearInput },
+    click("composer"),
+    .{ .text = "abcd" },
+    key(c.ImGuiKey_LeftArrow),
+    key(c.ImGuiKey_LeftArrow),
+    click("composer-emoji"),
+    expect("abre o seletor com o cursor no meio do texto", pickerOpen),
+    .{ .text = "joy" },
+    .{ .expect = .{ .name = "busca acha", .check = searchFound, .timeout_ms = 2000 } },
+    key(c.ImGuiKey_Enter),
+    expect("o emoji entra no meio", joyInserted),
+    expect("a caixa volta a ter o foco", composerFocused),
+    .{ .text = "x" },
+    expect("o cursor fica logo depois do emoji no meio do texto", typedAfterMiddle),
+    .{ .run = clearInput },
 
     s("autocompletar"),
     .{ .run = clearInput },
@@ -560,6 +668,14 @@ pub const ops = [_]Op{
     .{ .shot = "71-autocompletar-comandos" },
     key(c.ImGuiKey_Enter),
     expect("escolher entra com o nome do comando", commandInserted),
+    .{ .run = clearInput },
+    .{ .wait = 60 },
+    .{ .text = "ab :joy" },
+    .{ .expect = .{ .name = ":joy na lista depois de texto", .check = listOpen, .timeout_ms = 2000 } },
+    click("ac:0"),
+    expect("a caixa volta a ter o foco depois do clique na lista", composerFocused),
+    .{ .text = "x" },
+    expect("clique na lista: o cursor fica depois do emoji", typedAfterList),
     .{ .run = clearInput },
     .{ .wait = 60 },
     .{ .text = "@an" },

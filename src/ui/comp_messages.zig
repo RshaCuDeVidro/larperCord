@@ -1067,8 +1067,9 @@ fn colonName(buf: []u8, rc: *const types.Reaction) []const u8 {
     return std.fmt.bufPrint(buf, ":{s}:", .{rc.text()}) catch rc.text();
 }
 
+/// O lugar do emoji no chip: o mesmo quadrado para o Unicode e para a imagem.
 fn emojiW(ctx: *d.Ctx, rc: *const types.Reaction) f32 {
-    if (rc.custom == 0) return 16;
+    if (rc.custom == 0) return 18;
     if (emoji_img.enabled(ctx)) return 18;
     var nb: [40]u8 = undefined;
     return d.width(ctx.ui.get(.medium), 12, colonName(&nb, rc));
@@ -1103,20 +1104,26 @@ fn reactions(ctx: *d.Ctx, dl: *c.ImDrawList, m: *StoredMessage, x: f32, y: f32, 
         const cr_r = @min(8, ctx.th.radius + 2);
         d.rect(dl, cr, if (hb.hovered) bg.mix(ctx.col(.text), 0.06) else bg, cr_r);
         if (rc.me or hb.hovered) d.border(dl, cr, if (rc.me) ctx.col(.accent) else ctx.col(.border).mix(ctx.col(.text), 0.1), cr_r, 1);
+        // O lugar do emoji: no meio da altura do chip, com 6 de folga dos lados.
+        const eb: d.Rect = .{ .x = cr.x + 6, .y = cr.y + 3, .w = emojiW(ctx, rc), .h = 18 };
         if (rc.custom != 0) {
             var nb: [40]u8 = undefined;
             const shown = colonName(&nb, rc);
             if (emoji_img.enabled(ctx)) {
-                emoji_img.draw(ctx, dl, rc.custom, rc.animated, .{ .x = cr.x + 6, .y = cr.y + 3, .w = 18, .h = 18 }, 1, hb.hovered, true);
+                emoji_img.draw(ctx, dl, rc.custom, rc.animated, eb, 1, hb.hovered, true);
             } else d.text(dl, fam.get(.medium), 12, cr.x + 6, d.centerY(cr, 12), ctx.col(.text).mix(ctx.col(.muted), 0.3), shown);
             var tb: [96]u8 = undefined;
             d.tip(ctx, cr, i18n.fmt(&tb, "{s}  ·  botão direito: quem reagiu", "{s}  ·  right-click: who reacted", .{shown}), hb.hovered);
         } else {
-            // Sequência (família, bandeira): cada pedaço é um desenho; cabe no lugar.
+            // Pelo desenho de verdade, seja qual for a fonte de emoji. Sequência (família,
+            // bandeira): cada pedaço é um desenho, e tudo encolhe para caber no lugar.
             const pick = @import("emoji_picker.zig");
             const g = pick.drawable(rc.text());
-            const es = pick.fitSize(fam.get(.regular), g.slice(), 15, 18);
-            d.text(dl, fam.get(.regular), es, cr.x + 6, cr.y + 12 - es * 0.67, d.Rgba.white, g.slice());
+            const ink = pick.drawCentered(dl, fam.get(.regular), g.slice(), 15, eb, d.Rgba.white);
+            if (qa.on()) {
+                qa.mark(ink, "chip-ink:{d}:{d}", .{ m.msg.id, i });
+                qa.mark(eb, "chip-emoji:{d}:{d}", .{ m.msg.id, i });
+            }
             d.tip(ctx, cr, i18n.tr("Botão direito: quem reagiu", "Right-click: who reacted"), hb.hovered);
         }
         d.text(dl, fam.get(.semibold), 13, cr.x + 12 + emojiW(ctx, rc), d.centerY(cr, 13), if (rc.me) ctx.col(.accent).mix(ctx.col(.text), 0.3) else ctx.col(.muted), cnt);
@@ -1608,9 +1615,14 @@ fn inputCallback(data: [*c]c.ImGuiInputTextCallbackData) callconv(.c) c_int {
         st.input_sync = false;
         c.ImGuiInputTextCallbackData_DeleteChars(data, 0, data.*.BufTextLen);
         c.ImGuiInputTextCallbackData_InsertChars(data, 0, &st.input, null);
-        // O autocompletar pediu o cursor logo depois do que entrou.
-        if (autocomplete.pending_cursor) |p| {
-            autocomplete.pending_cursor = null;
+    }
+    // O autocompletar pediu o cursor logo depois do que entrou. O seletor de emoji e o
+    // clique na lista tiram o foco da caixa: o texto novo entra com ela solta (ver
+    // `composer`), e o ImGui, ao dar o foco de volta a um texto diferente, põe o cursor
+    // no começo. O pedido espera a caixa voltar; um clique nela, nesse quadro, decide.
+    if (autocomplete.pending_cursor) |p| {
+        autocomplete.pending_cursor = null;
+        if (!c.ImGui_IsMouseClicked(0)) {
             const at: c_int = @intCast(@min(p, @as(usize, @intCast(data.*.BufTextLen))));
             data.*.CursorPos = at;
             data.*.SelectionStart = at;
