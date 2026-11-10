@@ -152,6 +152,7 @@
 "All Messages" "すべてのメッセージ"
 "All your friends are already here." "フレンド全員がすでに参加しています。"
 "Allocated in total" "割り当て合計"
+"Also works while another window is focused, and that app still gets the key." "ほかのウィンドウがアクティブなときも動作し、そのアプリにもキー入力は届きます。"
 "Alt text" "代替テキスト"
 "Always show spoilers" "ネタバレを常に表示"
 "an image" "画像"
