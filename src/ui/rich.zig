@@ -502,7 +502,10 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
                     // A seleção vem por cima: o fundo do código não pode cobri-la.
                     const sel_pad = if (sp.flags.block) pad + 4 + ol.code_gutter else pad;
                     const last_run = ri + 1 >= n_runs;
-                    if (o.base) |base| select(l, th_col, base, if (atomic) word.text else rs, word.space_after and last_run, sp, font, size, sel_pad, x0 + px, y0 + y, r.w, space_w, ol, line_start and ri == 0, vline != null and vline.?.last and last_run, vline, x0, r.rtl and !atomic);
+                    // Código e linha de bloco não se quebram por nível: saem pela primeira letra
+                    // forte deles, e a seleção acompanha.
+                    const mirror = if (sp.flags.code or sp.flags.block) bidi.baseRtl(word.text) else r.rtl and !atomic;
+                    if (o.base) |base| select(l, th_col, base, if (atomic) word.text else rs, word.space_after and last_run, sp, font, size, sel_pad, x0 + px, y0 + y, r.w, space_w, ol, line_start and ri == 0, vline != null and vline.?.last and last_run, vline, x0, mirror);
                     if (block_top and o.ctx != null) copy = .{ .sp = sp, .x = x0 + px, .y = y0 + y, .at_top = y == 0 };
                 }
             }

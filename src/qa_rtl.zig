@@ -563,6 +563,26 @@ fn wideInColumnLtr(app: *App) bool {
     return @abs(a.x - b.x) < 0.5;
 }
 
+fn jumpCode(app: *App) void {
+    jumpTo(app, rulesMsg(app, gw.rtl_code));
+}
+
+fn tCode(app: *App, buf: []u8) []const u8 {
+    const m = rulesMsg(app, gw.rtl_code) orelse return "";
+    return std.fmt.bufPrint(buf, "msgtext:{d}", .{m.msg.id}) catch "";
+}
+
+/// Arrastar da ponta direita do código em árabe até o meio pega o começo dele (o texto do
+/// código sai da direita para a esquerda, e a seleção acompanha).
+fn codeSelectedFromStart(app: *App) bool {
+    const m = rulesMsg(app, gw.rtl_code) orelse return false;
+    const sel = &app.st.selection;
+    if (sel.a_id != m.msg.id or sel.b_id != m.msg.id) return false;
+    const lo = @min(sel.a_off, sel.b_off);
+    const hi = @max(sel.a_off, sel.b_off);
+    return lo == 1 and hi > 1 and hi + 1 < m.msg.content.len;
+}
+
 fn wideNumbersLtr(app: *App) bool {
     if (!watchMsg(app, gw.ltr_ordered_wide)) return false;
     const t = gw.ltr_ordered_wide;
@@ -841,6 +861,12 @@ pub const ops_theme = [_]Op{
     expect("número largo da lista em árabe não passa da borda direita da coluna", wideInColumnRtl),
     expect("número largo da lista em português não passa da borda esquerda da coluna", wideInColumnLtr),
     .{ .shot = "rtl9-numeros" },
+    run(jumpCode),
+    expect("o código em árabe aparece", jumped),
+    .{ .wait = 1700 },
+    .{ .drag = .{ .from = .{ .dyn_at = .{ .f = tCode, .fx = 0.97, .fy = 0.5 } }, .to = .{ .dyn_at = .{ .f = tCode, .fx = 0.5, .fy = 0.5 } } } },
+    expect("arrastar da ponta direita do código em árabe até o meio pega o começo dele", codeSelectedFromStart),
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
     run(jumpX),
     expect("o embed do X aparece", jumped),
     .{ .wait = 1700 },
