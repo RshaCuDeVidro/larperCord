@@ -261,6 +261,24 @@ fn stillOnTop(app: *App) bool {
     return onTop(app, closed_dm);
 }
 
+// Apertar uma DM, chegar mensagem que mexe na lista e só então soltar.
+var press_y: f32 = 0;
+fn pressRow(app: *App) void {
+    press_y = rowY(received_dm) orelse -1;
+    c.ImGuiIO_AddMouseButtonEvent(app.io, 0, true);
+}
+fn reorderUnderPress(app: *App) void {
+    // Uma DM de baixo sobe: a apertada desce uma linha e a de cima dela fica sob o mouse.
+    _ = incomingDm(app, gw.dmId(0), 1001, true, false);
+}
+fn releaseRow(app: *App) void {
+    c.ImGuiIO_AddMouseButtonEvent(app.io, 0, false);
+}
+fn pressedOpened(app: *App) bool {
+    const moved = if (rowY(received_dm)) |y| press_y > 0 and y > press_y else false;
+    return moved and topDm(app) == gw.dmId(0) and app.st.activeChannel() == received_dm;
+}
+
 pub const ops = [_]Op{
     s("pedidos de mensagem: fora das conversas e sem notificar"),
     run(openFirstDm),
@@ -335,4 +353,13 @@ pub const ops = [_]Op{
     run(deleteLast),
     .{ .wait = 200 },
     expect("apagar a última mensagem não reordena", stillOnTop),
+
+    s("lista de DMs: o clique fica com a conversa apertada"),
+    .{ .hover = .{ .mark = "channel:900004" } },
+    run(pressRow),
+    .{ .wait = 150 },
+    run(reorderUnderPress),
+    .{ .wait = 250 },
+    run(releaseRow),
+    expect("a lista andou entre apertar e soltar: abre a conversa apertada, não a que passou para baixo do mouse", pressedOpened),
 };
