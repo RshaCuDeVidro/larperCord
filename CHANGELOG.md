@@ -1,5 +1,10 @@
 # What changed in each version
 
+## 0.6.5
+
+**Tray**
+- On KDE and GNOME with Wayland, clicking the tray icon brings the window to the front when it's behind another window or minimized. Before, KDE only marked it as wanting attention and GNOME showed an "is ready" notice.
+
 ## 0.6.4
 
 **Conversations**

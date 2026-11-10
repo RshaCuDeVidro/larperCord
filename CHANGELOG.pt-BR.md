@@ -1,5 +1,10 @@
 # O que mudou em cada versão
 
+## 0.6.5
+
+**Bandeja**
+- No KDE e no GNOME com Wayland, clicar no ícone da bandeja traz a janela para a frente quando ela está atrás de outra ou minimizada. Antes o KDE só marcava a janela como pedindo atenção, e o GNOME mostrava um aviso de "está pronto".
+
 ## 0.6.4
 
 **Conversas**
