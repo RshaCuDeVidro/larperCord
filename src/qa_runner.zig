@@ -1002,10 +1002,10 @@ fn mixerOpen(app: *App) bool {
     return app.st.popup == .mixer;
 }
 fn userMuted(app: *App) bool {
-    return (app.st.voice_volumes.get(1001) orelse 1.0) < 0.01;
+    return app.st.volumes.isMuted(1001) and app.st.volumes.gain(1001) == 0;
 }
 fn userAudible(app: *App) bool {
-    return (app.st.voice_volumes.get(1001) orelse 1.0) > 0.99;
+    return !app.st.volumes.isMuted(1001) and app.st.volumes.gain(1001) > 0.99;
 }
 fn muted(app: *App) bool {
     return app.st.muted;

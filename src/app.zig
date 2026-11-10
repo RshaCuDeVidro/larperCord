@@ -481,6 +481,7 @@ pub const App = struct {
         app.saveDrafts();
         app.st.drafts.deinit(app.gpa);
         app.st.filtros.deinit(app.gpa);
+        app.st.volumes.deinit(app.gpa);
         app.st.conta.deinit();
         app.asked_profiles.deinit(app.gpa);
         var colors_it = app.theme_colors.iterator();
@@ -1021,12 +1022,8 @@ pub const App = struct {
                 // `theme-options "terminal" crt=#false ascii=#true`
                 const name = (n.arg(0) orelse continue).asString() orelse continue;
                 for (n.props) |p| if (p.value.asBool()) |v| app.themes.choose(name, p.key, v);
-            } else if (std.mem.eql(u8, n.name, "voice-volume")) {
-                // `voice-volume "1234" 0.8`
-                const sid = (n.arg(0) orelse continue).asString() orelse continue;
-                const gain = (n.arg(1) orelse continue).asNumber() orelse continue;
-                const uid = std.fmt.parseInt(types.Id, sid, 10) catch continue;
-                app.st.voice_volumes.put(app.gpa, uid, @floatCast(std.math.clamp(gain, 0, 2))) catch {};
+            } else if (app.st.volumes.applyNode(app.gpa, n)) {
+                // `voice-volume "1234" 0.8` e `voice-mute "1234"` (core/volumes.zig).
             } else if (app.st.filtros.applyNode(app.gpa, n, now())) {
                 // Palavras de alerta, filtro, ignorados e foco (core/filtros.zig).
             } else if (std.mem.eql(u8, n.name, "guild-color")) {
@@ -1061,6 +1058,16 @@ pub const App = struct {
         return app.theme_colors.getPtr(key);
     }
 
+    /// Ao entrar numa call: o volume de cada pessoa para o motor de voz, já com o
+    /// "Silenciar para mim" (zero), inclusive de quem só foi silenciada.
+    pub fn sendVoiceGains(app: *App) void {
+        const vs = &app.st.volumes;
+        var it = vs.level.keyIterator();
+        while (it.next()) |uid| app.cmd(.{ .voice_volume = .{ .user = uid.*, .volume = vs.gain(uid.*) } });
+        var mit = vs.muted.keyIterator();
+        while (mit.next()) |uid| if (!vs.level.contains(uid.*)) app.cmd(.{ .voice_volume = .{ .user = uid.*, .volume = 0 } });
+    }
+
     pub fn saveSettings(app: *App) void {
         if (app.opts.shot != null or app.opts.qa) return;
         var buf: [512]u8 = undefined;
@@ -1068,8 +1075,7 @@ pub const App = struct {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(app.gpa);
         settings_state.write(&app.st.settings, app.themes.name(), &out, app.gpa) catch return;
-        var vit = app.st.voice_volumes.iterator();
-        while (vit.next()) |e| out.print(app.gpa, "voice-volume \"{d}\" {d:.3}\n", .{ e.key_ptr.*, e.value_ptr.* }) catch return;
+        app.st.volumes.write(&out, app.gpa) catch return;
         app.st.filtros.save = false;
         app.st.filtros.write(&out, app.gpa) catch return;
         var it = app.themes.choices.iterator();
@@ -1859,8 +1865,7 @@ pub const App = struct {
                     st.voice_mixer = false;
                     app.resetCallState();
                     app.cmd(.{ .join_voice = .{ .guild = cs.info.guild, .channel = ch, .mute = st.muted, .deaf = st.deafened } });
-                    var vit = st.voice_volumes.iterator();
-                    while (vit.next()) |e| app.cmd(.{ .voice_volume = .{ .user = e.key_ptr.*, .volume = e.value_ptr.* } });
+                    app.sendVoiceGains();
                 }
             },
             .leave_voice => {
@@ -1887,14 +1892,20 @@ pub const App = struct {
             .accept_call => app_chamada.accept(app),
             .decline_call => app_chamada.decline(app),
             .set_voice_volume => |vv| {
-                const val = std.math.clamp(vv.volume, 0, 2);
-                st.voice_volumes.put(app.gpa, vv.user, val) catch {};
-                app.cmd(.{ .voice_volume = .{ .user = vv.user, .volume = val } });
+                // Silenciada para nós, continua sem som: só o volume guardado muda.
+                st.volumes.setVolume(app.gpa, vv.user, vv.volume);
+                app.cmd(.{ .voice_volume = .{ .user = vv.user, .volume = st.volumes.gain(vv.user) } });
                 const ms = now();
                 if (ms - st.voice_save_ms > 2000) {
                     st.voice_save_ms = ms;
                     app.saveSettings();
                 }
+            },
+            .set_voice_mute => |vm| {
+                // Tirar o silêncio volta para o volume de antes (core/volumes.zig).
+                st.volumes.setMuted(app.gpa, vm.user, vm.mute);
+                app.cmd(.{ .voice_volume = .{ .user = vm.user, .volume = st.volumes.gain(vm.user) } });
+                app.saveSettings();
             },
             .create_thread => |ct| {
                 defer app.gpa.free(ct.name);
