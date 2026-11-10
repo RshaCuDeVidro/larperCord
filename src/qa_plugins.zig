@@ -910,17 +910,26 @@ fn stampRelative(app: *App) bool {
 fn stampShown(_: *App) bool {
     return anyMark("stamp:");
 }
-/// Em todos os formatos, na mesma hora: número sem sinal, e o ano onde deveria estar.
+/// Em todos os formatos e idiomas, na mesma hora: número sem sinal, o ano onde
+/// deveria estar e, em japonês e russo, o relativo no próprio idioma.
 fn stampReadable(_: *App) bool {
     const rich = @import("ui/rich.zig");
+    const old = i18n.current();
+    defer i18n.set(old);
     const when: u64 = 1_800_000_000;
-    for ("tTdDfFR") |style| {
-        var b: [96]u8 = undefined;
-        const t = rich.stampText(&b, when << 8 | style);
-        if (t.len < 2 or std.mem.indexOfScalar(u8, t, '+') != null or std.mem.eql(u8, t, "?")) return false;
-        if (std.mem.indexOfScalar(u8, "dDfF", style) != null and std.mem.indexOf(u8, t, "2027") == null) return false;
+    for ([_]i18n.Lang{ .pt, .en, .ja, .ru }) |l| {
+        i18n.set(l);
+        for ("tTdDfFR") |style| {
+            var b: [96]u8 = undefined;
+            const t = rich.stampText(&b, when << 8 | style);
+            if (t.len < 2 or std.mem.indexOfScalar(u8, t, '+') != null or std.mem.eql(u8, t, "?")) return false;
+            if (std.mem.indexOfScalar(u8, "dDfF", style) != null and std.mem.indexOf(u8, t, "2027") == null) return false;
+            if (style == 'R' and (l == .ja or l == .ru) and (std.mem.indexOf(u8, t, " ago") != null or std.mem.startsWith(u8, t, "in "))) return false;
+        }
     }
-    return true;
+    // Depois de 2262 a data por extenso não cabe no relógio do SDL: "?", sem estourar.
+    var far: [96]u8 = undefined;
+    return std.mem.eql(u8, rich.stampText(&far, 9_999_999_999 << 8 | 'F'), "?");
 }
 fn sendLink(app: *App) void {
     _ = inject(app, geral, 1001, "olha https://exemplo.com/pagina.");
@@ -1851,7 +1860,7 @@ pub const ops = [_]Op{
     expect("/ts põe o horário na caixa, sem enviar", stampInBox),
     key(c.ImGuiKey_Enter),
     expect("enviado, aparece como horário", stampShown),
-    expect("e é legível em todos os formatos", stampReadable),
+    expect("e é legível em todos os formatos e idiomas", stampReadable),
     .{ .shot = "plugin-horario" },
     ctrl(c.ImGuiKey_Comma),
     click("settings:Plugins"),

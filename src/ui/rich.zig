@@ -7,6 +7,7 @@ const md = @import("../core/markdown.zig");
 const Store = @import("../core/store.zig").Store;
 const d = @import("draw.zig");
 const i18n = @import("i18n.zig");
+const horario = @import("horario.zig");
 const qa = @import("qa.zig");
 const syntax = @import("syntax.zig");
 const emoji_img = @import("emoji_img.zig");
@@ -210,68 +211,32 @@ pub fn label(store: *const Store, sp: *const md.Span, buf: []u8) []const u8 {
     };
 }
 
-const months_pt = [_][]const u8{ "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro" };
-const months_en = [_][]const u8{ "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
-const days_pt = [_][]const u8{ "domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado" };
-const days_en = [_][]const u8{ "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-
-/// `<t:…>` no fuso de quem lê, nos estilos do Discord.
+/// `<t:…>` no fuso de quem lê, nos estilos do Discord (o texto de cada idioma em
+/// horario.zig).
 pub fn stampText(buf: []u8, value: u64) []const u8 {
     const st = md.stampOf(value);
     if (st.style == 'R') return relativeText(buf, st.unix);
     var dt: c.SDL_DateTime = undefined;
-    if (!c.SDL_TimeToDateTime(st.unix * 1_000_000_000, &dt, true)) return "?";
-    const en = i18n.current() != .pt;
-    const mon = (if (en) months_en else months_pt)[@intCast(std.math.clamp(dt.month, 1, 12) - 1)];
-    const wd = (if (en) days_en else days_pt)[@intCast(std.math.clamp(dt.day_of_week, 0, 6))];
+    // Depois de 2262 o SDL_Time não cabe: "?", e o relativo (R) continua valendo.
+    const ns = horario.sdlTime(st.unix) orelse return "?";
+    if (!c.SDL_TimeToDateTime(ns, &dt, true)) return "?";
     // Sem sinal: com largura, o formato poria um "+" na frente de um número com sinal.
-    const hour: u32 = @intCast(dt.hour);
-    const minute: u32 = @intCast(dt.minute);
-    const second: u32 = @intCast(dt.second);
-    const month: u32 = @intCast(dt.month);
-    const day: u32 = @intCast(dt.day);
-    const year: u32 = @intCast(dt.year);
-    const f = std.fmt.bufPrint;
-    return switch (st.style) {
-        't' => f(buf, "{d:0>2}:{d:0>2}", .{ hour, minute }),
-        'T' => f(buf, "{d:0>2}:{d:0>2}:{d:0>2}", .{ hour, minute, second }),
-        'd' => if (en) f(buf, "{d:0>2}/{d:0>2}/{d}", .{ month, day, year }) else f(buf, "{d:0>2}/{d:0>2}/{d}", .{ day, month, year }),
-        'D' => if (en) f(buf, "{s} {d}, {d}", .{ mon, day, year }) else f(buf, "{d} de {s} de {d}", .{ day, mon, year }),
-        'F' => if (en) f(buf, "{s}, {s} {d}, {d} {d:0>2}:{d:0>2}", .{ wd, mon, day, year, hour, minute }) else f(buf, "{s}, {d} de {s} de {d} {d:0>2}:{d:0>2}", .{ wd, day, mon, year, hour, minute }),
-        else => if (en) f(buf, "{s} {d}, {d} {d:0>2}:{d:0>2}", .{ mon, day, year, hour, minute }) else f(buf, "{d} de {s} de {d} {d:0>2}:{d:0>2}", .{ day, mon, year, hour, minute }),
-    } catch "?";
+    return horario.absolute(buf, st.style, .{
+        .year = @intCast(dt.year),
+        .month = @intCast(dt.month),
+        .day = @intCast(dt.day),
+        .hour = @intCast(dt.hour),
+        .minute = @intCast(dt.minute),
+        .second = @intCast(dt.second),
+        .weekday = @intCast(std.math.clamp(dt.day_of_week, 0, 6)),
+    }, i18n.current());
 }
 
 /// "em 2 horas", "há 3 dias": refeito a cada desenho, sem nada guardado.
 fn relativeText(buf: []u8, unix: i64) []const u8 {
     var ns: c.SDL_Time = 0;
     _ = c.SDL_GetCurrentTime(&ns);
-    const delta = unix - @divTrunc(ns, 1_000_000_000);
-    const secs = @abs(delta);
-    const Unit = struct { size: u64, pt: []const u8, pts: []const u8, en: []const u8, ens: []const u8, ja: []const u8 };
-    const units = [_]Unit{
-        .{ .size = 365 * 86400, .pt = "ano", .pts = "anos", .en = "year", .ens = "years", .ja = "年" },
-        .{ .size = 30 * 86400, .pt = "mês", .pts = "meses", .en = "month", .ens = "months", .ja = "ヶ月" },
-        .{ .size = 86400, .pt = "dia", .pts = "dias", .en = "day", .ens = "days", .ja = "日" },
-        .{ .size = 3600, .pt = "hora", .pts = "horas", .en = "hour", .ens = "hours", .ja = "時間" },
-        .{ .size = 60, .pt = "minuto", .pts = "minutos", .en = "minute", .ens = "minutes", .ja = "分" },
-        .{ .size = 1, .pt = "segundo", .pts = "segundos", .en = "second", .ens = "seconds", .ja = "秒" },
-    };
-    const u = for (units) |x| {
-        if (secs >= x.size) break x;
-    } else units[units.len - 1];
-    const n = secs / u.size;
-    const f = std.fmt.bufPrint;
-    if (i18n.en()) {
-        const name = if (n == 1) u.en else u.ens;
-        return (if (delta < 0) f(buf, "{d} {s} ago", .{ n, name }) else f(buf, "in {d} {s}", .{ n, name })) catch "?";
-    }
-    if (i18n.current() == .ja) {
-        // Japonês não distingue singular/plural: "{d}前" / "{d}後".
-        return (if (delta < 0) f(buf, "{d}{s}前", .{ n, u.ja }) else f(buf, "{d}{s}後", .{ n, u.ja })) catch "?";
-    }
-    const name = if (n == 1) u.pt else u.pts;
-    return (if (delta < 0) f(buf, "há {d} {s}", .{ n, name }) else f(buf, "em {d} {s}", .{ n, name })) catch "?";
+    return horario.relative(buf, unix - @divTrunc(ns, 1_000_000_000), i18n.current());
 }
 
 /// Ordem visual de um texto com árabe ou hebraico (ver `rich_plan`).

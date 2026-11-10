@@ -60,6 +60,7 @@ const updater = @import("net/updater.zig");
 const lsp_ui = @import("ui/lsp_ui.zig");
 const mem_tune = @import("platform/mem_tune.zig");
 const tray = @import("platform/tray.zig");
+const wl_ativacao = @import("platform/wl_ativacao.zig");
 const instance = @import("platform/instance.zig");
 const janela = @import("core/janela.zig");
 const bandeja = @import("core/bandeja.zig");
@@ -379,6 +380,10 @@ pub const App = struct {
         // No X11 e no Wayland, restaurar uma janela que não está minimizada tira a
         // maximização: só a minimizada é restaurada (no Windows segue como antes).
         if (sys.windows or minimized) _ = c.SDL_RestoreWindow(app.win.window);
+        // Aberta, atrás de outra ou minimizada: no Wayland a ficha vai direto ao
+        // compositor. O SDL_RaiseWindow pediria outra com o foco no painel, que o KWin
+        // e o Mutter recusam.
+        if (token != null and !hidden and wl_ativacao.activate(app.win.window, token.?)) return;
         _ = c.SDL_RaiseWindow(app.win.window);
     }
 

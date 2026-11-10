@@ -59,7 +59,8 @@ fn stampAt(rest: []const u8) ?Stamp {
         digits = digits[0 .. digits.len - 2];
     }
     const unix = std.fmt.parseInt(u64, digits, 10) catch return null;
-    // Até o ano 5138: o relógio do sistema conta em nanossegundos.
+    // Até o ano 5138, como o Discord. A data por extenso só vai até 2262 (o
+    // SDL_Time conta nanossegundos num i64): depois disso aparece "?" (ui/horario.zig).
     if (unix > 100_000_000_000) return null;
     return .{ .len = close + 1, .value = unix << 8 | style };
 }

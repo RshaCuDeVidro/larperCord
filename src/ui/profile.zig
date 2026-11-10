@@ -78,13 +78,15 @@ fn elapsed(buf: []u8, ms: i64) []const u8 {
 
 const months_short = [_][]const u8{ "jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.", "dez." };
 const months_short_en = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+const months_short_ru = [_][]const u8{ "янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек." };
 
 /// "21 de nov. de 2017" / "Nov 21, 2017".
 fn dateShort(buf: []u8, ms: i64) []const u8 {
     const t = w.localTime(@divTrunc(ms, 1000));
     if (i18n.current() == .ja) return std.fmt.bufPrint(buf, "{d}年{d}月{d}日", .{ t.year, t.month, t.day }) catch "";
     const m: usize = t.month - 1;
-    return i18n.fmt(buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ t.day, if (i18n.en()) months_short_en[m] else months_short[m], t.year });
+    const mon = if (i18n.current() == .ru) months_short_ru[m] else if (i18n.en()) months_short_en[m] else months_short[m];
+    return i18n.fmt(buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ t.day, mon, t.year });
 }
 
 /// Quando a conta foi criada (no próprio ID). A demonstração tem IDs

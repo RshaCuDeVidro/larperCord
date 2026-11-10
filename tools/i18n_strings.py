@@ -62,12 +62,14 @@ SKIP_TABLES = {
     "src/ui/emoji_data.zig",
 }
 # Recebem pt/en e de propósito não passam pelo i18n: mensagens para quem escreve
-# plugins (o runtime não conhece o i18n) e os dados da demonstração.
+# plugins (o runtime não conhece o i18n), os dados da demonstração e as palavras
+# que vão na consulta da busca (o analisador só entende português e inglês).
 NOT_I18N = {
     ("src/plugins/runtime.zig", "tr"),
     ("src/plugins/runtime.zig", "raiseFmt"),
     ("src/plugins/engine.zig", "runtime_tr"),
     ("src/net/fake_gateway.zig", "pick"),
+    ("src/ui/search_sugg.zig", "word"),
 }
 KEYWORDS = {"if", "while", "for", "switch", "catch", "orelse", "return", "and", "or", "try", "else", "defer", "errdefer"}
 

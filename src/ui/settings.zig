@@ -736,6 +736,7 @@ fn page(p: *Page, previews: []const Preview) void {
                 "Português (Brasil)",
                 "English (US)",
                 "日本語 (Japanese)",
+                "Русский (Russian)",
             }, &.{}, &s.language);
             p.note(i18n.tr(
                 "Por padrão o app segue o idioma do sistema. A troca vale na hora.",

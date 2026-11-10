@@ -22,6 +22,7 @@ const arq = @import("../core/som_arquivo.zig");
 const ruido = @import("../core/ruido.zig");
 const S = @import("../ui/settings_state.zig");
 const fsutil = @import("../platform/fsutil.zig");
+const ptt_global = @import("../platform/ptt_global.zig");
 
 const alloc = std.heap.c_allocator;
 
@@ -78,6 +79,8 @@ pub const Shared = struct {
     /// A tecla do aperte para falar está apertada (eventos do SDL, janela em foco).
     ptt_down: Atomic(bool) = .init(false),
     binding: Atomic(u32) = .init(0),
+    /// O código virtual da tecla no Windows, para ler sem foco (0 = não dá).
+    ptt_vk: Atomic(u8) = .init(0),
     /// Imposto pelo servidor (VOICE_STATE_UPDATE).
     server_mute: Atomic(bool) = .init(false),
     server_deaf: Atomic(bool) = .init(false),
@@ -184,6 +187,7 @@ pub fn apply(set: *const S.Settings) void {
     if (!std.mem.eql(u8, set.voice_key.slice(), ui_binding.slice())) {
         ui_binding = set.voice_key;
         sh.binding.store(voz.Binding.parse(set.voice_key.slice()).encode(), .monotonic);
+        refreshVk();
         sh.ptt_down.store(false, .monotonic);
     }
     const mic_changed = !std.mem.eql(u8, set.voice_mic.slice(), ui_mic.slice());
@@ -207,10 +211,19 @@ var captured: ?voz.Binding = null;
 pub fn startCapture() void {
     capturing = true;
     captured = null;
+    // Escolhendo outro atalho, o de antes não abre o microfone de fora da janela.
+    sh.ptt_vk.store(0, .monotonic);
 }
 
 pub fn cancelCapture() void {
     capturing = false;
+    refreshVk();
+}
+
+/// O código virtual do atalho de agora (Windows, para ler sem foco). Na thread da
+/// interface: o de uma tecla de caractere depende do layout.
+fn refreshVk() void {
+    sh.ptt_vk.store(if (capturing) 0 else ptt_global.vkOf(voz.Binding.decode(sh.binding.load(.monotonic))), .monotonic);
 }
 
 pub fn isCapturing() bool {
@@ -234,6 +247,8 @@ pub fn onSdlEvent(e: *const c.SDL_Event) bool {
                 if (!down) return true;
                 capturing = false;
                 if (e.key.scancode != c.SDL_SCANCODE_ESCAPE) captured = .{ .key = @intCast(e.key.scancode) };
+                // O mesmo atalho de antes não muda o texto das configurações: volta aqui.
+                refreshVk();
                 return true;
             }
             if (sh.ptt.load(.monotonic)) setPtt(voz.pttFromEvent(voz.Binding.decode(sh.binding.load(.monotonic)), .{ .key = .{ .code = @intCast(e.key.scancode), .down = down } }));
@@ -246,11 +261,14 @@ pub fn onSdlEvent(e: *const c.SDL_Event) bool {
                 if (!down) return true;
                 capturing = false;
                 captured = .{ .mouse = e.button.button };
+                refreshVk();
                 return true;
             }
             if (sh.ptt.load(.monotonic)) setPtt(voz.pttFromEvent(voz.Binding.decode(sh.binding.load(.monotonic)), .{ .mouse = .{ .button = e.button.button, .down = down } }));
         },
         c.SDL_EVENT_WINDOW_FOCUS_LOST => setPtt(voz.pttFromEvent(.none, .focus_lost)),
+        // Trocou o layout: a mesma posição pode ter outro código virtual.
+        c.SDL_EVENT_KEYMAP_CHANGED => refreshVk(),
         else => {},
     }
     return false;
@@ -258,6 +276,13 @@ pub fn onSdlEvent(e: *const c.SDL_Event) bool {
 
 fn setPtt(v: ?bool) void {
     if (v) |down| sh.ptt_down.store(down, .monotonic);
+}
+
+/// A tecla do aperte para falar, na thread de voz: os eventos do SDL com a janela
+/// em foco e, no Windows, também com outra janela em foco.
+pub fn pttKey() bool {
+    if (!sh.ptt.load(.monotonic)) return false;
+    return sh.ptt_down.load(.monotonic) or ptt_global.down(sh.ptt_vk.load(.monotonic));
 }
 
 // --- Dispositivos -----------------------------------------------------------

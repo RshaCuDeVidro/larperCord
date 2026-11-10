@@ -167,6 +167,7 @@ pub fn build(b: *std.Build) void {
     mod.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
     // Traduções além do português e do inglês: um arquivo por idioma (src/ui/i18n.zig).
     mod.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
+    mod.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     mod.addImport("c", translate.createModule());
     mod.addImport("builtin_themes", builtin_themes);
     mod.addImport("plugin_examples", plugin_examples);
@@ -341,6 +342,7 @@ pub fn build(b: *std.Build) void {
     test_mod.addAnonymousImport("changelog_en", .{ .root_source_file = b.path("CHANGELOG.md") });
     test_mod.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
     test_mod.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
+    test_mod.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     addLua(b, test_mod);
     addRnnoise(b, test_mod);
     addFribidi(b, test_mod);
@@ -577,6 +579,7 @@ fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     m.addAnonymousImport("changelog_en", .{ .root_source_file = b.path("CHANGELOG.md") });
     m.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
     m.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
+    m.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     m.addAnonymousImport("icon_64", .{ .root_source_file = b.path("assets/icon-64.png") });
     m.addAnonymousImport("icon_32", .{ .root_source_file = b.path("assets/icon-32.png") });
     for ([_][]const u8{ "third_party/imgui", "third_party/imgui/backends", "third_party/dcimgui", "third_party/dcimgui/backends", "third_party/stb", "third_party/libdave/includes" }) |p| m.addIncludePath(b.path(p));
