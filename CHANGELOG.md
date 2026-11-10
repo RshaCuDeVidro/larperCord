@@ -1,10 +1,5 @@
 # What changed in each version
 
-## 0.6.5
-
-**Calls**
-- The right-click menu of someone in your call has a User Volume slider, from 0 to 200% (100% is normal), and Mute for Me, from mdvtnk's request (#17). It shows wherever the person appears: the voice channel, the member list, a message, a DM call. It's the same setting as the call mixer, so the two stay in sync and it's saved.
-
 ## 0.6.4
 
 **Conversations**
@@ -30,6 +25,9 @@
 - The extra space before some emoji, like ⚠️ and ✔️, is gone.
 - The Urdu letter ہ shows instead of `?`, and Settings no longer lists Arabic as missing a font when DejaVu Sans has it.
 - The England, Scotland and Wales flags, and a few rare invisible characters, no longer cost about 5.5 MB of memory for each font and size.
+
+**Calls**
+- The right-click menu of someone in your call has a User Volume slider, from 0 to 200% (100% is normal), and Mute for Me, from mdvtnk's request (#17). It shows wherever the person appears: the voice channel, the member list, a message, a DM call. It's the same setting as the call mixer, so the two stay in sync and it's saved. Muting keeps their volume, so unmuting brings back the same level, in the menu and in the mixer.
 
 **Known limitations**
 - Arabic and Hebrew you type in the message box still go left to right. The message shows correctly once it's sent.
