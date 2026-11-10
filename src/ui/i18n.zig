@@ -548,6 +548,26 @@ test "idioma do sistema: o código exato, com ou sem região" {
     try testing.expect(!isLang("r", "ru"));
 }
 
+// As datas dos arquivos embutidos, com os valores na ordem em que o código passa
+// (status_menu.zig, widgets.zig, profile.zig): o {N} conta os marcadores do texto
+// em inglês, não os argumentos, e é fácil trocar dia e mês.
+test "datas dos arquivos embutidos na ordem de cada idioma" {
+    const old = current();
+    defer set(old);
+    var buf: [64]u8 = undefined;
+    const day: u32 = 9;
+    const month: u32 = 11;
+    const year: u32 = 2026;
+    set(.ja);
+    try testing.expectEqualStrings("11/09 03:39まで", fmt(&buf, "até {d:0>2}/{d:0>2} {s}", "until {1d:0>2}/{0d:0>2} {2s}", .{ day, month, "03:39" }));
+    try testing.expectEqualStrings("2026/11/09 03:39", fmt(&buf, "{d:0>2}/{d:0>2}/{d} {s}", "{1d:0>2}/{0d:0>2}/{2d} {3s}", .{ day, month, year, "03:39" }));
+    try testing.expectEqualStrings("2026年11月9日", fmt(&buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ day, "11月", year }));
+    set(.ru);
+    try testing.expectEqualStrings("до 09.11 03:39", fmt(&buf, "até {d:0>2}/{d:0>2} {s}", "until {1d:0>2}/{0d:0>2} {2s}", .{ day, month, "03:39" }));
+    try testing.expectEqualStrings("09.11.2026 03:39", fmt(&buf, "{d:0>2}/{d:0>2}/{d} {s}", "{1d:0>2}/{0d:0>2}/{2d} {3s}", .{ day, month, year, "03:39" }));
+    try testing.expectEqualStrings("9 ноября 2026 г.", fmt(&buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ day, "ноября", year }));
+}
+
 test "arquivo de tradução: erros" {
     var a: std.heap.ArenaAllocator = .init(testing.allocator);
     defer a.deinit();
