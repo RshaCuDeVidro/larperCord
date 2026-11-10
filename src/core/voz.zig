@@ -358,7 +358,7 @@ pub fn winKey(b: Binding) WinKey {
             100 => .{ .scan = 0x56 }, // a tecla a mais do ISO, ao lado do Shift esquerdo
             135 => .{ .scan = 0x73 }, // a "/?" do ABNT2 (ろ no JIS)
             137 => .{ .scan = 0x7D }, // ¥ do JIS
-            40, 88 => .{ .vk = 0x0D }, // Enter e o do teclado numérico
+            40 => .{ .vk = 0x0D },
             41 => .{ .vk = 0x1B },
             42 => .{ .vk = 0x08 },
             43 => .{ .vk = 0x09 },
@@ -383,9 +383,10 @@ pub fn winKey(b: Binding) WinKey {
             85 => .{ .vk = 0x6A },
             86 => .{ .vk = 0x6D },
             87 => .{ .vk = 0x6B },
-            89...97 => .{ .vk = @intCast(0x61 + (k - 89)) }, // 1..9 do teclado numérico
-            98 => .{ .vk = 0x60 },
-            99 => .{ .vk = 0x6E },
+            // Dígitos, ponto e Enter do teclado numérico: com o NumLock desligado os
+            // dígitos viram setas e Home/End, e o Enter tem o mesmo código do outro.
+            // Esses só valem com a janela em foco (os eventos do SDL distinguem).
+            88...99 => .none,
             101 => .{ .vk = 0x5D },
             104...115 => .{ .vk = @intCast(0x7C + (k - 104)) }, // F13..F24
             224 => .{ .vk = 0xA2 }, // Ctrl, Shift, Alt e Windows, esquerdos e direitos
@@ -1106,8 +1107,10 @@ test "atalho no Windows: código virtual fixo, do layout ou nenhum" {
     try t_eq(WinKey{ .vk = 0x7B }, winKey(.{ .key = 69 })); // F12
     try t_eq(WinKey{ .vk = 0x7C }, winKey(.{ .key = 104 })); // F13
     try t_eq(WinKey{ .vk = 0x87 }, winKey(.{ .key = 115 })); // F24
-    try t_eq(WinKey{ .vk = 0x61 }, winKey(.{ .key = 89 })); // 1 do numérico
-    try t_eq(WinKey{ .vk = 0x60 }, winKey(.{ .key = 98 })); // 0 do numérico
+    try t_eq(WinKey.none, winKey(.{ .key = 89 })); // 1 do numérico: só em foco
+    try t_eq(WinKey.none, winKey(.{ .key = 88 })); // Enter do numérico: só em foco
+    try t_eq(WinKey{ .vk = 0x0D }, winKey(.{ .key = 40 })); // Enter
+    try t_eq(WinKey{ .vk = 0x6B }, winKey(.{ .key = 87 })); // + do numérico
     try t_eq(WinKey{ .vk = 0xA2 }, winKey(.{ .key = 224 })); // Ctrl esquerdo
     try t_eq(WinKey{ .vk = 0x5C }, winKey(.{ .key = 231 })); // Windows direito
     try t_eq(WinKey{ .vk = 0x05 }, winKey(.{ .mouse = 4 })); // botão lateral

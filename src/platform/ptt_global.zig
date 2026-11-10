@@ -32,6 +32,11 @@ pub fn down(vk: u8) bool {
         if (vk == 0) return false;
         const GetAsyncKeyState = @extern(*const fn (c_int) callconv(.winapi) i16, .{ .name = "GetAsyncKeyState", .library_name = "user32" });
         // Bit mais alto: apertada agora.
-        return GetAsyncKeyState(vk) < 0;
+        if (GetAsyncKeyState(vk) >= 0) return false;
+        // O AltGr chega como Ctrl esquerdo + Alt direito: com o Alt direito junto,
+        // o Ctrl esquerdo é o AltGr, não a tecla do atalho.
+        const vk_lcontrol = 0xA2;
+        const vk_rmenu = 0xA5;
+        return vk != vk_lcontrol or GetAsyncKeyState(vk_rmenu) >= 0;
     } else return false;
 }
