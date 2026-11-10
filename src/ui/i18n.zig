@@ -357,12 +357,19 @@ pub fn system() Lang {
     if (count > 0) if (list[0]) |loc| {
         if (loc.*.language) |l| {
             const s = std.mem.span(l);
-            if (std.mem.startsWith(u8, s, "pt")) return .pt;
-            if (std.mem.startsWith(u8, s, "ja")) return .ja;
-            if (std.mem.startsWith(u8, s, "ru")) return .ru;
+            if (isLang(s, "pt")) return .pt;
+            if (isLang(s, "ja")) return .ja;
+            if (isLang(s, "ru")) return .ru;
         }
     };
     return .en;
+}
+
+/// O código do idioma, sozinho ou seguido da região ("ru", "ru_RU", "ru-RU"), e
+/// não outro que só começa igual ("rue", "rup", "jam").
+fn isLang(s: []const u8, code: []const u8) bool {
+    if (!std.mem.startsWith(u8, s, code)) return false;
+    return s.len == code.len or s[code.len] == '_' or s[code.len] == '-';
 }
 
 /// `language` das configurações: 0 = seguir o sistema, 1 = português,
@@ -529,6 +536,16 @@ test "russo: tabela do arquivo e fallback em inglês" {
     try testing.expectEqualStrings("Sign in to nowhere", tr("Entrar em lugar nenhum", "Sign in to nowhere"));
     var buf: [64]u8 = undefined;
     try testing.expectEqualStrings("Сегодня в 03:39", fmt(&buf, "Hoje às {s}", "Today at {s}", .{"03:39"}));
+}
+
+test "idioma do sistema: o código exato, com ou sem região" {
+    try testing.expect(isLang("ru", "ru"));
+    try testing.expect(isLang("ru_RU", "ru"));
+    try testing.expect(isLang("pt-BR", "pt"));
+    try testing.expect(!isLang("rue", "ru"));
+    try testing.expect(!isLang("rup", "ru"));
+    try testing.expect(!isLang("jam", "ja"));
+    try testing.expect(!isLang("r", "ru"));
 }
 
 test "arquivo de tradução: erros" {
