@@ -189,8 +189,15 @@ pub fn block(ctx: *d.Ctx, dl: ?*c.ImDrawList, m: *const StoredMessage, x: f32, y
     }
     if (invites) {
         var shown: usize = 0;
+        // Um link mascarado com escape no texto vira vários trechos com a mesma URL:
+        // o convite dele aparece uma vez só.
+        var last_url: ?[*]const u8 = null;
         for (m.spans) |*sp| {
             if (!isInviteSpan(sp)) continue;
+            if (sp.url.len > 0) {
+                if (last_url) |lu| if (lu == sp.url.ptr) continue;
+                last_url = sp.url.ptr;
+            }
             if (shown == max_invites) break;
             shown += 1;
             y += gap;

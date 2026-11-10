@@ -774,3 +774,14 @@ test "spoiler e riscado" {
     try std.testing.expect(spans[0].flags.spoiler);
     try std.testing.expect(spans[2].flags.strike);
 }
+
+test "os trechos de um link com escape no texto apontam para a mesma URL (o convite aparece uma vez)" {
+    const a = std.testing.allocator;
+    const sp = try parse(a, "[join\\_us](https://discord.gg/abc)");
+    defer a.free(sp);
+    try std.testing.expect(sp.len >= 2);
+    for (sp) |s| {
+        try std.testing.expect(s.flags.link);
+        try std.testing.expect(s.url.ptr == sp[0].url.ptr and s.url.len == sp[0].url.len);
+    }
+}
