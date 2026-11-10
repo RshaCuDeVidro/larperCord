@@ -1407,6 +1407,7 @@
 "This is the start of #{s}." "Это начало канала #{s}."
 "This is the start of the thread {s}" "Это начало ветки {s}"
 "This item can only be answered in the official Discord app." "На этот вопрос можно ответить только в официальном приложении Discord."
+"This key only works while the larperCord window is focused. To use it while another window is focused, pick another one, like a letter, F13 to F24 or a side mouse button." "Эта клавиша работает, только когда окно larperCord в фокусе. Чтобы пользоваться ею, когда в фокусе другое окно, выберите другую, например букву, клавишу от F13 до F24 или боковую кнопку мыши."
 "This search got too long." "Поисковый запрос слишком длинный."
 "This server didn't show onboarding questions to this account." "Этот сервер не показал этому аккаунту вопросы знакомства."
 "This server has no onboarding questions right now." "На этом сервере сейчас нет вопросов знакомства."
