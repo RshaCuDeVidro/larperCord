@@ -743,6 +743,28 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
 
 // --- Mensagens diretas ------------------------------------------------------
 
+/// ID de clique de uma linha que muda de lugar (a DM sobe com mensagem nova):
+/// vem da conversa, não da posição, para apertar, passar por cima e o menu
+/// ficarem com a conversa certa. Sempre com o bit 30 ligado, longe dos fixos
+/// pequenos da mesma janela (Amigos 299, pedidos 296 a 298). `salt` separa as
+/// áreas da mesma conversa (a linha, aceitar, recusar).
+pub fn rowHit(id: Id, salt: u64) usize {
+    // splitmix64: todo bit do ID (e o `salt`) mexe nos 32 de baixo, que são os que o ImGui usa.
+    var h = id +% salt *% 0x9E3779B97F4A7C15;
+    h = (h ^ (h >> 30)) *% 0xBF58476D1CE4E5B9;
+    h = (h ^ (h >> 27)) *% 0x94D049BB133111EB;
+    h ^= h >> 31;
+    return @as(u32, @truncate(h)) | 0x4000_0000;
+}
+
+/// A DM apertada e a ordem da lista que estava na tela ao apertar. Se a lista
+/// andou antes de soltar (chegou mensagem), o clique vale para a conversa
+/// apertada, não para a que passou para baixo do mouse. Sem a lista andar,
+/// arrastar para fora da linha cancela, como em qualquer botão.
+var dm_press: struct { id: Id = 0, order: u64 = 0 } = .{};
+/// A ordem das linhas do quadro anterior (impressão digital, sem alocar).
+var dm_order_shown: u64 = 0;
+
 fn dmList(ctx: *d.Ctx, n: *const kdl.Node, fam: *d.Family, variant: Variant, r_in: d.Rect) void {
     var r = r_in;
     const tree = variant == .tree;
@@ -811,12 +833,15 @@ fn dmList(ctx: *d.Ctx, n: *const kdl.Node, fam: *d.Family, variant: Variant, r_i
         d.text(dl, fam.get(.semibold), 12, r.x + 18, y + 4, ctx.col(.faint).mix(ctx.col(.muted), 0.4), i18n.tr("MENSAGENS DIRETAS", "DIRECT MESSAGES"));
         y += 28;
     }
+    var order: u64 = 0xcbf29ce484222325;
+    defer dm_order_shown = order;
     for (dms, 0..) |id, idx| {
         const cs = ctx.store.channel(id) orelse continue;
         if (cs.info.request != .none) continue;
         const group = cs.info.group;
         const u = ctx.store.user(cs.info.recipient);
         if (!group and u == null) continue;
+        order = (order ^ id) *% 0x100000001b3;
         const selected = ctx.st.activeChannel() == id and !ctx.st.friends;
         const row_h: f32 = if (tree) 24 else 44;
         // Fora da tela: só a altura. O avatar nem é pedido (nada de baixar a
@@ -826,9 +851,14 @@ fn dmList(ctx: *d.Ctx, n: *const kdl.Node, fam: *d.Family, variant: Variant, r_i
             continue;
         }
         const rr: d.Rect = .{ .x = r.x + 8, .y = y, .w = r.w - 16, .h = row_h - 2 };
-        const hb = d.hit(ctx, 300 + idx, rr);
+        const hb = d.hit(ctx, rowHit(id, 1), rr);
         qa.mark(rr, "channel:{d}", .{id});
-        if (hb.clicked or hb.middle) ctx.act(.{ .select_channel = id });
+        if (c.ImGui_IsItemActivated()) dm_press = .{ .id = id, .order = dm_order_shown };
+        // Soltou fora da linha porque ela andou: abre a que foi apertada.
+        const moved = dm_press.id == id and c.ImGui_IsItemDeactivated() and c.ImGui_IsMouseReleased(0) and
+            !hb.clicked and dm_order_shown != dm_press.order and r.contains(ctx.mouse.x, ctx.mouse.y);
+        if (dm_press.id == id and c.ImGui_IsItemDeactivated()) dm_press = .{};
+        if (hb.clicked or hb.middle or moved) ctx.act(.{ .select_channel = id });
         if (hb.right) ctx.popup(.{ .menu = if (group)
             .{ .kind = .channel, .id = id, .x = ctx.mouse.x, .y = ctx.mouse.y }
         else
