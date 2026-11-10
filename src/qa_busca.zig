@@ -8,6 +8,8 @@ const Op = R.Op;
 const qa = @import("ui/qa.zig");
 const search = @import("ui/search.zig");
 const sugg = @import("ui/search_sugg.zig");
+const i18n = @import("ui/i18n.zig");
+const sq = @import("core/search_query.zig");
 const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
 const Id = types.Id;
@@ -52,6 +54,27 @@ fn hintInk(app: *App) bool {
 }
 fn tipsShown(_: *App) bool {
     return qa.find("search-tip:from:") != null and qa.find("search-tip:pinned:") != null;
+}
+fn toJa(_: *App) void {
+    i18n.set(.ja);
+}
+fn toRu(_: *App) void {
+    i18n.set(.ru);
+}
+fn toPt(_: *App) void {
+    i18n.set(.pt);
+}
+fn suggShown(_: *App) bool {
+    return sugg.count > 0 and qa.find("search-sugg:0") != null;
+}
+/// Em japonês e russo a sugestão põe a palavra que o analisador entende, não a traduzida.
+fn pickedImage(_: *App) bool {
+    const q = sq.Query.parse(search.text());
+    return std.mem.indexOf(u8, search.text(), "has:image") != null and q.has_image and q.invalid_len == 0;
+}
+fn pickedToday(_: *App) bool {
+    const q = sq.Query.parse(search.text());
+    return std.mem.indexOf(u8, search.text(), "before:today") != null and q.max_id != 0 and q.invalid_len == 0;
 }
 fn typedFrom(_: *App) bool {
     return std.mem.eql(u8, search.text(), "from:") and sugg.count > 0 and qa.find("search-sugg:0") != null;
@@ -167,6 +190,33 @@ pub const ops = [_]Op{
     key(c.ImGuiKey_Tab),
     expect("Tab completa o canal", tabCompleted),
     click("search-clear"),
+
+    s("busca: sugestões em japonês vão na consulta sem traduzir"),
+    .{ .run = toJa },
+    .{ .text = "has:i" },
+    expect("ja: has: sugere", suggShown),
+    click("search-sugg:0"),
+    expect("ja: escolher põe has:image, que a busca entende", pickedImage),
+    click("search-clear"),
+    .{ .text = "before:t" },
+    expect("ja: before: sugere", suggShown),
+    click("search-sugg:0"),
+    expect("ja: escolher põe before:today, que a busca entende", pickedToday),
+    click("search-clear"),
+
+    s("busca: sugestões em russo vão na consulta sem traduzir"),
+    .{ .run = toRu },
+    .{ .text = "has:i" },
+    expect("ru: has: sugere", suggShown),
+    click("search-sugg:0"),
+    expect("ru: escolher põe has:image, que a busca entende", pickedImage),
+    click("search-clear"),
+    .{ .text = "before:t" },
+    expect("ru: before: sugere", suggShown),
+    click("search-sugg:0"),
+    expect("ru: escolher põe before:today, que a busca entende", pickedToday),
+    click("search-clear"),
+    .{ .run = toPt },
 
     s("busca: no Discord"),
     .{ .text = "zig" },
