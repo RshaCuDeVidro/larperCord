@@ -1,5 +1,10 @@
 # What changed in each version
 
+## 0.6.5
+
+**Voice**
+- On Windows, push-to-talk works while another window is focused, like a game, from helpik1's request (#14). The app reads the key without a keyboard hook, and the other app still gets it. On Linux it still needs the larperCord window focused.
+
 ## 0.6.4
 
 **Conversations**

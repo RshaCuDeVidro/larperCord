@@ -1,5 +1,10 @@
 # O que mudou em cada versão
 
+## 0.6.5
+
+**Voz**
+- No Windows, o aperte para falar funciona com outra janela em foco, como um jogo, a pedido do helpik1 (#14). O app lê a tecla sem gancho de teclado, e o outro programa continua recebendo a tecla. No Linux ainda precisa da janela do larperCord em foco.
+
 ## 0.6.4
 
 **Conversas**
