@@ -174,6 +174,10 @@ pub fn build(b: *std.Build) void {
     // Ícones da janela e da bandeja (tools/gen_icons.py).
     mod.addAnonymousImport("icon_64", .{ .root_source_file = b.path("assets/icon-64.png") });
     mod.addAnonymousImport("icon_32", .{ .root_source_file = b.path("assets/icon-32.png") });
+    mod.addAnonymousImport("icon_128", .{ .root_source_file = b.path("assets/icon-128.png") });
+    mod.addAnonymousImport("icon_classico_64", .{ .root_source_file = b.path("assets/icon-classico-64.png") });
+    mod.addAnonymousImport("icon_classico_32", .{ .root_source_file = b.path("assets/icon-classico-32.png") });
+    mod.addAnonymousImport("icon_classico_128", .{ .root_source_file = b.path("assets/icon-classico-128.png") });
 
     mod.addIncludePath(imgui_dir);
     mod.addIncludePath(imgui_dir.path(b, "backends"));
@@ -582,6 +586,10 @@ fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     m.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     m.addAnonymousImport("icon_64", .{ .root_source_file = b.path("assets/icon-64.png") });
     m.addAnonymousImport("icon_32", .{ .root_source_file = b.path("assets/icon-32.png") });
+    m.addAnonymousImport("icon_128", .{ .root_source_file = b.path("assets/icon-128.png") });
+    m.addAnonymousImport("icon_classico_64", .{ .root_source_file = b.path("assets/icon-classico-64.png") });
+    m.addAnonymousImport("icon_classico_32", .{ .root_source_file = b.path("assets/icon-classico-32.png") });
+    m.addAnonymousImport("icon_classico_128", .{ .root_source_file = b.path("assets/icon-classico-128.png") });
     for ([_][]const u8{ "third_party/imgui", "third_party/imgui/backends", "third_party/dcimgui", "third_party/dcimgui/backends", "third_party/stb", "third_party/libdave/includes" }) |p| m.addIncludePath(b.path(p));
     m.addCMacro("IMGUI_ENABLE_FREETYPE", "1");
     m.addCMacro("IMGUI_USE_WCHAR32", "1");

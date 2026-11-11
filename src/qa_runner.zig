@@ -3261,6 +3261,7 @@ const ops_proxy = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import
 const ops_sem_fontes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_sem_fontes.zig").ops;
 const ops_interacoes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_interacoes.zig").ops;
 const ops_cronometro = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_cronometro.zig").ops;
+const ops_mascote = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote.zig").ops;
 const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_real;
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
 const ops_plugins_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_a;
@@ -3306,6 +3307,7 @@ fn script() []const Op {
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "sem-fontes")) return &ops_sem_fontes;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "interacoes")) return &ops_interacoes;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "cronometro")) return &ops_cronometro;
+    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "mascote")) return &ops_mascote;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-real")) return &ops_plugins_real;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "vitrine")) return &ops_vitrine;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-a")) return &ops_plugins_a;

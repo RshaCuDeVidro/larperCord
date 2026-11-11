@@ -1,2 +1,5 @@
-// Ícone do larperCord.exe (o .ico sai de tools/gen_icons.py).
+// Ícones do larperCord.exe (os .ico saem de tools/gen_icons.py): o 1 é o do
+// arquivo (o mascote Terminal, o principal); o 2 é o Clássico, para a bandeja
+// e os avisos quando ele é o escolhido nas Configurações.
 1 ICON "icon.ico"
+2 ICON "icon-classico.ico"

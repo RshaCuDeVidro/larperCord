@@ -36,6 +36,46 @@ pub const Pose = struct {
     alpha: f32 = 1,
 };
 
+fn seg(t: f32, a: f32, b: f32) f32 {
+    return std.math.clamp((t - a) / (b - a), 0, 1);
+}
+fn outCubic(x: f32) f32 {
+    const y = 1 - x;
+    return 1 - y * y * y;
+}
+fn outBack(x: f32, s: f32) f32 {
+    const y = x - 1;
+    return 1 + (s + 1) * y * y * y + s * y * y;
+}
+
+/// A abertura no instante `t` (segundos): o corpo pula, a estrelinha entra girando,
+/// ele chega de olhos fechados e "acorda" com a cara de deboche; depois pisca de vez
+/// em quando (às vezes duas seguidas). Quem chama completa `look` e `alpha`.
+pub fn introPose(t: f32) Pose {
+    var pose: Pose = .{
+        .body = outBack(seg(t, 0.12, 0.72), 2.4),
+        .eyes = outBack(seg(t, 0.95, 1.2), 2),
+        .smile = outCubic(seg(t, 1.1, 1.4)),
+        .star = outBack(seg(t, 0.7, 1.05), 3) * (1 + 0.07 * @sin(t * 3.1)),
+        .spin = (1 - outCubic(seg(t, 0.7, 1.2))) * -2.6 + 0.1 * @sin(t * 0.9),
+        .glow = 0.3 + 0.05 * @sin(t * 2.0),
+    };
+    if (t > 3) {
+        const period: f32 = 3.7;
+        const cyc = @floor((t - 3) / period);
+        const ph = (t - 3) - cyc * period;
+        const blink = struct {
+            fn at(x: f32) f32 {
+                return if (x >= 0 and x <= 0.16) @sin(std.math.pi * x / 0.16) else 0;
+            }
+        }.at;
+        var b = blink(ph);
+        if (@mod(cyc, 3) == 1) b = @max(b, blink(ph - 0.26));
+        pose.eyes *= 1 - b;
+    }
+    return pose;
+}
+
 /// Transforma pontos do SVG para a tela.
 const Xf = struct {
     cx: f32,

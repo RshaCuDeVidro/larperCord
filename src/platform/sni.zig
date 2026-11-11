@@ -257,15 +257,20 @@ fn onRegistered(p: *Pending, _: ?*anyopaque) callconv(.c) void {
 
 // --- Ícone ---------------------------------------------------------------------
 
+/// O mascote do ícone (o app manda no argumento do processo; ver tray.zig).
+pub var classic = false;
+
 /// O ícone embutido em 22 (o comum nas barras), 32 e 64 pixels, no ARGB do protocolo.
 fn loadIcons() void {
+    const png_64 = platform.iconPng(classic, .window);
+    const png_32 = platform.iconPng(classic, .tray);
     const gpa = std.heap.c_allocator;
     var n: usize = 0;
     var w: c_int = 0;
     var h: c_int = 0;
     var comp: c_int = 0;
     // Ficam carregados até o processo sair: o painel pede de novo quando quiser.
-    const big_px = c.stbi_load_from_memory(platform.icon_64.ptr, @intCast(platform.icon_64.len), &w, &h, &comp, 4);
+    const big_px = c.stbi_load_from_memory(png_64.ptr, @intCast(png_64.len), &w, &h, &comp, 4);
     const big: ?[]u8 = if (big_px != null and w == 64 and h == 64) big_px[0 .. 64 * 64 * 4] else null;
     // O de 22 sai do de 64 ainda em RGBA: antes de converter o de 64 no lugar.
     if (big) |src| small: {
@@ -275,7 +280,7 @@ fn loadIcons() void {
         pixmaps_buf[n] = .{ .size = 22, .argb = s };
         n += 1;
     }
-    const mid_px = c.stbi_load_from_memory(platform.icon_32.ptr, @intCast(platform.icon_32.len), &w, &h, &comp, 4);
+    const mid_px = c.stbi_load_from_memory(png_32.ptr, @intCast(png_32.len), &w, &h, &comp, 4);
     if (mid_px != null and w == 32 and h == 32) {
         const s = mid_px[0 .. 32 * 32 * 4];
         bandeja.argb(s, s);

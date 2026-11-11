@@ -359,6 +359,22 @@ pub fn trayHostAvailable() bool {
 var toast_hwnd: ?*anyopaque = null;
 var toast_ms: i64 = 0;
 const toast_uid: u32 = 0x1A5C;
+/// O ícone dos avisos: o 1 (Terminal) ou o 2 (Clássico) de assets/larpercord.rc.
+var toast_icon: usize = 1;
+
+/// Troca o mascote dos avisos do Windows (o ícone que já está na bandeja troca junto).
+pub fn setToastMascot(classic: bool) void {
+    if (!windows) return;
+    toast_icon = if (classic) 2 else 1;
+    const h = toast_hwnd orelse return;
+    var nid = std.mem.zeroes(c.NOTIFYICONDATAW);
+    nid.cbSize = @sizeOf(c.NOTIFYICONDATAW);
+    nid.hWnd = @ptrCast(@alignCast(h));
+    nid.uID = toast_uid;
+    nid.uFlags = c.NIF_ICON;
+    nid.hIcon = c.LoadIconA(c.GetModuleHandleA(null), @ptrFromInt(toast_icon));
+    _ = c.Shell_NotifyIconW(c.NIM_MODIFY, &nid);
+}
 
 /// Aviso do sistema no Windows. No Linux quem avisa é o notify-send (app.zig).
 pub fn toast(hwnd: ?*anyopaque, now_ms: i64, title: []const u8, body: []const u8) void {
@@ -370,8 +386,8 @@ pub fn toast(hwnd: ?*anyopaque, now_ms: i64, title: []const u8, body: []const u8
     nid.uID = toast_uid;
     if (toast_hwnd == null) {
         nid.uFlags = c.NIF_ICON | c.NIF_TIP;
-        // O ícone 1 de assets/larpercord.rc.
-        nid.hIcon = c.LoadIconA(c.GetModuleHandleA(null), @ptrFromInt(1));
+        // O ícone 1 ou 2 de assets/larpercord.rc (o mascote escolhido).
+        nid.hIcon = c.LoadIconA(c.GetModuleHandleA(null), @ptrFromInt(toast_icon));
         wide(&nid.szTip, "larperCord");
         if (c.Shell_NotifyIconW(c.NIM_ADD, &nid) == 0) return;
         toast_hwnd = h;

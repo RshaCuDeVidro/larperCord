@@ -305,7 +305,8 @@ pub const ops = [_]Op{
 
     s("listas flutuantes: cor do tema"),
     run(openLooks),
-    .{ .resize = .{ 1280, 2400 } },
+    // Alta o bastante para a página de Aparência inteira caber sem rolar.
+    .{ .resize = .{ 1280, 3000 } },
     .{ .wait = 500 },
     run(rememberColors),
     click("theme-color:2"),

@@ -77,6 +77,17 @@ pub const Window = struct {
         _ = c.SDL_PushEvent(&ev);
     }
 
+    /// Troca o ícone da janela (barra de tarefas, alt+tab) com o app aberto. No
+    /// Wayland vale onde o compositor aceita ícone por janela; nos outros, a barra
+    /// usa o do menu de aplicativos (ver sys.installUserIcon).
+    pub fn setIcon(win: *Window, classic: bool) void {
+        const icon = decodeIcon(iconPng(classic, .window)) orelse return;
+        defer c.SDL_DestroySurface(icon);
+        // Contado mesmo se recusar: o driver sem janela do QA não aceita ícone.
+        icon_sets += 1;
+        _ = c.SDL_SetWindowIcon(win.window, icon);
+    }
+
     pub fn screenshot(win: *Window, path: [*:0]const u8) bool {
         const surface = c.SDL_RenderReadPixels(win.renderer, null) orelse return false;
         defer c.SDL_DestroySurface(surface);
@@ -146,9 +157,28 @@ fn preferWayland() void {
     if (wayland) _ = c.SDL_SetHintWithPriority(c.SDL_HINT_VIDEO_DRIVER, "wayland,x11", c.SDL_HINT_DEFAULT);
 }
 
-/// Ícones embutidos (tools/gen_icons.py).
+/// Ícones embutidos (tools/gen_icons.py), dos dois mascotes (ui/mascote.zig):
+/// o da janela (64), o da bandeja (32, só o mascote) e o do menu de aplicativos (128).
 pub const icon_64 = @embedFile("icon_64");
 pub const icon_32 = @embedFile("icon_32");
+pub const icon_128 = @embedFile("icon_128");
+pub const icon_classico_64 = @embedFile("icon_classico_64");
+pub const icon_classico_32 = @embedFile("icon_classico_32");
+pub const icon_classico_128 = @embedFile("icon_classico_128");
+
+pub const IconSize = enum { window, tray, menu };
+
+/// Quantas vezes o app pediu para trocar o ícone da janela (o QA confere a troca).
+pub var icon_sets: u32 = 0;
+
+/// O PNG do ícone de `size` para o mascote escolhido (`classic`: o da cara de deboche).
+pub fn iconPng(classic: bool, size: IconSize) []const u8 {
+    return switch (size) {
+        .window => if (classic) icon_classico_64 else icon_64,
+        .tray => if (classic) icon_classico_32 else icon_32,
+        .menu => if (classic) icon_classico_128 else icon_128,
+    };
+}
 
 /// PNG embutido para uma superfície do SDL (quem chama destrói).
 pub fn decodeIcon(png: []const u8) ?*c.SDL_Surface {

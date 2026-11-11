@@ -90,5 +90,6 @@ for lang in en pt; do
 done
 
 # Ícones.
-for s in 32 64 180; do magick -background none -density 300 assets/icon.svg -resize "${s}x${s}" "docs/assets/icon-$s.png"; done
+# Ícones (os do site saem do mascote principal, junto com os embutidos no app).
+python3 tools/gen_icons.py >/dev/null
 du -sh docs/assets/shots
