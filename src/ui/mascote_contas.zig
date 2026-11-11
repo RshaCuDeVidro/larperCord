@@ -14,6 +14,44 @@ pub const Kind = enum(u8) {
     }
 };
 
+/// As aberturas do Terminal: o boot de terminal (a primeira) e as outras quatro.
+pub const Opening = enum(u8) {
+    boot = 0,
+    codigo = 1,
+    tv = 2,
+    pixels = 3,
+    portal = 4,
+
+    pub const count = 5;
+
+    /// O byte das configurações; o que passar do fim vira o boot.
+    pub fn of(v: u8) Opening {
+        return if (v < count) @fromBackingInt(@intCast(v)) else .boot;
+    }
+};
+
+/// Quando cada abertura termina e o mascote fica inteiro (depois disso, o parado).
+pub fn openingEnd(o: Opening) f32 {
+    return switch (o) {
+        .boot => 2.6,
+        .codigo => 2.0,
+        .tv => 1.9,
+        .pixels => 2.05,
+        .portal => 1.95,
+    };
+}
+
+/// Quanto o demo e a prévia esperam por abertura (até a gota do boot cair).
+pub fn openingSeconds(o: Opening) f32 {
+    return if (o == .boot) 3.4 else openingEnd(o) + 0.4;
+}
+
+/// A abertura desta vez: a escolhida, ou uma sorteada (o byte = `Opening.count`).
+pub fn pickOpening(setting: u8, seed: u64) Opening {
+    if (setting < Opening.count) return .of(setting);
+    return .of(@intCast(seed % Opening.count));
+}
+
 pub fn seg(t: f32, a: f32, b: f32) f32 {
     return std.math.clamp((t - a) / (b - a), 0, 1);
 }
@@ -132,4 +170,18 @@ test "o byte da configuração vira o mascote; o que não for 1 é o principal" 
     try std.testing.expectEqual(Kind.terminal, Kind.of(0));
     try std.testing.expectEqual(Kind.classico, Kind.of(1));
     try std.testing.expectEqual(Kind.terminal, Kind.of(7));
+}
+
+test "abertura: a escolhida vale; \"sortear\" passa pelas cinco; byte de fora vira o boot" {
+    try std.testing.expectEqual(Opening.portal, pickOpening(4, 123));
+    try std.testing.expectEqual(Opening.boot, Opening.of(200));
+    var seen: [Opening.count]bool = @splat(false);
+    var seed: u64 = 0;
+    while (seed < 20) : (seed += 1) seen[@backingInt(pickOpening(Opening.count, seed))] = true;
+    for (seen) |v| try std.testing.expect(v);
+    // A espera do demo cobre a abertura inteira de cada uma.
+    for (0..Opening.count) |i| {
+        const o: Opening = @fromBackingInt(@intCast(i));
+        try std.testing.expect(openingSeconds(o) >= openingEnd(o));
+    }
 }

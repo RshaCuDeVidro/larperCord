@@ -119,8 +119,9 @@ pub const Env = struct {
     proxy: ?ProxyHook = null,
     /// Tem um proxy salvo.
     proxy_on: bool = false,
-    /// Qual mascote abre o app (Configurações → Aparência).
+    /// Qual mascote abre o app e com qual abertura (Configurações → Aparência).
     mascot: mascote.Kind = .terminal,
+    opening: mascote_terminal.Opening = .boot,
 };
 
 /// O formulário do proxy é o das Configurações (ui/settings_rede.zig): quem tem o
@@ -378,6 +379,7 @@ pub fn draw(l: *Login, env: Env) ?Result {
             .leave = leave_k,
             .light = env.light,
             .reduce = env.reduce,
+            .opening = env.opening,
         }),
     }
 

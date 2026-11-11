@@ -107,6 +107,25 @@ fn chooseTerminal(app: *App) void {
     app.login.phase = .hidden;
 }
 
+// --- As outras aberturas -----------------------------------------------------------
+
+/// Escolhe a abertura `n` e mostra a tela no instante `t` dela.
+fn openingAt(comptime n: u8, comptime t: f32) fn (*App) void {
+    return struct {
+        fn f(app: *App) void {
+            app.st.settings.mascot = 0;
+            app.st.settings.mascot_opening = n;
+            if (!app.login.visible()) app.login.begin(.form);
+            app.login.t = t;
+            app.login.err_at = -10;
+        }
+    }.f;
+}
+fn openingBack(app: *App) void {
+    app.st.settings.mascot_opening = 0;
+    app.login.phase = .hidden;
+}
+
 // --- A abertura do demo ----------------------------------------------------------
 
 fn demoOpening(app: *App) void {
@@ -172,6 +191,30 @@ pub const ops = [_]Op{
     run(chooseClassic),
     .{ .shot = "mascote-classico" },
     run(chooseTerminal),
+
+    s("as outras aberturas do Terminal"),
+    run(openingAt(1, 0.7)),
+    expect("chuva de código: a tela aparece", loginShown),
+    .{ .shot = "abertura-codigo-meio" },
+    run(openingAt(1, 1.9)),
+    .{ .shot = "abertura-codigo-fim" },
+    run(openingAt(2, 0.3)),
+    .{ .shot = "abertura-tv-barras" },
+    run(openingAt(2, 0.8)),
+    .{ .shot = "abertura-tv-rolando" },
+    run(openingAt(3, 0.9)),
+    .{ .shot = "abertura-pixels-meio" },
+    run(openingAt(3, 1.38)),
+    .{ .shot = "abertura-pixels-montado" },
+    run(openingAt(4, 0.7)),
+    .{ .shot = "abertura-portal-subindo" },
+    run(openingAt(4, 1.0)),
+    expect("portal: ainda na abertura", loginShown),
+    .{ .shot = "abertura-portal-quique" },
+    run(openingAt(5, 2.5)),
+    expect("\"sortear\" também abre", loginShown),
+    .{ .shot = "abertura-sorteada" },
+    run(openingBack),
 
     s("abertura do demo"),
     run(demoOpening),

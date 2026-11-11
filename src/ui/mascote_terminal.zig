@@ -43,7 +43,14 @@ pub const Input = struct {
     light: bool = false,
     /// "Reduzir animações": o desenho parado, sem glitch nem partículas.
     reduce: bool = false,
+    /// Qual abertura toca (Configurações → Aparência).
+    opening: Opening = .boot,
 };
+
+/// As aberturas (ui/mascote_contas.zig).
+pub const Opening = contas.Opening;
+pub const openingEnd = contas.openingEnd;
+pub const openingSeconds = contas.openingSeconds;
 
 // --- Contas (ui/mascote_contas.zig) ---------------------------------------------
 
@@ -90,7 +97,10 @@ fn earPath(dl: *c.ImDrawList, m: Af) void {
     c.ImDrawList_PathBezierCubicCurveTo(dl, m.ap(13, 12), m.ap(16, -3), m.ap(20, -14), 16);
     c.ImDrawList_PathBezierQuadraticCurveTo(dl, m.ap(21, -16.5), m.ap(23.5, -15.5), 6);
     c.ImDrawList_PathBezierCubicCurveTo(dl, m.ap(35, -9), m.ap(47, 0), m.ap(59, 9), 16);
-    c.ImDrawList_PathLineTo(dl, m.ap(34, 24));
+    // A base entra fundo na cabeça (fica atrás do corpo): girando ou saltando,
+    // a orelha nunca descola da cabeça.
+    c.ImDrawList_PathLineTo(dl, m.ap(57, 34));
+    c.ImDrawList_PathLineTo(dl, m.ap(16, 36));
 }
 
 /// Pontos por curva: fixo, para o contorno caber no buffer em qualquer tamanho.
@@ -242,7 +252,7 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
     }
 
     // Orelhas, atrás do corpo (com um pouco de profundidade ao virar).
-    const ears_m = body.mul(Af.move(-p.look[0] * 1.6, -p.look[1] * 0.6));
+    const ears_m = body.mul(Af.move(-p.look[0] * 0.5, 0));
     const ear_l = ears_m.around(ear_pivot[0], ear_pivot[1], Af.turn(p.turn_l).mul(Af.scale(p.ear_l, p.ear_l)));
     const mirror = ears_m.mul(Af.move(body_w, 0)).mul(Af.scale(-1, 1));
     const ear_r = mirror.around(ear_pivot[0], ear_pivot[1], Af.turn(p.turn_r).mul(Af.scale(p.ear_r, p.ear_r)));
@@ -390,6 +400,344 @@ fn particles(dl: *c.ImDrawList, base: Af, t: f32, from: f32, until: f32, loop: b
     }
 }
 
+// --- As outras aberturas ---------------------------------------------------------
+
+/// Um "0" ou um "1" desenhado (sem fonte: nítido em qualquer tamanho).
+fn digit(dl: *c.ImDrawList, pt: c.ImVec2, s: f32, col: u32, one: bool) void {
+    const w = @max(s * 0.2, 0.9);
+    if (!one) {
+        c.ImDrawList_AddEllipseEx(dl, pt, d.v(s * 0.42, s * 0.62), col, 0, 12, w, 0);
+        return;
+    }
+    c.ImDrawList_AddLineEx(dl, d.v(pt.x, pt.y - s * 0.62), d.v(pt.x, pt.y + s * 0.62), col, w, 0);
+    c.ImDrawList_AddLineEx(dl, d.v(pt.x, pt.y - s * 0.62), d.v(pt.x - s * 0.3, pt.y - s * 0.32), col, w, 0);
+}
+
+fn halo(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, k: f32, shown: f32, A: f32) void {
+    logo.glow(dl, cx, cy + 4 * k, size * 0.55 * shown, size * 0.46 * shown, glow_col.alpha(0.34 * A));
+}
+
+fn shadow(dl: *c.ImDrawList, base: Af, k: f32, w: f32, shown: f32, A: f32, light: bool) void {
+    if (shown <= 0.01) return;
+    c.ImDrawList_AddEllipseFilled(dl, base.ap(mid_x, 99), d.v(46 * k * w * shown, 4.5 * k * shown), (if (light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(A));
+}
+
+fn openingAlt(o: Opening, dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, A: f32, light: bool, small: bool) void {
+    switch (o) {
+        .boot => {},
+        .codigo => openCodigo(dl, base, cx, cy, size, t, A, light, small),
+        .tv => openTv(dl, base, cx, cy, size, t, A, light, small),
+        .pixels => openPixels(dl, base, cx, cy, size, t, A, light, small),
+        .portal => openPortal(dl, base, cx, cy, size, t, A, light, small),
+    }
+}
+
+/// Chuva de código: colunas de 0 e 1 caem e o mascote aparece por onde passaram.
+fn openCodigo(dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, A: f32, light: bool, small: bool) void {
+    const k = base.k();
+    const cols: u32 = 22;
+    const left: f32 = -8;
+    const right: f32 = 135;
+    const top: f32 = -22;
+    const bottom: f32 = 101;
+    const cw = (right - left) / @as(f32, @floatFromInt(cols));
+    const built = seg(t, 0.35, 1.45);
+    halo(dl, cx, cy, size, k, built, A);
+    shadow(dl, base, k, 1, built, A, light);
+    // Pronto: um brilho passa pelo corpo e o mascote fica inteiro.
+    var pose: Pose = .{};
+    pose.flash = 0.55 * (1 - outCubic(seg(t, 1.45, 1.85))) * @as(f32, if (t > 1.45) 1 else 0);
+    var done = true;
+    const glyph_a = (1 - seg(t, 1.35, 1.8)) * A;
+    for (0..cols) |ci| {
+        const i: u32 = @intCast(ci);
+        const delay = hash(i, 11) * 0.55;
+        const speed = 150 + hash(i, 12) * 90;
+        const head = top + (t - delay) * speed;
+        if (head < bottom + 4) done = false;
+        const x0 = left + @as(f32, @floatFromInt(i)) * cw;
+        if (head > top and t < 1.45) {
+            const a = base.ap(x0, top - 6);
+            const b = base.ap(x0 + cw, @min(head, bottom + 6));
+            c.ImDrawList_PushClipRect(dl, a, b, true);
+            figure(dl, base, pose, A, null, small);
+            c.ImDrawList_PopClipRect(dl);
+        }
+        // O rastro: a cabeça clara, a cauda roxa sumindo.
+        if (glyph_a > 0.01) {
+            for (0..7) |gi| {
+                const g: u32 = @intCast(gi);
+                const gy = head - @as(f32, @floatFromInt(g)) * 8.5;
+                if (gy < top - 12 or gy > bottom + 22) continue;
+                const fade = 1 - @as(f32, @floatFromInt(g)) / 7.0;
+                const col = (if (g == 0) cream else if (g % 2 == 0) magenta else Rgba.hex(0xB98CFF)).col(glyph_a * fade);
+                const one = hash(i *% 31 +% g, @intFromFloat(@floor(t * 14))) > 0.5;
+                digit(dl, base.ap(x0 + cw / 2, gy), 5.2 * k, col, one);
+            }
+        }
+    }
+    if (t >= 1.45 or done) figure(dl, base, pose, A, null, small);
+}
+
+/// TV sintonizando: chiado, barras de cor, a imagem rolando até firmar.
+fn openTv(dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, A: f32, light: bool, small: bool) void {
+    const k = base.k();
+    const on = outCubic(seg(t, 0, 0.18));
+    const off = seg(t, 1.45, 1.9);
+    const r0 = base.ap(-10, -24);
+    const r1 = base.ap(137, 103);
+    const screen_a = on * (1 - off) * A;
+    const shown = seg(t, 0.45, 1.3);
+    halo(dl, cx, cy, size, k, shown, A);
+    shadow(dl, base, k, 1, shown, A, light);
+    c.ImDrawList_AddRectFilledEx(dl, r0, r1, ink.col(0.9 * screen_a), 10 * k, 0);
+    c.ImDrawList_PushClipRect(dl, r0, r1, true);
+    // As barras de cor antes do sinal.
+    if (t > 0.16 and t < 0.44) {
+        const bars = [_]u32{ 0xE8E8E8, 0xE8E04A, 0x45D9E8, 0x4AD957, 0xD94AD0, 0xE0453F, 0x3F55E0 };
+        const bw = (r1.x - r0.x) / @as(f32, @floatFromInt(bars.len));
+        const flick = 0.75 + 0.25 * hash(@intFromFloat(@floor(t * 40)), 3);
+        for (bars, 0..) |hex, bi| {
+            const x = r0.x + bw * @as(f32, @floatFromInt(bi));
+            c.ImDrawList_AddRectFilled(dl, d.v(x, r0.y), d.v(x + bw + 0.5, r0.y + (r1.y - r0.y) * 0.72), Rgba.hex(hex).col(flick * screen_a));
+        }
+    }
+    // A imagem rolando na vertical, com faixas tremidas, até parar.
+    if (t > 0.42) {
+        var pose: Pose = .{};
+        const settle = outCubic(seg(t, 0.42, 1.25));
+        pose.rgb = 1 - seg(t, 0.42, 1.4);
+        pose.slices = (1 - seg(t, 0.42, 1.1)) * 0.8;
+        pose.slice_seed = @intFromFloat(@floor(t * 20));
+        const h: f32 = 127;
+        const roll = @mod((1 - settle) * h * 1.6, h);
+        figureFx(dl, base.mul(Af.move(0, roll)), pose, A, small, cx, size);
+        if (roll > 0.5) figureFx(dl, base.mul(Af.move(0, roll - h)), pose, A, small, cx, size);
+        // A faixa escura do "vertical hold" subindo junto.
+        if (settle < 1) {
+            const by = base.ap(0, -24 + @mod(roll + 40, h)).y;
+            c.ImDrawList_AddRectFilled(dl, d.v(r0.x, by), d.v(r1.x, by + 9 * k), ink.col(0.55 * (1 - settle) * A));
+        }
+    }
+    // O chiado (muda a cada quadro de TV).
+    const noise_a = (if (t < 0.44) @as(f32, 0.85) else 0.75 * (1 - seg(t, 0.44, 1.45))) * screen_a;
+    if (noise_a > 0.02) {
+        const cell: f32 = 4.5;
+        const frame: u32 = @intFromFloat(@floor(t * 30));
+        var y: f32 = -24;
+        var row: u32 = 0;
+        while (y < 103) : ({
+            y += cell;
+            row += 1;
+        }) {
+            var x: f32 = -10;
+            var col_i: u32 = 0;
+            while (x < 137) : ({
+                x += cell;
+                col_i += 1;
+            }) {
+                const v = hash(row *% 97 +% col_i, frame);
+                if (v < 0.35) continue;
+                const a = base.ap(x, y);
+                const b = base.ap(x + cell, y + cell);
+                c.ImDrawList_AddRectFilled(dl, a, b, ink.mix(cream, v).col(noise_a * (v - 0.2)));
+            }
+        }
+    }
+    c.ImDrawList_PopClipRect(dl);
+    // A borda da tela, sumindo no fim.
+    c.ImDrawList_AddRectEx(dl, r0, r1, Rgba.hex(0xB98CFF).col(0.5 * screen_a), 10 * k, @max(1.5 * k, 1), 0);
+    if (t > 1.3) figure(dl, base, .{ .flash = 0.4 * (1 - seg(t, 1.3, 1.7)) }, A * seg(t, 1.3, 1.5), null, small);
+}
+
+/// As células do mascote em pixel (calculadas uma vez, no espaço do SVG).
+const Cell = struct { x: f32, y: f32, ink: bool };
+const px_step: f32 = 4.6;
+var px_cells: [900]Cell = undefined;
+var px_count: usize = 0;
+var px_ready = false;
+
+fn insidePoly(poly: []const [2]f32, x: f32, y: f32) bool {
+    var inside = false;
+    var j = poly.len - 1;
+    for (poly, 0..) |a, i| {
+        const b = poly[j];
+        if ((a[1] > y) != (b[1] > y) and x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+        j = i;
+    }
+    return inside;
+}
+
+fn segDist(px: f32, py: f32, a: [2]f32, b: [2]f32) f32 {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const l2 = dx * dx + dy * dy;
+    const tt = if (l2 > 0) std.math.clamp(((px - a[0]) * dx + (py - a[1]) * dy) / l2, 0, 1) else 0;
+    return std.math.hypot(px - (a[0] + dx * tt), py - (a[1] + dy * tt));
+}
+
+fn buildPixels() void {
+    if (px_ready) return;
+    px_ready = true;
+    // O contorno do corpo e das orelhas em pontos (curvas amostradas).
+    var body: [body_curves.len * 10 + 1][2]f32 = undefined;
+    body[0] = body_start;
+    var n: usize = 1;
+    var cur = body_start;
+    for (body_curves) |q| {
+        for (1..11) |si| {
+            const tt = @as(f32, @floatFromInt(si)) / 10.0;
+            const u = 1 - tt;
+            body[n] = .{
+                u * u * u * cur[0] + 3 * u * u * tt * q[0] + 3 * u * tt * tt * q[2] + tt * tt * tt * q[4],
+                u * u * u * cur[1] + 3 * u * u * tt * q[1] + 3 * u * tt * tt * q[3] + tt * tt * tt * q[5],
+            };
+            n += 1;
+        }
+        cur = .{ q[4], q[5] };
+    }
+    const ear = [_][2]f32{ .{ 11, 26 }, .{ 13, 12 }, .{ 16, -3 }, .{ 20, -14 }, .{ 23.5, -15.5 }, .{ 35, -9 }, .{ 47, 0 }, .{ 59, 9 }, .{ 57, 34 }, .{ 16, 36 } };
+    var ear_r: [ear.len][2]f32 = undefined;
+    for (ear, 0..) |q, i| ear_r[i] = .{ body_w - q[0], q[1] };
+    var y: f32 = -16;
+    while (y < 98) : (y += px_step) {
+        var x: f32 = -2;
+        while (x < 130) : (x += px_step) {
+            const mx = x + px_step / 2;
+            const my = y + px_step / 2;
+            if (!insidePoly(body[0..n], mx, my) and !insidePoly(&ear, mx, my) and !insidePoly(&ear_r, mx, my)) continue;
+            if (px_count == px_cells.len) return;
+            // O rosto também vira pixel: ">", "_" e o sorriso.
+            const face = segDist(mx, my, .{ 31, 41 }, .{ 49, 50 }) < 3.3 or segDist(mx, my, .{ 49, 50 }, .{ 31, 59 }) < 3.3 or
+                segDist(mx, my, .{ 73, 58 }, .{ 95, 58 }) < 3.3 or segDist(mx, my, .{ 52, 69 }, .{ 63.5, 72 }) < 2.4 or segDist(mx, my, .{ 63.5, 72 }, .{ 76, 68 }) < 2.4;
+            px_cells[px_count] = .{ .x = x, .y = y, .ink = face };
+            px_count += 1;
+        }
+    }
+}
+
+/// Pixels se montando: os quadradinhos voam de todo lado e formam o mascote.
+fn openPixels(dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, A: f32, light: bool, small: bool) void {
+    buildPixels();
+    const k = base.k();
+    const built = seg(t, 0.3, 1.35);
+    halo(dl, cx, cy, size, k, built, A);
+    shadow(dl, base, k, 1, built, A, light);
+    const swap = seg(t, 1.4, 1.75);
+    const block_a = (1 - swap) * A;
+    if (block_a > 0.01) {
+        for (px_cells[0..px_count], 0..) |cell, ci| {
+            const i: u32 = @intCast(ci);
+            const row = (cell.y + 16) / 114;
+            const arrive = 0.4 + row * 0.5 + hash(i, 21) * 0.4;
+            const k_in = seg(t, arrive - 0.5, arrive);
+            if (k_in <= 0) continue;
+            const ang = hash(i, 22) * std.math.tau;
+            const far = 70 + hash(i, 23) * 90;
+            const e = outBack(k_in, 1.3);
+            const x = cell.x + @cos(ang) * far * (1 - e);
+            const y = cell.y + @sin(ang) * far * (1 - e);
+            const spin = (1 - e) * (hash(i, 24) - 0.5) * 4;
+            const shade = (hash(i, 25) - 0.5) * 0.18;
+            var col = if (cell.ink) ink else head_top.mix(head_bottom, std.math.clamp(row, 0, 1));
+            if (!cell.ink) col = if (shade > 0) col.mix(cream, shade) else col.mix(ink, -shade);
+            const a = @min(seg(t, arrive - 0.5, arrive - 0.32) * 1.0, 1) * block_a;
+            const s = px_step * 0.94 * (0.6 + 0.4 * k_in);
+            const m = base.around(x + px_step / 2, y + px_step / 2, Af.turn(spin));
+            const p0 = m.ap(x + (px_step - s) / 2, y + (px_step - s) / 2);
+            const p1 = m.ap(x + (px_step + s) / 2, y + (px_step - s) / 2);
+            const p2 = m.ap(x + (px_step + s) / 2, y + (px_step + s) / 2);
+            const p3 = m.ap(x + (px_step - s) / 2, y + (px_step + s) / 2);
+            c.ImDrawList_AddQuadFilled(dl, p0, p1, p2, p3, col.col(a));
+        }
+    }
+    if (swap > 0) figure(dl, base, .{ .flash = 0.45 * (1 - seg(t, 1.5, 1.95)) }, A * swap, null, small);
+}
+
+/// Portal: um anel de luz abre no chão, o mascote sobe por ele e aterrissa.
+fn openPortal(dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, A: f32, light: bool, small: bool) void {
+    const k = base.k();
+    const ring_open = outBack(seg(t, 0, 0.4), 1.6);
+    const ring_close = seg(t, 1.2, 1.55);
+    const rw = 60 * ring_open * (1 - inCubic(ring_close));
+    const rh = 9.5 * ring_open * (1 - ring_close);
+    const foot = base.ap(mid_x, 99);
+    const rise = outCubic(seg(t, 0.35, 0.95));
+    const landed = t >= 0.95;
+    halo(dl, cx, cy, size, k, rise, A);
+    if (landed) shadow(dl, base, k, 1, 1, A, light);
+    // O buraco do portal e o brilho em volta.
+    if (rw > 0.5) {
+        logo.glow(dl, foot.x, foot.y, rw * k * 1.5, rh * k * 3.2, magenta.alpha(0.55 * A));
+        c.ImDrawList_AddEllipseFilled(dl, foot, d.v(rw * k, rh * k), ink.col(0.95 * A));
+    }
+    // Faíscas subindo em espiral do portal.
+    for (0..12) |si| {
+        const i: u32 = @intCast(si);
+        const st = 0.3 + hash(i, 31) * 0.7;
+        const life: f32 = 0.7;
+        const age = t - st;
+        if (age < 0 or age > life) continue;
+        const f = age / life;
+        const ang = hash(i, 32) * std.math.tau + f * 5;
+        const px = mid_x + @cos(ang) * (rw * 0.8) * (1 - f * 0.4);
+        const py = 99 - f * 70 + @sin(ang) * 3;
+        const col = (if (i % 2 == 0) cream else cyan).col((1 - f) * A);
+        c.ImDrawList_AddCircleFilled(dl, base.ap(px, py), @max(1.6 * k * (1 - f), 0.7), col, 0);
+    }
+    // O mascote: sobe esticado (cortado na linha do portal) e quica ao chegar.
+    var pose: Pose = .{};
+    pose.ear_l = std.math.clamp(spring(t - 0.98, 13, 6), 0, 1.3);
+    pose.ear_r = std.math.clamp(spring(t - 1.04, 13, 6), 0, 1.3);
+    pose.under_on = !(t > 1.25 and t < 1.4);
+    const bounce = kick(t - 0.95, 0.32);
+    const stretch = if (landed) 1 - bounce * 0.13 else 1 + 0.12 * (1 - rise);
+    const widen = if (landed) 1 + bounce * 0.09 else 1 - 0.06 * (1 - rise);
+    const lift = (1 - rise) * 118;
+    const m = base.around(mid_x, 99, Af.scale(widen, stretch)).mul(Af.move(0, lift));
+    if (!landed) {
+        const top_y = base.ap(0, -40).y;
+        c.ImDrawList_PushClipRect(dl, d.v(cx - size, top_y), d.v(cx + size, foot.y), true);
+        figure(dl, m, pose, A, null, small);
+        c.ImDrawList_PopClipRect(dl);
+    } else figure(dl, m, pose, A, null, small);
+    // A borda do anel por cima (a frente do portal) e o clarão ao fechar.
+    if (rw > 0.5) {
+        c.ImDrawList_AddEllipseEx(dl, foot, d.v(rw * k, rh * k), cyan.col(0.9 * A), 0, 48, @max(2.4 * k, 1), 0);
+        c.ImDrawList_AddEllipseEx(dl, foot, d.v(rw * k * 0.86, rh * k * 0.7), magenta.col(0.8 * A), 0, 48, @max(1.6 * k, 0.8), 0);
+    }
+    const burst = kick(t - 1.42, 0.35);
+    if (burst > 0.01) logo.glow(dl, foot.x, foot.y, 30 * k * burst * 2, 12 * k * burst * 2, cream.alpha(0.8 * burst * A));
+}
+
+/// A figura com os efeitos de tela: as cores separadas (franjas ciano e magenta
+/// nas bordas) e o glitch em faixas horizontais deslocadas.
+fn figureFx(dl: *c.ImDrawList, base: Af, p: Pose, A: f32, small: bool, cx: f32, size: f32) void {
+    const k = base.k();
+    if (p.rgb > 0.01) {
+        const off = 5.5 * k * p.rgb;
+        figure(dl, base.mul(Af.move(-off / k, 0)), p, A * 0.55 * p.rgb, cyan, small);
+        figure(dl, base.mul(Af.move(off / k, 0)), p, A * 0.55 * p.rgb, magenta, small);
+    }
+    if (p.slices > 0.01) {
+        // Glitch: faixas horizontais deslocadas.
+        const top_y = base.ap(0, -18).y;
+        const bot_y = base.ap(0, 100).y;
+        const bands: u32 = 6;
+        for (0..bands) |bi| {
+            const b: u32 = @intCast(bi);
+            const y0 = top_y + (bot_y - top_y) * @as(f32, @floatFromInt(b)) / @as(f32, @floatFromInt(bands));
+            const y1 = top_y + (bot_y - top_y) * @as(f32, @floatFromInt(b + 1)) / @as(f32, @floatFromInt(bands));
+            const shift = (hash(b, p.slice_seed) - 0.5) * 22 * p.slices;
+            c.ImDrawList_PushClipRect(dl, d.v(cx - size, y0), d.v(cx + size, y1), true);
+            figure(dl, base.mul(Af.move(shift, 0)), p, A, null, small);
+            c.ImDrawList_PopClipRect(dl);
+        }
+    } else {
+        figure(dl, base, p, A, null, small);
+    }
+}
+
 /// O quadro `in.t` da animação, centrado em (cx, cy) com `size` pixels de largura.
 pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
     const A = in.alpha;
@@ -402,7 +750,15 @@ pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
         figure(dl, base, .{ .look = in.look }, A, null, small);
         return;
     }
-    const t = in.t;
+    // As aberturas alternativas desenham do jeito delas até o mascote ficar inteiro;
+    // depois, o relógio continua do parado do boot. O erro e a saída pulam a abertura.
+    const alt = in.opening != .boot;
+    const end = openingEnd(in.opening);
+    if (alt and in.t < end and in.leave == 0 and in.err_age > 2) {
+        openingAlt(in.opening, dl, base, cx, cy, size, in.t, A, in.light, small);
+        return;
+    }
+    const t = if (alt) 2.6 + @max(in.t - end, 0) else in.t;
     var p: Pose = .{ .look = in.look };
 
     // --- Abertura -----------------------------------------------------------
@@ -429,7 +785,7 @@ pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
     // O "_" pisca como cursor depois de digitado.
     if (t > 1.9 and t < 2.6) p.under_on = @mod(t - 1.9, 0.36) < 0.2;
     // Gota: aparece, escorre e cai.
-    if (t > 2.0 and t < 3.3) {
+    if (!alt and t > 2.0 and t < 3.3) {
         p.drop = outBack(seg(t, 2.0, 2.2), 2);
         p.drop_slide = outCubic(seg(t, 2.25, 2.75));
         p.drop_fall = seg(t, 2.8, 3.3);
@@ -443,7 +799,7 @@ pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
         const ear_period: f32 = 5.3;
         const ec = @floor(it / ear_period);
         const eph = it - ec * ear_period;
-        const tw = kick(eph - 1.0, 0.32) * 0.35;
+        const tw = kick(eph - 1.0, 0.32) * 0.24;
         if (@mod(ec, 2) == 0) p.turn_l += tw else p.turn_r += tw;
         // O cursor pisca duas vezes de vez em quando.
         const cph = @mod(it, 4.2);
@@ -542,29 +898,7 @@ pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
         return;
     }
 
-    // Separação de cores atrás (as franjas ciano e magenta nas bordas).
-    if (p.rgb > 0.01) {
-        const off = 5.5 * k * p.rgb;
-        figure(dl, base.mul(Af.move(-off / k, 0)), p, A * 0.55 * p.rgb, cyan, small);
-        figure(dl, base.mul(Af.move(off / k, 0)), p, A * 0.55 * p.rgb, magenta, small);
-    }
-    if (p.slices > 0.01) {
-        // Glitch: faixas horizontais deslocadas.
-        const top_y = base.ap(0, -18).y;
-        const bot_y = base.ap(0, 100).y;
-        const bands: u32 = 6;
-        for (0..bands) |bi| {
-            const b: u32 = @intCast(bi);
-            const y0 = top_y + (bot_y - top_y) * @as(f32, @floatFromInt(b)) / @as(f32, @floatFromInt(bands));
-            const y1 = top_y + (bot_y - top_y) * @as(f32, @floatFromInt(b + 1)) / @as(f32, @floatFromInt(bands));
-            const shift = (hash(b, p.slice_seed) - 0.5) * 22 * p.slices;
-            c.ImDrawList_PushClipRect(dl, d.v(cx - size, y0), d.v(cx + size, y1), true);
-            figure(dl, base.mul(Af.move(shift, 0)), p, A, null, small);
-            c.ImDrawList_PopClipRect(dl);
-        }
-    } else {
-        figure(dl, base, p, A, null, small);
-    }
+    figureFx(dl, base, p, A, small, cx, size);
     // Faíscas saindo da ponta de cada orelha quando ela salta.
     for ([_]f32{ 0.95, 1.03 }, [_]f32{ 1, -1 }) |at, side| {
         const sp = seg(t, at, at + 0.42);

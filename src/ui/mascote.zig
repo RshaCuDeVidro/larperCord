@@ -18,17 +18,20 @@ pub fn still(kind: Kind, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32) void {
 
 /// A abertura sozinha, sem a tela de login (a prévia das Configurações): `t` em
 /// segundos desde o começo.
-pub fn preview(kind: Kind, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, t: f32, light: bool, reduce: bool) void {
+pub fn preview(kind: Kind, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, t: f32, light: bool, reduce: bool, opening: terminal.Opening) void {
     switch (kind) {
-        .terminal => terminal.draw(dl, cx, cy, size, .{ .t = t, .light = light, .reduce = reduce }),
+        .terminal => terminal.draw(dl, cx, cy, size, .{ .t = t, .light = light, .reduce = reduce, .opening = opening }),
         .classico => logo.draw(dl, cx, cy, size, if (reduce) .{} else logo.introPose(t)),
     }
 }
 
 /// Quanto dura a abertura de cada um (depois disso, a prévia pode parar).
-pub fn introSeconds(kind: Kind) f32 {
+pub fn introSeconds(kind: Kind, opening: terminal.Opening) f32 {
     return switch (kind) {
-        .terminal => 3.4,
+        .terminal => terminal.openingSeconds(opening),
         .classico => 1.5,
     };
 }
+
+/// A abertura desta vez: a escolhida, ou uma sorteada (`mascot_opening` = 5).
+pub const pickOpening = @import("mascote_contas.zig").pickOpening;

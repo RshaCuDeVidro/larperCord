@@ -169,6 +169,8 @@ pub const App = struct {
     /// A abertura fica pelo menos até aqui (segundos) antes de sair para o app: no
     /// demo, a animação inteira; com a conta de verdade, nada (sai quando conectar).
     login_min_t: f32 = 0,
+    /// O sorteio da abertura desta vez (com "sortear a cada vez" nas Configurações).
+    opening_seed: u64 = 0,
     /// Quando tentar pôr o ícone de novo (SDL_GetTicks) e quantas vezes já tentou.
     tray_retry_ms: u64 = 0,
     tray_tries: u8 = 0,
@@ -291,6 +293,10 @@ pub const App = struct {
         i18n.set(if (opts.qa and opts.lang == null) .pt else opts.lang orelse i18n.fromSetting(app.st.settings.language));
         app.fonts.preferLanguage(@tagName(i18n.current()));
         app.st.settings.open = opts.settings;
+        var wall: c.SDL_Time = 0;
+        _ = c.SDL_GetCurrentTime(&wall);
+        const mix = @as(u64, @bitCast(wall)) ^ c.SDL_GetTicksNS();
+        app.opening_seed = (mix ^ (mix >> 29)) *% 0x9E3779B97F4A7C15 >> 17;
         // Antes da bandeja abrir: o ícone já sai com o mascote escolhido.
         app.applyMascot();
         timeline.mark(.config);
@@ -319,7 +325,7 @@ pub const App = struct {
             // O demo é a vitrine: mostra a abertura inteira (o QA e os prints, não).
             if (opts.demo and !opts.qa and opts.shot == null and !app.st.settings.reduce_motion) {
                 app.login.begin(.connecting);
-                app.login_min_t = mascote.introSeconds(mascote.Kind.of(app.st.settings.mascot));
+                app.login_min_t = mascote.introSeconds(mascote.Kind.of(app.st.settings.mascot), mascote.pickOpening(app.st.settings.mascot_opening, app.opening_seed));
             }
         } else if (app_accounts.envStartupToken()) |t| {
             try app.startReal(t);
@@ -3100,6 +3106,7 @@ pub const App = struct {
                     .proxy = .{ .ctx = app, .draw = loginProxyForm },
                     .proxy_on = set.proxy.len > 0,
                     .mascot = mascote.Kind.of(set.mascot),
+                    .opening = mascote.pickOpening(set.mascot_opening, app.opening_seed),
                 });
                 _ = th;
                 if (result) |r| login_result = r;
@@ -3440,6 +3447,7 @@ pub const App = struct {
                 .dt = anim.dt,
                 .accounts = app_accounts.others(&login_accounts),
                 .mascot = mascote.Kind.of(set.mascot),
+                .opening = mascote.pickOpening(set.mascot_opening, app.opening_seed),
             })) |r| wl.login_result = r;
         }
         @import("ui/video.zig").endFrame(now());

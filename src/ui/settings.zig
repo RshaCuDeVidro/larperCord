@@ -497,16 +497,23 @@ fn applyColor(ctx: *d.Ctx) void {
     }
 }
 
-/// Quando a prévia do mascote começou (a página aberta de novo começa outra).
+/// Quando a prévia do mascote começou (a página aberta de novo começa outra) e o
+/// sorteio dela (com "Sortear", cada prévia toca uma abertura).
 var preview_from_ms: i64 = -1;
 var preview_seen_ms: i64 = -10_000;
+var preview_seed: u64 = 0;
+
+fn restartPreview(now: i64) void {
+    preview_from_ms = now;
+    preview_seed +%= 1 + @as(u64, @intCast(@mod(now, 7)));
+}
 
 /// Os dois mascotes lado a lado: o escolhido toca a abertura uma vez e para no
 /// fim (sem ficar acordando o app); o outro fica parado.
 fn mascotPicker(p: *Page, value: *u8) void {
     const ctx = p.ctx;
     const now = ctx.now_ms;
-    if (now - preview_seen_ms > 600) preview_from_ms = now;
+    if (now - preview_seen_ms > 600) restartPreview(now);
     preview_seen_ms = now;
     const gap: f32 = 12;
     const cw = (p.w - gap) / 2;
@@ -520,21 +527,22 @@ fn mascotPicker(p: *Page, value: *u8) void {
         qa.mark(r, "mascot:{d}", .{i});
         if (hb.clicked and value.* != i) {
             value.* = @intCast(i);
-            preview_from_ms = now;
+            restartPreview(now);
         }
         const sel = mascote.Kind.of(value.*) == @as(mascote.Kind, @enumFromInt(i));
         const k = anim.to(anim.id("mascot", i), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
         d.rect(p.dl, r, ctx.col(.rail).alpha(0.6).mix(ctx.col(.accent).alpha(0.18), k), ctx.th.radius + 4);
         d.border(p.dl, r, if (sel) ctx.col(.accent) else ctx.col(.border), ctx.th.radius + 4, if (sel) 2 else 1);
         const kind: mascote.Kind = @enumFromInt(i);
-        const end = mascote.introSeconds(kind);
+        const opening = mascote.pickOpening(ctx.st.settings.mascot_opening, preview_seed);
+        const end = mascote.introSeconds(kind, opening);
         var t: f32 = 100;
         if (sel and !reduce) {
             t = @as(f32, @floatFromInt(now - preview_from_ms)) / 1000.0;
             if (t < end) anim.active = true else t = end;
         }
         c.ImDrawList_PushClipRect(p.dl, d.v(r.x + 1, r.y + 1), d.v(r.right() - 1, r.bottom() - 1), true);
-        mascote.preview(kind, p.dl, r.x + r.w / 2, r.y + 72, @min(118, cw * 0.62), t, light, reduce or !sel);
+        mascote.preview(kind, p.dl, r.x + r.w / 2, r.y + 72, @min(118, cw * 0.62), t, light, reduce or !sel, opening);
         c.ImDrawList_PopClipRect(p.dl);
         const tw = d.width(p.font(.semibold), 15, name);
         d.text(p.dl, p.font(.semibold), 15, r.x + (r.w - tw) / 2, r.bottom() - 32, if (sel) ctx.col(.text) else ctx.col(.muted), name);
@@ -693,8 +701,14 @@ fn page(p: *Page, previews: []const Preview) void {
             p.segmented(&.{ i18n.tr("Do tema", "Theme"), i18n.tr("Retos", "Square"), i18n.tr("Suaves", "Soft"), i18n.tr("Redondos", "Round") }, &s.corners);
             p.heading(i18n.tr("Mascote", "Mascot"));
             mascotPicker(p, &s.mascot);
+            if (mascote.Kind.of(s.mascot) == .terminal) {
+                p.heading(i18n.tr("Abertura", "Opening"));
+                const before = s.mascot_opening;
+                p.segmented(&.{ i18n.tr("Boot", "Boot"), i18n.tr("Código", "Code"), i18n.tr("TV", "TV"), i18n.tr("Pixels", "Pixels"), i18n.tr("Portal", "Portal"), i18n.tr("Sortear", "Shuffle") }, &s.mascot_opening);
+                if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
+            }
             p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
-            if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) preview_from_ms = p.ctx.now_ms;
+            if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
             p.divider();
             themeColors(p);
             p.heading("Layout");
