@@ -22,6 +22,7 @@ const search = @import("search.zig");
 const md_preview = @import("md_preview.zig");
 const lsp_ui = @import("lsp_ui.zig");
 const vim = @import("vim.zig");
+const ime = @import("ime.zig");
 const popup = @import("popup.zig");
 const mosaic = @import("mosaic.zig");
 const autocomplete = @import("autocomplete.zig");
@@ -1629,6 +1630,9 @@ fn inputCallback(data: [*c]c.ImGuiInputTextCallbackData) callconv(.c) c_int {
         c.ImGuiInputTextCallbackData_DeleteChars(data, 0, data.*.BufTextLen);
         c.ImGuiInputTextCallbackData_InsertChars(data, 0, &st.input, null);
     }
+    // Texto em conversão do IME: entra e sai do buffer ativo aqui, depois de o
+    // ImGui já ter encaixado o texto decidido (ui/ime.zig).
+    ime.applyCallback(data);
     // O autocompletar pediu o cursor logo depois do que entrou. O seletor de emoji e o
     // clique na lista tiram o foco da caixa: o texto novo entra com ela solta (ver
     // `composer`), e o ImGui, ao dar o foco de volta a um texto diferente, põe o cursor
@@ -1652,6 +1656,9 @@ pub var composer_extra: f32 = 0;
 const composer_max_lines = 10;
 
 pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
+    // Só a caixa do chat recebe a conversão do IME. Quem desenha outra caixa
+    // neste quadro (ou o painel de configurações) deixa esta desligada.
+    ime.beginComposer();
     if (ctx.st.friends) return;
     const ch_id = ctx.st.activeChannel() orelse return;
     const cs = ctx.store.channel(ch_id) orelse return;
@@ -1869,26 +1876,35 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     const synced = st.input_sync;
     var wanted: @TypeOf(st.input) = undefined;
     if (synced) wanted = st.input;
+    // O Enter que fecha a conversão do IME não manda a mensagem: ele decidiu o
+    // candidato, e o texto só entra no st.input depois.
+    const composing = ime.isComposing();
     if (c.ImGui_InputTextMultilineEx("##composer", &st.input, st.input.len, d.v(input_w, frame_h), flags, inputCallback, st))
         // Alt+Enter é tela cheia (ui/root.zig): não manda a mensagem.
-        if (!ctx.io.*.KeyAlt) submit(ctx);
+        if (!composing and !ctx.io.*.KeyAlt) submit(ctx);
     if (synced and st.input_sync and !c.ImGui_IsItemActive()) {
         st.input = wanted;
         st.input_sync = false;
     }
     // Avisa o Discord quando o texto muda (o app limita a um a cada 8 s).
-    if (c.ImGui_IsItemEdited() and st.input[0] != 0) ctx.act(.{ .typing = ch_id });
+    if (c.ImGui_IsItemEdited() and st.input[0] != 0 and !ime.isComposing()) ctx.act(.{ .typing = ch_id });
     const active = c.ImGui_IsItemActive();
+    // O sublinhado do texto em conversão, por cima do que o ImGui desenhou.
+    if (active) ime.underline(ctx.col(.text).u(), 1);
     lsp_ui.afterInput(ctx, dl, fam.get(.regular), .{ .x = input_x, .y = input_y, .w = input_w, .h = frame_h }, font_px, active, grown == composer_extra);
     // Seta para cima com a caixa vazia: edita a última mensagem.
     if (active and st.input[0] == 0 and c.ImGui_IsKeyPressed(c.ImGuiKey_UpArrow)) st.edit_last = true;
     if (keep) st.input = kept;
     vim.composer_active = active;
+    ime.endComposer(active);
+    // Perdeu o foco no meio de uma conversão: o ImGui acabou de copiar o buffer
+    // com ela para o st.input. Tira o texto em conversão de lá.
+    if (!active and ime.isComposing()) ime.dropFromBuffer(&st.input);
     c.ImGui_PopFont();
     // A lista fica acima de tudo que está preso na caixa.
     {
         const inset: f32 = if (pill) 18 else 0;
-        autocomplete.update(ctx, ch_id, active, .{ .x = r.x + inset, .y = top - tray_h, .w = r.w - inset * 2, .h = 0 });
+        autocomplete.update(ctx, ch_id, active and !ime.isComposing(), .{ .x = r.x + inset, .y = top - tray_h, .w = r.w - inset * 2, .h = 0 });
     }
     // Ctrl+V com imagem copiada (print, imagem do navegador): vira anexo.
     if (active and ctx.io.*.KeyCtrl and c.ImGui_IsKeyPressed(c.ImGuiKey_V)) {
@@ -1901,7 +1917,7 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     // sugestões aberta e os painéis por cima (o formulário e o modal de um bot também)
     // pegam o Esc primeiro.
     const over_it = autocomplete.open() or st.popup != .none or st.palette.open or st.settings.open or search.open or
-        @import("interact.zig").anyOpen();
+        ime.isComposing() or @import("interact.zig").anyOpen();
     if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and (st.reply_to != 0 or st.editing != 0) and !over_it and (active or was_active or !ctx.io.*.WantTextInput)) ctx.act(.cancel_compose);
 
     if (st.edit_last) {

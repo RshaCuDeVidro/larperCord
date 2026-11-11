@@ -32,6 +32,7 @@
 
 **Texto em qualquer idioma**
 - Interface em russo, traduzida pelo pIat0n (#15, #16). Escolha "Русский" em Configurações → Idioma, ou o app segue um sistema em russo. As datas usam os nomes dos meses e dos dias da semana em russo.
+- O texto em japonês, chinês e coreano aparece na caixa de mensagem enquanto você escolhe o candidato, com o sublinhado, em vez de só depois de decidir.
 - Os horários do Discord aparecem em japonês e em russo, também os relativos, como "3日前" e "3 дня назад", com os plurais do russo. Antes saíam em inglês.
 - Em japonês, as datas voltam a sair na ordem certa (algumas apareciam dia/mês ou ano/dia/mês), e as sugestões `has:` e `before:` da busca funcionam em japonês e russo.
 - Mais correções no árabe e no hebraico, a partir do relato de majd-tqe (#9). Título, autor e nome de campo de embed que começam em árabe ou hebraico terminam na borda direita do cartão, como a descrição.

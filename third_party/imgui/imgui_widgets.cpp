@@ -5744,6 +5744,15 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         draw_pos.x = ImMin(draw_pos.x, frame_bb.Max.x - CalcTextSize(buf_display, NULL).x - style.FramePadding.x);
     //draw_scroll.x = state->Scroll.x; // Preserve scroll when inactive?
 
+    // larperCord: remember where the text landed, for InputTextDrawUnderline() (IME preedit).
+    if (state != NULL)
+    {
+        state->TextDrawPos = draw_pos;
+        state->TextDrawScroll = draw_scroll;
+        state->TextClipRect = clip_rect;
+        state->TextDrawList = draw_window->DrawList;
+    }
+
     // Render text
     if ((is_multiline || (buf_display_end - buf_display) < buf_display_max_length) && (text_col & IM_COL32_A_MASK) && (line_visible_n0 < line_visible_n1))
         g.Font->RenderText(draw_window->DrawList, g.FontSize,
@@ -5821,6 +5830,48 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         return validated;
     else
         return value_changed;
+}
+
+// larperCord: underline for an IME preedit range that lives in the active InputText buffer.
+// Called right after InputTextEx() by the message composer, while g.InputTextLineIndex and the
+// text draw position saved above still match the widget.
+void ImGui::InputTextDrawUnderline(int text_start, int text_len, ImU32 col, float thickness)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiInputTextState* state = &g.InputTextState;
+    if (state->ID == 0 || state->TextA.Data == NULL || state->TextDrawList == NULL || text_len <= 0)
+        return;
+    const int text_end = ImMin(text_start + text_len, state->TextLen);
+    if (text_start < 0 || text_start >= text_end)
+        return;
+
+    ImGuiTextIndex* line_index = &g.InputTextLineIndex;
+    if (line_index->Offsets.Size == 0)
+        return;
+    const char* buf = state->TextA.Data;
+    const char* buf_end = buf + state->TextLen;
+    const int line_count = line_index->Offsets.Size;
+    ImDrawList* draw_list = state->TextDrawList;
+    draw_list->PushClipRect(state->TextClipRect.Min, state->TextClipRect.Max, true);
+    for (int line_n = 0; line_n < line_count; line_n++)
+    {
+        const char* line = line_index->get_line_begin(buf, line_n);
+        const char* line_end = line_index->get_line_end(buf, line_n);
+        if (line_end == NULL || line_end > buf_end)
+            line_end = buf_end;
+        const int line_start_ofs = (int)(line - buf);
+        const int line_end_ofs = (int)(line_end - buf);
+        const int a = ImMax(text_start, line_start_ofs);
+        const int b = ImMin(text_end, line_end_ofs);
+        if (a >= b)
+            continue;
+        const float x0 = InputTextCalcTextSize(&g, line, buf + a, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
+        const float x1 = InputTextCalcTextSize(&g, line, buf + b, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
+        const ImVec2 pos = state->TextDrawPos - state->TextDrawScroll + ImVec2(0.0f, line_n * g.FontSize);
+        const float y = pos.y + g.FontSize - thickness;
+        draw_list->AddLine(ImVec2(pos.x + x0, y), ImVec2(pos.x + x1, y), col, thickness);
+    }
+    draw_list->PopClipRect();
 }
 
 void ImGui::DebugNodeInputTextState(ImGuiInputTextState* state)

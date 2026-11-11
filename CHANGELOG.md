@@ -32,6 +32,7 @@
 
 **Text in any language**
 - Russian interface, translated by pIat0n (#15, #16). Pick "Русский" in Settings → Language, or the app follows a Russian system. Dates use Russian month and weekday names.
+- Japanese, Chinese and Korean input shows while you're converting it in the message box, with the underline, instead of appearing only after you pick the candidate.
 - Discord timestamps show in Japanese and Russian, including relative ones like "3日前" and "3 дня назад", with Russian plural forms. Before they came out in English.
 - In Japanese, dates are in the right order again (some showed day/month or year/day/month), and the `has:` and `before:` search suggestions work in Japanese and Russian.
 - More Arabic and Hebrew fixes, from majd-tqe's report (#9). Embed titles, authors and field names that start in Arabic or Hebrew end at the right edge of the card, like the description.

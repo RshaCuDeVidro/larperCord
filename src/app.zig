@@ -43,6 +43,7 @@ const plugin_host = @import("plugins/host.zig");
 const mentions = @import("core/mentions.zig");
 const envio = @import("core/envio.zig");
 const autocomplete = @import("ui/autocomplete.zig");
+const ime = @import("ui/ime.zig");
 const interact = @import("ui/interact.zig");
 const inbox_core = @import("core/inbox.zig");
 const leitura = @import("core/leitura.zig");
@@ -2798,6 +2799,9 @@ pub const App = struct {
                         e.motion.x /= s;
                         e.motion.y /= s;
                     }
+                    // Texto em conversão do IME (o backend do SDL3 não o conhece):
+                    // o texto decidido continua indo para o ImGui logo abaixo.
+                    ime.onSdlEvent(&e);
                     // Aperte para falar (e "aperte uma tecla" nas Configurações).
                     if (!for_list and !voz_audio.onSdlEvent(&e)) _ = c.cImGui_ImplSDL3_ProcessEvent(&e);
                     // QUIT é sair sempre (sinal, fim da sessão); o fechar da janela, depende.
@@ -2995,6 +2999,9 @@ pub const App = struct {
                 app.st.theme_gen +%= 1;
             }
 
+            // Só a caixa de texto do chat recebe a conversão do IME neste quadro;
+            // quem desenha outra caixa (ou nenhuma) deixa isto desligado.
+            ime.composer_active = false;
             if (app.store.ready and (app.opts.stats or app.opts.shot != null)) app.scene(settled_frames >= 3);
             c.ImGui_NewFrame();
             qa_mod.beginFrame();
