@@ -115,7 +115,7 @@ layout {
                     spacer height=6
                     header height=44 variant=minimal inset-x=18
                     tabs height=40 variant=underline when=abas font=mono
-                    messages flex=1 variant=cozy avatar=square avatar-size=26 spacing=12
+                    messages flex=1 variant=cozy avatar=square avatar-size=26 spacing=12 call-style=panel call-tint=0.12
                     column height=84 padding-x=18 {
                         spacer flex=1
                         composer height=44 variant=prompt

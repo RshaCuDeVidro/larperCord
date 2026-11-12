@@ -87,7 +87,7 @@ layout {
         column flex=1 style=folha {
             header height=86 variant=minimal inset-x=44 font="Liberation Serif"
             tabs height=36 variant=underline when=abas
-            messages flex=1 avatar=none spacing=22 inset-x=28 ruled="$pautado" margin-line="$margem"
+            messages flex=1 avatar=none spacing=22 inset-x=28 call-style=folha call-tint=0.08 ruled="$pautado" margin-line="$margem"
             column height=96 padding-x=44 {
                 spacer flex=1
                 composer height=46
