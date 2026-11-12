@@ -19,7 +19,7 @@ tools/membench.sh 50                # RAM and idle CPU per theme, with a budget 
 | `tools/site_shots.sh` | Regenerates the website's images |
 | `python3 tools/gen_site.py` | Regenerates the website in `docs/` |
 
-The QA drives the real UI: it clicks through elements, and a button with no effect counts as a failure. It runs in demo mode, without a window, and never touches your account.
+The QA drives the real UI: it clicks through elements, and a button with no effect counts as a failure. It runs in demo mode, without a window, and never touches your account. After `tools/qa.sh` has built it, one battery runs alone with `QA_SUITE=call ./.zig-cache/qa/bin/larpercord --qa`, and `--qa-list` prints every battery's name.
 
 CI (`.github/workflows/ci.yml`) runs the tests, then builds the app on Arch and runs the full QA on every push and pull request.
 

@@ -246,6 +246,7 @@
   <div class="tour">
     <ol class="tour-list">
       <li><h3>Split view</h3><p>Up to three conversations side by side, each with its own history and scroll position. The composer follows the focused pane.</p><img src="assets/shots/en/f-mosaico.webp" alt="Two conversations side by side" loading="lazy" decoding="async"></li>
+      <li><h3>The call screen</h3><p>Click a voice channel and the call takes the chat area: one tile per person, in the theme's colors and card style, with a green ring while they talk and a LIVE badge when they stream. The mixer gives each person a volume, plus Remove noise and Even out volume.</p><img src="assets/shots/en/f-call.webp" alt="The call screen, one tile per person" loading="lazy" decoding="async"></li>
       <li><h3>Threads and forums</h3><p>Threads nest under their channel and open like any conversation, with tabs, drafts and search. Forums show their posts instead of a chat, with tags and “New Post”.</p><img src="assets/shots/en/f-forum.webp" alt="A forum channel showing its list of posts" loading="lazy" decoding="async"></li>
       <li><h3>Emoji and autocomplete</h3><p>Custom emoji and stickers show as images, animated too. The picker has the full Unicode list and your servers' emoji. In the text box, <code>@</code>, <code>#</code>, <code>:ab</code> and <code>/</code> open a list.</p><img src="assets/shots/en/f-emoji.webp" alt="The emoji picker" loading="lazy" decoding="async"></li>
       <li><h3>Read state, in sync</h3><p>Unreads and mentions match Discord when you open the app, and reading on another device clears them here. Channels open at the first unread. Pins live behind the pin icon, and Discord links open in the app.</p><img src="assets/shots/en/f-fixadas.webp" alt="The pinned messages panel" loading="lazy" decoding="async"></li>
@@ -254,10 +255,11 @@
       <li><h3>Command palette</h3><p><kbd>Ctrl</kbd>+<kbd>K</kbd>: fuzzy search for channels, DMs, servers, themes, status and every toggle. This page has one too. Try it.</p><img src="assets/shots/en/f-paleta.webp" alt="The command palette" loading="lazy" decoding="async"></li>
       <li><h3>Video in the chat</h3><p>Attachments and direct links play in place through FFmpeg, loaded only on the first play: your distro's on Linux, or the Download FFmpeg button in Settings → Chat on Windows. Up to 480p and about 30 fps. Without FFmpeg, the video opens in your browser.</p><img src="assets/shots/en/f-video.webp" alt="A video playing inside a conversation" loading="lazy" decoding="async"></li>
       <li><h3>Code that reads like code</h3><p>Discord markdown, parsed once when the message arrives. Code blocks get highlighting in your theme's colors and a copy button, and a live preview sits above the composer.</p><img src="assets/shots/en/f-codigo.webp" alt="A highlighted code block" loading="lazy" decoding="async"></li>
-      <li><h3>Full profiles</h3><p>Banner, bio, activity, mutual friends and servers, connections, roles and a private note.</p><img src="assets/shots/en/f-perfil.webp" alt="A full user profile" loading="lazy" decoding="async"></li>
+      <li><h3>Full profiles</h3><p>Banner, bio, activity, mutual friends and servers, connections, roles and a private note. In a server, people show the nickname, picture, bio and banner they set for it.</p><img src="assets/shots/en/f-perfil.webp" alt="A full user profile" loading="lazy" decoding="async"></li>
       <li><h3>Saved messages, with notes</h3><p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>: bookmarks that live only on your computer. Nothing goes to Discord.</p><img src="assets/shots/en/f-salvas.webp" alt="A saved message with a note" loading="lazy" decoding="async"></li>
       <li><h3>Alerts and filters</h3><p>Alert words count as mentions, a word filter collapses messages, “ignore” hides someone without blocking them, and focus mode quiets everything but DMs and mentions. All local.</p><img src="assets/shots/en/f-alertas.webp" alt="The alerts and filters settings page" loading="lazy" decoding="async"></li>
-      <li><h3>And the rest</h3><p>Replies, edits, reactions, right-click menus everywhere, multi-message text selection, images and GIFs, calls in DMs and groups, bot buttons and slash commands, polls, moderation, server folders, channel tabs, multiple accounts, drafts per channel, proxy and Tor support, English, Portuguese and Japanese, Arabic and Hebrew, optional vim keys. <a href="guide/features.html">Full tour →</a></p><img src="assets/shots/en/f-menu.webp" alt="The right-click menu on a message" loading="lazy" decoding="async"></li>
+      <li><h3>A mascot with a life of its own</h3><p>Terminal plays an opening while the app connects, then sits on your message box: it follows the mouse, reacts to what you write, can be grabbed and thrown, and drinks coffee or goes for a walk when you leave it alone. It only moves while the window is focused, and one switch turns it off. <a href="guide/mascot.html">The mascot →</a></p><img src="assets/shots/en/f-mascote.webp" alt="The corner mascot sitting on the message box" loading="lazy" decoding="async"></li>
+      <li><h3>And the rest</h3><p>Replies, edits, reactions, right-click menus everywhere, multi-message text selection, images and GIFs, calls in DMs and groups, call timers on voice channels, bot buttons and slash commands, polls, moderation, server folders, channel tabs, multiple accounts, drafts per channel, proxy and Tor support, English, Portuguese, Japanese and Russian, Arabic and Hebrew (typed too), shortcuts you can change, optional vim keys. <a href="guide/features.html">Full tour →</a></p><img src="assets/shots/en/f-menu.webp" alt="The right-click menu on a message" loading="lazy" decoding="async"></li>
     </ol>
     <div class="tour-stage" aria-hidden="true"></div>
   </div>
@@ -276,12 +278,13 @@
     <div><b>05</b><strong>UDP</strong>Voice gateway v8, with heartbeat and resume</div>
   </div>
   <div class="split reveal">
-    <img src="assets/shots/en/f-voz.webp" alt="The per-person volume mixer during a call" loading="lazy" decoding="async">
+    <img src="assets/shots/en/f-voz.webp" alt="The call mixer during a call: a volume, Remove noise and Even out volume for each person" loading="lazy" decoding="async">
     <ul class="ticks">
-      <li><strong>A mixer with one volume per person.</strong> Each person is their own audio stream on the same output device.</li>
+      <li><strong>A mixer with one volume per person.</strong> Each person is their own audio stream on the same output device. Remove noise runs RNNoise on one person's sound, and Even out volume brings a quiet or loud voice toward the others. Both stay off until you turn them on for someone.</li>
+      <li><strong>A call screen in the theme's style.</strong> One tile per person, with the picture and nickname they use in that server, what they're playing and who's streaming. Alone in a call, the mascot naps next to an invite button.</li>
       <li><strong>No call, no cost.</strong> The voice thread is only created when you join. Before that, audio only starts if you open the voice settings.</li>
       <li><strong>Your mic, your rules.</strong> Pick your devices, even mid-call. Voice activity with an automatic threshold or push-to-talk, a high-pass filter, a noise gate and RNNoise noise suppression, a live meter and a mic test.</li>
-      <li><strong>Honest limits.</strong> Push-to-talk only works while the window is focused. No screen sharing or camera. <a href="guide/voice.html">Voice guide →</a></li>
+      <li><strong>Honest limits.</strong> On Linux, push-to-talk only works while the window is focused (on Windows it works from any window). No screen sharing or camera. <a href="guide/voice.html">Voice guide →</a></li>
     </ul>
   </div>
   <span class="close">}</span>
@@ -337,8 +340,8 @@
     <li><strong>Only the video driver it needs.</strong> On Linux machines with only an NVIDIA GPU, glvnd would also load Mesa and LLVM for nothing. The app detects that and avoids it.</li>
     <li><strong>Markdown is parsed once.</strong> When the message arrives. After that, the UI only lays out spans, with a height cache per width.</li>
     <li><strong>A virtualized list.</strong> Binary search for the first visible item, then draw only what's on screen.</li>
-    <li><strong>Memory has ceilings.</strong> 1,500 messages per channel and 3,000 in total. Forgotten conversations get unloaded, and the image cache has a fixed 64&nbsp;MB budget.</li>
-    <li><strong>fontconfig gets freed.</strong> After fonts are resolved on Linux: <code>FcFini</code>, then <code>malloc_trim</code>. Windows has no fontconfig: fonts come straight from <code>C:\Windows\Fonts</code>.</li>
+    <li><strong>Memory has ceilings.</strong> 1,500 messages per channel and 2,000 in total by default. Forgotten conversations get unloaded, and images get 32&nbsp;MB by default. Settings → Performance moves both limits.</li>
+    <li><strong>Freed memory goes back.</strong> On Linux, fontconfig is freed after fonts are resolved (<code>FcFini</code>, then <code>malloc_trim</code>), and big image buffers go back to the system when freed instead of piling up in glibc's arenas. Windows has no fontconfig: fonts come straight from <code>C:\Windows\Fonts</code>.</li>
     <li><strong>No blinking cursor.</strong> A blinking cursor would keep the CPU awake for no good reason.</li>
     <li><strong>Things start when you ask.</strong> The voice thread on your first call, FFmpeg on your first video. With no plugin on, there's no plugin thread and no Lua, and nothing is spent per message, key or frame.</li>
   </ol>
@@ -368,11 +371,11 @@
       <tr><th>Read state, pins, Discord links</th><td><span class="chip ok">works</span></td><td>Synced with your other devices</td></tr>
       <tr><th>Themes</th><td><span class="chip ok">works</span></td><td>11 built-in, light and dark, reload on save</td></tr>
       <tr><th>Joining servers by invite</th><td><span class="chip ok">works</span></td><td>From an invite card, a link or a code, with a warning first</td></tr>
-      <tr><th>Arabic, Hebrew, other scripts</th><td><span class="chip part">partial</span></td><td>They display. Right-to-left typing in the message box and shaping for scripts like Devanagari are missing</td></tr>
-      <tr><th>Voice</th><td><span class="chip part">partial</span></td><td>Server channels and DM and group calls, E2EE, mixer, device picker, push-to-talk and filters work. Push-to-talk needs the window focused</td></tr>
+      <tr><th>Arabic, Hebrew, other scripts</th><td><span class="chip part">partial</span></td><td>They display, in messages and in the message box. Shaping for scripts like Devanagari is missing</td></tr>
+      <tr><th>Voice</th><td><span class="chip part">partial</span></td><td>Server channels and DM and group calls, the call screen, E2EE, mixer, device picker, push-to-talk and filters work. On Linux, push-to-talk needs the window focused</td></tr>
       <tr><th>Permissions</th><td><span class="chip part">partial</span></td><td>Locked channels, voice, threads and forums are enforced, and the message box says why you can't send. Reactions and the member list don't check yet</td></tr>
       <tr><th>Notifications</th><td><span class="chip part">partial</span></td><td>Through <code>notify-send</code> on Linux and the tray on Windows. Clicking doesn't open the channel</td></tr>
-      <tr><th>Accessibility</th><td><span class="chip part">partial</span></td><td>Font scale, reduced motion, keyboard palette. No visible focus or high contrast</td></tr>
+      <tr><th>Accessibility</th><td><span class="chip part">partial</span></td><td>Font scale, interface size, reduced motion, keyboard palette, shortcuts you can change. No visible focus or high contrast</td></tr>
       <tr><th>Platforms</th><td><span class="chip part">partial</span></td><td>Linux and Windows 10/11. Tested daily on Arch with Hyprland; Windows is new.</td></tr>
             <tr><th>Screen sharing and camera</th><td><span class="chip no">missing</span></td><td></td></tr>
     </tbody>
@@ -459,7 +462,7 @@
     <div>
       <h2 class="h reveal">Keep the mascot <em>caffeinated.</em></h2>
       <p class="lead reveal">larperCord is free and has no ads. It runs on about 130 MB of RAM. Its developer runs on coffee.</p>
-      <div class="reveal"><a class="kofi-sticker" href="https://ko-fi.com/M7E72A1EGZ" target="_blank" rel="noopener"><img src="assets/kofi6.png" alt="Buy Me a Coffee at ko-fi.com" width="580" height="146" loading="lazy" decoding="async" decoding="async"></a></div>
+      <div class="reveal"><a class="kofi-sticker" href="https://ko-fi.com/M7E72A1EGZ" target="_blank" rel="noopener"><img src="assets/kofi6.png" alt="Buy Me a Coffee at ko-fi.com" width="580" height="146" loading="lazy" decoding="async"></a></div>
     </div>
     <div class="receipt reveal" aria-hidden="true">
       <p class="rc-head">larperCord<br><small>receipt, idle session</small></p>
@@ -493,6 +496,7 @@
   <div><h2>Customize</h2>
     <a href="guide/themes.html">Writing themes</a>
     <a href="guide/theme-gallery.html">Built-in themes</a>
+    <a href="guide/mascot.html">The mascot</a>
     <a href="guide/plugins.html">Lua plugins</a>
     <a href="guide/plugin-directory.html">Plugin directory</a>
     <a href="guide/plugin-starter.html">Plugin starter</a>

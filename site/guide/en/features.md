@@ -10,7 +10,7 @@ Everything here works in demo mode, except where it needs the real network. For 
 - **Reactions**, an emoji picker and a hover action bar on every message. Right-click a reaction, or use View Reactions, to see who reacted.
 - **Polls**: vote, remove your vote or see the results first, and click an answer to see who voted for it.
 - **Text selection** across several messages with the mouse, then `Ctrl+C`.
-- **Multi-line composer**: wraps long text and grows up to 10 lines. `Enter` sends and `Shift+Enter` adds a line.
+- **Multi-line composer**: wraps long text and grows up to 10 lines. `Enter` sends and `Shift+Enter` adds a line. Arabic and Hebrew you type show in the right order and line up to the right, like in sent messages, and the cursor, clicking, selecting, `Backspace`, `←` and `→` follow the text on screen.
 - **Drafts** per channel: unsent text comes back when you return to the channel, even after closing the app.
 - **History** loads as you scroll up, without jumping the screen, on a virtualized list.
 - **System messages**: joins, calls, pins, boosts.
@@ -99,17 +99,22 @@ Search ignores case and accents, so `nao` finds `não`.
 - **Resizable panels**: drag the edge of the channel list, the member list or the panes of a split view. A double-click goes back to the theme's width. Your choice is saved, follows you between themes, and gives way when the window gets too small for the conversation; Settings → Appearance can reset it.
 - **Hide the member list or status bar** in Settings → Appearance, and the conversation takes the space.
 - **Server folders** from your Discord settings, updated live.
+- **The DM list** keeps the most recent conversation on top, live: a message you get or send moves its DM up right away, and a DM you closed comes back when a new message arrives in it.
+- **Interface size** from 75 to 200% in Settings → Appearance, or `Ctrl` `+`, `Ctrl` `-` and `Ctrl` `0` from anywhere. `F11` or `Alt+Enter` toggles fullscreen.
 - **Friends screen**: requests, accepting and cancelling them, starting DMs, and an **Add Friend** tab that takes a username. DMs from people who aren't your friends go to **Message Requests**, with a Spam tab, and don't notify.
 
 ## People
 
 - **Profile card** with banner, accent color, bio in markdown, pronouns, mutual friends and servers, current game with elapsed time, and the call they're in, with a Join button.
+- **Server profiles**: in a server, people show the nickname and picture they set for that server instead of the global ones, wherever they appear: messages, replies and mentions, the member list, the voice channel list, the call screen and the mixer, and the `@` list in the message box, which finds people by either name. The profile card shows the server nickname with the global name smaller underneath, plus the server bio, pronouns and banner when they set them. DMs and groups keep the global name and picture.
 - **Full profile** with tabs: activity, mutual friends and servers, connections, badges and your private note.
 - **See it bigger**: click a profile banner or picture to open it in full. A server's banner opens the same way from the channel list, and the server and user menus have View Icon and View Picture.
 - **Status picker**: online, idle, do not disturb, invisible, for 15 minutes up to 3 days or until you change it, saved to your account. Click your name for a **custom status** with an emoji and when it clears.
 - **Block, unblock and Add Friend** from a person's menu or profile. Settings → My Account edits your display name, pronouns and About me.
 - **Rich Presence** (off by default, in Settings → Privacy): games that support it show what you're playing.
 - **Roles**: member list by role with real colors, and giving or removing roles when you have permission.
+
+![A profile card in a server: the server nickname, with the global name underneath](shot:f-perfil-servidor)
 
 ## Attention
 
@@ -133,16 +138,26 @@ If a server asks you to accept its rules, the message box says so and opens them
 
 ## Calls
 
-Real voice with end-to-end encryption, a per-person mixer, device picker, push-to-talk and filters, in server voice channels and in DM and group calls. See [Voice calls](page:voice).
+Real voice with end-to-end encryption, in server voice channels and in DM and group calls. Clicking a voice channel opens the **call screen**, one tile per person in the theme's style. The **mixer** has a volume for each person, plus **Remove noise** and **Even out volume** per person, off by default. Voice channels show how long their call has been going. There's also a device picker, push-to-talk and filters. See [Voice calls](page:voice).
+
+![The call screen](shot:f-call)
+
+## The mascot
+
+Terminal, the main mascot, plays an opening while the app connects (five to pick from), naps where a list is empty and, as the **corner mascot**, sits on the message box: it follows the mouse, reacts to what you write, can be grabbed and thrown, and does things on its own when you leave it alone. Settings → Mascot switches to the Classic mascot, sets how lively it is or turns the corner mascot off. See [The mascot](page:mascot).
+
+![The corner mascot on the message box](shot:f-mascote)
 
 ## Network and languages
 
 - **Proxy** for HTTP, HTTPS, SOCKS5 and SOCKS5h (Tor at `127.0.0.1:9050`), with separate fields for the address, port, login and password, for external media only or for everything except voice calls, which always connect directly. It's in Settings → Network and on the sign-in screen, which offers it when it can't reach Discord.
-- **English and Portuguese** across the UI, network notices, demo data and theme options, and the whole interface in **Japanese**. Translations are one file per language (`i18n/ja.kdl`), so a new language needs no code. It follows your system by default.
-- **Text in any language**: Arabic letters are joined and right-to-left text comes in the right order. A letter the theme's font lacks, in any script, comes from a system font that has it. Typed right-to-left text still goes left to right in the message box, and scripts that need shaping, like Devanagari or Thai, show their letters one by one.
+- **English and Portuguese** across the UI, network notices, demo data and theme options, and the whole interface in **Japanese** and **Russian**, including the built-in themes' descriptions and options. Discord timestamps, relative ones too ("3日前", "3 дня назад"), follow the language. Translations are one file per language (`i18n/ja.kdl`, `i18n/ru.kdl`), so a new language needs no code. It follows your system by default.
+- **Text in any language**: Arabic letters are joined and right-to-left text comes in the right order, in messages and in the message box. A letter the theme's font lacks, in any script, comes from a system font that has it. Scripts that need shaping, like Devanagari or Thai, show their letters one by one.
 
 ## Make it yours
 
 - [Themes](page:themes) rearrange the entire interface and reload on save. On Linux, themes with `palette "wal"` follow your wallpaper through pywal, and the `vidro` theme's transparent background is blurred by your compositor (Hyprland, KDE…). Windows has no blur, and it only reads pywal's colors when the `HOME` variable is set, without following the wallpaper live.
 - [Plugins](page:plugins) in Lua add panels, right-click entries, notes under messages, commands and keybinds. Scam guard, CVE radar, GitHub cards, what did I miss, translate, reminders, highlights, clean links, and links and files come with the app.
+- **Your own shortcuts**: the palette, search, settings, inbox, saved, themes, fullscreen, tabs, mute and deafen can take other keys in Settings → Keybinds. See [Changing a shortcut](page:shortcuts#changing-a-shortcut).
 - **Optional vim navigation**: see [Shortcuts](page:shortcuts).
+- **[The mascot](page:mascot)**: pick Terminal or Classic, its opening and how lively it is, or turn the corner mascot off.

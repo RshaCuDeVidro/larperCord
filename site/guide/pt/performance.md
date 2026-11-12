@@ -22,6 +22,7 @@ Leia esses números com as ressalvas certas:
 - **Parado quer dizer que nada está se mexendo.** Um GIF animado na tela custa cerca de 2,5% de CPU. O primeiro canal da demonstração tem um, então a medição desliga a reprodução automática.
 - **Boa parte do PSS não é do app.** É o driver da NVIDIA e bibliotecas do sistema como libcurl e OpenSSL. Numa medição entre os temas, a memória anônima ficou em cerca de 25 MB.
 - **O arquivo publicado para Linux traz SDL3, libcurl e OpenSSL dentro**, para rodar em mais distros, compilados só com as partes que o app usa. Compilado com as cópias do sistema, ele tem cerca de 8 MB. Estes números de RAM vêm desse tipo de build; lado a lado na demonstração, o arquivo publicado usou cerca de 2 MB a mais.
+- **O mascote só se mexe com a janela em foco.** A vida própria dele custa uns 0,5% de um núcleo enquanto ele está acordado, e nada depois que ele dorme, passados uns minutos parado. A janela medida aqui estava sem foco, então estes números não incluem ele. Veja [O mascote](page:mascot#quanto-custa).
 - Os números do Vesktop vêm de uma única execução anterior na mesma máquina.
 
 ## Meça você mesmo
@@ -34,7 +35,7 @@ Para cada tema, ele abre o app em modo demonstração com configurações limpas
 
 O `tools/membench.sh` é um script de Linux, porque lê o `/proc`. No Windows, use Configurações → Desempenho: lá o número da RAM é a memória privada do processo (a coluna "Tamanho da confirmação", ou "Commit size", do Gerenciador de Tarefas), e não o PSS, então não dá para comparar direto com os números acima.
 
-A página Desempenho nas configurações mostra números ao vivo, inclusive para onde vai a memória na sua conta, e o `--stats` mostra o tempo até o primeiro quadro.
+A página Desempenho nas configurações mostra números ao vivo, inclusive para onde vai a memória na sua conta, e o `--stats` imprime a linha do tempo da abertura e o custo de cada quadro. Se um backend de renderização se der mal com o driver da sua placa de vídeo, a mesma página escolhe outro em **Renderizador**.
 
 ## Dez decisões
 
@@ -44,8 +45,8 @@ A página Desempenho nas configurações mostra números ao vivo, inclusive para
 4. **Só o driver de vídeo necessário.** Em máquinas Linux só com GPU NVIDIA, o glvnd também carregava o Mesa e o LLVM (cerca de 23 MB) à toa. O app detecta isso e evita.
 5. **Markdown interpretado uma vez**, quando a mensagem chega. A interface só faz o layout dos trechos, com cache de altura por largura.
 6. **Lista virtualizada.** Busca binária pelo primeiro item visível, depois desenha só a tela.
-7. **Memória com teto.** 1.500 mensagens por canal e 3.000 no total, e depois disso a conversa vista há mais tempo é descarregada. As imagens têm um orçamento fixo de 64 MB, e qualquer download isolado para em 32 MB. Depois de um minuto na bandeja ou minimizada, as imagens também saem da memória, menos as pequenas que estavam na tela.
-8. **No Linux, o fontconfig é liberado** depois que as fontes são resolvidas (`FcFini` e `malloc_trim`). O Windows não tem fontconfig: as fontes são abertas direto de `C:\Windows\Fonts`.
+7. **Memória com teto.** 1.500 mensagens por canal e, por padrão, 2.000 no total, e depois disso a conversa vista há mais tempo é descarregada. As imagens ficam com 32 MB por padrão, e qualquer download isolado para em 32 MB. Configurações → Desempenho muda esses limites: de 500 a 5.000 mensagens, de 16 a 128 MB de imagens e de 4 a 32 MB para cada GIF. Depois de um minuto na bandeja ou minimizada, as imagens também saem da memória, menos as pequenas que estavam na tela.
+8. **No Linux, a memória liberada volta ao sistema.** O fontconfig é liberado depois que as fontes são resolvidas (`FcFini` e `malloc_trim`), e os buffers grandes de imagem ganham um mapa de memória próprio, então liberar devolve a memória em vez de deixá-la nas arenas da glibc de cada thread. Antes da 0.6.5, depois de 4h30 na conta do desenvolvedor, uns 190 MB ficavam parados ali à toa. O Windows não tem fontconfig: as fontes são abertas direto de `C:\Windows\Fonts`.
 9. **Sem cursor piscando.** Ele manteria a CPU acordada à toa.
 10. **As coisas começam quando você pede.** A thread de voz na primeira call e o FFmpeg no primeiro vídeo. O vídeo fora da tela é liberado depois de 30 segundos, e sem plugin ligado não há thread de plugins, estado de Lua nem trabalho extra por mensagem, tecla ou quadro.
 

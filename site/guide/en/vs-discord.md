@@ -53,7 +53,8 @@ Some items here are how larperCord stays light, and the official app may do simi
 
 ## Voice
 
-- **[A call mixer](page:voice#using-it)** with everyone's volume and a mute button in one window. The official app sets them one person at a time, from each person's menu.
+- **[A call mixer](page:voice#volume-per-person)** with everyone's volume and a mute button in one window. The official app sets them one person at a time, from each person's menu.
+- **[Remove noise and Even out volume for each person](page:voice#volume-per-person)**, in the same mixer and off by default: noise suppression on someone else's sound, and a quiet or loud voice brought toward everyone else's level.
 
 ## Themes and plugins
 
@@ -67,10 +68,14 @@ Some items here are how larperCord stays light, and the official app may do simi
 - **[Plugins in a sandbox](page:plugins#limits).** A thread apart from the interface, a Lua state and 8 MB for each plugin, about 5 million instructions per call, no files, processes or sockets, and HTTPS only to hosts you approve. They never see your token.
 - **[Nine plugins come with the app](page:plugins#the-plugins-that-come-with-the-app):** scam guard, CVE radar, GitHub cards, what did I miss, translate, reminders, highlights, clean links, and links and files.
 
+## The mascot
+
+- **[A mascot on your message box](page:mascot)** that follows the mouse, reacts to what you write and does things on its own, with five openings to pick from. One switch turns the corner mascot off.
+
 ## What the official app has that larperCord doesn't
 
 - **[Screen sharing (sending or watching), camera and video calls](page:voice#limits-today).** larperCord does voice only, and these aren't planned.
-- **[Push-to-talk outside the window](page:voice#limits-today).** Here it only works while the window is focused, because SDL has no portable global shortcut. A global one is on the roadmap.
+- **[Push-to-talk outside the window, on Linux](page:voice#limits-today).** On Linux it only works while the window is focused, because SDL has no portable global shortcut. A global one is on the roadmap. On Windows it works from any window.
 - **[Notifications that open the conversation](page:status#what-works-today).** Clicking one doesn't open the channel yet.
 - **[Server and role settings](page:features#servers-and-groups).** Here you can edit a server's name, description, icon and banner, give or remove roles, and kick, ban, time out, or server-mute and deafen members. The rest is on the roadmap.
 - **Creating servers and channels.** You can create threads and forum posts, but not servers or channels.

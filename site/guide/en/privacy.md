@@ -26,6 +26,8 @@ Like the official client, the app tells Discord what you've read, at most once p
 | Saved messages and notes | `saved-<account>.json` | Up to 500. Nothing goes to Discord |
 | Alert words, filters, ignored people | `settings.kdl` | Nobody is told |
 | Message log | Local, on screen | Off by default |
+| Each person's call volume, Mute for Me, Remove noise and Even out volume | `settings.kdl`, by user ID | Nothing goes to Discord |
+| The mascot's reactions to what you write | Worked out on your computer as you type; only the little plant's days are saved, in `settings.kdl` | Nothing goes over the network |
 
 On Windows, these folders are inside your user profile, which other users can't open. The complete list is in [Settings and files](page:settings).
 
