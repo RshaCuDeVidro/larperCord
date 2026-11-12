@@ -223,6 +223,8 @@ irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1 
 
 Os dois baixam a última [versão publicada](https://github.com/RshaCuDeVidro/larperCord/releases) e conferem com o `SHA256SUMS`. No Linux o script lista as bibliotecas do sistema que faltam. Numa distro de antes de 2022, [compile do código](#compilando). Depois disso, o app se atualiza sozinho: Configurações → Atualizações. Rodar um script de novo também instala a versão mais nova.
 
+Para remover: `curl -fsSL https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.sh | sh -s -- --uninstall` no Linux, ou no PowerShell `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1))) -Uninstall`. Assim as configurações ficam. Com `--purge` (Linux) ou `-Purge` (Windows) no lugar, ele também apaga as configurações, o cache, o FFmpeg baixado, os seus sons e as contas salvas.
+
 ## Conectando sua conta
 
 O token **nunca** fica no código, em log ou em mensagem de erro, e é apagado da memória ao

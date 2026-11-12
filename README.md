@@ -222,6 +222,8 @@ irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1 
 
 Both download the latest [release](https://github.com/RshaCuDeVidro/larperCord/releases) and check it against `SHA256SUMS`. On Linux the script lists any system library that's missing. On a distro older than 2022, [build from source](#building). After that, the app updates itself: Settings → Updates. Running a script again also installs the newest version.
 
+To remove it: `curl -fsSL https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.sh | sh -s -- --uninstall` on Linux, or in PowerShell `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1))) -Uninstall`. That keeps your settings. With `--purge` (Linux) or `-Purge` (Windows) instead, it also deletes the settings, the cache, the downloaded FFmpeg, your sounds and the saved accounts.
+
 ## Connecting your account
 
 The token is **never** in the code, in a log or in an error message, and it's wiped from memory on
