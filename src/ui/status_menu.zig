@@ -74,14 +74,15 @@ pub fn row(ctx: *d.Ctx, dl: *c.ImDrawList, ir: d.Rect, it: popup.Item, hovered: 
     d.line(dl, cx - 1.5, cy + 4, cx + 5.5, cy - 4.5, ink, 2);
 }
 
-/// Textos do submenu, na ordem de `conta.status_minutes`, mais "até eu mudar".
-const labels = [_][2][]const u8{
-    .{ "Por 15 minutos", "For 15 Minutes" },
-    .{ "Por 1 hora", "For 1 Hour" },
-    .{ "Por 8 horas", "For 8 Hours" },
-    .{ "Por 24 horas", "For 24 Hours" },
-    .{ "Por 3 dias", "For 3 Days" },
-    .{ "Até eu mudar", "Until I Change It" },
+/// Textos do submenu, na ordem de `conta.status_minutes`, mais "até eu mudar". Em campos
+/// `.pt`/`.en`: assim o tools/i18n_strings.py os acha e eles entram nas traduções.
+const labels = [_]struct { pt: []const u8, en: []const u8 }{
+    .{ .pt = "Por 15 minutos", .en = "For 15 Minutes" },
+    .{ .pt = "Por 1 hora", .en = "For 1 Hour" },
+    .{ .pt = "Por 8 horas", .en = "For 8 Hours" },
+    .{ .pt = "Por 24 horas", .en = "For 24 Hours" },
+    .{ .pt = "Por 3 dias", .en = "For 3 Days" },
+    .{ .pt = "Até eu mudar", .en = "Until I Change It" },
 };
 
 /// Depois do menu (`menu_r`): o submenu do item com o mouse, ao lado dele.
@@ -110,10 +111,10 @@ pub fn drawSub(ctx: *d.Ctx, menu_r: d.Rect) bool {
     for (labels, 0..) |lb, i| {
         const ir: d.Rect = .{ .x = r.x + 6, .y = y, .w = r.w - 12, .h = row_h - 2 };
         const hb = d.hit(ctx, i, ir);
-        qa.mark(ir, "menu:{s}", .{lb[0]});
+        qa.mark(ir, "menu:{s}", .{lb.pt});
         if (hb.hovered) d.rect(dl, ir, ctx.col(.accent), @max(ctx.th.radius - 2, 2));
         const tc = if (hb.hovered) ctx.col(.accent_text) else ctx.col(.text).mix(ctx.col(.muted), 0.15);
-        _ = d.textClipped(dl, ctx.ui.get(.medium), 14, ir.x + 10, d.centerY(ir, 14), tc, i18n.tr(lb[0], lb[1]), ir.w - 18);
+        _ = d.textClipped(dl, ctx.ui.get(.medium), 14, ir.x + 10, d.centerY(ir, 14), tc, i18n.tr(lb.pt, lb.en), ir.w - 18);
         if (hb.clicked) {
             const minutes: u32 = if (i < conta.status_minutes.len) conta.status_minutes[i] else 0;
             ctx.act(.{ .set_status_for = .{ .status = st, .minutes = minutes } });
