@@ -30,13 +30,16 @@ pub const Nivelador = struct {
 
     pub fn process(n: *Nivelador, pcm: []i16) void {
         const rms = rmsOf(pcm);
+        // As velocidades são por quadro de 20 ms; um pedaço menor (pacote de 10 ms)
+        // anda a parte dele, para a voz não nivelar mais rápido por isso.
+        const k = @as(f32, @floatFromInt(pcm.len)) / @as(f32, @floatFromInt(voz.frame_len));
         var want = n.gain;
         if (rms >= gate) {
-            n.env = if (n.env == 0) rms else n.env * 0.9 + rms * 0.1;
+            n.env = if (n.env == 0) rms else n.env + (rms - n.env) * per(0.1, k);
             want = std.math.clamp(target / n.env, min_gain, max_gain);
         }
         // Desce rápido, sobe devagar.
-        const rate: f32 = if (want < n.gain) 0.35 else 0.06;
+        const rate: f32 = per(if (want < n.gain) 0.35 else 0.06, k);
         var next = n.gain + (want - n.gain) * rate;
         // O limitador: o pico deste quadro não passa do teto. Se nem o ganho do começo
         // do quadro cabe, ele vale desde a primeira amostra (sem rampa, sem estourar).
@@ -46,7 +49,24 @@ pub const Nivelador = struct {
         apply(pcm, from, next);
         n.gain = next;
     }
+
+    /// Já mexeu no som (ganho fora de 1 ou algo aprendido).
+    pub fn touched(n: *const Nivelador) bool {
+        return n.gain != 1 or n.env != 0;
+    }
+
+    /// Desligou: volta ao ganho 1 de rampa ao longo deste quadro (sem degrau) e
+    /// esquece o que aprendeu, para religar começar do 1.
+    pub fn finish(n: *Nivelador, pcm: []i16) void {
+        apply(pcm, n.gain, 1);
+        n.* = .{};
+    }
 };
+
+/// A fração `r` de um quadro de 20 ms valendo por `k` quadros.
+fn per(r: f32, k: f32) f32 {
+    return if (k == 1) r else 1 - std.math.pow(f32, 1 - r, k);
+}
 
 fn rmsOf(pcm: []const i16) f32 {
     if (pcm.len == 0) return 0;
@@ -129,6 +149,48 @@ test "silêncio continua silêncio e o chiado de fundo não sobe" {
         n.process(&pcm);
     }
     try std.testing.expectEqual(@as(f32, 1), n.gain);
+}
+
+test "desligar volta ao ganho 1 de rampa, e religar começa do 1" {
+    var n: Nivelador = .{};
+    var pcm: [voz.frame_len]i16 = undefined;
+    var ph: f32 = 0;
+    for (0..200) |_| {
+        sine(&pcm, 16000, &ph);
+        n.process(&pcm);
+    }
+    try std.testing.expect(n.gain < 0.4);
+    // O quadro de desligar começa perto do ganho de antes e termina no som cru.
+    sine(&pcm, 16000, &ph);
+    const raw = pcm;
+    n.finish(&pcm);
+    try std.testing.expect(!n.touched());
+    const lastL = pcm.len - voz.channels;
+    try std.testing.expectEqual(raw[lastL], pcm[lastL]);
+    var early: f32 = 0;
+    var early_raw: f32 = 0;
+    for (0..40) |i| {
+        early += @abs(@as(f32, @floatFromInt(pcm[i * voz.channels])));
+        early_raw += @abs(@as(f32, @floatFromInt(raw[i * voz.channels])));
+    }
+    try std.testing.expect(early < early_raw * 0.5);
+}
+
+test "pedaços de 10 ms nivelam na mesma velocidade que os de 20" {
+    var a: Nivelador = .{};
+    var b: Nivelador = .{};
+    var pa: [voz.frame_len]i16 = undefined;
+    var pb: [voz.frame_len]i16 = undefined;
+    var ph_a: f32 = 0;
+    var ph_b: f32 = 0;
+    for (0..50) |_| {
+        sine(&pa, 1400, &ph_a);
+        a.process(&pa);
+        sine(&pb, 1400, &ph_b);
+        b.process(pb[0 .. voz.frame_len / 2]);
+        b.process(pb[voz.frame_len / 2 ..]);
+    }
+    try std.testing.expect(@abs(a.gain - b.gain) < 0.1);
 }
 
 test "o ganho fica entre os limites e o pico não passa do teto" {

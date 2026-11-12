@@ -342,7 +342,12 @@ pub fn statusBar(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
                 break :blk std.fmt.bufPrint(b, "🔊 {s}{s}", .{ cs.info.name, if (ctx.st.muted) i18n.tr(" (mudo)", " (muted)") else "" }) catch "";
             },
             .theme => std.fmt.bufPrint(b, "◆ {s}", .{ctx.theme_name}) catch "",
-            .keys => i18n.tr("Ctrl+K comandos · F2 tema", "Ctrl+K commands · F2 theme"),
+            .keys => blk: {
+                const tk = @import("teclas.zig");
+                var pk: [32]u8 = undefined;
+                var tk2: [32]u8 = undefined;
+                break :blk i18n.fmt(b, "{s} comandos · {s} tema", "{s} commands · {s} theme", .{ tk.first(&ctx.st.teclas, .paleta, &pk), tk.first(&ctx.st.teclas, .proximo_tema, &tk2) });
+            },
             .clock => w.clock(b, @divTrunc(ctx.now_ms, 1000)),
             .me => blk: {
                 const me = ctx.store.user(ctx.store.me) orelse continue;
