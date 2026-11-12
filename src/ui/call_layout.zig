@@ -3,6 +3,11 @@ const std = @import("std");
 
 pub const Grid = struct { cols: usize = 0, rows: usize = 0, tile_w: f32 = 0, tile_h: f32 = 0 };
 
+/// O quanto um arranjo foge de quadrado (0 = tantas colunas quanto linhas).
+fn squareness(cols: usize, rows: usize) usize {
+    return if (cols > rows) cols - rows else rows - cols;
+}
+
 /// Colunas e tamanho do quadro (16:9) para `n` pessoas em `area_w`×`area_h`: o maior
 /// que cabe, até `max_w`. Abaixo de `min_w`, fica no mínimo, com quantas colunas
 /// couberem, e a grade rola.
@@ -20,8 +25,11 @@ pub fn layout(n: usize, area_w: f32, area_h: f32, gap: f32, min_w: f32, max_w: f
         const by_w = (area_w - gap * (fc - 1)) / fc;
         const by_h = (area_h - gap * (fr - 1)) / fr * 16.0 / 9.0;
         const tw = @min(@min(by_w, by_h), max_w);
-        // Empate (os dois no máximo): mais colunas, e duas pessoas ficam lado a lado.
-        if (tw >= best.tile_w) best = .{ .cols = cols, .rows = rows, .tile_w = tw, .tile_h = tw * 9.0 / 16.0 };
+        // Empate (vários no máximo, ou presos pela altura): o mais "quadrado" (4 em 2×2,
+        // não 4×1); entre dois iguais, mais colunas (duas pessoas lado a lado).
+        const better = tw > best.tile_w + 0.5 or
+            (@abs(tw - best.tile_w) <= 0.5 and squareness(cols, rows) <= squareness(best.cols, best.rows));
+        if (better) best = .{ .cols = cols, .rows = rows, .tile_w = tw, .tile_h = tw * 9.0 / 16.0 };
     }
     if (best.tile_w >= min_w) return best;
     const tw = @min(min_w, area_w);
@@ -56,6 +64,13 @@ test "grade da call: o maior quadro que cabe, e o mínimo com rolagem" {
     try std.testing.expectEqual(@as(usize, 1), two.rows);
     const three = layout(3, 1336, 1000, 10, 176, 560);
     try std.testing.expectEqual(@as(usize, 2), three.cols);
+    // Quatro num 4K maximizado (todos os arranjos no teto): 2×2, não 4×1.
+    const four_4k = layout(4, 3400, 1900, 10, 176, 560);
+    try std.testing.expectEqual(@as(usize, 2), four_4k.cols);
+    try std.testing.expectEqual(@as(usize, 2), four_4k.rows);
+    // Cinco numa área larga e baixa, presos pela altura: 3+2, não 4+1.
+    const five = layout(5, 2000, 560, 10, 176, 560);
+    try std.testing.expectEqual(@as(usize, 3), five.cols);
     // Área de largura zero ou negativa: uma coluna, nada de zero (quem chama divide).
     const none = layout(4, -20, 300, 10, 176, 560);
     try std.testing.expect(none.cols >= 1 and none.rows >= 1);

@@ -233,7 +233,8 @@ pub fn page(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) void 
 pub fn escFree(ctx: *const d.Ctx) bool {
     const st = ctx.st;
     return st.popup == .none and !st.palette.open and st.viewer == null and !st.settings.open and
-        !@import("search.zig").open and !ctx.io.*.WantTextInput;
+        !@import("search.zig").open and !@import("interact.zig").anyOpen() and !@import("dropdown.zig").ownsEsc() and
+        !ctx.io.*.WantTextInput;
 }
 
 /// A call da DM ou do grupo aberto: uma faixa em cima da conversa, com a grade e os

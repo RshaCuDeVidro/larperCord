@@ -794,6 +794,8 @@ pub const App = struct {
         st.tabs.clearRetainingCapacity();
         st.tab = 0;
         st.guild = 0;
+        // (Outra conta: nada de voltar para um servidor da de antes.)
+        st.call_view = false;
         st.last_channel.clearRetainingCapacity();
         st.collapsed.clearRetainingCapacity();
         st.scroll.clearRetainingCapacity();
@@ -1012,6 +1014,12 @@ pub const App = struct {
 
     /// O que só vale durante uma call (entrou, saiu, trocou de conta).
     pub fn resetCallState(app: *App) void {
+        // Saindo da call (ou trocando de call) com a tela dela aberta: volta para o que
+        // estava antes dela (o servidor, a DM, os amigos).
+        if (app.st.call_view) {
+            app.st.guild = app.st.call_prev_guild;
+            app.st.friends = app.st.call_prev_friends;
+        }
         app.st.call_view = false;
         app.st.voice_ping_ms = 0;
         app.st.voice_mic_failed = false;
@@ -1757,6 +1765,10 @@ pub const App = struct {
                 st.guild = cs.info.guild;
                 st.friends = false;
                 st.call_view = true;
+                // A lista de membros do servidor da call (que pode nunca ter sido aberto
+                // nesta sessão): o mesmo pedido de quando se abre um canal de lá.
+                const sub = st.last_channel.get(cs.info.guild) orelse app.firstTextChannel(cs.info.guild);
+                if (sub) |id| if (app.store.channel(id)) |tcs| app.subscribeTo(tcs);
             },
             .set_setting => |ss| if (settings_state.setByte(&st.settings, ss.index, ss.value)) app.saveSettings(),
             .accept_friend => |rel| app.cmd(.{ .relationship = .{ .user = rel.user, .accept = true, .from = rel.from } }),
