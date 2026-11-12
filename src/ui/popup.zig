@@ -167,8 +167,8 @@ pub fn draw(ctx: *d.Ctx) void {
     defer ctx.dl = saved;
     switch (ctx.st.popup) {
         .menu => |m| menu(ctx, m.kind, m.id, m.x, m.y),
-        .profile => |p| profile.card(ctx, p.user, p.x, p.y),
-        .profile_full => |p| profile.full(ctx, p.user),
+        .profile => |p| profile.card(ctx, p.user, p.x, p.y, p.guild orelse ctx.st.guild),
+        .profile_full => |p| profile.full(ctx, p.user, p.guild orelse ctx.st.guild),
         .emoji => |e| @import("emoji_picker.zig").draw(ctx, e.target, e.x, e.y),
         .gif => |g| @import("gif_picker.zig").draw(ctx, g.x, g.y),
         .mixer => |m| mixer(ctx, m.x, m.y),

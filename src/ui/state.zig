@@ -15,9 +15,10 @@ pub const DeviceMenu = enum { mic, out, both };
 pub const Popup = union(enum) {
     none,
     menu: struct { kind: MenuKind, id: Id, x: f32, y: f32 },
-    profile: struct { user: Id, x: f32, y: f32 },
+    /// `guild`: o servidor de onde o cartão abriu (null = o selecionado).
+    profile: struct { user: Id, x: f32, y: f32, guild: ?Id = null },
     /// Perfil grande, no meio da tela (aba em `profile_tab`).
-    profile_full: struct { user: Id },
+    profile_full: struct { user: Id, guild: ?Id = null },
     /// `target` = mensagem que vai receber a reação (0 = caixa de texto).
     emoji: struct { target: Id, x: f32, y: f32 },
     /// Seletor de GIFs da caixa de texto.

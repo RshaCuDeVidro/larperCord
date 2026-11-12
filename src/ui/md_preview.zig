@@ -74,6 +74,7 @@ pub fn draw(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, x: f32, bottom: f32,
         .color = ctx.col(.text).mix(ctx.col(.muted), 0.12),
         .reveal_spoilers = ctx.st.settings.show_spoilers,
         .underline_links = ctx.st.settings.underline_links,
+        .guild = if (ctx.st.activeChannel()) |ch| ctx.store.guildOfChannel(ch) else 0,
     };
     const pad: f32 = 12;
     const head: f32 = 20;

@@ -98,6 +98,7 @@ test {
     _ = @import("net/social.zig");
     _ = @import("core/thread_edit.zig");
     _ = @import("net/user_json.zig");
+    _ = @import("net/face_json.zig");
     _ = @import("net/call_json.zig");
     _ = @import("net/rpc_proto.zig");
     _ = @import("ui/apng.zig");

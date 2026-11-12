@@ -19,6 +19,11 @@ var seeded_profile = false;
 /// A pessoa mexeu: o que chegar do Discord não apaga o que ela escreveu.
 var dirty = false;
 
+/// Para o QA: o que está nos campos de pronomes e "sobre mim".
+pub fn qaFields() [2][]const u8 {
+    return .{ std.mem.sliceTo(&pronouns_buf, 0), std.mem.sliceTo(&bio_buf, 0) };
+}
+
 fn fill(buf: []u8, s: []const u8) void {
     @memset(buf, 0);
     const n = d.utf8Prefix(s, buf.len - 1).len;
@@ -51,7 +56,8 @@ pub fn profile(ctx: *d.Ctx, dl: *c.ImDrawList, x: f32, y: *f32, wd: f32) void {
     const me = ctx.store.me;
     const u = ctx.store.user(me) orelse return;
     // O perfil (pronomes, bio) só é pedido quando a página abre.
-    ctx.act(.{ .want_profile = me });
+    // O global (sem servidor): é ele que esta página mostra e grava.
+    ctx.act(.{ .want_profile = .{ .user = me, .guild = 0 } });
     const pf = ctx.store.profiles.get(me);
     if (seeded_user != me) {
         seeded_user = me;

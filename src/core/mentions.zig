@@ -55,6 +55,18 @@ fn findUser(store: *const Store, guild: Id, rest: []const u8) ?Found {
         if (best) |b| if (b.len > n.len or (b.len == n.len and (b.member or !member))) continue;
         best = .{ .id = u.id, .len = n.len, .member = member };
     }
+    // O apelido no servidor da conversa também vale: é o que o @ da caixa e "Mencionar"
+    // inserem, e o texto fica assim quando a escolha se perde (outro canal e volta).
+    if (guild != 0) {
+        var fi = store.faces.iterator();
+        while (fi.next()) |e| {
+            if (e.key_ptr[0] != guild) continue;
+            const n = e.value_ptr.nick orelse continue;
+            if (n.len == 0 or n.len > rest.len or !std.ascii.startsWithIgnoreCase(rest, n) or !after(rest, n.len)) continue;
+            if (best) |b| if (b.len > n.len or (b.len == n.len and b.member)) continue;
+            best = .{ .id = e.key_ptr[1], .len = n.len, .member = true };
+        }
+    }
     return if (best) |b| .{ .id = b.id, .len = b.len } else null;
 }
 
@@ -270,6 +282,18 @@ test "menções à prova de nomes com espaço" {
     // Canal: nome mais longo; em DM não tem canal.
     try expectExpand(&s, 5, "veja #geral-dev e #geral.", "veja <#51> e <#50>.", &.{});
     try expectExpand(&s, 0, "veja #geral", "veja #geral", &.{});
+}
+
+test "menção pelo apelido do servidor da conversa" {
+    var s = try testStore();
+    defer s.deinit();
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 12, .face = .{ .nick = try c_alloc.dupe(u8, "Bruninho do Zig") } } }, 0);
+    // Escolhido pelo @ (o texto da caixa é o apelido) e perdido o token: vale o apelido.
+    try expectExpand(&s, 5, "@Bruninho do Zig olha isso", "<@12> olha isso", &.{});
+    // O nome de sempre continua valendo.
+    try expectExpand(&s, 5, "@bruno olha", "<@12> olha", &.{});
+    // Em outro servidor o apelido de lá não vale.
+    try expectExpand(&s, 6, "@Bruninho do Zig", "@Bruninho do Zig", &.{});
 }
 
 test "o que veio da lista vale pelo ID e uma vez só" {
