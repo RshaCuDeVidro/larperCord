@@ -92,6 +92,14 @@ fn cachedMessages(app: *App) bool {
     return find("msg:{d}", .{lastId(app)}) != null;
 }
 
+/// Os nomes já saem com o apelido do servidor (a ana é "Aninha" no primeiro servidor da
+/// demonstração), e a nossa linha com o status escolhido, não offline.
+fn facesAndStatus(app: *App) bool {
+    if (app.store.ready) return false;
+    const me = app.store.user(app.store.me) orelse return false;
+    return qa.find("nome:msg:1001:Aninha") != null and qa.find("nome:msg:1001:ana.exe") == null and me.status == .online;
+}
+
 fn connectingNote(app: *App) bool {
     const cs = active(app) orelse return false;
     return send_limits.blockFor(&app.store, &cs.info, gw.nowMs()).reason == .connecting;
@@ -169,6 +177,7 @@ pub const ops_b = [_]Op{
     expect("os servidores na barra", railShown),
     expect("o canal aberto está na lista de canais", channelListed),
     expect("a conversa aberta mostra as mensagens do cache", cachedMessages),
+    expect("os nomes com o apelido do servidor e a nossa linha com o status escolhido, antes do READY", facesAndStatus),
     expect("a caixa diz que só dá para enviar depois de conectar", connectingNote),
     expect("a caixa está na tela", composerShown),
     run(trySend),

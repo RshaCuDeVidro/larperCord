@@ -51,6 +51,12 @@ pub fn collect(a: std.mem.Allocator, s: *const Store) !format.Snapshot {
         var mit = m.keyIterator();
         while (mit.next()) |id| try muted.append(a, id.*);
     }
+    var faces: std.ArrayList(format.ServerFace) = .empty;
+    var fit = s.faces.iterator();
+    while (fit.next()) |e| {
+        if (faces.items.len == format.max_faces) break;
+        try faces.append(a, .{ .guild = e.key_ptr[0], .user = e.key_ptr[1], .face = e.value_ptr.* });
+    }
     var rels: std.ArrayList(format.Relation) = .empty;
     var rl_it = s.relationships.iterator();
     while (rl_it.next()) |e| try rels.append(a, .{ .user = e.key_ptr.*, .kind = e.value_ptr.*, .since_ms = s.friend_since.get(e.key_ptr.*) orelse 0 });
@@ -68,6 +74,7 @@ pub fn collect(a: std.mem.Allocator, s: *const Store) !format.Snapshot {
         .folders = s.folders,
         .relations = rels.items,
         .muted = muted.items,
+        .faces = faces.items,
     };
 }
 
@@ -150,6 +157,7 @@ pub fn events(snap: *const format.Snapshot, out: *std.ArrayList(Event), gpa: std
         for (snap.folders, folders) |f, *d| d.* = .{ .id = f.id, .name = try dupe(f.name), .color = f.color, .guilds = try dupeIds(f.guilds) };
         try out.append(gpa, .{ .guild_folders = folders });
     }
+    for (snap.faces) |f| try out.append(gpa, .{ .member_face = .{ .guild = f.guild, .user = f.user, .face = .{ .nick = try dupeOpt(f.face.nick), .avatar = try dupeOpt(f.face.avatar) } } });
 }
 
 /// O retrato direto num Store (sem o app: os testes). Os silenciados, que o app trata,
@@ -180,6 +188,7 @@ test "retrato da conta: do Store para o disco e de volta para outro Store" {
     try a.apply(.{ .ready = .{ .me = 10, .users = users, .guilds = guilds, .channels = try ev_alloc.dupe(types.Channel, &ch), .voice = &.{} } }, 0);
     try a.apply(.{ .relationship = .{ .user = 11, .kind = .friend, .since_ms = 7 } }, 0);
     try a.apply(.{ .read_states = .{ .entries = try ev_alloc.dupe(types.ReadEntry, &[_]types.ReadEntry{.{ .channel = 50, .last_read = 800 }}) } }, 0);
+    try a.apply(.{ .member_face = .{ .guild = 5, .user = 11, .face = .{ .nick = try ev_alloc.dupe(u8, "Ana do Zig") } } }, 0);
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -199,6 +208,8 @@ test "retrato da conta: do Store para o disco e de volta para outro Store" {
     try std.testing.expectEqualStrings("abc", b.user(11).?.avatar.?);
     try std.testing.expectEqual(types.Relationship.friend, b.relationships.get(11).?);
     try std.testing.expectEqual(@as(Id, 800), b.read_index.get(50).?.last_read);
+    // O apelido do servidor já vem no retrato.
+    try std.testing.expectEqualStrings("Ana do Zig", b.face(5, 11).?.nick.?);
 }
 
 fn testChannel(id: Id, guild: Id) !types.Channel {

@@ -2668,6 +2668,8 @@ pub const App = struct {
             app.store.apply(e, now()) catch {};
             app.afterEvent(e);
         }
+        // A nossa linha com o status escolhido (o retrato não guarda presença).
+        if (app.store.users.getPtr(app.store.me)) |me| me.status = @fromBackingInt(@intCast(@min(app.st.settings.my_status, 3)));
         app.cache_opened = true;
         app.firstView();
         return true;

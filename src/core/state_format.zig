@@ -21,6 +21,7 @@
 //!   u32 pastas; cada uma: u64 id, str nome, u32 cor, ids
 //!   u32 relações; cada uma: u64 pessoa, u8 tipo, i64 desde
 //!   ids dos canais silenciados
+//!   u32 perfis de servidor; cada um: u64 servidor, u64 pessoa, str apelido, str foto
 //!   str = u32 tamanho + bytes; ids = u32 quantos + u64 cada
 //!
 //! A leitura confere cada tamanho contra o que sobrou: um arquivo estragado vira
@@ -36,6 +37,10 @@ const max_str: u32 = 1 << 16;
 const max_count: u32 = 200_000;
 
 pub const MyRoles = struct { guild: Id, roles: []const Id };
+/// Apelido e foto de alguém num servidor (vazio = não tem).
+pub const ServerFace = struct { guild: Id, user: Id, face: types.Face };
+/// Teto de perfis de servidor no retrato (os mais vistos cabem; o resto vem depois).
+pub const max_faces = 20_000;
 pub const Relation = struct { user: Id, kind: types.Relationship, since_ms: i64 = 0 };
 
 pub const Snapshot = struct {
@@ -52,6 +57,8 @@ pub const Snapshot = struct {
     relations: []const Relation = &.{},
     /// Canais silenciados (os servidores e categorias já abertos em canais).
     muted: []const Id = &.{},
+    /// O nome de cada um nas mensagens e listas já sai com o apelido do servidor.
+    faces: []const ServerFace = &.{},
 };
 
 // --- Escrita ------------------------------------------------------------------
@@ -194,6 +201,14 @@ pub fn encode(out: *std.ArrayList(u8), gpa: std.mem.Allocator, s: *const Snapsho
         try w.int(i64, r.since_ms);
     }
     try w.ids(s.muted);
+    const nf = @min(s.faces.len, max_faces);
+    try w.int(u32, @intCast(nf));
+    for (s.faces[0..nf]) |f| {
+        try w.int(u64, f.guild);
+        try w.int(u64, f.user);
+        try w.opt(f.face.nick);
+        try w.opt(f.face.avatar);
+    }
 }
 
 // --- Leitura ------------------------------------------------------------------
@@ -375,6 +390,9 @@ pub fn decode(a: std.mem.Allocator, bytes: []const u8) !Snapshot {
     for (rels) |*x| x.* = .{ .user = try r.int(u64), .kind = try r.enumOf(types.Relationship), .since_ms = try r.int(i64) };
     s.relations = rels;
     s.muted = try r.ids();
+    const faces = try a.alloc(ServerFace, try r.items(24));
+    for (faces) |*f| f.* = .{ .guild = try r.int(u64), .user = try r.int(u64), .face = .{ .nick = try r.opt(), .avatar = try r.opt() } };
+    s.faces = faces;
     return s;
 }
 
@@ -405,6 +423,7 @@ test "retrato da conta: ida e volta com tudo, e estragado vira erro" {
         .folders = &.{.{ .id = 1, .name = "dev", .color = 0xFF0000, .guilds = &fguilds }},
         .relations = &.{.{ .user = 11, .kind = .friend, .since_ms = 1234 }},
         .muted = &.{ 50, 51 },
+        .faces = &.{ .{ .guild = 5, .user = 11, .face = .{ .nick = "Aninha" } }, .{ .guild = 5, .user = 12, .face = .{ .avatar = "guilds/5/users/12/avatars/x" } } },
     };
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(gpa);
@@ -440,6 +459,9 @@ test "retrato da conta: ida e volta com tudo, e estragado vira erro" {
     try std.testing.expectEqual(types.Relationship.friend, d.relations[0].kind);
     try std.testing.expectEqual(@as(i64, 1234), d.relations[0].since_ms);
     try std.testing.expectEqualSlices(Id, &.{ 50, 51 }, d.muted);
+    try std.testing.expectEqualStrings("Aninha", d.faces[0].face.nick.?);
+    try std.testing.expect(d.faces[0].face.avatar == null and d.faces[1].face.nick == null);
+    try std.testing.expectEqualStrings("guilds/5/users/12/avatars/x", d.faces[1].face.avatar.?);
     // Cortado em qualquer ponto: erro, nunca leitura fora do lugar.
     var cut: usize = 0;
     while (cut < out.items.len) : (cut += 7) try std.testing.expectError(error.Corrupt, decode(arena.allocator(), out.items[0..cut]));
