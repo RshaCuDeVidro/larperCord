@@ -42,6 +42,7 @@ const voice_info = @import("voice_info_json.zig");
 const thread_json = @import("thread_json.zig");
 const user_json = @import("user_json.zig");
 const face_json = @import("face_json.zig");
+const member_ask = @import("member_ask.zig");
 const envio_json = @import("envio_json.zig");
 const envio = @import("../core/envio.zig");
 const gw_budget = @import("gw_budget.zig");
@@ -131,6 +132,12 @@ pub const Gateway = struct {
     role_info: std.AutoHashMapUnmanaged(Id, RoleInfo) = .empty,
     /// O apelido e a foto do servidor já mandados ao Store (net/face_json.zig).
     faces: face_json.Tracker = .{},
+    /// Quem já tem membro conhecido ou pedido (op 8) em cada servidor (net/member_ask.zig).
+    members_ask: member_ask.Asker = .{},
+    /// Os últimos op 8 que saíram, pelo número no `nonce` (o pedido N fica em N % 4):
+    /// um RATE_LIMITED devolve o pedido para a fila.
+    members_sent: [4]member_ask.Request = undefined,
+    members_seq: u32 = 0,
     /// Última lista de membros pedida (op 14): repetida depois de um READY.
     sub_guild: Id = 0,
     sub_channel: Id = 0,
@@ -226,6 +233,7 @@ pub const Gateway = struct {
         g.zout.deinit(alloc);
         g.role_info.deinit(alloc);
         g.faces.deinit(alloc);
+        g.members_ask.deinit(alloc);
         g.voice_volumes.deinit(alloc);
         g.acks.deinit(alloc);
         g.conta.deinit();
@@ -379,7 +387,7 @@ pub const Gateway = struct {
     fn dropCommand(g: *Gateway, cmd: ev.Command) void {
         switch (cmd) {
             .send_message => |m| g.emit(.{ .send_failed = .{ .channel = m.channel, .nonce = m.nonce } }),
-            .fetch_history => |ch| g.emit(.{ .history = .{ .channel = ch, .messages = &.{} } }),
+            .fetch_history => |fh| g.emit(.{ .history = .{ .channel = fh.channel, .messages = &.{} } }),
             .search_messages => |s| g.emit(.{ .search_results = .{ .req = s.req, .status = .failed } }),
             .fetch_older => |o| g.emit(.{ .history = .{ .channel = o.channel, .messages = &.{}, .older = true } }),
             .fetch_around => |o| g.emit(.{ .history = .{ .channel = o.channel, .messages = &.{}, .around = true } }),
@@ -662,7 +670,7 @@ pub const Gateway = struct {
         switch (g.outbox.push(it)) {
             .queued, .coalesced => {},
             .merged => if (debug_log.isOn()) std.log.info("gateway: fila do op 4 cheia; o último estado de voz ficou no lugar do anterior", .{}),
-            .replaced_oldest => if (debug_log.isOn()) std.log.info("gateway: op 14 ou 43 de muitos servidores na fila; o mais antigo deu lugar ao novo", .{}),
+            .replaced_oldest => if (debug_log.isOn()) std.log.info("gateway: op 14, 43 ou 8 de muitos servidores na fila; o mais antigo deu lugar ao novo", .{}),
         }
         g.flushOutbox();
     }
@@ -704,6 +712,17 @@ pub const Gateway = struct {
                 var buf: [360]u8 = undefined;
                 const payload = std.fmt.bufPrint(&buf, "{{\"op\":14,\"d\":{{\"guild_id\":\"{d}\",\"typing\":true,\"threads\":true,\"activities\":true,\"members\":[],\"channels\":{{\"{d}\":[[0,99]]}},\"thread_member_lists\":[{s}]}}}}", .{ l.guild, l.channel, lists }) catch return true;
                 return g.writeWs(payload);
+            },
+            // Os membros dos autores de uma página de histórico (net/member_ask.zig).
+            .members => |r| {
+                var buf: [2600]u8 = undefined;
+                const seq = g.members_seq;
+                const p = member_ask.payload(&buf, &r, seq) orelse return true;
+                if (debug_log.isOn()) std.log.info("gateway: op 8 com {d} pessoa(s) do servidor {d}", .{ r.n, r.guild });
+                if (!g.writeWs(p)) return false;
+                g.members_sent[seq % g.members_sent.len] = r;
+                g.members_seq +%= 1;
+                return true;
             },
             // Quando começou a call de cada canal de voz (net/voice_info_json.zig).
             .channel_info => |gid| {
@@ -1110,6 +1129,8 @@ pub const Gateway = struct {
 
     /// Apelido e foto do servidor de um objeto `member` (perfil do servidor).
     fn memberFace(g: *Gateway, gid: Id, uid: Id, m: Value) void {
+        // Todo `member` passa por aqui: quem já é conhecido não entra num op 8.
+        g.members_ask.see(alloc, gid, uid);
         var pb: [128]u8 = undefined;
         const read = face_json.read(&pb, gid, uid, m) orelse return;
         const ch = g.faces.filter(alloc, gid, uid, read) orelse return;
@@ -1253,16 +1274,16 @@ pub const Gateway = struct {
 
     fn dispatch(g: *Gateway, t: []const u8, d: Value, arena: std.mem.Allocator) !void {
         if (std.mem.eql(u8, t, "READY")) return g.onReady(d, arena);
-        // Limite de um op específico (o do op 8, por exemplo): só registra.
+        // Limite de um op específico: o op 8 volta para a fila e espera; o resto só registra.
         if (std.mem.eql(u8, t, "RATE_LIMITED")) {
-            if (debug_log.isOn()) {
-                const secs: f64 = switch (j.get(d, "retry_after") orelse Value.null) {
-                    .float => |f| f,
-                    .integer => |n| @floatFromInt(n),
-                    else => 0,
-                };
-                std.log.info("gateway: o Discord limitou o op {d}; esperar {d:.1} s", .{ j.int(j.get(d, "opcode")) orelse -1, secs });
-            }
+            const secs: f64 = switch (j.get(d, "retry_after") orelse Value.null) {
+                .float => |f| f,
+                .integer => |n| @floatFromInt(n),
+                else => 0,
+            };
+            const op = j.int(j.get(d, "opcode")) orelse -1;
+            if (debug_log.isOn()) std.log.info("gateway: o Discord limitou o op {d}; esperar {d:.1} s", .{ op, secs });
+            if (op == 8) g.membersLimited(d, secs);
             return;
         }
         if (std.mem.eql(u8, t, "RESUMED")) {
@@ -1367,6 +1388,7 @@ pub const Gateway = struct {
             if (j.get(d, "unavailable")) |u| if (u == .bool and u.bool) return;
             if (j.id(j.get(d, "id"))) |id| {
                 g.faces.forgetGuild(id);
+                g.members_ask.forgetGuild(id);
                 g.emit(.{ .guild_delete = id });
             }
             return;
@@ -1773,11 +1795,23 @@ pub const Gateway = struct {
         }
     }
 
+    /// Um op 8 nosso foi limitado: o mesmo pedido volta para a fila e espera o
+    /// `retry_after` (até 10 min). Sem o `nonce` (ou de um pedido já esquecido), nada.
+    fn membersLimited(g: *Gateway, d: Value, secs: f64) void {
+        const nonce = j.str(j.get(j.get(d, "meta") orelse .null, "nonce")) orelse return;
+        const seq = member_ask.nonceSeq(nonce) orelse return;
+        if (seq >= g.members_seq or g.members_seq - seq > g.members_sent.len) return;
+        const wait_ms: i64 = @intFromFloat(std.math.clamp(secs, 0, 600) * 1000);
+        g.outbox.holdMembers(nowMs(), wait_ms, g.members_sent[seq % g.members_sent.len]);
+    }
+
+    /// Os `members` de um GUILD_CREATE ou da resposta de um op 8 (GUILD_MEMBERS_CHUNK):
+    /// o mesmo caminho do `member` de uma mensagem (cargos e cor do nome, apelido e foto).
     fn ingestMembers(g: *Gateway, gid: Id, v: Value) void {
         for (j.array(j.get(v, "members"))) |m| {
             const u = j.get(m, "user") orelse continue;
             g.upsert(u);
-            g.memberFace(gid, j.id(j.get(u, "id")) orelse 0, m);
+            g.memberColor(gid, j.id(j.get(u, "id")) orelse 0, m);
         }
         g.ingestPresences(j.array(j.get(v, "presences")));
     }
@@ -3789,7 +3823,8 @@ pub const Gateway = struct {
         var path_buf: [256]u8 = undefined;
         switch (cmd) {
             .interaction => |ic| g.interact(ic),
-            .fetch_history => |ch| {
+            .fetch_history => |fh| {
+                const ch = fh.channel;
                 const path = std.fmt.bufPrint(&path_buf, "/channels/{d}/messages?limit=50", .{ch}) catch return;
                 var resp = g.request("GET", path, null) orelse return g.emit(.{ .history = .{ .channel = ch, .messages = &.{} } });
                 defer resp.body.deinit(alloc);
@@ -3801,7 +3836,7 @@ pub const Gateway = struct {
                     }
                     return g.emit(.{ .history = .{ .channel = ch, .messages = &.{} } });
                 }
-                g.history(ch, resp.body.items, .latest) catch g.emit(.{ .history = .{ .channel = ch, .messages = &.{} } });
+                g.history(ch, resp.body.items, .latest, fh.members) catch g.emit(.{ .history = .{ .channel = ch, .messages = &.{} } });
             },
             .search_messages => |s| {
                 const failed: ev.Event = .{ .search_results = .{ .req = s.req, .status = .failed } };
@@ -3826,7 +3861,7 @@ pub const Gateway = struct {
                 var resp = g.request("GET", path, null) orelse return g.emit(none);
                 defer resp.body.deinit(alloc);
                 if (resp.status != 200) return g.emit(none);
-                g.history(o.channel, resp.body.items, .older) catch g.emit(none);
+                g.history(o.channel, resp.body.items, .older, o.members) catch g.emit(none);
             },
             .fetch_around => |o| {
                 const path = std.fmt.bufPrint(&path_buf, "/channels/{d}/messages?around={d}&limit=50", .{ o.channel, o.id }) catch return;
@@ -3834,7 +3869,7 @@ pub const Gateway = struct {
                 var resp = g.request("GET", path, null) orelse return g.emit(none);
                 defer resp.body.deinit(alloc);
                 if (resp.status != 200) return g.emit(none);
-                g.history(o.channel, resp.body.items, .around) catch g.emit(none);
+                g.history(o.channel, resp.body.items, .around, o.members) catch g.emit(none);
             },
             .fetch_newer => |o| {
                 const path = std.fmt.bufPrint(&path_buf, "/channels/{d}/messages?after={d}&limit=50", .{ o.channel, o.after }) catch return;
@@ -3842,7 +3877,7 @@ pub const Gateway = struct {
                 var resp = g.request("GET", path, null) orelse return g.emit(none);
                 defer resp.body.deinit(alloc);
                 if (resp.status != 200) return g.emit(none);
-                g.history(o.channel, resp.body.items, .newer) catch g.emit(none);
+                g.history(o.channel, resp.body.items, .newer, o.members) catch g.emit(none);
             },
             .ack => |a| {
                 if (!a.manual) return g.acks.push(alloc, .{ .channel = a.channel, .message = a.message, .last_viewed = a.last_viewed });
@@ -4685,7 +4720,9 @@ pub const Gateway = struct {
 
     const HistoryKind = enum { latest, older, around, newer };
 
-    fn history(g: *Gateway, ch: Id, body: []const u8, kind: HistoryKind) !void {
+    /// Uma página de histórico. `members`: o servidor da conversa vista (0 = não pede
+    /// membros): um op 8, no máximo, com os autores da página que ninguém conhece.
+    fn history(g: *Gateway, ch: Id, body: []const u8, kind: HistoryKind, members: Id) !void {
         var arena = std.heap.ArenaAllocator.init(alloc);
         defer arena.deinit();
         const root = try std.json.parseFromSliceLeaky(Value, arena.allocator(), body, .{});
@@ -4719,6 +4756,13 @@ pub const Gateway = struct {
                 g.emit(.{ .reaction_set = .{ .channel = ch, .id = mid, .reaction = r } });
             }
             g.emitPoll(m);
+        }
+        if (members != 0) {
+            // A página tem até 50 (o `limit` do pedido).
+            var authors: [member_ask.max_ids]Id = undefined;
+            const n = @min(items.len, authors.len);
+            for (items[0..n], authors[0..n]) |m, *a| a.* = user_json.authorId(m);
+            if (g.members_ask.page(alloc, members, authors[0..n])) |r| g.queueOp(.{ .members = r });
         }
     }
 };

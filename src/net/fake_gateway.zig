@@ -26,6 +26,7 @@ const alloc = std.heap.c_allocator;
 
 const voice_mod = @import("voice.zig");
 const call_json = @import("call_json.zig");
+const member_ask = @import("member_ask.zig");
 const fake_interactions = @import("fake_interactions.zig");
 
 pub const Sink = struct {
@@ -102,6 +103,16 @@ pub const sent = struct {
     /// Pedidos do começo das calls (op 43) e o servidor do último.
     pub var channel_infos: A = .init(0);
     pub var channel_info_guild: A = .init(0);
+    /// Op 8 (membros dos autores de uma página, net/member_ask.zig): quantos saíram, o
+    /// servidor e o tamanho do último, as páginas que podiam pedir, os IDs pedidos de novo
+    /// (deve ficar 0) e os pedidos de página com servidor errado (DM ou grupo pedindo, ou
+    /// outro servidor; deve ficar 0).
+    pub var member_requests: A = .init(0);
+    pub var member_guild: A = .init(0);
+    pub var member_n: A = .init(0);
+    pub var member_pages: A = .init(0);
+    pub var member_repeats: A = .init(0);
+    pub var member_wrong: A = .init(0);
     pub var create_dms: A = .init(0);
     /// GET /channels/{id}: a DM que apareceu só por uma mensagem, e qual foi a última.
     pub var fetch_channels: A = .init(0);
@@ -216,7 +227,13 @@ pub const Gateway = struct {
     call_peer: ?struct { channel: Id, user: Id } = null,
     ringing_me: Id = 0,
     nonce_replies: std.ArrayList(struct { at_ms: i64, msg: types.Message }) = .empty,
-    history_replies: std.ArrayList(struct { at_ms: i64, channel: Id }) = .empty,
+    history_replies: std.ArrayList(struct { at_ms: i64, channel: Id, members: Id = 0 }) = .empty,
+    /// Op 8, como o gateway de verdade: quem já é membro conhecido ou foi pedido; a
+    /// resposta (GUILD_MEMBERS_CHUNK) chega um pouco depois. `asked` conta à parte o
+    /// que saiu, para o QA ver se algum ID foi pedido duas vezes.
+    members_ask: member_ask.Asker = .{},
+    member_replies: std.ArrayList(struct { at_ms: i64, req: member_ask.Request }) = .empty,
+    asked: std.AutoHashMapUnmanaged([2]Id, void) = .empty,
     /// Servidores cujos cargos já foram mandados.
     roles_sent: u64 = 0,
     /// LARPER_FLOOD=N: N trocas de presença por segundo (teste de carga,
@@ -671,9 +688,10 @@ pub const Gateway = struct {
                     defer alloc.free(s.params);
                     try g.searchPage(s);
                 },
-                .fetch_history => |ch| {
-                    g.hot_channel = ch;
-                    try g.history_replies.append(alloc, .{ .at_ms = nowMs() + 140, .channel = ch });
+                .fetch_history => |fh| {
+                    g.hot_channel = fh.channel;
+                    noteMembersAsk(fh.channel, fh.members);
+                    try g.history_replies.append(alloc, .{ .at_ms = nowMs() + 140, .channel = fh.channel, .members = fh.members });
                 },
                 .fetch_threads => |ft| if (ft.private) try g.privatePage(ft.channel, ft.guild, ft.manage) else try g.threadsPage(ft.channel, ft.guild, ft.archived, ft.offset),
                 .edit_thread => |et| {
@@ -730,10 +748,12 @@ pub const Gateway = struct {
                 },
                 .typing => {},
                 .fetch_older => |o| {
+                    noteMembersAsk(o.channel, o.members);
                     const msgs = try buildOlder(o.channel, o.before);
                     // Duas semanas para trás é o "começo do canal" na demonstração.
                     const more = @divTrunc(nowMs(), 1000) - msgs[0].timestamp < 14 * 86400;
                     g.emit(.{ .history = .{ .channel = o.channel, .messages = msgs, .older = true, .more = more } });
+                    try g.askMembers(o.members, msgs);
                 },
                 .subscribe_guild => |sg| {
                     _ = sent.subscribes.fetchAdd(1, .monotonic);
@@ -920,13 +940,17 @@ pub const Gateway = struct {
                 },
                 .fetch_around => |o| {
                     _ = sent.arounds.fetchAdd(1, .monotonic);
+                    noteMembersAsk(o.channel, o.members);
                     const page = try buildAround(o.channel, o.id, g.epoch_ms);
                     g.placeMention(page, o.id);
                     g.emit(.{ .history = .{ .channel = o.channel, .messages = page, .around = true, .more = true } });
+                    try g.askMembers(o.members, page);
                 },
                 .fetch_newer => |o| {
+                    noteMembersAsk(o.channel, o.members);
                     const page = try buildNewer(o.channel, o.after, g.epoch_ms);
                     g.emit(.{ .history = .{ .channel = o.channel, .messages = page.msgs, .newer = true, .more = page.more } });
+                    try g.askMembers(o.members, page.msgs);
                 },
                 .fetch_pins => |channel| {
                     _ = sent.pin_fetches.fetchAdd(1, .monotonic);
@@ -1224,6 +1248,7 @@ pub const Gateway = struct {
     /// Jogos da demonstração (com tempo de jogo, para o cartão de perfil).
     /// Os perfis de servidor (`demo_faces`), todos no primeiro servidor.
     fn demoFaces(g: *Gateway) !void {
+        for (demo_faces) |f| g.members_ask.see(alloc, guildId(0), f.user);
         for (demo_faces) |f| g.emit(.{ .member_face = .{ .guild = guildId(0), .user = f.user, .face = .{
             .nick = if (f.nick) |n| try alloc.dupe(u8, n) else null,
             .avatar = if (f.avatar) try std.fmt.allocPrint(alloc, "demo:av:{d}", .{demo_face_avatar + f.user}) else null,
@@ -1298,11 +1323,11 @@ pub const Gateway = struct {
             g.emit(.{ .roles = .{ .guild = gid, .roles = rs } });
         }
         // Quem está neste servidor e em qual cargo (0 = fundação, 1 = moderação, 2 = membro).
+        // No servidor grande, a lista não traz quem está offline (como no Discord).
         var rank: [users.len]?u8 = @splat(null);
         for (users, 0..) |u, i| {
-            if (u.id != me_id and (u.id * 7 + gi) % 5 == 0) continue;
-            if (g.removed.contains(.{ gid, u.id })) continue;
-            rank[i] = if (u.id == 1001 or (u.id == me_id and gi == 0)) 0 else if ((u.id + gi) % 3 == 0) 1 else 2;
+            rank[i] = g.demoRank(gi, u.id) orelse continue;
+            if (gi == large_guild and u.status == .offline) rank[i] = null else g.members_ask.see(alloc, gid, u.id);
         }
         var items: std.ArrayList(types.MemberItem) = .empty;
         defer items.deinit(alloc);
@@ -1335,6 +1360,45 @@ pub const Gateway = struct {
         const ops = try alloc.alloc(types.MemberOp, 1);
         ops[0] = .{ .kind = .sync, .index = 0, .end = 99, .items = try alloc.dupe(types.MemberItem, items.items) };
         g.emit(.{ .member_list = .{ .guild = gid, .list_id = gid, .online = online, .total = total, .ops = ops } });
+    }
+
+    /// O cargo de alguém num servidor da demonstração (null = não é membro de lá).
+    fn demoRank(g: *Gateway, gi: usize, uid: Id) ?u8 {
+        if (uid != me_id and (uid * 7 + gi) % 5 == 0) return null;
+        if (g.removed.contains(.{ guildId(gi), uid })) return null;
+        return if (uid == 1001 or (uid == me_id and gi == 0)) 0 else if ((uid + gi) % 3 == 0) 1 else 2;
+    }
+
+    /// A página carregou: o op 8 com os autores que ninguém conhece, como o gateway de
+    /// verdade faz (net/discord.zig, `history`), e a resposta um pouco depois.
+    fn askMembers(g: *Gateway, guild: Id, msgs: []const types.Message) !void {
+        if (guild == 0) return;
+        _ = sent.member_pages.fetchAdd(1, .monotonic);
+        var authors: [member_ask.max_ids]Id = undefined;
+        const n = @min(msgs.len, authors.len);
+        for (msgs[0..n], authors[0..n]) |m, *a| a.* = m.author;
+        const r = g.members_ask.page(alloc, guild, authors[0..n]) orelse return;
+        _ = sent.member_requests.fetchAdd(1, .monotonic);
+        sent.member_guild.store(guild, .release);
+        sent.member_n.store(r.n, .release);
+        for (r.slice()) |uid| if ((try g.asked.getOrPut(alloc, .{ guild, uid })).found_existing) {
+            _ = sent.member_repeats.fetchAdd(1, .monotonic);
+        };
+        try g.member_replies.append(alloc, .{ .at_ms = nowMs() + 120, .req = r });
+    }
+
+    /// O GUILD_MEMBERS_CHUNK: quem é membro vem com cargos e perfil do servidor (os mesmos
+    /// eventos que o `member` de verdade gera); quem não é, no `not_found` (nada).
+    fn membersChunk(g: *Gateway, r: member_ask.Request) !void {
+        if (r.guild < guildId(0)) return;
+        const gi: usize = @intCast((r.guild - guildId(0)) / 1000);
+        if (gi >= guilds.len) return;
+        const role_ids = [_]Id{ r.guild + 901, r.guild + 902, r.guild + 903 };
+        for (r.slice()) |uid| {
+            const rank = g.demoRank(gi, uid) orelse continue;
+            g.emit(.{ .member_info = .{ .guild = r.guild, .user = uid, .info = g.infoFor(r.guild, uid, role_ids, rank) } });
+            for (large_faces) |f| if (gi == large_guild and f.user == uid) g.emit(.{ .member_face = .{ .guild = r.guild, .user = uid, .face = .{ .nick = try alloc.dupe(u8, f.nick) } } });
+        }
     }
 
     fn infoFor(g: *Gateway, gid: Id, uid: Id, role_ids: [3]Id, rank: u8) types.MemberInfo {
@@ -1480,6 +1544,7 @@ pub const Gateway = struct {
         if (g.status_until != 0) d = @min(d, g.status_until);
         for (g.nonce_replies.items) |r| d = @min(d, r.at_ms);
         for (g.history_replies.items) |r| d = @min(d, r.at_ms);
+        for (g.member_replies.items) |r| d = @min(d, r.at_ms);
         return @min(d, g.acks.nextDue());
     }
 
@@ -1659,14 +1724,17 @@ pub const Gateway = struct {
             if (r.at_ms <= now) {
                 // Thread ou post: uma conversa curta, que tem começo.
                 if (g.threads.get(r.channel)) |t| {
-                    g.emit(.{ .history = .{ .channel = r.channel, .messages = try buildThreadHistory(r.channel, t, g.epoch_ms), .more = false } });
+                    const msgs = try buildThreadHistory(r.channel, t, g.epoch_ms);
+                    g.emit(.{ .history = .{ .channel = r.channel, .messages = msgs, .more = false } });
                     _ = g.history_replies.orderedRemove(i);
+                    try g.askMembers(r.members, msgs);
                     continue;
                 }
                 const msgs = try buildHistory(r.channel, g.epoch_ms);
                 // Os IDs antes de a lista passar para o Store.
                 if (r.channel == poll_channel) g.notePollIds(msgs);
                 g.emit(.{ .history = .{ .channel = r.channel, .messages = msgs, .more = msgs.len > 0 } });
+                try g.askMembers(r.members, msgs);
                 // Algumas reações nas mensagens recentes.
                 var prng = std.Random.DefaultPrng.init(r.channel ^ 0xABCD);
                 const rr = prng.random();
@@ -1685,6 +1753,14 @@ pub const Gateway = struct {
                     g.emit(.{ .reaction = .{ .channel = r.channel, .id = target, .emoji = types.Reaction.initCustom("festa", demo_emojis[3].id, true), .user = users[4].id, .add = true } });
                 }
                 _ = g.history_replies.orderedRemove(i);
+            } else i += 1;
+        }
+        i = 0;
+        while (i < g.member_replies.items.len) {
+            const r = g.member_replies.items[i];
+            if (r.at_ms <= now) {
+                _ = g.member_replies.orderedRemove(i);
+                try g.membersChunk(r.req);
             } else i += 1;
         }
         if (now >= g.next_flood_ms) {
@@ -1864,6 +1940,17 @@ pub const demo_faces = [_]struct { user: Id, nick: ?[]const u8 = null, avatar: b
 /// A foto do servidor é a "demo:av:N" de outro N: outra cor, outro desenho.
 pub const demo_face_avatar: Id = 90_000;
 
+/// O servidor grande da demonstração (Arch Linux BR): a lista de membros não traz quem
+/// está offline, como num servidor grande do Discord, e as mensagens antigas também são
+/// de gente offline. Quem é de lá só aparece com apelido e cor do cargo depois do op 8.
+pub const large_guild = 8;
+/// Os apelidos de lá, que só chegam pela resposta do op 8 (a nanda é da Moderação).
+pub const large_faces = [_]struct { user: Id, nick: []const u8 }{
+    .{ .user = 1009, .nick = "Nanda do Arch" },
+};
+/// Autora de uma mensagem antiga de cada página do servidor grande.
+pub const large_old_author: Id = 1009;
+
 const demo_vflags = [_]struct { user: Id, flags: ev.VoiceFlags }{
     .{ .user = 1001, .flags = .{ .self_mute = true } },
     .{ .user = 1005, .flags = .{ .self_mute = true, .self_deaf = true } },
@@ -1984,6 +2071,15 @@ fn isDemoForum(ch: Id) bool {
 
 fn guildOfChannel(ch: Id) Id {
     return guildId(@intCast((ch - guildId(0)) / 1000));
+}
+
+/// O app pediu os membros de uma página: só vale com o servidor da própria conversa
+/// (em DM e grupo, nunca). Threads (IDs de mensagem) não dá para conferir aqui.
+fn noteMembersAsk(channel: Id, members: Id) void {
+    if (members == 0) return;
+    const dm = channel >= 900_000 and channel < 1_000_000;
+    const in_guilds = channel >= guildId(0) and channel < guildId(guilds.len);
+    if (dm or (in_guilds and guildOfChannel(channel) != members)) _ = sent.member_wrong.fetchAdd(1, .monotonic);
 }
 
 const demo_tags = [_]struct { name: []const u8, en: []const u8, emoji: []const u8 = "" }{
@@ -2511,7 +2607,9 @@ fn buildOlder(channel: Id, before: Id) ![]types.Message {
     var i: usize = n;
     while (i > 0) {
         i -= 1;
-        const author = if (dmRecipient(channel)) |u| (if (r.boolean()) u else me_id) else users[r.uintLessThan(usize, 8)].id;
+        const large = guildOfChannel(channel) == guildId(large_guild) and dmRecipient(channel) == null;
+        // No servidor grande, as antigas também são de quem está offline (a nanda e o pedro).
+        const author = if (dmRecipient(channel)) |u| (if (r.boolean()) u else me_id) else if (large and (i == n / 2 or r.uintLessThan(u8, 5) == 0)) (if (i == n / 2 or r.boolean()) large_old_author else 1010) else users[r.uintLessThan(usize, 8)].id;
         msgs[i] = .{
             .id = types.makeSnowflake(t * 1000, demoSeq(channel, i)),
             .channel = channel,

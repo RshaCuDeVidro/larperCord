@@ -1324,7 +1324,7 @@ pub const App = struct {
             cs.history = .loading;
             // O cache do disco aparece na hora; o histórico chega por cima.
             msg_cache.restore(&app.store, cs);
-            app.cmd(.{ .fetch_history = cs.info.id });
+            app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = cs.info.guild } });
         }
     }
 
@@ -1559,7 +1559,7 @@ pub const App = struct {
                     if (m.msg.id != 0) break m.msg.id;
                 } else return;
                 cs.older = .loading;
-                app.cmd(.{ .fetch_older = .{ .channel = id, .before = before } });
+                app.cmd(.{ .fetch_older = .{ .channel = id, .before = before, .members = cs.info.guild } });
             },
             .load_newer => |id| {
                 const cs = app.store.channel(id) orelse return;
@@ -1570,7 +1570,7 @@ pub const App = struct {
                     if (cs.messages.items[i].msg.id != 0) break cs.messages.items[i].msg.id;
                 } else return;
                 cs.newer = .loading;
-                app.cmd(.{ .fetch_newer = .{ .channel = id, .after = after } });
+                app.cmd(.{ .fetch_newer = .{ .channel = id, .after = after, .members = cs.info.guild } });
             },
             .jump_present => |id| {
                 const cs = app.store.channel(id) orelse return;
@@ -1582,12 +1582,12 @@ pub const App = struct {
                 // Enquanto a última página não chega, nada de buscar as mais novas.
                 cs.newer = .loading;
                 cs.around = .idle;
-                app.cmd(.{ .fetch_history = id });
+                app.cmd(.{ .fetch_history = .{ .channel = id, .members = cs.info.guild } });
             },
             .fetch_around => |o| {
                 const cs = app.store.channel(o.channel) orelse return;
                 cs.around = .loading;
-                app.cmd(.{ .fetch_around = .{ .channel = o.channel, .id = o.id } });
+                app.cmd(.{ .fetch_around = .{ .channel = o.channel, .id = o.id, .members = cs.info.guild } });
             },
             .jump_first_unread => |id| {
                 const cs = app.store.channel(id) orelse return;
@@ -1600,7 +1600,7 @@ pub const App = struct {
                 // Não está: busca em volta do que foi lido por último.
                 if (cs.divider_after > 1) {
                     cs.around = .loading;
-                    app.cmd(.{ .fetch_around = .{ .channel = id, .id = cs.divider_after } });
+                    app.cmd(.{ .fetch_around = .{ .channel = id, .id = cs.divider_after, .members = cs.info.guild } });
                 } else {
                     // Canal nunca aberto: não há ponto de partida, vai para o topo.
                     cs.pos_unread = false;
@@ -1710,7 +1710,7 @@ pub const App = struct {
                 if (cs.history != .failed and cs.history != .none) return;
                 cs.history = .loading;
                 msg_cache.restore(&app.store, cs);
-                app.cmd(.{ .fetch_history = id });
+                app.cmd(.{ .fetch_history = .{ .channel = id, .members = cs.info.guild } });
             },
             .resend_message => |r| {
                 const m = app.store.pendingByNonce(r.channel, r.nonce) orelse return;
@@ -2153,7 +2153,8 @@ pub const App = struct {
                 st.popup = .{ .inbox = .{} };
                 // Prévia das DMs não lidas que ainda não foram abertas.
                 var want: [6]types.Id = undefined;
-                for (inbox_core.prefetch(&app.store, &st.muted_channels, &st.filtros, &want)) |id| app.cmd(.{ .fetch_history = id });
+                // (A caixa de entrada carregando por baixo não pede membros: só a conversa vista.)
+                for (inbox_core.prefetch(&app.store, &st.muted_channels, &st.filtros, &want)) |id| app.cmd(.{ .fetch_history = .{ .channel = id } });
             },
             .toggle_saved => {
                 st.palette.open = false;
@@ -2301,7 +2302,7 @@ pub const App = struct {
                 }
                 if (cs.cached or cs.history == .failed) {
                     if (cs.history == .failed) cs.history = .loading;
-                    app.cmd(.{ .fetch_history = cs.info.id });
+                    app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (app.st.activeChannel() == cs.info.id) cs.info.guild else 0 } });
                 } else if (new_session and cs.history == .loaded) {
                     // Sessão nova: o Discord não repete o que passou enquanto
                     // estávamos fora, e a conversa ficaria com um buraco.
@@ -2311,7 +2312,7 @@ pub const App = struct {
                     } else false;
                     // Lendo o passado: aquela página continua valendo.
                     if (open or unsent) {
-                        if (!cs.detached) app.cmd(.{ .fetch_history = cs.info.id });
+                        if (!cs.detached) app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (open) cs.info.guild else 0 } });
                     } else app.store.unload(cs);
                 }
             }

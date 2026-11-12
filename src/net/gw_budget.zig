@@ -1,6 +1,7 @@
 //! Teto de envio do gateway. O Discord aceita 120 eventos por conexão a cada
 //! 60 s e derruba quem passa disso (docs.discord.food, "Rate Limiting"); o
-//! op 8 tem limite próprio, mas o app não usa. A presença ainda fica em 5 a
+//! op 8 tem limite próprio (o app pede só os membros dos autores de uma página de
+//! histórico, net/member_ask.zig, e conta no mesmo teto). A presença ainda fica em 5 a
 //! cada 20 s por conta nossa (a doc não dá número; trocar de status mais que
 //! isso não tem porquê). Aqui:
 //!  - heartbeat (op 1), IDENTIFY (op 2) e RESUME (op 6) saem sempre e na hora:
@@ -14,6 +15,7 @@
 //! Lógica pura: quem escreve no WebSocket é net/discord.zig.
 const std = @import("std");
 const types = @import("../core/types.zig");
+const member_ask = @import("member_ask.zig");
 const Id = types.Id;
 
 pub const window_ms: i64 = 60_000;
@@ -110,7 +112,8 @@ pub const Voice = struct {
 };
 /// O que espera vez. A presença sai com o status do momento (só o último vale).
 /// `channel_info`: o servidor do op 43.
-pub const Item = union(enum) { presence, lazy: Lazy, voice: Voice, channel_info: Id };
+/// `members`: um op 8 com os autores de uma página de histórico.
+pub const Item = union(enum) { presence, lazy: Lazy, voice: Voice, channel_info: Id, members: member_ask.Request };
 
 pub const Push = enum {
     queued,
@@ -136,6 +139,11 @@ pub const Outbox = struct {
     /// Op 43 esperando, na ordem em que chegaram (um por servidor).
     info: [8]Id = undefined,
     info_n: usize = 0,
+    /// Op 8 esperando, por último (o que é só cosmético espera o resto).
+    members: [8]member_ask.Request = undefined,
+    members_n: usize = 0,
+    /// Até quando o op 8 espera: o Discord o limitou (RATE_LIMITED com `retry_after`).
+    members_after: i64 = 0,
 
     pub fn push(o: *Outbox, it: Item) Push {
         switch (it) {
@@ -179,11 +187,23 @@ pub const Outbox = struct {
                 o.info_n += 1;
                 return .queued;
             },
+            .members => |r| {
+                // Dois pedidos do mesmo servidor esperando viram um (cabendo nos 100).
+                for (o.members[0..o.members_n]) |*x| if (member_ask.merge(x, &r)) return .coalesced;
+                if (o.members_n == o.members.len) {
+                    std.mem.copyForwards(member_ask.Request, o.members[0 .. o.members.len - 1], o.members[1..]);
+                    o.members[o.members.len - 1] = r;
+                    return .replaced_oldest;
+                }
+                o.members[o.members_n] = r;
+                o.members_n += 1;
+                return .queued;
+            },
         }
     }
 
     pub fn pending(o: *const Outbox) usize {
-        return o.voice_n + o.lazy_n + o.info_n + @intFromBool(o.presence);
+        return o.voice_n + o.lazy_n + o.info_n + o.members_n + @intFromBool(o.presence);
     }
 
     fn presenceOk(o: *Outbox, now_ms: i64) bool {
@@ -211,6 +231,10 @@ pub const Outbox = struct {
             it = .{ .channel_info = o.info[0] };
             std.mem.copyForwards(Id, o.info[0 .. o.info_n - 1], o.info[1..o.info_n]);
             o.info_n -= 1;
+        } else if (o.members_n > 0 and now_ms >= o.members_after) {
+            it = .{ .members = o.members[0] };
+            std.mem.copyForwards(member_ask.Request, o.members[0 .. o.members_n - 1], o.members[1..o.members_n]);
+            o.members_n -= 1;
         } else return null;
         o.budget.note(now_ms);
         return it;
@@ -244,6 +268,12 @@ pub const Outbox = struct {
                 o.info[0] = g;
                 o.info_n += 1;
             },
+            .members => |r| {
+                if (o.members_n == o.members.len) return;
+                std.mem.copyBackwards(member_ask.Request, o.members[1 .. o.members_n + 1], o.members[0..o.members_n]);
+                o.members[0] = r;
+                o.members_n += 1;
+            },
         }
     }
 
@@ -261,8 +291,18 @@ pub const Outbox = struct {
         if (o.pending() == 0) return std.math.maxInt(i64);
         const free = o.budget.freeAt(now_ms);
         if (o.voice_n > 0 or o.lazy_n > 0 or o.info_n > 0) return free;
-        // Só a presença: espera também o limite dela.
-        return if (o.presenceOk(now_ms)) free else @max(free, o.presence_sent.oldestExpires(presence_window_ms));
+        // Só a presença e o op 8: cada um espera também o limite dele.
+        var at: i64 = std.math.maxInt(i64);
+        if (o.presence) at = if (o.presenceOk(now_ms)) free else @max(free, o.presence_sent.oldestExpires(presence_window_ms));
+        if (o.members_n > 0) at = @min(at, @max(free, o.members_after));
+        return at;
+    }
+
+    /// O Discord limitou um op 8 (RATE_LIMITED): ele volta para a fila e nenhum op 8
+    /// sai antes de `wait_ms`.
+    pub fn holdMembers(o: *Outbox, now_ms: i64, wait_ms: i64, r: member_ask.Request) void {
+        o.members_after = now_ms + wait_ms;
+        _ = o.push(.{ .members = r });
     }
 
     /// Conexão nova: os limites recomeçam; o que espera continua esperando.
@@ -273,7 +313,8 @@ pub const Outbox = struct {
 
     /// Sessão nova (READY): o que esperava era da anterior. Quem chama manda de
     /// novo o que ainda vale (voz, lista de membros; a presença foi no IDENTIFY).
-    /// Os limites ficam: a conexão é a mesma.
+    /// O op 8 fica: quem ele pede não muda com a sessão. Os limites ficam: a
+    /// conexão é a mesma.
     pub fn forgetPending(o: *Outbox) void {
         o.presence = false;
         o.lazy_n = 0;
@@ -454,6 +495,30 @@ test "item devolvido: um pedido mais novo do mesmo servidor vence; voz volta par
     o.unpop(v);
     try t.expectEqual(@as(?Id, 20), o.pop(window_ms).?.voice.channel);
     try t.expectEqual(@as(?Id, 21), o.pop(window_ms).?.voice.channel);
+}
+
+test "op 8: depois de tudo, o mesmo servidor junta, e conta no teto" {
+    var o: Outbox = .{};
+    var a: member_ask.Request = .{ .guild = 5 };
+    a.ids[0] = 11;
+    a.n = 1;
+    var b: member_ask.Request = .{ .guild = 5 };
+    b.ids[0] = 12;
+    b.n = 1;
+    try std.testing.expectEqual(Push.queued, o.push(.{ .members = a }));
+    try std.testing.expectEqual(Push.coalesced, o.push(.{ .members = b }));
+    _ = o.push(.{ .channel_info = 9 });
+    // O op 43 sai antes; depois um op 8 só, com os dois autores.
+    try std.testing.expect(o.pop(0).? == .channel_info);
+    const it = o.pop(0).?;
+    try std.testing.expectEqualSlices(Id, &.{ 11, 12 }, it.members.slice());
+    try std.testing.expect(o.pop(0) == null);
+    try std.testing.expectEqual(@as(usize, 2), o.budget.used(0));
+    // Limitado pelo Discord: volta e espera o `retry_after`, mesmo com vez no teto.
+    o.holdMembers(1000, 5000, it.members);
+    try std.testing.expect(o.pop(1000) == null);
+    try std.testing.expectEqual(@as(i64, 6000), o.due(1000));
+    try std.testing.expectEqualSlices(Id, &.{ 11, 12 }, o.pop(6000).?.members.slice());
 }
 
 test "op 43: um por servidor, depois do resto, e volta para a frente se não saiu" {
