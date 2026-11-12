@@ -41,6 +41,7 @@ const call_json = @import("call_json.zig");
 const voice_info = @import("voice_info_json.zig");
 const thread_json = @import("thread_json.zig");
 const user_json = @import("user_json.zig");
+const face_json = @import("face_json.zig");
 const envio_json = @import("envio_json.zig");
 const envio = @import("../core/envio.zig");
 const gw_budget = @import("gw_budget.zig");
@@ -128,9 +129,8 @@ pub const Gateway = struct {
     presence: rpc_proto.Presence = .{},
     /// Cargo -> cor e posição, para a cor do nome de cada membro.
     role_info: std.AutoHashMapUnmanaged(Id, RoleInfo) = .empty,
-    /// (servidor, pessoa) que já foram ao Store com apelido ou foto do servidor.
-    /// Quem não tem (quase todo mundo) só vira evento se já teve, para limpar.
-    faced: std.AutoHashMapUnmanaged([2]Id, void) = .empty,
+    /// O apelido e a foto do servidor já mandados ao Store (net/face_json.zig).
+    faces: face_json.Tracker = .{},
     /// Última lista de membros pedida (op 14): repetida depois de um READY.
     sub_guild: Id = 0,
     sub_channel: Id = 0,
@@ -225,7 +225,7 @@ pub const Gateway = struct {
         g.frame.deinit(alloc);
         g.zout.deinit(alloc);
         g.role_info.deinit(alloc);
-        g.faced.deinit(alloc);
+        g.faces.deinit(alloc);
         g.voice_volumes.deinit(alloc);
         g.acks.deinit(alloc);
         g.conta.deinit();
@@ -1110,16 +1110,11 @@ pub const Gateway = struct {
 
     /// Apelido e foto do servidor de um objeto `member` (perfil do servidor).
     fn memberFace(g: *Gateway, gid: Id, uid: Id, m: Value) void {
-        if (gid == 0 or uid == 0) return;
         var pb: [128]u8 = undefined;
-        const f = user_json.memberFace(&pb, gid, uid, m) orelse return;
-        const key: [2]Id = .{ gid, uid };
-        if (f.nick == null and f.avatar == null) {
-            if (g.faced.remove(key)) g.emit(.{ .member_face = .{ .guild = gid, .user = uid } });
-            return;
-        }
-        g.faced.put(alloc, key, {}) catch return;
-        g.emit(.{ .member_face = .{ .guild = gid, .user = uid, .face = .{ .nick = optDupe(f.nick), .avatar = optDupe(f.avatar) } } });
+        const read = face_json.read(&pb, gid, uid, m) orelse return;
+        const ch = g.faces.filter(alloc, gid, uid, read) orelse return;
+        const o = face_json.owned(alloc, ch);
+        g.emit(.{ .member_face = .{ .guild = gid, .user = uid, .face = o.face, .keep_nick = o.keep_nick, .keep_avatar = o.keep_avatar } });
     }
 
     /// `communication_disabled_until` de um membro, em s Unix (0 = sem castigo).
@@ -1370,7 +1365,10 @@ pub const Gateway = struct {
             // `unavailable`: queda do Discord, não saída. O servidor volta com
             // um GUILD_CREATE, e as mensagens em memória continuam valendo.
             if (j.get(d, "unavailable")) |u| if (u == .bool and u.bool) return;
-            if (j.id(j.get(d, "id"))) |id| g.emit(.{ .guild_delete = id });
+            if (j.id(j.get(d, "id"))) |id| {
+                g.faces.forgetGuild(id);
+                g.emit(.{ .guild_delete = id });
+            }
             return;
         }
         if (std.mem.eql(u8, t, "GUILD_UPDATE")) {
@@ -1796,19 +1794,10 @@ pub const Gateway = struct {
         }
         // Os membros de quem está nas presenças e nas calls, na ordem de `guilds`:
         // é daqui que sai o apelido de quem aparece na lista da call.
-        const gs = j.array(j.get(d, "guilds"));
         for (j.array(j.get(d, "merged_members")), 0..) |members, gi| {
-            if (gi >= gs.len) break;
-            const gid = j.id(j.get(gs[gi], "id")) orelse continue;
-            for (j.array(members)) |m| g.memberFace(gid, memberUserId(m) orelse continue, m);
+            const gid = face_json.mergedGuild(d, gi) orelse continue;
+            for (j.array(members)) |m| g.memberFace(gid, face_json.ownerOf(m) orelse continue, m);
         }
-    }
-
-    /// O dono de um objeto `member`: `user_id` no formato sem repetição, ou `user`.
-    fn memberUserId(m: Value) ?Id {
-        if (j.id(j.get(m, "user_id"))) |id| return id;
-        const u = j.get(m, "user") orelse return null;
-        return j.id(j.get(u, "id"));
     }
 
     fn channelValue(g: *Gateway, cv: Value, guild_hint: Id) !?types.Channel {
@@ -2832,7 +2821,7 @@ pub const Gateway = struct {
             if (gi >= gv.len) break;
             const gid = j.id(j.get(gv[gi], "id")) orelse continue;
             for (j.array(members)) |m| {
-                const uid = memberUserId(m) orelse continue;
+                const uid = face_json.ownerOf(m) orelse continue;
                 // O nosso passa pelo memberColor, que também lê o apelido.
                 if (uid != g.me) {
                     g.memberFace(gid, uid, m);

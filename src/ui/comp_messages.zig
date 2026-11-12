@@ -193,8 +193,9 @@ fn measure(ctx: *d.Ctx, g: Geo, m: *StoredMessage, flags: u8) f32 {
     // O idioma entra na chave: "(editado)" e "(edited)" têm larguras diferentes.
     // A decoração dos plugins também, quando uma regra ou um plugin mudam.
     const deco_gen: u32 = if (decoIndex(false)) |dx| dx.layout_gen else 0;
-    // Um apelido que mudou muda a largura da menção a essa pessoa.
-    const key: u32 = (@as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19)) ^ (ctx.store.nicks_gen *% 0x9E3779B1);
+    // Um apelido do servidor que mudou muda a largura da menção a essa pessoa (só as
+    // mensagens de lá são medidas de novo).
+    const key: u32 = (@as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19)) ^ (ctx.store.nickGen(g.guild) *% 0x9E3779B1);
     // Uma entrada nova nesta mensagem (uma tradução que chegou) invalida a medida.
     if (decoIndex(true)) |dx| _ = dx.view(m, ctx.store.me);
     if (m.layout_w == g.wrap and m.layout_variant == key) return m.height;

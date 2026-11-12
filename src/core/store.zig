@@ -325,9 +325,10 @@ pub const Store = struct {
     /// (servidor, usuário) -> apelido e foto do perfil do servidor; só de quem
     /// tem algum (os outros aparecem com o nome e a foto globais).
     faces: std.AutoHashMapUnmanaged([2]Id, types.Face) = .empty,
-    /// Muda quando um apelido muda: a menção a essa pessoa numa mensagem muda
-    /// de largura, e a altura medida da mensagem deixa de valer.
-    nicks_gen: u32 = 0,
+    /// Muda quando um apelido do servidor muda: a menção a essa pessoa numa
+    /// mensagem de lá muda de largura, e a altura medida deixa de valer (só a das
+    /// mensagens daquele servidor).
+    nick_gens: std.AutoHashMapUnmanaged(Id, u32) = .empty,
     /// Alguém já apareceu de castigo nesta sessão: sem isso, a lista de membros
     /// nem procura o reloginho.
     algum_castigo: bool = false,
@@ -339,6 +340,8 @@ pub const Store = struct {
     /// Muda quando `profiles` é esvaziado (dá para pedir os perfis de novo).
     profiles_gen: u32 = 0,
     bios: std.AutoHashMapUnmanaged(Id, []const markdown.Span) = .empty,
+    /// A bio do perfil do servidor já interpretada (só de quem tem).
+    guild_bios: std.AutoHashMapUnmanaged(Id, []const markdown.Span) = .empty,
     /// Atividades de cada um (jogo, música…), da presença; só quem tem alguma.
     activities: std.AutoHashMapUnmanaged(Id, []types.Activity) = .empty,
     /// Até quando cada pessoa conta como "falando" (o gateway de voz manda
@@ -451,6 +454,10 @@ pub const Store = struct {
         var bi = s.bios.valueIterator();
         while (bi.next()) |b| s.gpa.free(b.*);
         s.bios.deinit(s.gpa);
+        var gbi = s.guild_bios.valueIterator();
+        while (gbi.next()) |b| s.gpa.free(b.*);
+        s.guild_bios.deinit(s.gpa);
+        s.nick_gens.deinit(s.gpa);
         var ai = s.activities.valueIterator();
         while (ai.next()) |a| freeActivities(a.*);
         s.activities.deinit(s.gpa);
@@ -1446,6 +1453,7 @@ pub const Store = struct {
             .guild_delete => |id| {
                 s.removeGuild(id);
                 _ = s.info_asked.remove(id);
+                s.forgetFaces(id);
             },
             .channel_upsert => |ch| {
                 const before: ?Id = if (s.channel(ch.id)) |cs| dm_order.activity(&cs.info) else null;
@@ -1688,7 +1696,7 @@ pub const Store = struct {
                 };
             },
             .member_info => |mi| try s.putMember(mi.guild, mi.user, mi.info),
-            .member_face => |mf| try s.putFace(mf.guild, mf.user, mf.face),
+            .member_face => |mf| try s.putFace(mf.guild, mf.user, mf.face, mf.keep_nick, mf.keep_avatar),
             .my_roles => |mr| {
                 const gop = try s.my_roles.getOrPut(s.gpa, mr.guild);
                 if (gop.found_existing) ev_alloc.free(gop.value_ptr.*);
@@ -1701,7 +1709,7 @@ pub const Store = struct {
             .member_remove => |mr| {
                 if (mr.user == s.me) s.me_rev +%= 1;
                 _ = s.members.remove(.{ mr.guild, mr.user });
-                try s.putFace(mr.guild, mr.user, .{});
+                try s.putFace(mr.guild, mr.user, .{}, false, false);
             },
             .guild_folders => |list| {
                 freeFolders(s.folders);
@@ -1998,27 +2006,54 @@ pub const Store = struct {
         return if (s.users.getPtr(user_id)) |u| u.name else null;
     }
 
-    /// Guarda o apelido e a foto de alguém num servidor (os dois null tira).
-    /// O mesmo de novo (cada mensagem traz o membro) não mexe em nada.
-    fn putFace(s: *Store, guild_id: Id, user_id: Id, f: types.Face) !void {
+    /// A geração dos apelidos de um servidor (entra na chave da medida das mensagens).
+    pub fn nickGen(s: *const Store, guild_id: Id) u32 {
+        return s.nick_gens.get(guild_id) orelse 0;
+    }
+
+    fn bumpNick(s: *Store, guild_id: Id) void {
+        const gop = s.nick_gens.getOrPut(s.gpa, guild_id) catch return;
+        gop.value_ptr.* = if (gop.found_existing) gop.value_ptr.* +% 1 else 1;
+    }
+
+    /// Guarda o apelido e a foto de alguém num servidor: `keep_*` mantém o campo de
+    /// antes (o objeto não falou dele); null tira; os dois vazios tiram a pessoa.
+    fn putFace(s: *Store, guild_id: Id, user_id: Id, f: types.Face, keep_nick: bool, keep_avatar: bool) !void {
         const key: [2]Id = .{ guild_id, user_id };
-        if (f.nick == null and f.avatar == null) {
-            const kv = s.faces.fetchRemove(key) orelse return;
-            if (kv.value.nick != null) s.nicks_gen +%= 1;
-            freeFace(kv.value);
+        // O campo mantido não vem no evento (se vier, sobra e é solto aqui).
+        if (keep_nick) if (f.nick) |t| ev_alloc.free(t);
+        if (keep_avatar) if (f.avatar) |t| ev_alloc.free(t);
+        const cur = s.faces.getPtr(key);
+        const old: types.Face = if (cur) |o| o.* else .{};
+        const new: types.Face = .{
+            .nick = if (keep_nick) old.nick else f.nick,
+            .avatar = if (keep_avatar) old.avatar else f.avatar,
+        };
+        if (!sameOpt(old.nick, new.nick)) s.bumpNick(guild_id);
+        if (!keep_nick) if (old.nick) |t| ev_alloc.free(t);
+        if (!keep_avatar) if (old.avatar) |t| ev_alloc.free(t);
+        if (new.nick == null and new.avatar == null) {
+            _ = s.faces.remove(key);
             return;
         }
-        const gop = s.faces.getOrPut(s.gpa, key) catch |e| {
-            freeFace(f);
+        if (cur) |o| {
+            o.* = new;
+        } else s.faces.put(s.gpa, key, new) catch |e| {
+            freeFace(new);
             return e;
         };
-        if (gop.found_existing) {
-            const old = gop.value_ptr.*;
-            if (sameOpt(old.nick, f.nick) and sameOpt(old.avatar, f.avatar)) return freeFace(f);
-            if (!sameOpt(old.nick, f.nick)) s.nicks_gen +%= 1;
-            freeFace(old);
-        } else if (f.nick != null) s.nicks_gen +%= 1;
-        gop.value_ptr.* = f;
+    }
+
+    /// Saímos do servidor: os apelidos e fotos de lá vão embora.
+    fn forgetFaces(s: *Store, guild_id: Id) void {
+        var it = s.faces.iterator();
+        while (it.next()) |e| {
+            if (e.key_ptr[0] != guild_id) continue;
+            freeFace(e.value_ptr.*);
+            s.faces.removeByPtr(e.key_ptr);
+            it = s.faces.iterator();
+        }
+        _ = s.nick_gens.remove(guild_id);
     }
 
     /// Servidores na ordem da barra lateral: primeiro os que não estão na
@@ -2638,7 +2673,7 @@ test "menção numa thread: cargo que chega depois, @everyone e as supressões" 
     try std.testing.expect(!s.mentionsMeCached(5, &items[1]));
 }
 
-test "perfil do servidor: apelido e foto por servidor, iguais não mexem, vazio tira" {
+test "perfil do servidor: apelido e foto por servidor, parcial mantém, vazio e saída tiram" {
     const c_alloc = std.heap.c_allocator;
     var s = Store.init(std.testing.allocator);
     defer s.deinit();
@@ -2648,39 +2683,40 @@ test "perfil do servidor: apelido e foto por servidor, iguais não mexem, vazio 
     try std.testing.expectEqualStrings("ana.exe", s.nameIn(5, 2).?);
     try std.testing.expect(s.nameIn(5, 3) == null);
 
-    const face = struct {
-        fn f(nick: ?[]const u8, avatar: ?[]const u8) !types.Face {
-            return .{
-                .nick = if (nick) |n| try std.heap.c_allocator.dupe(u8, n) else null,
-                .avatar = if (avatar) |a| try std.heap.c_allocator.dupe(u8, a) else null,
-            };
+    const dup = struct {
+        fn f(t: ?[]const u8) ?[]const u8 {
+            return if (t) |x| std.heap.c_allocator.dupe(u8, x) catch null else null;
         }
     }.f;
-    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face("Aninha", "guilds/5/users/2/avatars/x") } }, 0);
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = .{ .nick = dup("Aninha"), .avatar = dup("guilds/5/users/2/avatars/x") } } }, 0);
     try std.testing.expectEqualStrings("Aninha", s.nameIn(5, 2).?);
     try std.testing.expectEqualStrings("guilds/5/users/2/avatars/x", s.face(5, 2).?.avatar.?);
     // Em outro servidor e em DM (0), o nome global.
     try std.testing.expectEqualStrings("ana.exe", s.nameIn(6, 2).?);
     try std.testing.expectEqualStrings("ana.exe", s.nameIn(0, 2).?);
-    const gen = s.nicks_gen;
-    // O mesmo de novo (cada mensagem traz o membro): nada muda.
-    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face("Aninha", "guilds/5/users/2/avatars/x") } }, 0);
-    try std.testing.expectEqual(gen, s.nicks_gen);
-    // Só a foto mudou: a medida das mensagens continua valendo.
-    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face("Aninha", "guilds/5/users/2/avatars/y") } }, 0);
-    try std.testing.expectEqual(gen, s.nicks_gen);
+    const gen = s.nickGen(5);
+    try std.testing.expect(gen != 0 and s.nickGen(6) == 0);
+    // O mesmo apelido de novo, ou só a foto mudando: a medida das mensagens vale.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = .{ .nick = dup("Aninha"), .avatar = dup("guilds/5/users/2/avatars/y") } } }, 0);
+    try std.testing.expectEqual(gen, s.nickGen(5));
     try std.testing.expectEqualStrings("guilds/5/users/2/avatars/y", s.face(5, 2).?.avatar.?);
-    // Tirou o apelido e ficou a foto.
-    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face(null, "guilds/5/users/2/avatars/y") } }, 0);
-    try std.testing.expect(s.nicks_gen != gen);
-    try std.testing.expectEqualStrings("ana.exe", s.nameIn(5, 2).?);
-    // Os dois vazios tiram a pessoa; sair do servidor também.
-    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2 } }, 0);
+    // Um GUILD_MEMBER_UPDATE parcial (sem `nick`, foto tirada): o apelido fica.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .keep_nick = true } }, 0);
+    try std.testing.expectEqualStrings("Aninha", s.nameIn(5, 2).?);
+    try std.testing.expect(s.face(5, 2).?.avatar == null);
+    try std.testing.expectEqual(gen, s.nickGen(5));
+    // Tirou o apelido também: some, e só a geração do servidor 5 muda.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .keep_avatar = true } }, 0);
     try std.testing.expect(s.face(5, 2) == null);
-    try s.apply(.{ .member_face = .{ .guild = 6, .user = 2, .face = try face("Ana no 6", null) } }, 0);
+    try std.testing.expect(s.nickGen(5) != gen and s.nickGen(6) == 0);
+    // Sair do servidor (alguém ou nós) tira o que era de lá.
+    try s.apply(.{ .member_face = .{ .guild = 6, .user = 2, .face = .{ .nick = dup("Ana no 6") } } }, 0);
     try std.testing.expectEqualStrings("Ana no 6", s.nameIn(6, 2).?);
     try s.apply(.{ .member_remove = .{ .guild = 6, .user = 2 } }, 0);
     try std.testing.expect(s.face(6, 2) == null);
+    try s.apply(.{ .member_face = .{ .guild = 7, .user = 2, .face = .{ .nick = dup("Ana no 7") } } }, 0);
+    try s.apply(.{ .guild_delete = 7 }, 0);
+    try std.testing.expect(s.face(7, 2) == null);
     try std.testing.expectEqual(@as(u32, 0), s.faces.count());
 }
 

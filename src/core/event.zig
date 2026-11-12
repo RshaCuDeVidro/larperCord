@@ -201,8 +201,9 @@ pub const Event = union(enum) {
     my_roles: struct { guild: Id, roles: []Id },
     /// Cargos e cor do nome de alguém num servidor.
     member_info: struct { guild: Id, user: Id, info: types.MemberInfo },
-    /// Apelido e foto de alguém num servidor (os dois null: não tem mais).
-    member_face: struct { guild: Id, user: Id, face: types.Face = .{} },
+    /// Apelido e foto de alguém num servidor (null: não tem mais). `keep_*`: o
+    /// objeto não falou desse campo (um GUILD_MEMBER_UPDATE parcial), fica o de antes.
+    member_face: struct { guild: Id, user: Id, face: types.Face = .{}, keep_nick: bool = false, keep_avatar: bool = false },
     /// Ordem dos servidores e pastas (READY / mudança nas configurações).
     guild_folders: []types.GuildFolder,
     /// Perfil completo de alguém (o Store assume os textos).
