@@ -250,7 +250,12 @@ fn choose(ctx: *d.Ctx, item: state.PaletteItem) void {
     switch (item.kind) {
         .channel => {
             const cs = ctx.store.channel(item.id) orelse return;
-            if (cs.info.kind == .voice) ctx.act(.{ .toggle_voice = item.id }) else ctx.act(.{ .select_channel = item.id });
+            // Canal de voz: como o clique na lista, entra (se ainda não está) e abre a
+            // tela da call; sair é pelo botão.
+            if (cs.info.kind == .voice) {
+                if (ctx.st.voice != item.id) ctx.act(.{ .toggle_voice = item.id });
+                ctx.act(.{ .show_call = item.id });
+            } else ctx.act(.{ .select_channel = item.id });
         },
         .guild => ctx.act(.{ .select_guild = item.id }),
         .theme => ctx.act(.{ .set_theme = item.index }),

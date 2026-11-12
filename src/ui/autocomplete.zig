@@ -242,7 +242,7 @@ fn addUser(ctx: *d.Ctx, guild: Id, uid: Id, q: []const u8, bonus: i32) void {
     if (sc == 0) return;
     var it: Item = .{ .kind = .user, .id = uid, .score = sc + bonus };
     it.setName(name);
-    if (name.ptr != u.name.ptr) it.setHint(u.name);
+    if (!std.mem.eql(u8, name, u.name)) it.setHint(u.name);
     add(it);
 }
 

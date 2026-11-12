@@ -264,16 +264,17 @@ pub fn lookup(store: *const Store, channel: Id, id: Id) ?struct { m: *const Stor
 /// escondidos, quebras de linha viram espaço. Vazia se não tem texto
 /// (só anexo ou embed: quem desenha decide o que mostrar).
 pub fn preview(buf: []u8, store: *const Store, m: *const StoredMessage) []const u8 {
-    return previewSpans(buf, store, m.spans);
+    return previewSpans(buf, store, store.guildOfChannel(m.msg.channel), m.spans);
 }
 
-pub fn previewSpans(buf: []u8, store: *const Store, spans: []const @import("markdown.zig").Span) []const u8 {
+/// `guild`: o servidor da mensagem (a menção a alguém mostra o apelido de lá).
+pub fn previewSpans(buf: []u8, store: *const Store, guild: Id, spans: []const @import("markdown.zig").Span) []const u8 {
     var n: usize = 0;
     var tmp: [96]u8 = undefined;
     for (spans) |sp| {
         const piece: []const u8 = if (sp.flags.spoiler) "▮▮▮" else switch (sp.mention) {
             .none => sp.text,
-            .user => |id| std.fmt.bufPrint(&tmp, "@{s}", .{if (store.user(id)) |u| u.name else "?"}) catch "@?",
+            .user => |id| std.fmt.bufPrint(&tmp, "@{s}", .{store.nameIn(guild, id) orelse "?"}) catch "@?",
             .channel => |id| std.fmt.bufPrint(&tmp, "#{s}", .{if (store.channel(id)) |cs| cs.info.name else "?"}) catch "#?",
             .role => |id| std.fmt.bufPrint(&tmp, "@{s}", .{if (store.roles.get(id)) |r| r.name else "?"}) catch "@?",
             .stamp => "🕒",

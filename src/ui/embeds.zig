@@ -128,6 +128,7 @@ pub fn appendText(ctx: *d.Ctx, out: *std.ArrayList(u8), m: *const StoredMessage,
         from: u32,
         to: u32,
         any: bool,
+        guild: types.Id,
         fn text(self: *@This(), t: []const u8, spans: ?[]const md.Span, off: u32) void {
             const sel: Sel = .{ .from = self.from, .to = self.to, .off = off };
             const r = sel.range(t.len) orelse return;
@@ -144,19 +145,20 @@ pub fn appendText(ctx: *d.Ctx, out: *std.ArrayList(u8), m: *const StoredMessage,
                 const p1 = p0 + @as(u32, @intCast(sp.text.len));
                 if (p1 <= r[0] or p0 >= r[1]) continue;
                 if (sp.mention != .none or sp.emoji != 0 or sp.flags.bullet or sp.flags.number) {
-                    self.out.appendSlice(g, rich.label(self.ctx.store, self.ctx.st.guild, sp, &buf)) catch {};
+                    self.out.appendSlice(g, rich.label(self.ctx.store, self.guild, sp, &buf)) catch {};
                     if (sp.flags.bullet or sp.flags.number) self.out.append(g, ' ') catch {};
                 } else self.out.appendSlice(g, t[@max(p0, r[0])..@min(p1, r[1])]) catch {};
                 if (sp.flags.block) self.out.append(g, '\n') catch {};
             }
         }
-    } = .{ .ctx = ctx, .out = out, .from = from, .to = to, .any = b > a };
+    } = .{ .ctx = ctx, .out = out, .from = from, .to = to, .any = b > a, .guild = ctx.store.guildOfChannel(m.msg.channel) };
     eachText(m, &v);
 }
 
 /// Altura de todos os embeds da mensagem (com o espaço acima), desenhando
 /// se `dl` não for null.
 pub fn block(ctx: *d.Ctx, dl: ?*c.ImDrawList, m: *const StoredMessage, x: f32, y_in: f32, avail: f32, alpha: f32, sel_in: Sel) f32 {
+    cur_guild = ctx.store.guildOfChannel(m.msg.channel);
     const invites = hasInvite(m);
     const foot = interact.footerHeight(m, ctx.now_ms);
     if (m.msg.embeds.len == 0 and !invites and foot == 0) return 0;
@@ -353,6 +355,8 @@ fn cardHeight(ctx: *d.Ctx, e: *const types.Embed, spans: []const []const md.Span
     hash.update(std.mem.asBytes(&w));
     hash.update(std.mem.asBytes(&d.text_scale));
     hash.update(std.mem.asBytes(&ctx.st.theme_gen));
+    // Um apelido que mudou muda a largura de uma menção no embed.
+    hash.update(std.mem.asBytes(&ctx.store.nickGen(cur_guild)));
     const key = hash.final() | 1;
     const slot = &height_cache[@intCast(key % height_cache.len)];
     if (slot.key == key) return slot.h;
@@ -360,8 +364,13 @@ fn cardHeight(ctx: *d.Ctx, e: *const types.Embed, spans: []const []const md.Span
     return slot.h;
 }
 
+/// O servidor da mensagem dos embeds sendo desenhados (`block`): as menções dentro
+/// deles mostram o apelido de lá.
+var cur_guild: types.Id = 0;
+
 fn opts(ctx: *d.Ctx, size: f32) rich.Opts {
     return .{
+        .guild = cur_guild,
         .ctx = ctx,
         .family = ctx.ui,
         .size = size,

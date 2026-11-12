@@ -695,7 +695,7 @@ fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont,
         d.rect(dl, r, if (o.on_accent) d.Rgba.white.alpha(0.22) else th.c(.mention).alpha(0.22), 4);
         d.text(dl, font, size, x + pad, ty, if (o.on_accent) o.color else th.c(.mention).mix(th.c(.text), 0.45), s);
         if (sp.mention == .user and s.len > 1) qa.mark(r, "nome:mention:{d}:{s}", .{ sp.mention.user, d.utf8Prefix(s[1..], 20) });
-        if (o.ctx) |ctx| mentionClick(ctx, sp, r, mouse);
+        if (o.ctx) |ctx| mentionClick(ctx, sp, r, mouse, o.guild);
         return;
     }
     if (sp.flags.link) {
@@ -730,7 +730,7 @@ fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont,
 
 /// `@alguém` abre o cartão de perfil; `#canal` abre o canal. O botão direito
 /// abre o menu de quem (ou do que) foi mencionado.
-fn mentionClick(ctx: *d.Ctx, sp: *const md.Span, r: d.Rect, mouse: c.ImVec2) void {
+fn mentionClick(ctx: *d.Ctx, sp: *const md.Span, r: d.Rect, mouse: c.ImVec2, guild: u64) void {
     switch (sp.mention) {
         .user => |id| qa.mark(r, "mention:{d}", .{id}),
         .channel => |id| qa.mark(r, "mention-channel:{d}", .{id}),
@@ -745,7 +745,7 @@ fn mentionClick(ctx: *d.Ctx, sp: *const md.Span, r: d.Rect, mouse: c.ImVec2) voi
     if (!left and !right) return;
     switch (sp.mention) {
         .user => |id| if (ctx.store.user(id) != null) {
-            ctx.popup(if (left) .{ .profile = .{ .user = id, .x = r.right() + 4, .y = r.y } } else .{ .menu = .{ .kind = .user, .id = id, .x = mouse.x, .y = mouse.y } });
+            ctx.popup(if (left) .{ .profile = .{ .user = id, .x = r.right() + 4, .y = r.y, .guild = guild } } else .{ .menu = .{ .kind = .user, .id = id, .x = mouse.x, .y = mouse.y } });
         } else if (left) ctx.st.showToast(ctx.now_ms, false, "não conheço essa pessoa ainda", "that user isn't known yet", .{}),
         .channel => |id| {
             if (ctx.store.channel(id) == null) {

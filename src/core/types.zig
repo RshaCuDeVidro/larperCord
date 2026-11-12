@@ -47,9 +47,13 @@ pub const Profile = struct {
     username: []const u8 = "",
     /// Servidor do pedido e quando a pessoa entrou nele (ms; 0 = não sabe).
     guild: Id = 0,
-    /// A bio, os pronomes ou o banner são os do perfil desse servidor: o
-    /// cartão aberto em outro lugar espera o perfil de lá.
-    server: bool = false,
+    /// O perfil do servidor `guild` (vazio = a pessoa não tem: vale o global).
+    /// Ficam à parte: a bio e os pronomes de cima são sempre os globais, os que
+    /// Configurações → Minha conta mostra e grava.
+    guild_bio: []const u8 = "",
+    guild_pronouns: []const u8 = "",
+    /// Já o caminho no CDN (guilds/{servidor}/users/{pessoa}/banners/{hash}).
+    guild_banner: []const u8 = "",
     joined_ms: i64 = 0,
     /// Impulsionando o servidor desde (ms; 0 = não).
     boost_ms: i64 = 0,

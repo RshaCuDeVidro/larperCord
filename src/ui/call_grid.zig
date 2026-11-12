@@ -27,8 +27,18 @@ const Id = types.Id;
 pub fn guildCall(ctx: *const d.Ctx) ?*ChannelState {
     if (!ctx.st.call_view or ctx.st.friends) return null;
     const cs = ctx.store.channel(ctx.st.voice orelse return null) orelse return null;
-    return if (cs.info.guild != 0) cs else null;
+    // Outro servidor na tela (por qualquer caminho): a conversa dele, não a call.
+    return if (cs.info.guild != 0 and cs.info.guild == ctx.st.guild) cs else null;
 }
+
+/// Os botões no estilo texto ([mic] [fone]…): o da caixa de mensagem do tema
+/// (composer variant=prompt), guardado a cada quadro, vale também para a faixa da DM.
+pub var text_buttons = false;
+
+/// O tamanho em que as fotos dos quadros são pedidas, o mesmo para qualquer quadro: o
+/// quadro muda de tamanho (gente entrando, a janela) sem pedir e decodificar a foto de
+/// novo, e a cor dela é achada pela mesma chave.
+const photo_px: f32 = 128;
 
 /// A call da DM ou do grupo `ch_id`, com a gente nela: a faixa em cima da conversa.
 pub fn dmCall(ctx: *const d.Ctx, ch_id: Id) ?*ChannelState {
@@ -68,7 +78,7 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, uid: Id, r: d.Rect, idx: usiz
     const url = w.avatarUrl(ctx, &ub, guild, uid);
     // O fundo: a cor da foto (quando ela já carregou) ou a do cargo, escura o
     // bastante para o nome em branco.
-    const photo: ?d.Rgba = if (url.len == 0) null else if (ctx.images.tint(url, av * scale, av * scale)) |t| d.Rgba.hex(t) else null;
+    const photo: ?d.Rgba = if (url.len == 0) null else if (ctx.images.tint(url, photo_px * scale, photo_px * scale)) |t| d.Rgba.hex(t) else null;
     const fill = (photo orelse ctx.th.role(if (u) |x| x.role else 0)).mix(d.Rgba.black, 0.5);
     d.rect(dl, r, fill, radius);
     const hb = d.hit(ctx, 8900 + idx, r);
@@ -83,7 +93,7 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, uid: Id, r: d.Rect, idx: usiz
         c.ImDrawList_AddCircleEx(dl, d.v(cx, cy), av / 2 + 4, ctx.col(.online).u(), 0, 3, 0);
         qa.mark(r, "grid-speaking:{d}", .{uid});
     }
-    w.avatarAt(ctx, dl, guild, cx, cy, av, uid, .circle, null, 1, false);
+    w.avatarAt(ctx, dl, guild, cx, cy, av, uid, .circle, null, 1, .{ .animate = false, .request = photo_px });
 
     // O nome e, embaixo, a atividade, centrados.
     const name = ctx.store.nameIn(guild, uid) orelse "?";
@@ -105,12 +115,13 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, uid: Id, r: d.Rect, idx: usiz
         }
     };
 
-    // Microfone e fone desligados, no canto de baixo (vermelho: foi o servidor).
+    // Microfone e fone desligados, no canto de cima (longe do nome e da atividade;
+    // vermelho: foi o servidor).
     const mic_off = vf.self_mute or vf.serverMuted();
     const deaf = vf.deafened();
     if (mic_off or deaf) {
         const iw: f32 = (if (deaf) @as(f32, 22) else 0) + (if (mic_off) @as(f32, 22) else 0);
-        const pr: d.Rect = .{ .x = r.right() - 10 - iw - 8, .y = r.bottom() - 36, .w = iw + 8, .h = 26 };
+        const pr: d.Rect = .{ .x = r.right() - 10 - iw - 8, .y = r.y + 10, .w = iw + 8, .h = 26 };
         d.rect(dl, pr, d.Rgba.black.alpha(0.45), 13);
         var x = pr.right() - 4;
         const my = pr.y + pr.h / 2;
@@ -191,6 +202,8 @@ fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bo
         return d.endRegion(ctx, y + 8, r.x);
     }
     const g = layout(list.len, r.w - pad * 2, r.h - pad * 2, tile_gap, tile_min, tile_max);
+    // Área estreita demais para um quadro (a janela sendo arrastada bem pequena).
+    if (g.cols == 0 or g.rows == 0) return d.endRegion(ctx, top + r.h, r.x);
     const rows_f: f32 = @floatFromInt(g.rows);
     const block_h = rows_f * g.tile_h + (rows_f - 1) * tile_gap;
     const y0 = top + @max(pad, (r.h - block_h) / 2);
@@ -209,26 +222,38 @@ fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bo
 
 /// A tela da call no lugar da conversa.
 pub fn page(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) void {
-    // Esc volta para a conversa (sem nada aberto por cima nem texto sendo digitado).
-    if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and ctx.st.popup == .none and !ctx.io.*.WantTextInput) ctx.act(.{ .show_call = 0 });
+    // Esc volta para a conversa, se não for para fechar outra coisa (menu, paleta,
+    // Configurações, a imagem aberta, a busca) nem estiver digitando.
+    if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and escFree(ctx)) ctx.act(.{ .show_call = 0 });
     qa.mark(r, "grid-view", .{});
     people(ctx, n, r, cs, d.is(n, "variant", "irc", ""), "##call-grid");
 }
 
+/// O Esc é da tela da call? (Nada aberto por cima que ele deva fechar antes.)
+pub fn escFree(ctx: *const d.Ctx) bool {
+    const st = ctx.st;
+    return st.popup == .none and !st.palette.open and st.viewer == null and !st.settings.open and
+        !@import("search.zig").open and !ctx.io.*.WantTextInput;
+}
+
 /// A call da DM ou do grupo aberto: uma faixa em cima da conversa, com a grade e os
-/// botões. Devolve a altura que ocupou.
+/// botões. Devolve a altura que ocupou (0: a conversa é baixa demais para dividir).
 pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32 {
     const tty = d.is(n, "variant", "irc", "");
     const ctl_h: f32 = if (tty) 28 else 60;
+    // Sobra pelo menos isto para a conversa embaixo.
+    const room = r.h - 80;
+    const min_h: f32 = if (tty) 70 else 160;
+    if (room < min_h) return 0;
     const rows: f32 = @floatFromInt(@max(cs.voice_members.items.len, 1));
     const want = if (tty) rows * (ctx.th.font_size + 10) + 16 + ctl_h else r.h * 0.42;
-    const h = @min(@max(want, if (tty) @as(f32, 70) else 210), @max(r.h * 0.6, 100));
+    const h = std.math.clamp(want, min_h, room);
     const band: d.Rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = h };
     d.rect(ctx.dl, band, ctx.col(.rail).alpha(0.55), 0);
     d.line(ctx.dl, band.x, band.bottom() - 0.5, band.right(), band.bottom() - 0.5, ctx.col(.border), 1);
     qa.mark(band, "grid-band", .{});
     people(ctx, n, .{ .x = band.x, .y = band.y, .w = band.w, .h = band.h - ctl_h }, cs, tty, "##call-band");
-    buttons(ctx, ctx.dl, ctx.familyFor(n), .{ .x = band.x, .y = band.bottom() - ctl_h, .w = band.w, .h = ctl_h }, tty);
+    buttons(ctx, ctx.dl, ctx.familyFor(n), .{ .x = band.x, .y = band.bottom() - ctl_h, .w = band.w, .h = ctl_h }, text_buttons);
     return h;
 }
 
@@ -237,7 +262,7 @@ pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32
 /// Os botões da faixa de voz (microfone, fone, mixer, sair), no lugar da caixa de
 /// mensagem.
 pub fn controls(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
-    buttons(ctx, ctx.dl, ctx.familyFor(n), r, d.is(n, "variant", "prompt", ""));
+    buttons(ctx, ctx.dl, ctx.familyFor(n), r, text_buttons);
 }
 
 fn openMixer(ctx: *d.Ctx, r: d.Rect) void {

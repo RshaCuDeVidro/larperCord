@@ -78,10 +78,18 @@ pub var no_pics = false;
 pub var square_pics = false;
 
 pub fn picture(ctx: *d.Ctx, dl: *c.ImDrawList, url: []const u8, r: d.Rect, radius: f32, alpha: f32) bool {
+    return pictureAt(ctx, dl, url, r, radius, alpha, 0);
+}
+
+/// Como `picture`, pedindo a imagem em `request` px (0 = no tamanho de `r`) e
+/// escalando no desenho: o tamanho na tela pode mudar sem um pedido novo.
+pub fn pictureAt(ctx: *d.Ctx, dl: *c.ImDrawList, url: []const u8, r: d.Rect, radius: f32, alpha: f32, request: f32) bool {
     if (url.len == 0) return false;
     if (no_pics) return false;
     const scale = ctx.io.*.DisplayFramebufferScale.x;
-    switch (ctx.images.getStill(url, r.w * scale, r.h * scale)) {
+    const rw = if (request > 0) request else r.w;
+    const rh = if (request > 0) request else r.h;
+    switch (ctx.images.getStill(url, rw * scale, rh * scale)) {
         .ready => |t| {
             // Em pixel inteiro: cada ponto da textura cai num ponto da tela, sem borrar.
             const x0 = @round(r.x * scale) / scale;
@@ -119,8 +127,13 @@ pub fn avatar(ctx: *d.Ctx, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, user_
 /// O avatar de alguém num servidor: a foto do perfil de lá, quando tem
 /// (`guild` 0 = DM ou grupo: a global).
 pub fn avatarIn(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f32, size: f32, user_id: types.Id, shape: Shape, ring: ?d.Rgba, alpha: f32) void {
-    avatarAt(ctx, dl, guild, cx, cy, size, user_id, shape, ring, alpha, true);
+    avatarAt(ctx, dl, guild, cx, cy, size, user_id, shape, ring, alpha, .{});
 }
+
+/// `animate` false deixa a decoração parada mesmo grande (a tela da call não acorda
+/// o app a cada quadro da moldura); `request` pede a foto num tamanho fixo (ver
+/// `pictureAt`).
+pub const AvatarOpts = struct { animate: bool = true, request: f32 = 0 };
 
 /// A URL da foto de alguém num servidor ("" = sem foto: vai a inicial).
 pub fn avatarUrl(ctx: *const d.Ctx, buf: []u8, guild: types.Id, user_id: types.Id) []const u8 {
@@ -129,9 +142,8 @@ pub fn avatarUrl(ctx: *const d.Ctx, buf: []u8, guild: types.Id, user_id: types.I
     return cdnUrl(buf, .avatar, user_id, hash);
 }
 
-/// Como `avatarIn`; `animate` false deixa a decoração parada mesmo grande (a tela
-/// da call não acorda o app a cada quadro da moldura).
-pub fn avatarAt(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f32, size: f32, user_id: types.Id, shape: Shape, ring: ?d.Rgba, alpha: f32, animate: bool) void {
+/// Como `avatarIn`, com as opções de `AvatarOpts`.
+pub fn avatarAt(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f32, size: f32, user_id: types.Id, shape: Shape, ring: ?d.Rgba, alpha: f32, opt: AvatarOpts) void {
     const u = ctx.store.user(user_id);
     const role: u8 = if (u) |x| x.role else 0;
     const base = ctx.th.role(role);
@@ -140,7 +152,8 @@ pub fn avatarAt(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f3
     var ub: [160]u8 = undefined;
     if (ctx.store.face(guild, user_id)) |f| if (f.avatar != null) qa.mark(rr, "avatar-srv:{d}", .{user_id});
     const url = avatarUrl(ctx, &ub, guild, user_id);
-    if (!picture(ctx, dl, url, rr, shapeRadius(shape, size), alpha)) {
+    if (!pictureAt(ctx, dl, url, rr, shapeRadius(shape, size), alpha, opt.request)) {
+        if (url.len > 0) qa.mark(rr, "avatar-letter:{d}", .{user_id});
         d.rect(dl, rr, base.mix(ctx.col(.surface), 0.28).alpha(alpha), shapeRadius(shape, size));
         var up: [8]u8 = undefined;
         const name = ctx.store.nameIn(guild, user_id) orelse "?";
@@ -159,7 +172,7 @@ pub fn avatarAt(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f3
         const ds = size * 1.2;
         const dr: d.Rect = .{ .x = cx - ds / 2, .y = cy - ds / 2, .w = ds, .h = ds };
         const scale = ctx.io.*.DisplayFramebufferScale.x;
-        if (!no_pics) switch (ctx.images.getEx(deco_url, ds * scale, ds * scale, big and animate and ctx.st.window_focused)) {
+        if (!no_pics) switch (ctx.images.getEx(deco_url, ds * scale, ds * scale, big and opt.animate and ctx.st.window_focused)) {
             .ready => |t| c.ImDrawList_AddImageEx(dl, t.ref, d.v(dr.x, dr.y), d.v(dr.right(), dr.bottom()), d.v(0, 0), d.v(1, 1), d.Rgba.white.col(alpha)),
             else => {},
         };

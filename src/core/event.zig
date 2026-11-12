@@ -201,8 +201,9 @@ pub const Event = union(enum) {
     my_roles: struct { guild: Id, roles: []Id },
     /// Cargos e cor do nome de alguém num servidor.
     member_info: struct { guild: Id, user: Id, info: types.MemberInfo },
-    /// Apelido e foto de alguém num servidor (os dois null: não tem mais).
-    member_face: struct { guild: Id, user: Id, face: types.Face = .{} },
+    /// Apelido e foto de alguém num servidor (null: não tem mais). `keep_*`: o
+    /// objeto não falou desse campo (um GUILD_MEMBER_UPDATE parcial), fica o de antes.
+    member_face: struct { guild: Id, user: Id, face: types.Face = .{}, keep_nick: bool = false, keep_avatar: bool = false },
     /// Ordem dos servidores e pastas (READY / mudança nas configurações).
     guild_folders: []types.GuildFolder,
     /// Perfil completo de alguém (o Store assume os textos).
@@ -285,7 +286,20 @@ pub const VoiceFlags = packed struct(u8) {
     pub fn deafened(f: VoiceFlags) bool {
         return f.self_deaf or f.deaf;
     }
+
+    /// Vale mandar as flags de alguém que já estava na call quando conectamos? Sim se
+    /// tem alguma: mudo, surdo ou transmitindo (o selo AO VIVO).
+    pub fn worthSending(f: VoiceFlags) bool {
+        return @as(u8, @bitCast(f)) != 0;
+    }
 };
+
+test "flags iniciais da call: transmitir sem estar mudo também vai" {
+    const std = @import("std");
+    try std.testing.expect((VoiceFlags{ .self_stream = true }).worthSending());
+    try std.testing.expect((VoiceFlags{ .self_mute = true }).worthSending());
+    try std.testing.expect(!(VoiceFlags{}).worthSending());
+}
 
 pub const EditPlace = struct {
     id: Id,
@@ -587,7 +601,8 @@ pub const Action = union(enum) {
     resend_message: struct { channel: Id, nonce: u64 },
     discard_message: struct { channel: Id, nonce: u64 },
     /// O cartão de perfil abriu: busca o perfil completo (uma vez por pessoa).
-    want_profile: Id,
+    /// O perfil de alguém, como aparece no servidor `guild` (0 = o global).
+    want_profile: struct { user: Id, guild: Id },
     /// Online, ausente, não perturbe ou invisível (offline), até mudar.
     set_status: types.Status,
     /// O mesmo, por um tempo (`minutes`; 0 = até mudar), escolhido no submenu.
@@ -601,7 +616,7 @@ pub const Action = union(enum) {
     /// Recusa um pedido, cancela o nosso, desfaz a amizade ou desbloqueia.
     remove_relationship: struct { user: Id, from: @import("conta.zig").Origin },
     /// Perfil grande (o cartão com abas); `tab`: 0 atividade, 1 amigos, 2 servidores.
-    open_full_profile: struct { user: Id, tab: u8 = 0 },
+    open_full_profile: struct { user: Id, tab: u8 = 0, guild: ?Id = null },
     set_note: struct { user: Id, text: []const u8 },
     /// Atividade sem imagem: busca o ícone do jogo (uma vez por aplicação).
     want_app_icon: Id,
