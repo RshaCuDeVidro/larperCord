@@ -7,6 +7,8 @@ Entradas:
   docs/plugins*.md, themes/README*.md   guias que também vivem fora do site
   site/theme-builder.html   o criador de temas (o código fica em docs/assets/site/theme-builder*.js)
   site/community-themes.html  a galeria da comunidade (o código fica em docs/assets/site/community.js)
+  site/community-mascots.html  a galeria dos mascotes da comunidade (mascots/community/*.kdl, com as
+                            imagens em docs/assets/mascots/<nome>.webp)
   themes/*.kdl              paletas, opções e layouts dos temas (a fonte de verdade)
   src/ui/atalhos.zig        os atalhos de teclado ({{keys}} nos guias)
   docs/plugins/*.lua        os plugins que vêm com o app (diretório de plugins)
@@ -1616,6 +1618,10 @@ def community_url(lang):
     return "community-themes.html" if lang == "en" else "pt/community-themes.html"
 
 
+def mascots_url(lang):
+    return "community-mascots.html" if lang == "en" else "pt/community-mascots.html"
+
+
 def root_of(path):
     return "../" * path.count("/")
 
@@ -1646,6 +1652,7 @@ NAV_IC = {
     "versus": '<path d="M5 5l4 14 4-14M14.5 17.5c.8.9 2 1.5 3.2 1.5 1.8 0 3-1 3-2.5 0-3.6-6-2.4-6-6 0-1.4 1.2-2.5 3-2.5 1.1 0 2.1.4 2.8 1.2"/>',
     "gauge": '<path d="M4.5 18a9 9 0 1 1 15 0M12 13l4-5"/><circle class="fill" cx="12" cy="13" r="1.6"/>',
     "book": '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20M8 7.5h8"/>',
+    "mascot": '<path d="M5 9.5 6.5 4l4 3.2h3L17.5 4 19 9.5c1.3 1.7 2 3.7 2 5.8 0 3.2-4 5.2-9 5.2s-9-2-9-5.2c0-2.1.7-4.1 2-5.8z"/><path d="m8.5 12.5 2 1.5-2 1.5M13 15.5h3"/>',
 }
 
 
@@ -1664,6 +1671,7 @@ def topnav(lang, path, alt_path, kind, slug):
             ("swatch", t(lang, "Built-in themes", "Temas embutidos"), t(lang, "11 themes, each in light and dark", "11 temas, cada um em claro e escuro"), f"{anchor_home}#themes", False),
             ("brush", t(lang, "Theme builder", "Criador de temas"), t(lang, "Colors, layout and fonts, live", "Cores, layout e fontes, ao vivo"), rel(path, builder_url(lang)), kind == "builder"),
             ("users", t(lang, "Community themes", "Temas da comunidade"), t(lang, "Made and sent by people who use it", "Feitos e mandados por quem usa"), rel(path, community_url(lang)), kind == "community"),
+            ("mascot", t(lang, "Community mascots", "Mascotes da comunidade"), t(lang, "Mascot files to download and wear", "Arquivos de mascote para baixar e usar"), rel(path, mascots_url(lang)), kind == "mascots"),
             ("layout", t(lang, "Layout playground", "Playground de layout"), t(lang, "Edit a layout and watch it move", "Edite um layout e veja mudar"), f"{anchor_home}#playground", False),
         ]),
         ("why", t(lang, "Why larperCord", "Por que larperCord"), f"{anchor_home}#features", [
@@ -2203,6 +2211,109 @@ def write_community_files(community):
         out.rmdir()
 
 
+# mascots/community/*.kdl: os arquivos de mascote mandados por pull request. O app é quem confere
+# o desenho (o QA_SUITE=mascote-folha abre cada um e faz a imagem); aqui, só o que a galeria precisa.
+MASCOT_DIR = ROOT / "mascots" / "community"
+MASCOT_MAX_BYTES = 64 * 1024
+
+
+def load_community_mascots():
+    """Os mascotes da pasta, em ordem de nome. Um arquivo sem o nó `mascot` completo para o build."""
+    out, problems = [], []
+    if not MASCOT_DIR.exists():
+        return out, problems
+    for f in sorted(MASCOT_DIR.iterdir()):
+        where = f"mascots/community/{f.name}"
+        if f.name.startswith(".") or re.fullmatch(r"README(\.[a-zA-Z-]+)?\.md", f.name):
+            continue
+        if f.is_dir() or f.suffix != ".kdl":
+            problems.append(f"{where}: only .kdl mascot files go in this folder")
+            continue
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,39}", f.stem):
+            problems.append(f"{where}: the file name must be lowercase letters, digits and hyphens, up to 40")
+            continue
+        data = f.read_bytes()
+        if len(data) > MASCOT_MAX_BYTES:
+            problems.append(f"{where}: the file has {len(data)} bytes; the limit is {MASCOT_MAX_BYTES}")
+            continue
+        try:
+            nodes = kdl_strict(data.decode("utf-8"))
+        except UnicodeDecodeError:
+            problems.append(f"{where}: the file is not UTF-8")
+            continue
+        except ThemeProblem as e:
+            problems.append(f"{where}:{e.line}:{e.col}: {e.msg}")
+            continue
+        head = next((nd for nd in nodes if nd.name == "mascot"), None)
+        title = head.args[0] if head and head.args and isinstance(head.args[0], str) else ""
+        fields = {k: (head.props.get(k) if head else None) for k in ("author", "license", "description")}
+        missing = [k for k, v in fields.items() if not isinstance(v, str) or not v.strip()]
+        if not title or missing:
+            problems.append(f"{where}:{head.line if head else 1}:1: the mascot node needs a name, author=, license= and description=")
+            continue
+        out.append({"name": f.stem, "title": title, "author": fields["author"], "license": fields["license"],
+                    "desc": fields["description"], "src": data.decode("utf-8")})
+    return out, problems
+
+
+def mascot_card(lang, path, m):
+    e = html.escape
+    name = m["name"]
+    pic = OUT / "assets" / "mascots" / f"{name}.webp"
+    img = (f'<img class="mg-pic" src="{rel(path, "assets/mascots/" + name + ".webp")}" alt="{e(m["title"])}" width="720" height="176" loading="lazy">'
+           if pic.exists() else '<div class="mg-pic" aria-hidden="true"></div>')
+    faces = "".join(f"<li>{x}</li>" for x in (t(lang, "normal", "normal"), t(lang, "happy", "feliz"), t(lang, "startled", "susto"), t(lang, "asleep", "dormindo")))
+    return f'''<article class="cg-card" data-mg-card="{name}">
+  {img}
+  <div class="cg-body">
+    <ul class="mg-faces" aria-hidden="true">{faces}</ul>
+    <h2 class="cg-name">{e(m["title"])}</h2>
+    <p class="cg-meta">{t(lang, "by", "por")} <strong>{e(m["author"])}</strong> · <span title="{t(lang, 'License', 'Licença')}">{e(m["license"])}</span> · <code>{name}.kdl</code></p>
+    <p class="cg-desc">{e(m["desc"])}</p>
+    <div class="cg-actions"><a class="tb-b primary" href="{rel(path, "mascots/" + name + ".kdl")}" download="{name}.kdl">{t(lang, "Download .kdl", "Baixar .kdl")}</a><a class="cg-src" href="{REPO}/blob/main/mascots/community/{name}.kdl" rel="noopener">{t(lang, "Source", "Fonte")}</a></div>
+  </div>
+</article>'''
+
+
+def build_mascots(lang, mascots):
+    """A galeria de mascotes: um cartão por arquivo de mascots/community/, com a imagem que o app desenhou."""
+    src = (SITE / "community-mascots.html").read_text(encoding="utf-8")
+    src = re.sub(r"\{\{(.*?)\|\|(.*?)\}\}", lambda m: m.group(1 if lang == "en" else 2), src, flags=re.S)
+    path = mascots_url(lang)
+    alt = mascots_url("pt" if lang == "en" else "en")
+    root = root_of(path)
+    keep, drop = ("MASCOTS", "EMPTY") if mascots else ("EMPTY", "MASCOTS")
+    src = re.sub(rf"<!--{drop}-->.*?<!--/{drop}-->\n?", "", src, flags=re.S)
+    src = src.replace(f"<!--{keep}-->\n", "").replace(f"<!--/{keep}-->\n", "")
+    count = len(mascots)
+    guide = f"{REPO}/blob/main/mascots/" + ("README.md" if lang == "en" else "README.pt-BR.md")
+    src = (src.replace("%ROOT%", root).replace("%REPO%", REPO).replace("%MASCOT_GUIDE%", guide)
+           .replace("%CARDS%", "\n".join(mascot_card(lang, path, m) for m in mascots))
+           .replace("%COUNT%", t(lang, f"{count} mascot" + ("" if count == 1 else "s"), f"{count} mascote" + ("" if count == 1 else "s"))))
+    title = t(lang, "Community mascots · larperCord", "Mascotes da comunidade · larperCord")
+    desc = t(lang, "Mascot files for larperCord made by people who use it: a picture of each in four expressions and the .kdl to download. How to send yours.",
+             "Arquivos de mascote do larperCord feitos por quem usa: uma imagem de cada em quatro expressões e o .kdl para baixar. Como mandar o seu.")
+    head = (f'\n<meta http-equiv="Content-Security-Policy" content="{BUILDER_CSP}">\n<link rel="stylesheet" href="{root}assets/site/theme-builder.css">'
+            f'\n<link rel="stylesheet" href="{root}assets/site/community.css">')
+    write(path, shell(lang, path, alt, title, desc, src, "mascots", head=head))
+    return [{"t": t(lang, "Community mascots", "Mascotes da comunidade"), "s": "larperCord", "u": path,
+             "x": t(lang, "Mascot files people sent, and how to send yours.", "Arquivos de mascote que as pessoas mandaram, e como mandar o seu.")}]
+
+
+def write_mascot_files(mascots):
+    """O .kdl de cada mascote em docs/mascots/, para o botão de baixar. Os que saíram da pasta somem."""
+    out = OUT / "mascots"
+    names = {m["name"] + ".kdl" for m in mascots}
+    if out.exists():
+        for f in out.iterdir():
+            if f.name not in names:
+                f.unlink()
+    for m in mascots:
+        write(f"mascots/{m['name']}.kdl", m["src"])
+    if out.exists() and not any(out.iterdir()):
+        out.rmdir()
+
+
 def report_community(problems):
     for p in problems:
         print(p, file=sys.stderr)
@@ -2227,6 +2338,11 @@ def main():
     if problems:
         report_community(problems)
         raise SystemExit(1)
+    mascots, problems = load_community_mascots()
+    if problems:
+        for p in problems:
+            print(p, file=sys.stderr)
+        raise SystemExit(1)
     TRY_SIZE = try_size()
     if not TRY_SIZE:
         drop_try_pages()
@@ -2242,13 +2358,15 @@ def main():
         index = build_landing(lang, themes)
         index += build_builder(lang, themes, community)
         index += build_community(lang, community)
+        index += build_mascots(lang, mascots)
         index += build_guide(lang, themes)
         if TRY_SIZE:
             index += build_try(lang)
         write(f"assets/site/search-{lang}.js", "window.LC_SEARCH=" + json.dumps(index, ensure_ascii=False, separators=(",", ":")) + ";\n")
-    urls = (["", "pt/"] + [builder_url(la) for la in LANGS] + [community_url(la) for la in LANGS] + [page_url(la, s) for la in LANGS for s, _, _ in FLAT]
+    urls = (["", "pt/"] + [builder_url(la) for la in LANGS] + [community_url(la) for la in LANGS] + [mascots_url(la) for la in LANGS] + [page_url(la, s) for la in LANGS for s, _, _ in FLAT]
             + (["try/", "pt/try/"] if TRY_SIZE else []))
     write_community_files(community)
+    write_mascot_files(mascots)
     write("sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
           + "".join(f"  <url><loc>{BASE_URL}{u}</loc></url>\n" for u in urls) + "</urlset>\n")
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}sitemap.xml\n")

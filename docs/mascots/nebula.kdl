@@ -1,0 +1,36 @@
+// Nebula: a space cat with sparkle eyes and a tiny planet.
+// Shows: drawn eyes with one drawing per expression, a palette with one color
+// changed, a library mouth and a front layer.
+mascot "Nebula" author="larperCord" license="CC0-1.0" description="A space cat with sparkle eyes and a tiny planet."
+
+look mouth="cat" ears="pointy"
+colors palette="meia-noite" accent="#7EE8FF"
+
+eyes {
+    // Four-pointed sparkles (the default for every expression).
+    path d="M 40 42 Q 41.4 48.6 48 50 Q 41.4 51.4 40 58 Q 38.6 51.4 32 50 Q 38.6 48.6 40 42 Z" fill="white" stroke="ink" width=1.4
+    path d="M 84 47 Q 85.4 53.6 92 55 Q 85.4 56.4 84 63 Q 82.6 56.4 76 55 Q 82.6 53.6 84 47 Z" fill="white" stroke="ink" width=1.4
+    when "happy" "laugh" {
+        path d="M 32 53 Q 40 44 48 53" stroke="ink" width=4
+        path d="M 76 58 Q 84 49 92 58" stroke="ink" width=4
+    }
+    when "startled" {
+        circle cx=40 cy=50 r=6.5 fill="none" stroke="ink" width=2.4
+        circle cx=40 cy=50 r=2 fill="ink"
+        circle cx=84 cy=55 r=6.5 fill="none" stroke="ink" width=2.4
+        circle cx=84 cy=55 r=2 fill="ink"
+    }
+    when "sad" {
+        path d="M 40 45 Q 40.9 49.1 45 50 Q 40.9 50.9 40 55 Q 39.1 50.9 35 50 Q 39.1 49.1 40 45 Z" fill="white" stroke="ink" width=1.2
+        path d="M 84 50 Q 84.9 54.1 89 55 Q 84.9 55.9 84 60 Q 83.1 55.9 79 55 Q 83.1 54.1 84 50 Z" fill="white" stroke="ink" width=1.2
+        path d="M 34 58 Q 31.5 63 34 65.5 Q 36.5 63 34 58 Z" fill="accent"
+    }
+}
+
+layer "front" {
+    // The planet orbiting next to the head, and two little stars.
+    circle cx=111 cy=14 r=5.5 fill="accent"
+    ellipse cx=111 cy=14 rx=10 ry=2.6 rotate=-18 fill="none" stroke="tufts" width=1.4
+    circle cx=12 cy=2 r=1.4 fill="white" opacity=0.9
+    circle cx=4 cy=14 r=0.9 fill="white" opacity=0.7
+}
