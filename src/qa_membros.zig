@@ -75,7 +75,20 @@ fn olderDone(app: *App) bool {
 
 // --- DM e grupo --------------------------------------------------------------------
 
+/// As abas que o demo abre no começo (no primeiro servidor) já carregaram e o op 8 delas
+/// já saiu: o que vem depois é só deste QA (o lote delas sai ~2 s depois, e a página de
+/// cada uma é contada pela thread do demo logo depois de a interface vê-la).
+fn settled(app: *App) bool {
+    for (app.st.tabs.items) |id| {
+        const cs = app.store.channel(id) orelse return false;
+        if (cs.history != .loaded) return false;
+    }
+    return load(&gw.sent.member_pages) >= app.st.tabs.items.len and load(&gw.sent.member_queued) == 0;
+}
+
+var refetch0: u64 = 0;
 fn start(app: *App) void {
+    refetch0 = load(&gw.sent.history_refetches);
     req0 = load(&gw.sent.member_requests);
     pages0 = load(&gw.sent.member_pages);
     wrong0 = load(&gw.sent.member_wrong);
@@ -91,6 +104,10 @@ fn openGroup(app: *App) void {
 }
 fn groupNoAsk(app: *App) bool {
     return loaded(app, group) and load(&gw.sent.member_requests) == req0 and load(&gw.sent.member_pages) == pages0 and load(&gw.sent.member_wrong) == wrong0;
+}
+/// Abrir a DM e o grupo não fez nenhuma aba pedir a última página de novo.
+fn noReload(_: *App) bool {
+    return load(&gw.sent.history_refetches) == refetch0;
 }
 
 // --- Servidor grande: abrir e rolar depressa -----------------------------------------
@@ -114,7 +131,7 @@ fn older(app: *App) void {
     app.handle(.{ .load_older = scrolling });
 }
 
-/// Abriu e rolou dentro do lote de 1 s: as páginas viraram um pedido só, de lá, com a
+/// Abriu e rolou dentro do lote de 2 s: as páginas viraram um pedido só, de lá, com a
 /// nanda (que só aparece nas antigas) junto com quem a primeira página trouxe.
 fn oneBatch(_: *App) bool {
     return load(&gw.sent.member_large) == big_step + 1 and load(&gw.sent.member_large_first_n) >= 2 and load(&gw.sent.member_refused) == refused0;
@@ -164,7 +181,7 @@ fn geralLoaded(app: *App) bool {
     return loaded(app, big_geral) and load(&gw.sent.member_pages) > pages_step;
 }
 /// Outro canal do mesmo servidor, aberto e rolado na mesma janela: a página antiga dele
-/// traz alguém que ninguém pediu (o gustavo), e mesmo com o lote já fechado (mais de 1 s
+/// traz alguém que ninguém pediu (o gustavo), e mesmo com o lote já fechado (mais de 2 s
 /// depois) o pedido dele espera a janela; nenhum op 8 novo de lá.
 fn geralHeld(app: *App) bool {
     const in_window = gw.monoMs() - @as(i64, @intCast(batch_at)) < 30_000;
@@ -193,6 +210,9 @@ fn newSession(app: *App) void {
     push(app, .{ .ready = .{ .me = app.store.me, .users = users, .guilds = guilds, .channels = channels, .voice = &.{} } });
     push(app, .{ .status = .ready });
 }
+fn noReloadYet(_: *App) bool {
+    return load(&gw.sent.history_refetches) == refetch0;
+}
 fn activeOnly(_: *App) bool {
     return tabs_open >= 2 and load(&gw.sent.member_fetches) == fetches0 + 1;
 }
@@ -203,10 +223,12 @@ fn allClean(_: *App) bool {
 
 pub const ops = [_]Op{
     s("op 8: DM e grupo"),
+    .{ .expect = .{ .name = "as abas do começo carregaram e o op 8 delas já saiu", .check = settled, .timeout_ms = 8000 } },
     run(start),
     expect("a DM abre", dmLoaded),
     run(openGroup),
     expect("o grupo abre; nenhuma página de DM ou grupo pediu membros", groupNoAsk),
+    expect("e nenhuma aba pediu a última página de novo", noReload),
     s("op 8: abrir e rolar depressa"),
     run(openBig),
     expect("o canal do servidor grande abre", bigLoaded),
@@ -235,9 +257,11 @@ pub const ops = [_]Op{
     expect("outro canal do mesmo servidor", geralLoaded),
     run(older),
     expect("uma página antiga dele", olderDone),
-    .{ .wait = 1500 },
+    // Mais que o lote (2 s): sem a janela por servidor, o pedido já teria saído.
+    .{ .wait = 2500 },
     expect("também dentro da janela: quem é novo espera, e nenhum op 8 novo de lá", geralHeld),
     s("op 8: sessão nova"),
+    expect("até aqui, nenhum canal pediu a última página duas vezes", noReloadYet),
     run(newSession),
     // Espera as abas pedirem e confere a conta exata (não o momento em que ela passa por 1).
     .{ .wait = 800 },

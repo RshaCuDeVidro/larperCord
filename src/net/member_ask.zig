@@ -26,8 +26,8 @@ pub const Request = struct {
     }
 };
 
-/// Teto do que o Asker lembra: passando, quem chama esquece tudo menos quem está num
-/// op 8 ainda sem resposta (no pior caso alguém é pedido de novo, no ritmo da fila).
+/// Teto do que o Asker lembra: passando, o op 8 para na sessão (limpar faria pedir de
+/// novo quem já foi respondido).
 pub const max_known = 200_000;
 
 pub const Asker = struct {
@@ -65,11 +65,6 @@ pub const Asker = struct {
     /// Passou do teto (`max_known`)?
     pub fn full(a: *const Asker) bool {
         return a.known.count() >= max_known;
-    }
-
-    /// Quem está num pedido que ainda vai sair ou espera resposta continua marcado.
-    pub fn mark(a: *Asker, gpa: std.mem.Allocator, r: *const Request) void {
-        for (r.slice()) |uid| a.known.put(gpa, .{ r.guild, uid }, {}) catch {};
     }
 
     /// Um pedido que não vai sair (a fila cheia, a sessão nova): quem estava nele pode
@@ -137,14 +132,20 @@ pub fn limited(d: Value) Limited {
     return .{
         .guild = j.id(j.get(meta, "guild_id")) orelse 0,
         .seq = if (j.str(j.get(meta, "nonce"))) |n| nonceSeq(n) else null,
-        .wait_ms = @intFromFloat(std.math.clamp(secs, 0, 600) * 1000),
+        // (Sem teto de 10 min: um retry_after enorme acaba com o op 8 daquele servidor,
+        // net/gw_budget.zig `holdMembers`, em vez de virar uma tentativa antes da hora.)
+        .wait_ms = @intFromFloat(std.math.clamp(secs, 0, 86_400) * 1000),
     };
 }
 
-/// O pedido recusado entre os que saíram: pelo nonce; sem ele (ou de um pedido que já
-/// saiu do anel), o mais novo daquele servidor. null = não dá para saber.
+/// O pedido recusado entre os que saíram: pelo nonce; sem nonce, o mais novo daquele
+/// servidor. Com o nosso nonce e o pedido fora do anel (recusa repetida, vaga reusada),
+/// nenhum: o mais novo do servidor seria outro pedido. null = não dá para saber.
 pub fn pickSent(ring: []Sent, lim: Limited) ?*Sent {
-    if (lim.seq) |seq| for (ring) |*x| if (x.req.guild != 0 and x.seq == seq) return x;
+    if (lim.seq) |seq| {
+        for (ring) |*x| if (x.req.guild != 0 and x.seq == seq) return x;
+        return null;
+    }
     if (lim.guild == 0) return null;
     var pick: ?*Sent = null;
     for (ring) |*x| if (x.req.guild == lim.guild) {
@@ -248,10 +249,13 @@ test "RATE_LIMITED: com nonce, sem nonce, sem retry_after, sem servidor" {
     try std.testing.expect(l2.seq == null);
     try std.testing.expectEqual(@as(i64, 3000), l2.wait_ms);
     try std.testing.expectEqual(@as(Id, 30), pickSent(&ring, l2).?.req.ids[0]);
-    // Nonce que já saiu do anel: também cai no mais novo do servidor.
+    // Nosso nonce, mas o pedido já saiu do anel: nenhum (o mais novo do servidor é outro).
     const l3 = limited(try parse(a, "{\"opcode\":8,\"meta\":{\"guild_id\":\"6\",\"nonce\":\"m1\"}}"));
     try std.testing.expectEqual(@as(i64, 0), l3.wait_ms);
-    try std.testing.expectEqual(@as(Id, 20), pickSent(&ring, l3).?.req.ids[0]);
+    try std.testing.expect(pickSent(&ring, l3) == null);
+    // retry_after de uma hora fica uma hora (quem decide desistir é a fila).
+    const big = limited(try parse(a, "{\"opcode\":8,\"retry_after\":3600,\"meta\":{\"guild_id\":\"6\"}}"));
+    try std.testing.expectEqual(@as(i64, 3_600_000), big.wait_ms);
     // Sem servidor e sem nonce: ninguém (a fila segura todos).
     const l4 = limited(try parse(a, "{\"opcode\":8}"));
     try std.testing.expectEqual(@as(Id, 0), l4.guild);
@@ -261,15 +265,26 @@ test "RATE_LIMITED: com nonce, sem nonce, sem retry_after, sem servidor" {
     try std.testing.expectEqual(@as(Id, 30), pickSent(&ring, l2).?.req.ids[0]);
 }
 
-test "teto do Asker: esquece tudo menos quem espera resposta" {
+/// Os pedidos que saíram e não vão mais ter resposta (sessão nova, ou um RESUMED depois
+/// de a conexão cair logo atrás deles): quem estava neles volta a poder ser pedido, e o
+/// anel esvazia.
+pub fn releaseSent(a: *Asker, ring: []Sent) void {
+    for (ring) |*x| if (x.req.guild != 0) {
+        a.unmark(&x.req);
+        x.req.guild = 0;
+    };
+}
+
+test "pedidos sem resposta voltam ao Asker e o anel esvazia" {
     const gpa = std.testing.allocator;
     var a: Asker = .{};
     defer a.deinit(gpa);
-    const pending = req(5, 100, 2);
-    _ = a.page(gpa, 5, &.{ 100, 101, 102 });
+    const r = a.page(gpa, 5, &.{ 100, 101 }).?;
+    var ring: [2]Sent = @splat(.{});
+    ring[0] = .{ .seq = 1, .req = r };
+    try std.testing.expect(a.page(gpa, 5, &.{ 100, 101 }) == null);
+    releaseSent(&a, &ring);
+    try std.testing.expectEqual(@as(Id, 0), ring[0].req.guild);
+    try std.testing.expectEqualSlices(Id, &.{ 100, 101 }, a.page(gpa, 5, &.{ 100, 101 }).?.slice());
     try std.testing.expect(!a.full());
-    // Como o gateway faz quando passa do teto.
-    a.known.clearRetainingCapacity();
-    a.mark(gpa, &pending);
-    try std.testing.expectEqualSlices(Id, &.{102}, a.page(gpa, 5, &.{ 100, 101, 102 }).?.slice());
 }

@@ -747,8 +747,12 @@ pub const Gateway = struct {
                 if (!g.writeWs(p)) return false;
                 // A janela conta do fim da escrita (o writeWs pode esperar o socket).
                 const sent_at = monoMs();
-                g.outbox.hold(r.guild, sent_at + gw_budget.members_window_ms, sent_at);
-                g.members_sent[seq % g.members_sent.len] = .{ .seq = seq, .req = r };
+                _ = g.outbox.hold(r.guild, sent_at + gw_budget.members_window_ms, sent_at);
+                // A vaga ainda tinha um pedido sem resposta: quem estava nele pode ser
+                // pedido de novo (não fica marcado para sempre).
+                const slot = &g.members_sent[seq % g.members_sent.len];
+                if (slot.req.guild != 0) g.members_ask.unmark(&slot.req);
+                slot.* = .{ .seq = seq, .req = r };
                 g.members_seq +%= 1;
                 return true;
             },
@@ -1314,6 +1318,9 @@ pub const Gateway = struct {
             return;
         }
         if (std.mem.eql(u8, t, "RESUMED")) {
+            // Um op 8 escrito logo antes da queda pode não ter chegado: quem estava nos
+            // pedidos sem resposta volta a poder ser pedido (no ritmo da fila).
+            member_ask.releaseSent(&g.members_ask, &g.members_sent);
             // O gateway reenviou o que perdemos; o estado local continua válido. O op 4
             // escrito pouco antes da queda que não teve resposta nesses eventos se perdeu:
             // vai de novo, antes do que ainda espera na fila.
@@ -1415,8 +1422,8 @@ pub const Gateway = struct {
             if (j.get(d, "unavailable")) |u| if (u == .bool and u.bool) return;
             if (j.id(j.get(d, "id"))) |id| {
                 g.faces.forgetGuild(id);
-                // O op 8 de lá sai da fila e da espera, e um RATE_LIMITED atrasado não o
-                // traz de volta.
+                // O op 8 de lá sai da fila (a espera do servidor fica: o limite é por
+                // sessão), e um RATE_LIMITED atrasado não o traz de volta.
                 g.members_ask.forgetGuild(id);
                 g.outbox.forgetMembers(id);
                 for (&g.members_sent) |*x| if (x.req.guild == id) {
@@ -1644,10 +1651,12 @@ pub const Gateway = struct {
             return;
         }
         if (std.mem.eql(u8, t, "GUILD_MEMBERS_CHUNK")) {
-            // Respondido: um RATE_LIMITED atrasado não manda este pedido de novo.
+            // Respondido: um RATE_LIMITED atrasado não manda este pedido de novo, e as
+            // recusas seguidas daquele servidor recomeçam.
             if (j.str(j.get(d, "nonce"))) |nonce| if (member_ask.nonceSeq(nonce)) |seq| for (&g.members_sent) |*x| if (x.seq == seq) {
                 x.req.guild = 0;
             };
+            if (j.id(j.get(d, "guild_id"))) |gid| g.outbox.membersAnswered(gid);
             g.ingestMembers(j.id(j.get(d, "guild_id")) orelse 0, d);
             return;
         }
@@ -2818,10 +2827,7 @@ pub const Gateway = struct {
         // não saiu volta a poder ser pedido.
         for (g.outbox.members[0..g.outbox.members_n]) |*w| g.members_ask.unmark(&w.req);
         // O que saiu na sessão velha e não teve resposta não vai ter mais.
-        for (&g.members_sent) |*x| if (x.req.guild != 0) {
-            g.members_ask.unmark(&x.req);
-            x.req.guild = 0;
-        };
+        member_ask.releaseSent(&g.members_ask, &g.members_sent);
         g.outbox.forgetPending();
         g.voice_unconfirmed = null;
         // O pedido de voz pode ter chegado antes do READY; agora o gateway
@@ -4810,13 +4816,9 @@ pub const Gateway = struct {
             var authors: [member_ask.max_ids]Id = undefined;
             const n = @min(items.len, authors.len);
             for (items[0..n], authors[0..n]) |m, *a| a.* = user_json.authorId(m);
-            // Passou do teto: esquece tudo menos quem está num op 8 ainda sem resposta.
-            if (g.members_ask.full()) {
-                g.members_ask.known.clearRetainingCapacity();
-                for (g.outbox.members[0..g.outbox.members_n]) |*w| g.members_ask.mark(alloc, &w.req);
-                for (&g.members_sent) |*x| if (x.req.guild != 0) g.members_ask.mark(alloc, &x.req);
-            }
-            if (g.members_ask.page(alloc, members, authors[0..n])) |r| g.queueMembers(r);
+            // Passou do teto do Asker: o op 8 para na sessão (limpar faria pedir de novo
+            // quem já foi respondido).
+            if (!g.members_ask.full()) if (g.members_ask.page(alloc, members, authors[0..n])) |r| g.queueMembers(r);
         }
     }
 };
