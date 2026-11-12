@@ -233,7 +233,22 @@ pub const App = struct {
 
         // O fontconfig se prepara enquanto a janela abre (ver fc_warm.zig).
         const fc_warm = @import("platform/fc_warm.zig").start();
-        const win = platform.Window.init("larperCord", 1280, 800);
+        // O renderizador escolhido vem antes do resto das configurações (só ele importa
+        // para abrir a janela).
+        var rbuf: [32]u8 = undefined;
+        var rz: [33]u8 = @splat(0);
+        const wanted = blk: {
+            var pbuf: [512]u8 = undefined;
+            const path = settingsPath(&pbuf) orelse break :blk null;
+            var size: usize = 0;
+            const data = c.SDL_LoadFile(path.ptr, &size) orelse break :blk null;
+            defer c.SDL_free(data);
+            const name = settings_state.peekRenderer(gpa, @as([*]const u8, @ptrCast(data))[0..size], &rbuf);
+            if (name.len == 0) break :blk null;
+            @memcpy(rz[0..name.len], name);
+            break :blk @as([*:0]const u8, @ptrCast(&rz));
+        };
+        const win = platform.Window.init("larperCord", 1280, 800, wanted);
         @import("platform/fc_warm.zig").join(fc_warm);
         app.win = try win;
         wake_type_global = app.win.wake_type;
@@ -1094,6 +1109,8 @@ pub const App = struct {
                 // `theme-options "terminal" crt=#false ascii=#true`
                 const name = (n.arg(0) orelse continue).asString() orelse continue;
                 for (n.props) |p| if (p.value.asBool()) |v| app.themes.choose(name, p.key, v);
+            } else if (app.st.teclas.applyNode(n)) {
+                // `keybind "paleta" "Ctrl+J"` (ui/atalhos.zig).
             } else if (app.st.volumes.applyNode(app.gpa, n)) {
                 // `voice-volume "1234" 0.8` e `voice-mute "1234"` (core/volumes.zig).
             } else if (app.st.filtros.applyNode(app.gpa, n, now())) {
@@ -1153,6 +1170,7 @@ pub const App = struct {
         defer out.deinit(app.gpa);
         settings_state.write(&app.st.settings, app.themes.name(), &out, app.gpa) catch return;
         app.st.volumes.write(&out, app.gpa) catch return;
+        app.st.teclas.write(&out, app.gpa) catch return;
         app.st.filtros.save = false;
         app.st.filtros.write(&out, app.gpa) catch return;
         var it = app.themes.choices.iterator();
