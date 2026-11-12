@@ -58,7 +58,7 @@ pub fn profile(ctx: *d.Ctx, dl: *c.ImDrawList, x: f32, y: *f32, wd: f32) void {
     // O perfil (pronomes, bio) só é pedido quando a página abre.
     // O global (sem servidor): é ele que esta página mostra e grava.
     ctx.act(.{ .want_profile = .{ .user = me, .guild = 0 } });
-    const pf = ctx.store.profiles.get(me);
+    const pf = ctx.store.profile(me, 0);
     if (seeded_user != me) {
         seeded_user = me;
         seeded_profile = false;

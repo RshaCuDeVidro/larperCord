@@ -112,7 +112,8 @@ fn postMessages(app: *App) void {
     first = types.makeSnowflake(now, 0x3e001);
     second = types.makeSnowflake(now, 0x3e002);
     push(app, .{ .message_create = .{ .id = first, .channel = setups, .author = ana, .timestamp = @divTrunc(now, 1000), .content = a.dupe(u8, "rice novo, o que acham?") catch return } });
-    push(app, .{ .message_create = .{ .id = second, .channel = setups, .author = 1007, .timestamp = @divTrunc(now, 1000), .content = a.dupe(u8, "<@1001> ficou lindo!") catch return, .reply_to = first } });
+    // Comprida o bastante para que um apelido bem maior quebre a linha (ver `renamed`).
+    push(app, .{ .message_create = .{ .id = second, .channel = setups, .author = 1007, .timestamp = @divTrunc(now, 1000), .content = a.dupe(u8, "<@1001> ficou lindo, me passa esse tema depois por favor") catch return, .reply_to = first } });
 }
 fn authorShown(_: *App) bool {
     const r = find("msg:{d}", .{first}) orelse return false;
@@ -147,7 +148,7 @@ fn cardShown(_: *App) bool {
 /// Na tela: a bio e o banner do perfil do servidor (e os pronomes de lá no Store, à
 /// parte dos globais).
 fn cardServerProfile(app: *App) bool {
-    const p = app.store.profiles.get(ana) orelse return false;
+    const p = app.store.profile(ana, g0) orelse return false;
     return p.guild == g0 and std.mem.eql(u8, p.guild_pronouns, "ela/elu") and !std.mem.eql(u8, p.pronouns, "ela/elu") and
         qa.find("profile-bio-srv") != null and qa.find("profile-banner-srv") != null;
 }
@@ -188,7 +189,7 @@ fn voiceList1(app: *App) bool {
 }
 fn cardGlobal(app: *App) bool {
     const av = qa.find("profile-avatar") orelse return false;
-    const p = app.store.profiles.get(ana) orelse return false;
+    const p = app.store.profile(ana, g1) orelse return false;
     return named("card", ana, "ana.exe") and find("nome:global:{d}:ana.exe", .{ana}) == null and !serverAvatarIn(ana, av) and
         p.guild == g1 and qa.find("profile-bio-srv") == null and qa.find("profile-banner-srv") == null;
 }
@@ -196,7 +197,7 @@ fn cardGlobal(app: *App) bool {
 /// De volta ao primeiro servidor, o cartão pede o perfil de lá de novo (o Store tinha o
 /// do outro servidor).
 fn cardServerAgain(app: *App) bool {
-    const p = app.store.profiles.get(ana) orelse return false;
+    const p = app.store.profile(ana, g0) orelse return false;
     return app.st.guild == g0 and p.guild == g0 and named("card", ana, "Aninha") and qa.find("profile-bio-srv") != null;
 }
 
@@ -237,14 +238,49 @@ fn nickKept(_: *App) bool {
 
 /// O apelido muda com a conversa já medida: a menção na resposta muda junto, e a
 /// mensagem é medida de novo (a menção continua dentro dela).
-const long_nick = "Aninha Comprida";
+/// O apelido novo é bem maior: a menção quebra a linha, e a mensagem precisa ficar
+/// mais alta (medida de novo), com a menção dentro dela.
+const long_nick = "Aninha Comprida da Silva Sauro Mendes Pereira dos Santos";
+var height_before: f32 = 0;
 fn renameAna(app: *App) void {
+    height_before = if (find("msg:{d}", .{second})) |r| r.h else 0;
     push(app, .{ .member_face = .{ .guild = g0, .user = ana, .face = .{ .nick = std.heap.c_allocator.dupe(u8, long_nick) catch return }, .keep_avatar = true } });
 }
 fn renamed(_: *App) bool {
     const r = find("msg:{d}", .{second}) orelse return false;
-    const m = find("nome:mention:{d}:" ++ long_nick, .{ana}) orelse return false;
-    return m.bottom() <= r.bottom() + 1 and namedIn("reply", ana, long_nick, r);
+    // (A marca guarda os 20 primeiros bytes do nome.)
+    const m = find("nome:mention:{d}:" ++ long_nick[0..20], .{ana}) orelse return false;
+    return height_before > 0 and r.h > height_before + 5 and m.bottom() <= r.bottom() + 1 and namedIn("reply", ana, long_nick[0..20], r);
+}
+
+/// Apelido igual ao nome global: o cartão não repete o nome embaixo.
+fn sameAsGlobal(app: *App) void {
+    push(app, .{ .member_face = .{ .guild = g0, .user = ana, .face = .{ .nick = std.heap.c_allocator.dupe(u8, "ana.exe") catch return }, .keep_avatar = true } });
+    app.st.popup = .{ .profile = .{ .user = ana, .x = 420, .y = 200 } };
+}
+fn noRepeat(_: *App) bool {
+    return named("card", ana, "ana.exe") and find("nome:global:{d}:ana.exe", .{ana}) == null;
+}
+fn closeCard(app: *App) void {
+    app.st.popup = .none;
+}
+
+/// O próprio cartão aberto num servidor e Configurações → Minha conta ao mesmo tempo:
+/// cada um pede o seu perfil uma vez (antes, um tirava o do outro e os dois pediam de
+/// novo a cada quadro, uma tempestade de GET /users/@me/profile).
+var fetches_before: u64 = 0;
+fn cardAndAccount(app: *App) void {
+    app.st.popup = .{ .profile = .{ .user = 1000, .x = 420, .y = 200 } };
+    app.st.settings.page = .conta;
+    app.st.settings.open = true;
+    fetches_before = gw.sent.profile_fetches.load(.monotonic);
+}
+fn noStorm(_: *App) bool {
+    return gw.sent.profile_fetches.load(.monotonic) - fetches_before <= 2;
+}
+fn closeAll(app: *App) void {
+    app.st.settings.open = false;
+    app.st.popup = .none;
 }
 fn renameBack(app: *App) void {
     push(app, .{ .member_face = .{ .guild = g0, .user = ana, .face = .{ .nick = std.heap.c_allocator.dupe(u8, "Aninha") catch return }, .keep_avatar = true } });
@@ -297,6 +333,11 @@ pub const ops = [_]Op{
     expect("o apelido muda com a conversa já na tela: a menção e a resposta mudam, e a mensagem é medida de novo", renamed),
     run(renameBack),
     expect("e volta", nameBack),
+    run(sameAsGlobal),
+    expect("apelido igual ao nome global: o cartão não repete o nome", noRepeat),
+    run(closeCard),
+    run(renameBack),
+    expect("e volta de novo", nameBack),
     run(partialUpdate),
     expect("um GUILD_MEMBER_UPDATE sem \"nick\" (ganhou um cargo) não apaga o apelido", nickKept),
     run(replyToFirst),
@@ -350,6 +391,10 @@ pub const ops = [_]Op{
     run(openAccount),
     expect("Configurações → Minha conta mostra os pronomes e a bio globais, não os do servidor", accountGlobal),
     run(closeSettings),
+    run(cardAndAccount),
+    .{ .wait = 1500 },
+    expect("o próprio cartão num servidor e Minha conta abertos juntos: no máximo um pedido de perfil de cada", noStorm),
+    run(closeAll),
     run(openDm),
     expect("abre a DM com a ana", dmOpen),
     run(dmMessage),
@@ -358,8 +403,12 @@ pub const ops = [_]Op{
 
 // --- Cada tema -----------------------------------------------------------------------
 
+/// O que veio antes na bateria pode ter tirado alguém da call (a chamada no grupo leva a
+/// ana): a ana e o kaique voltam para a Call da madrugada antes de conferir.
 fn openGuild0(app: *App) void {
     app.handle(.{ .select_guild = g0 });
+    for ([_]Id{ ana, kaique }) |uid| if (std.mem.indexOfScalar(Id, (app.store.channel(call0) orelse return).voice_members.items, uid) == null)
+        push(app, .{ .voice_state = .{ .channel = call0, .user = uid } });
 }
 /// Nos temas de linha alta os canais de voz ficam abaixo da dobra: rola até eles.
 fn listMark(_: *App, _: []u8) []const u8 {

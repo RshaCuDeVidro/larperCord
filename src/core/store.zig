@@ -336,12 +336,12 @@ pub const Store = struct {
     /// Pastas e ordem dos servidores (vazio = a ordem em que vieram).
     folders: []types.GuildFolder = &.{},
     /// Perfis completos já buscados (e a bio já interpretada).
-    profiles: std.AutoHashMapUnmanaged(Id, types.Profile) = .empty,
+    profiles: std.AutoHashMapUnmanaged([2]Id, types.Profile) = .empty,
     /// Muda quando `profiles` é esvaziado (dá para pedir os perfis de novo).
     profiles_gen: u32 = 0,
-    bios: std.AutoHashMapUnmanaged(Id, []const markdown.Span) = .empty,
+    bios: std.AutoHashMapUnmanaged([2]Id, []const markdown.Span) = .empty,
     /// A bio do perfil do servidor já interpretada (só de quem tem).
-    guild_bios: std.AutoHashMapUnmanaged(Id, []const markdown.Span) = .empty,
+    guild_bios: std.AutoHashMapUnmanaged([2]Id, []const markdown.Span) = .empty,
     /// Atividades de cada um (jogo, música…), da presença; só quem tem alguma.
     activities: std.AutoHashMapUnmanaged(Id, []types.Activity) = .empty,
     /// Até quando cada pessoa conta como "falando" (o gateway de voz manda
@@ -1730,15 +1730,18 @@ pub const Store = struct {
                     while (gbit.next()) |b| s.gpa.free(b.*);
                     s.guild_bios.clearRetainingCapacity();
                 }
-                const gop = try s.profiles.getOrPut(s.gpa, pr.user);
+                // Um perfil por pessoa e servidor do pedido (0 = o global): o cartão em
+                // dois servidores e Minha conta não pedem um por cima do outro.
+                const key: [2]Id = .{ pr.user, pr.profile.guild };
+                const gop = try s.profiles.getOrPut(s.gpa, key);
                 if (gop.found_existing) freeProfile(gop.value_ptr.*);
                 gop.value_ptr.* = pr.profile;
                 const spans = try markdown.parse(s.gpa, pr.profile.bio);
-                const bg = try s.bios.getOrPut(s.gpa, pr.user);
+                const bg = try s.bios.getOrPut(s.gpa, key);
                 if (bg.found_existing) s.gpa.free(bg.value_ptr.*);
                 bg.value_ptr.* = spans;
-                if (s.guild_bios.fetchRemove(pr.user)) |kv| s.gpa.free(kv.value);
-                if (pr.profile.guild_bio.len > 0) try s.guild_bios.put(s.gpa, pr.user, try markdown.parse(s.gpa, pr.profile.guild_bio));
+                if (s.guild_bios.fetchRemove(key)) |kv| s.gpa.free(kv.value);
+                if (pr.profile.guild_bio.len > 0) try s.guild_bios.put(s.gpa, key, try markdown.parse(s.gpa, pr.profile.guild_bio));
             },
             .relationship => |r| {
                 if (r.kind == .none) {
@@ -2009,6 +2012,18 @@ pub const Store = struct {
     pub fn nameIn(s: *const Store, guild_id: Id, user_id: Id) ?[]const u8 {
         if (s.face(guild_id, user_id)) |f| if (f.nick) |n| return n;
         return if (s.users.getPtr(user_id)) |u| u.name else null;
+    }
+
+    /// O perfil de alguém como veio no pedido com o servidor `guild` (0 = o global).
+    pub fn profile(s: *const Store, user_id: Id, guild_id: Id) ?types.Profile {
+        return s.profiles.get(.{ user_id, guild_id });
+    }
+
+    /// Já veio algum perfil desta pessoa (de qualquer servidor)?
+    pub fn hasProfile(s: *const Store, user_id: Id) bool {
+        var it = s.profiles.keyIterator();
+        while (it.next()) |k| if (k[0] == user_id) return true;
+        return false;
     }
 
     /// A geração dos apelidos de um servidor (entra na chave da medida das mensagens).

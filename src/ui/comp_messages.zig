@@ -61,8 +61,9 @@ const Geo = struct {
     prefix_w: f32 = 0,
     bubble_max: f32 = 0,
     /// Servidor da conversa (0 = DM ou grupo): nomes, fotos e menções com o
-    /// perfil de lá.
+    /// perfil de lá, e a geração dos apelidos de lá (lida uma vez por quadro).
     guild: Id = 0,
+    nick_gen: u32 = 0,
 };
 
 const flag_group: u8 = 1;
@@ -196,7 +197,7 @@ fn measure(ctx: *d.Ctx, g: Geo, m: *StoredMessage, flags: u8) f32 {
     const deco_gen: u32 = if (decoIndex(false)) |dx| dx.layout_gen else 0;
     // Um apelido do servidor que mudou muda a largura da menção a essa pessoa (só as
     // mensagens de lá são medidas de novo).
-    const key: u32 = (@as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19)) ^ (ctx.store.nickGen(g.guild) *% 0x9E3779B1);
+    const key: u32 = (@as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19)) ^ (g.nick_gen *% 0x9E3779B1);
     // Uma entrada nova nesta mensagem (uma tradução que chegou) invalida a medida.
     if (decoIndex(true)) |dx| _ = dx.view(m, ctx.store.me);
     if (m.layout_w == g.wrap and m.layout_variant == key) return m.height;
@@ -394,6 +395,7 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
     if (cs.info.kind == .forum) return forum.page(ctx, n, r, cs, region);
     var g = geometry(ctx, n, r);
     g.guild = cs.info.guild;
+    g.nick_gen = ctx.store.nickGen(cs.info.guild);
     ctx.hot = false;
     vim.page_h = r.h;
 
@@ -1754,16 +1756,18 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
         const bar: d.Rect = .{ .x = r.x + (if (pill) @as(f32, 18) else 0), .y = r.y - 32, .w = r.w - (if (pill) @as(f32, 36) else 0), .h = 34 };
         d.rectFlags(dl, bar, ctx.col(.rail).mix(ctx.col(.elevated), 0.5), @max(ctx.th.radius + 4, 4), c.ImDrawFlags_RoundTop);
         var buf: [128]u8 = undefined;
+        var replying: ?struct { user: Id, name: []const u8 } = null;
         const t = if (st.editing != 0)
             i18n.tr("Editando mensagem  ·  Esc cancela  ·  Enter salva", "Editing message  ·  Esc to cancel  ·  Enter to save")
         else blk: {
-            const f = ctx.store.findAny(st.reply_to);
-            const who = if (f) |x| ctx.store.nameIn(cs.info.guild, x.m.msg.author) else null;
-            if (who) |x| break :blk i18n.fmt(&buf, "Respondendo a {s}", "Replying to {s}", .{x});
-            break :blk i18n.tr("Respondendo a mensagem", "Replying to a message");
+            const f = ctx.store.findAny(st.reply_to) orelse break :blk i18n.tr("Respondendo a mensagem", "Replying to a message");
+            const who = ctx.store.nameIn(cs.info.guild, f.m.msg.author) orelse break :blk i18n.tr("Respondendo a mensagem", "Replying to a message");
+            replying = .{ .user = f.m.msg.author, .name = who };
+            break :blk i18n.fmt(&buf, "Respondendo a {s}", "Replying to {s}", .{who});
         };
         d.text(dl, fam.get(.medium), 13, bar.x + 14, bar.y + 8, ctx.col(.muted), t);
-        if (st.editing == 0) if (ctx.store.findAny(st.reply_to)) |f| w.markName(.{ .x = bar.x + 14, .y = bar.y + 6, .w = d.width(fam.get(.medium), 13, t), .h = 18 }, "replying", f.m.msg.author, ctx.store.nameIn(cs.info.guild, f.m.msg.author) orelse "?");
+        // Para o QA: o nome que entrou no texto desenhado.
+        if (qa.on()) if (replying) |rp| w.markName(.{ .x = bar.x + 14, .y = bar.y + 6, .w = d.width(fam.get(.medium), 13, t), .h = 18 }, "replying", rp.user, rp.name);
         const xr: d.Rect = .{ .x = bar.right() - 30, .y = bar.y + 5, .w = 22, .h = 22 };
         // Respondendo: mencionar ou não quem escreveu (ui/compose_opts.zig).
         if (st.editing == 0) _ = compose_opts.replyToggle(ctx, dl, fam, bar, xr.x - 6);

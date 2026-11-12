@@ -1160,7 +1160,7 @@ fn webhookTagged(_: *App) bool {
 fn webhookCard(app: *App) bool {
     var b: [40]u8 = undefined;
     const k = std.fmt.bufPrint(&b, "bot-tag:{d}", .{gw.webhook_user}) catch return false;
-    return app.st.popup == .profile and qa.find(k) != null and !app.store.profiles.contains(gw.webhook_user);
+    return app.st.popup == .profile and qa.find(k) != null and !app.store.hasProfile(gw.webhook_user);
 }
 fn webhookMenu(app: *App) bool {
     return app.st.popup == .menu and qa.find("menu:Perfil") != null and qa.find("menu:Mensagem") == null;
