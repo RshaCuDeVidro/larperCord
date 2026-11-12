@@ -1640,6 +1640,13 @@ fn searchNoReread(_: *App) bool {
 fn searchOpen(_: *App) bool {
     return search.open and qa.find("search-input") != null;
 }
+fn searchClosedLongAgo(_: *App) void {
+    search.close();
+    search.qaClosedAgo(6 * 60 * 1000);
+}
+fn searchIndexFreed(_: *App) bool {
+    return search.diskBytes() == 0;
+}
 fn searchClosed(_: *App) bool {
     return !search.open;
 }
@@ -2604,6 +2611,8 @@ const ops = [_]Op{
     click("search-result:0"),
     .{ .expect = .{ .name = "clicar no resultado abre o canal e pula até a mensagem", .check = searchJumped, .timeout_ms = 4000 } },
     .{ .run = searchClose },
+    .{ .run = searchClosedLongAgo },
+    expect("fechada há minutos, a busca solta o índice do disco (até 16 MB)", searchIndexFreed),
 } ++ @import("qa_busca.zig").ops ++ @import("qa_convites.zig").ops ++ @import("qa_conta.zig").ops ++ [_]Op{
     ctrl(c.ImGuiKey_Comma),
     click("settings:Privacidade"),
@@ -2884,6 +2893,7 @@ const ops_voice = [_]Op{ s("voz"), expect("pronto", ready) } ++ qa_volume.fora +
     .{ .shot = "voz-mixer-mudo" },
     click("voice-mute:1001"),
     expect("voltar a ouvir", userAudible),
+} ++ qa_volume.dsp ++ [_]Op{
     click("voice-mixer-close"),
     expect("fechar o mixer", notMixerOpen),
 } ++ qa_volume.na_call ++ [_]Op{
@@ -3275,55 +3285,76 @@ const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @impo
 const ops_plugins_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_a;
 const ops_plugins_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_b;
 
+/// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
+/// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
+const suites = [_]struct { []const u8, []const Op }{
+    .{ "tema", &ops_theme },
+    .{ "login", &ops_login },
+    .{ "voice", &ops_voice },
+    .{ "leitura", &ops_leitura },
+    .{ "rtl", &ops_rtl },
+    .{ "voz", &ops_voz },
+    .{ "render", &@import("qa_render.zig").ops },
+    .{ "render-falha", &@import("qa_render.zig").ops_fail },
+    .{ "atalhos", &@import("qa_atalhos.zig").ops },
+    .{ "chamada", &ops_chamada },
+    .{ "lsp", &ops_lsp },
+    .{ "lsp-quit", &ops_lsp_quit },
+    .{ "bandeja", &ops_bandeja },
+    .{ "bandeja-sair", &ops_bandeja_sair },
+    .{ "bandeja-menu", &ops_bandeja_menu },
+    .{ "bandeja-sair-aberta", &ops_bandeja_sair_aberta },
+    .{ "bandeja-desligada", &ops_bandeja_desligada },
+    .{ "bandeja-reinicio", &ops_bandeja_reinicio },
+    .{ "lsp-real", &ops_lsp_real },
+    .{ "paineis", &ops_paineis },
+    .{ "quadros", &ops_quadros },
+    .{ "plugins", &ops_plugins_only },
+    .{ "plugins-tls", &ops_plugins_tls },
+    .{ "extras", &ops_extras },
+    .{ "ffmpeg", &ops_ffmpeg },
+    .{ "escritas", &ops_scripts },
+    .{ "ime", &ops_ime },
+    .{ "busca", &ops_busca },
+    .{ "threads", &ops_threads },
+    .{ "midia", &ops_midia },
+    .{ "convites", &ops_convites },
+    .{ "envio", &ops_envio },
+    .{ "limites", &ops_limites },
+    .{ "conta", &ops_conta },
+    .{ "social", &ops_social },
+    .{ "presenca", &ops_presenca },
+    .{ "moderacao", &ops_moderacao },
+    .{ "entrada", &ops_entrada },
+    .{ "proxy", &ops_proxy },
+    .{ "sem-fontes", &ops_sem_fontes },
+    .{ "interacoes", &ops_interacoes },
+    .{ "cronometro", &ops_cronometro },
+    .{ "perfil", &ops_perfil },
+    .{ "perfil-tema", &ops_perfil_tema },
+    .{ "call", &ops_call },
+    .{ "call-tema", &ops_call_tema },
+    .{ "mascote", &ops_mascote },
+    .{ "plugins-real", &ops_plugins_real },
+    .{ "vitrine", &ops_vitrine },
+    .{ "plugins-a", &ops_plugins_a },
+    .{ "plugins-b", &ops_plugins_b },
+};
+
+/// O nome de cada bateria (tools/qa.sh e quem quiser listar: --qa-list).
+pub fn suiteNames(out: [][]const u8) [][]const u8 {
+    const n = @min(out.len, suites.len);
+    for (suites[0..n], 0..) |e, i| out[i] = e[0];
+    return out[0..n];
+}
+
 fn script() []const Op {
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "tema")) return &ops_theme;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "login")) return &ops_login;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "voice")) return &ops_voice;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "leitura")) return &ops_leitura;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "rtl")) return &ops_rtl;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "voz")) return &ops_voz;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "chamada")) return &ops_chamada;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "lsp")) return &ops_lsp;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "lsp-quit")) return &ops_lsp_quit;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "bandeja")) return &ops_bandeja;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "bandeja-sair")) return &ops_bandeja_sair;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "bandeja-menu")) return &ops_bandeja_menu;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "bandeja-sair-aberta")) return &ops_bandeja_sair_aberta;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "bandeja-desligada")) return &ops_bandeja_desligada;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "bandeja-reinicio")) return &ops_bandeja_reinicio;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "lsp-real")) return &ops_lsp_real;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "paineis")) return &ops_paineis;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "quadros")) return &ops_quadros;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins")) return &ops_plugins_only;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-tls")) return &ops_plugins_tls;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "extras")) return &ops_extras;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "ffmpeg")) return &ops_ffmpeg;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "escritas")) return &ops_scripts;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "ime")) return &ops_ime;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "busca")) return &ops_busca;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "threads")) return &ops_threads;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "midia")) return &ops_midia;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "convites")) return &ops_convites;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "envio")) return &ops_envio;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "limites")) return &ops_limites;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "conta")) return &ops_conta;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "social")) return &ops_social;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "presenca")) return &ops_presenca;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "moderacao")) return &ops_moderacao;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "entrada")) return &ops_entrada;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "proxy")) return &ops_proxy;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "sem-fontes")) return &ops_sem_fontes;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "interacoes")) return &ops_interacoes;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "cronometro")) return &ops_cronometro;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "perfil")) return &ops_perfil;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "perfil-tema")) return &ops_perfil_tema;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "call")) return &ops_call;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "call-tema")) return &ops_call_tema;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "mascote")) return &ops_mascote;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-real")) return &ops_plugins_real;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "vitrine")) return &ops_vitrine;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-a")) return &ops_plugins_a;
-    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-b")) return &ops_plugins_b;
+    if (c.SDL_getenv("QA_SUITE")) |raw| {
+        const name = std.mem.span(raw);
+        for (suites) |e| if (std.mem.eql(u8, e[0], name)) return e[1];
+        std.debug.print("QA_SUITE desconhecida: \"{s}\" (veja --qa-list)\n", .{name});
+        std.process.exit(2);
+    }
     const scene = std.mem.span(c.SDL_getenv("QA_SCENE") orelse return &ops);
     if (std.mem.eql(u8, scene, "ctrl")) return &ops_ctrl;
     if (std.mem.eql(u8, scene, "nome")) return &ops_nome;

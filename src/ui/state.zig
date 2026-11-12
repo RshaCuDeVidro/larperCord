@@ -191,6 +191,8 @@ pub const State = struct {
     call_prev_friends: bool = false,
     /// Volume de cada pessoa na call (0..2) e o "Silenciar para mim", separados.
     volumes: @import("../core/volumes.zig").Volumes = .{},
+    /// Os atalhos trocados em Configurações → Atalhos de teclado (ui/atalhos.zig).
+    teclas: @import("atalhos.zig").Personalizados = .{},
     voice_save_ms: i64 = 0,
     /// Ping da call (heartbeat do gateway de voz); 0 = ainda não mediu.
     voice_ping_ms: u32 = 0,

@@ -4,6 +4,7 @@
 const std = @import("std");
 const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
+const teclas = @import("teclas.zig");
 const layout = @import("../theme/layout.zig");
 const theme_mod = @import("../theme/theme.zig");
 const d = @import("draw.zig");
@@ -187,6 +188,8 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     @import("attachments.zig").viewer(ctx);
     palette.draw(ctx);
     search.draw(ctx);
+    // Fechada há minutos, a busca solta o índice do disco (um teste barato por quadro).
+    _ = search.releaseIdle(false);
     toast(ctx);
     connectionBanner(ctx);
     @import("mascote_pet.zig").draw(ctx);
@@ -273,34 +276,45 @@ fn connectionBanner(ctx: *d.Ctx) void {
 fn shortcuts(ctx: *d.Ctx) void {
     const io = ctx.io;
     const ctrl = io.*.KeyCtrl;
-    const shift = io.*.KeyShift;
     if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and ctx.st.popup == .none and !ctx.st.selection.empty()) ctx.st.selection = .{};
+    // Trocando um atalho em Configurações: a tecla é para a troca, não para disparar.
+    // (Fora da página de atalhos, não há troca nenhuma esperando.)
+    if (!ctx.st.settings.open or ctx.st.settings.page != .atalhos) teclas.capturing = null;
+    if (teclas.busy()) return;
     if (ctrl) zoomKeys(ctx);
-    const alt_enter = io.*.KeyAlt and (c.ImGui_IsKeyPressedEx(c.ImGuiKey_Enter, false) or c.ImGui_IsKeyPressedEx(c.ImGuiKey_KeypadEnter, false));
-    if (c.ImGui_IsKeyPressedEx(c.ImGuiKey_F11, false) or alt_enter) ctx.act(.toggle_fullscreen);
-    if (ctrl and c.ImGui_IsKeyPressed(c.ImGuiKey_Comma)) ctx.act(if (ctx.st.settings.open) .close_settings else .open_settings);
-    if (ctrl and c.ImGui_IsKeyPressed(c.ImGuiKey_K)) {
+    // Os que dá para trocar (Configurações → Atalhos de teclado): a combinação de cada
+    // ação vem de ui/atalhos.zig, a trocada ou a do padrão.
+    const kb = &ctx.st.teclas;
+    const K = struct {
+        fn on(k: *const @import("atalhos.zig").Personalizados, x: *c.ImGuiIO, a: teclas.Acao, repeat: bool) bool {
+            return teclas.pressed(k, x, a, repeat);
+        }
+    };
+    if (K.on(kb, io, .tela_cheia, false)) ctx.act(.toggle_fullscreen);
+    if (K.on(kb, io, .configuracoes, true)) ctx.act(if (ctx.st.settings.open) .close_settings else .open_settings);
+    if (K.on(kb, io, .paleta, true)) {
         palette.commands_first = false;
         ctx.act(if (ctx.st.palette.open) .close_palette else .open_palette);
     }
-    // Ctrl+Shift+P: a mesma paleta, com as ações primeiro.
-    if (ctrl and shift and c.ImGui_IsKeyPressed(c.ImGuiKey_P)) {
+    // A mesma paleta, com as ações primeiro.
+    if (K.on(kb, io, .paleta_acoes, true)) {
         palette.commands_first = true;
         ctx.act(if (ctx.st.palette.open) .close_palette else .open_palette);
     }
     vim.keys(ctx);
-    if (ctrl and c.ImGui_IsKeyPressed(c.ImGuiKey_F) and !ctx.st.settings.open) search.toggle();
-    if (c.ImGui_IsKeyPressed(c.ImGuiKey_F2) or (ctrl and c.ImGui_IsKeyPressed(c.ImGuiKey_T)))
-        ctx.act(.{ .next_theme = if (shift) -1 else 1 });
+    if (K.on(kb, io, .buscar, true) and !ctx.st.settings.open) search.toggle();
+    if (K.on(kb, io, .proximo_tema, true)) ctx.act(.{ .next_theme = 1 });
+    if (K.on(kb, io, .tema_anterior, true)) ctx.act(.{ .next_theme = -1 });
     // Uma troca por toque: segurar não sai trocando de aba em rajada.
-    if (ctrl and c.ImGui_IsKeyPressedEx(c.ImGuiKey_Tab, false)) ctx.act(.{ .next_tab = if (shift) -1 else 1 });
-    if (ctrl and c.ImGui_IsKeyPressed(c.ImGuiKey_W)) ctx.act(.{ .close_tab = ctx.st.tab });
+    if (K.on(kb, io, .proxima_aba, false)) ctx.act(.{ .next_tab = 1 });
+    if (K.on(kb, io, .aba_anterior, false)) ctx.act(.{ .next_tab = -1 });
+    if (K.on(kb, io, .fechar_aba, true)) ctx.act(.{ .close_tab = ctx.st.tab });
     // Caixa de entrada e mensagens salvas (ui/inbox.zig, ui/saved.zig).
-    if (ctrl and !shift and c.ImGui_IsKeyPressed(c.ImGuiKey_I) and !ctx.st.settings.open) ctx.act(.toggle_inbox);
-    if (ctrl and shift and c.ImGui_IsKeyPressed(c.ImGuiKey_S) and !ctx.st.settings.open) ctx.act(.toggle_saved);
-    // Mudo e ensurdecer, os atalhos do Discord (as dicas dos botões mostram).
-    if (ctrl and shift and c.ImGui_IsKeyPressedEx(c.ImGuiKey_M, false)) ctx.act(.toggle_mute);
-    if (ctrl and shift and c.ImGui_IsKeyPressedEx(c.ImGuiKey_D, false)) ctx.act(.toggle_deafen);
+    if (K.on(kb, io, .caixa_entrada, true) and !ctx.st.settings.open) ctx.act(.toggle_inbox);
+    if (K.on(kb, io, .salvas, true) and !ctx.st.settings.open) ctx.act(.toggle_saved);
+    // Mudo e ensurdecer (as dicas dos botões mostram a combinação de agora).
+    if (K.on(kb, io, .mutar, false)) ctx.act(.toggle_mute);
+    if (K.on(kb, io, .ensurdecer, false)) ctx.act(.toggle_deafen);
     if (io.*.KeyAlt) {
         const keys = [_]c_int{ c.ImGuiKey_1, c.ImGuiKey_2, c.ImGuiKey_3, c.ImGuiKey_4, c.ImGuiKey_5, c.ImGuiKey_6, c.ImGuiKey_7, c.ImGuiKey_8, c.ImGuiKey_9 };
         for (keys, 0..) |k, i| if (c.ImGui_IsKeyPressed(k)) ctx.act(.{ .focus_tab = i });

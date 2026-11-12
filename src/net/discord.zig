@@ -111,6 +111,8 @@ pub const Gateway = struct {
     voice_token_len: usize = 0,
     /// Volume individual por pessoa (0..2), mantido entre calls.
     voice_volumes: std.AutoHashMapUnmanaged(Id, f32) = .empty,
+    /// "Tirar ruído" e "Igualar volume" por pessoa (mixer da call), para cada call nova.
+    voice_dsp: std.AutoHashMapUnmanaged(Id, voice_mod.Dsp) = .empty,
     /// O último op 4 escrito, até o VOICE_STATE_UPDATE da conta confirmar que chegou.
     /// Escrito pouco antes de a conexão cair, pode ter se perdido: vai de novo no RESUMED.
     voice_unconfirmed: ?gw_budget.Voice = null,
@@ -227,6 +229,7 @@ pub const Gateway = struct {
         g.role_info.deinit(alloc);
         g.faces.deinit(alloc);
         g.voice_volumes.deinit(alloc);
+        g.voice_dsp.deinit(alloc);
         g.acks.deinit(alloc);
         g.conta.deinit();
         for (g.fav_batch.items) |f| freeCommand(.{ .gif_favorite = f });
@@ -3698,6 +3701,8 @@ pub const Gateway = struct {
         );
         var it = g.voice_volumes.iterator();
         while (it.next()) |kv| vc.setVolume(kv.key_ptr.*, kv.value_ptr.*);
+        var dit = g.voice_dsp.iterator();
+        while (dit.next()) |kv| vc.setDsp(kv.key_ptr.*, kv.value_ptr.*);
         vc.start() catch {
             vc.deinit();
             alloc.destroy(vc);
@@ -4441,6 +4446,11 @@ pub const Gateway = struct {
             .voice_volume => |v| {
                 g.voice_volumes.put(alloc, v.user, std.math.clamp(v.volume, 0, 2)) catch {};
                 if (g.voice) |vc| vc.setVolume(v.user, v.volume);
+            },
+            .voice_dsp => |v| {
+                const dsp: voice_mod.Dsp = .{ .denoise = v.denoise, .level = v.level };
+                if (dsp.denoise or dsp.level) g.voice_dsp.put(alloc, v.user, dsp) catch {} else _ = g.voice_dsp.remove(v.user);
+                if (g.voice) |vc| vc.setDsp(v.user, dsp);
             },
             .call_ring => |ch| {
                 const path = std.fmt.bufPrint(&path_buf, "/channels/{d}/call/ring", .{ch}) catch return;

@@ -7,6 +7,11 @@
 //!     voice-volumes 2
 //!     voice-volume "1234" 0.8
 //!     voice-mute "1234"
+//!     voice-denoise "1234"
+//!     voice-level "1234"
+//!
+//! `voice-denoise` (tirar ruído) e `voice-level` (igualar volume) são escolhas por
+//! pessoa no mixer, desligadas de começo: só quem aparece nessas linhas tem.
 //!
 //! Até a 0.6.3 silenciar era só o volume em zero, e o arquivo não tinha a linha
 //! `voice-volumes 2`: sem ela, um volume zero vira "Silenciar para mim" com o volume
@@ -20,12 +25,17 @@ pub const Volumes = struct {
     level: std.AutoHashMapUnmanaged(Id, f32) = .empty,
     /// Silenciados só para nós.
     muted: std.AutoHashMapUnmanaged(Id, void) = .empty,
+    /// Com "Tirar ruído" e com "Igualar volume" (mixer da call).
+    denoise: std.AutoHashMapUnmanaged(Id, void) = .empty,
+    leveled: std.AutoHashMapUnmanaged(Id, void) = .empty,
     /// O arquivo é desta versão (a linha `voice-volumes 2` vem antes das outras).
     v2: bool = false,
 
     pub fn deinit(v: *Volumes, gpa: std.mem.Allocator) void {
         v.level.deinit(gpa);
         v.muted.deinit(gpa);
+        v.denoise.deinit(gpa);
+        v.leveled.deinit(gpa);
     }
 
     /// O volume guardado (o que o controle mostra), silenciado ou não.
@@ -50,6 +60,22 @@ pub const Volumes = struct {
         if (on) v.muted.put(gpa, uid, {}) catch {} else _ = v.muted.remove(uid);
     }
 
+    pub fn denoiseOn(v: *const Volumes, uid: Id) bool {
+        return v.denoise.contains(uid);
+    }
+
+    pub fn levelOn(v: *const Volumes, uid: Id) bool {
+        return v.leveled.contains(uid);
+    }
+
+    pub fn setDenoise(v: *Volumes, gpa: std.mem.Allocator, uid: Id, on: bool) void {
+        if (on) v.denoise.put(gpa, uid, {}) catch {} else _ = v.denoise.remove(uid);
+    }
+
+    pub fn setLevel(v: *Volumes, gpa: std.mem.Allocator, uid: Id, on: bool) void {
+        if (on) v.leveled.put(gpa, uid, {}) catch {} else _ = v.leveled.remove(uid);
+    }
+
     /// Escreve as linhas do settings.kdl.
     pub fn write(v: *const Volumes, out: *std.ArrayList(u8), gpa: std.mem.Allocator) !void {
         try out.appendSlice(gpa, "voice-volumes 2\n");
@@ -57,6 +83,10 @@ pub const Volumes = struct {
         while (it.next()) |e| try out.print(gpa, "voice-volume \"{d}\" {d:.3}\n", .{ e.key_ptr.*, e.value_ptr.* });
         var mit = v.muted.keyIterator();
         while (mit.next()) |uid| try out.print(gpa, "voice-mute \"{d}\"\n", .{uid.*});
+        var dit = v.denoise.keyIterator();
+        while (dit.next()) |uid| try out.print(gpa, "voice-denoise \"{d}\"\n", .{uid.*});
+        var lit = v.leveled.keyIterator();
+        while (lit.next()) |uid| try out.print(gpa, "voice-level \"{d}\"\n", .{uid.*});
     }
 
     /// Lê um nó do settings.kdl. Retorna false se não é nosso.
@@ -66,9 +96,19 @@ pub const Volumes = struct {
             return true;
         }
         const is_volume = std.mem.eql(u8, n.name, "voice-volume");
-        if (!is_volume and !std.mem.eql(u8, n.name, "voice-mute")) return false;
+        const is_denoise = std.mem.eql(u8, n.name, "voice-denoise");
+        const is_level = std.mem.eql(u8, n.name, "voice-level");
+        if (!is_volume and !is_denoise and !is_level and !std.mem.eql(u8, n.name, "voice-mute")) return false;
         const sid = (n.arg(0) orelse return true).asString() orelse return true;
         const uid = std.fmt.parseInt(Id, sid, 10) catch return true;
+        if (is_denoise) {
+            v.setDenoise(gpa, uid, true);
+            return true;
+        }
+        if (is_level) {
+            v.setLevel(gpa, uid, true);
+            return true;
+        }
         if (is_volume) {
             const value = (n.arg(1) orelse return true).asNumber() orelse return true;
             if (!v.v2 and value <= 0.0005) {
@@ -144,4 +184,29 @@ test "arquivo de até a 0.6.3: volume zero vira silenciado com o volume normal; 
     for (nodes) |*n| try std.testing.expect(c.applyNode(gpa, n));
     try std.testing.expect(!c.isMuted(10));
     try std.testing.expectEqual(@as(f32, 0), c.gain(10));
+}
+
+test "tirar ruído e igualar volume: desligados de começo, por pessoa, e vão e voltam pelo settings.kdl" {
+    const gpa = std.testing.allocator;
+    var v: Volumes = .{};
+    defer v.deinit(gpa);
+    try std.testing.expect(!v.denoiseOn(5) and !v.levelOn(5));
+    v.setDenoise(gpa, 5, true);
+    v.setLevel(gpa, 6, true);
+    v.setLevel(gpa, 7, true);
+    v.setLevel(gpa, 7, false);
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    try v.write(&out, gpa);
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const nodes = try kdl.parse(arena.allocator(), out.items, null);
+    var back: Volumes = .{};
+    defer back.deinit(gpa);
+    for (nodes) |*n| try std.testing.expect(back.applyNode(gpa, n));
+    try std.testing.expect(back.denoiseOn(5) and !back.levelOn(5));
+    try std.testing.expect(back.levelOn(6) and !back.denoiseOn(6));
+    try std.testing.expect(!back.levelOn(7));
+    // O volume de quem só tem as escolhas novas continua o normal.
+    try std.testing.expectEqual(@as(f32, 1), back.gain(5));
 }

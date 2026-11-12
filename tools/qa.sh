@@ -47,6 +47,13 @@ QA_SUITE=perfil run "perfil do servidor" $bin --qa --theme classico
 # Tela da call: a grade com cada um, os botões, ir e voltar, muita gente e a DM.
 QA_SUITE=call run "tela da call" $bin --qa --theme classico
 QA_SUITE=mascote run "mascote" $bin --qa --theme classico
+# Parado não gasta: quadros desenhados com o app à toa (o --stats do demo).
+bash tools/qa_parado.sh "$bin" || total_fail=1
+QA_SUITE=render run "renderizador" $bin --qa --theme classico
+QA_SUITE=atalhos run "atalhos personalizáveis" $bin --qa --theme classico
+# Um settings.kdl que pede um renderizador que não existe: abre no automático e avisa.
+mkdir -p qa-out/render-cfg/larpercord && printf 'settings renderer="naoexiste"\n' > qa-out/render-cfg/larpercord/settings.kdl
+QA_SUITE=render-falha XDG_CONFIG_HOME="$PWD/qa-out/render-cfg" run "renderizador que não abre" $bin --qa --theme classico
 # Fontes reserva (CJK) só quando um texto pede, e o mixer da call: fora da geral.
 QA_SUITE=escritas run "escritas" $bin --qa --theme classico
 # Sem fonte nenhuma no sistema (o fontconfig sem pasta de fontes): abre com a do ImGui.

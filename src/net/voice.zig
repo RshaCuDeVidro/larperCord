@@ -34,6 +34,8 @@ const j = @import("jsonx.zig");
 const call_json = @import("call_json.zig");
 const web = @import("web_client.zig");
 const voz = @import("../core/voz.zig");
+const ruido = @import("../core/ruido.zig");
+const nivel = @import("../core/nivel.zig");
 const voz_audio = @import("voz_audio.zig");
 
 const Id = types.Id;
@@ -75,6 +77,12 @@ pub const Ended = enum(u8) {
     moved,
 };
 
+/// "Tirar ruído" e "Igualar volume" de uma pessoa (mixer da call; desligados de começo).
+pub const Dsp = struct {
+    denoise: bool = false,
+    level: bool = false,
+};
+
 pub const Voice = struct {
     sink: Sink,
     guild: Id = 0,
@@ -94,7 +102,9 @@ pub const Voice = struct {
     thread: ?*c.SDL_Thread = null,
     volume_mutex: ?*c.SDL_Mutex = null,
     volumes: std.AutoHashMapUnmanaged(Id, f32) = .empty,
-    /// Sobe a cada mudança de volume (a thread de voz reaplica os ganhos).
+    /// "Tirar ruído" e "Igualar volume" por pessoa (só quem tem algum ligado).
+    dsp: std.AutoHashMapUnmanaged(Id, Dsp) = .empty,
+    /// Sobe a cada mudança de volume ou de `dsp` (a thread de voz reaplica).
     volumes_gen: std.atomic.Value(u32) = .init(0),
     /// Sem rede: só o microfone e a detecção de voz (a demonstração).
     local: bool = false,
@@ -131,6 +141,7 @@ pub const Voice = struct {
         std.crypto.secureZero(u8, &v.token);
         std.crypto.secureZero(u8, &v.session);
         v.volumes.deinit(alloc);
+        v.dsp.deinit(alloc);
         if (v.volume_mutex) |m| c.SDL_DestroyMutex(m);
     }
 
@@ -144,6 +155,19 @@ pub const Voice = struct {
         defer c.SDL_UnlockMutex(v.volume_mutex);
         v.volumes.put(alloc, user, std.math.clamp(gain, 0, 2)) catch {};
         _ = v.volumes_gen.fetchAdd(1, .release);
+    }
+
+    pub fn setDsp(v: *Voice, user: Id, dsp: Dsp) void {
+        c.SDL_LockMutex(v.volume_mutex);
+        defer c.SDL_UnlockMutex(v.volume_mutex);
+        if (dsp.denoise or dsp.level) v.dsp.put(alloc, user, dsp) catch {} else _ = v.dsp.remove(user);
+        _ = v.volumes_gen.fetchAdd(1, .release);
+    }
+
+    fn dspOf(v: *Voice, user: Id) Dsp {
+        c.SDL_LockMutex(v.volume_mutex);
+        defer c.SDL_UnlockMutex(v.volume_mutex);
+        return v.dsp.get(user) orelse .{};
     }
 
     /// Mudo por nós ou pelo servidor: nada de transmitir (nem abrir o microfone).
@@ -1375,20 +1399,42 @@ const Source = struct {
     /// Só para o registro de depuração: o pico do último quadro e do último salto avisado.
     peak_prev: i32 = 0,
     jump_ms: i64 = 0,
+    /// "Tirar ruído" e "Igualar volume" desta pessoa, e o estado de cada um. O
+    /// supressor só existe (e só gasta) enquanto o "Tirar ruído" está ligado.
+    dsp: Dsp = .{},
+    sup: ruido.Supressor = .{},
+    lev: nivel.Nivelador = .{},
 
     /// Entrega áudio ao stream, sem degrau onde ele não continua de onde parou.
     fn put(s: *Source, st: *c.SDL_AudioStream, pcm: []i16) void {
+        s.filter(pcm);
         s.seam.apply(pcm);
         _ = c.SDL_PutAudioStreamData(st, pcm.ptr, @intCast(pcm.len * @sizeOf(i16)));
+    }
+
+    /// Tirar ruído e igualar volume, de 20 em 20 ms (o que o Opus entrega). Desligados,
+    /// é só um teste. Desligar o "Tirar ruído" ainda passa uns quadros pelo supressor,
+    /// que volta para o som cru sem emenda e depois se solta (core/ruido.zig).
+    fn filter(s: *Source, pcm: []i16) void {
+        if (!s.dsp.denoise and !s.dsp.level and s.sup.state == null) return;
+        var i: usize = 0;
+        while (i + voz.frame_len <= pcm.len) : (i += voz.frame_len) {
+            const chunk = pcm[i..][0..voz.frame_len];
+            if (s.dsp.denoise or s.sup.state != null) _ = s.sup.process(chunk, if (s.dsp.denoise) .rnnoise else .off);
+            if (s.dsp.level) s.lev.process(chunk);
+        }
     }
 
     fn deinit(s: *Source) void {
         c.opus_decoder_destroy(s.dec);
         if (s.stream) |st| c.SDL_DestroyAudioStream(st);
         s.stream = null;
+        s.sup.release();
     }
 
+    /// O volume desta pessoa e as escolhas do mixer (tirar ruído, igualar volume).
     fn applyGain(s: *Source, v: *Voice) void {
+        s.dsp = if (s.user != 0) v.dspOf(s.user) else .{};
         const st = s.stream orelse return;
         _ = c.SDL_SetAudioStreamGain(st, if (s.user != 0) v.volumeOf(s.user) else 1);
     }
