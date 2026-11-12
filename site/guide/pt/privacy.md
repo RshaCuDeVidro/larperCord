@@ -26,6 +26,8 @@ Como o cliente oficial, o app avisa o Discord do que você leu, no máximo uma v
 | Mensagens salvas e anotações | `saved-<conta>.json` | Até 500. Nada vai para o Discord |
 | Palavras de alerta, filtros, pessoas ignoradas | `settings.kdl` | Ninguém é avisado |
 | Registro de mensagens | Local, na tela | Desligado por padrão |
+| Volume, Silenciar para mim, Tirar ruído e Igualar volume de cada pessoa na call | `settings.kdl`, pelo ID da pessoa | Nada vai para o Discord |
+| As reações do mascote ao que você escreve | Calculadas no seu computador enquanto você digita; só os dias da plantinha ficam salvos, no `settings.kdl` | Nada vai pela rede |
 
 No Windows, essas pastas ficam dentro do seu perfil de usuário, que os outros usuários não abrem. A lista completa está em [Configurações e arquivos](page:settings).
 

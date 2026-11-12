@@ -1,6 +1,6 @@
 # Settings and files
 
-Open settings with `Ctrl+,`. Changes apply right away and are saved in `settings.kdl`, in the larperCord folder: `~/.config/larpercord/` on Linux and `%APPDATA%\larpercord\` on Windows.
+Open settings with `Ctrl+,`. Changes apply right away and are saved in `settings.kdl`, in the larperCord folder: `~/.config/larpercord/` on Linux and `%APPDATA%\larpercord\` on Windows. There are 19 pages, in three groups: your user, the app, and larperCord itself.
 
 ## The pages
 
@@ -9,18 +9,24 @@ Open settings with `Ctrl+,`. Changes apply right away and are saved in `settings
 | **My Account** | Account details, your display name, pronouns and About me, and log out |
 | **Privacy** | Typing indicator, Tenor and Giphy animation, streamer mode, message log, keep messages on disk, clear cache, Rich Presence, the warning before joining a server, and a button to the Network page |
 | **Alerts & Filters** | Alert words, word filter, ignored people (on your account or this computer) and focus mode |
-| **Appearance** | Mode (dark, light, follow the system), theme with thumbnails and its options, font scale, compact mode, avatars, 24-hour clock, status ring, accent color, corners, custom theme colors, member list, status bar and resetting panel sizes |
+| **Appearance** | Mode (dark, light, follow the system), theme with thumbnails and its options, text size, interface size (75 to 200%), compact mode, avatars, 24-hour clock, status ring, accent color, corners, custom theme colors, member list, status bar, resetting panel sizes, and the call timer on voice channels with its format |
+| **Mascot** | Terminal or Classic, with a live preview, the opening (Terminal has five, or Shuffle) and **Replay the opening**, the corner mascot, how lively it is, its switches and the little plant. See [The mascot](page:mascot) |
 | **Accessibility** | Reduce motion, role colors, underline links |
 | **Chat** | Autoplay GIFs, images from links, data saver, video, always show spoilers, markdown preview, open at the first unread. **Choose FFmpeg folder…** points the app at a "shared" FFmpeg 7, 8 or 9 you already have. Without FFmpeg, the video section says why it wasn't found, which package to install on Linux, and has a **Download FFmpeg** button on Windows |
-| **Voice** | Microphone and output, volumes, voice activity or push-to-talk, microphone test, filters and a sound for each call event. See [Voice calls](page:voice) |
+| **Voice** | Microphone and output, volumes, voice activity or push-to-talk, microphone test, filters, noise suppression and a sound for each call event. See [Voice calls](page:voice) |
 | **Notifications** | Desktop notifications and taskbar flashing |
-| **Keybinds** | The shortcut list and vim navigation |
-| **Language** | Follow the system, Português (Brasil), English (US) or 日本語 (Japanese) |
+| **Keybinds** | Vim navigation and the shortcut list. Click a changeable shortcut and press the new keys; **Default** puts it back. See [Changing a shortcut](page:shortcuts#changing-a-shortcut) |
+| **Language** | Follow the system, Português (Brasil), English (US), 日本語 (Japanese) or Русский (Russian) |
 | **Network** | The proxy (type, address, port, login and password) and **Use the proxy for everything**. The sign-in screen has the same form under **Connect through a proxy**. See [Proxy](page:privacy#proxy) |
 | **Advanced** | Developer mode (message IDs, "Copy ID"), reload themes on save, close to tray, text weight, the debug log, and how often Discord asked for a captcha or verification |
-| **Performance** | RAM, CPU per frame, idle CPU and messages per channel |
+| **Performance** | Live RAM, CPU per frame, frames skipped because nothing changed, idle CPU and messages per channel; where the memory goes; memory limits for images, each GIF and messages; and the **Renderer** (below) |
+| **Code diagnostics** | A language server that checks the code block you're typing, off by default. See [Code diagnostics](page:lsp) |
 | **Plugins** | A card for each plugin (what it is and what it asks for), on/off, errors, host approvals, its panel, Reload and Install bundled plugins |
-| **About** | Version and what it's built with |
+| **Updates** | The current version, **Check for updates**, **Check when opening**, **Download and install** when there's a new version, and **Restart larperCord** |
+| **What's new** | The changes in each version |
+| **About** | Version and what it's built with. Click the mascot and it reacts |
+
+**Renderer**, in Settings → Performance, is **Automatic** or one of the render backends SDL has on your computer (Vulkan, OpenGL, Direct3D…). It's read before the window opens, so it applies the next time the app starts. If the chosen one doesn't open, the app starts with the automatic one and the page says so. It's handy when one of them misbehaves with your graphics driver. The `LARPER_RENDERER` variable wins over this choice ([Environment variables](page:shortcuts#environment-variables)).
 
 **Close to tray** is on by default: the larperCord icon stays in the system tray from launch until you quit, with **Open larperCord** and **Quit** in its menu even while the window is open, and closing the window keeps the app connected there. Left-clicking the icon brings the window to the front, or hides it to the tray if it's already open in front, and right-clicking opens the menu. Turned off, there's no icon at all and closing the window quits. Windows always has a tray. On Linux it needs a panel with a StatusNotifier tray: without one the switch is greyed out with the reason and closing the window quits. On Linux the icon lives in a small separate process (about 6 MB, with no wake-ups while idle), which comes back on its own if it dies.
 
@@ -51,7 +57,7 @@ In the settings folder:
 
 | File | What it is |
 |---|---|
-| `settings.kdl` | Settings, including per-theme options and colors |
+| `settings.kdl` | Settings, including per-theme options and colors, the shortcuts you changed (`keybind` lines), the renderer, and each person's call volume, Mute for Me, Remove noise and Even out volume (by user ID) |
 | `themes/*.kdl` | Your themes. Create the folder before opening the app, or restart it once (Settings → Updates → Restart larperCord) |
 | `plugins/*.lua` | Your plugins |
 | `plugins.kdl` | Which plugins are off, the hosts you approved, and the side panel |
@@ -81,4 +87,6 @@ Two more, which stay under your home folder even with `XDG_CONFIG_HOME` or `XDG_
 | `~/.config/larpercord/token` | Linux only: optional token file (`chmod 600`), from before multiple accounts |
 | `~/.cache/wal/colors` | Read only: pywal's palette, for themes that use it. On Windows it's read only when `HOME` is set (`%HOME%\.cache\wal\colors`), and changes aren't followed |
 
-To go back to defaults, quit the app and delete `settings.kdl` from the settings folder (`~/.config/larpercord/` on Linux, `%APPDATA%\larpercord\` on Windows). Closing the window isn't enough while the app stays in the tray: use **Quit** in the tray icon's menu.
+On Linux, picking the Classic mascot writes the app menu icon to `~/.local/share/icons/hicolor/128x128/apps/larpercord.png` (under `XDG_DATA_HOME` when it's set), and going back to Terminal puts Terminal there, so the launcher and Wayland taskbars show the mascot you chose.
+
+To go back to defaults, quit the app and delete `settings.kdl` from the settings folder (`~/.config/larpercord/` on Linux, `%APPDATA%\larpercord\` on Windows). Closing the window isn't enough while the app stays in the tray: use **Quit** in the tray icon's menu. To remove the app and everything it saved, see [Uninstall](page:getting-started#uninstall).

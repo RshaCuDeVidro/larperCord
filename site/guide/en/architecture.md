@@ -1,6 +1,6 @@
 # Architecture
 
-About 34,000 lines of Zig on top of a thin C layer. The rule that shapes everything: **the UI never changes data directly**.
+About 135,000 lines of Zig, a sixth of them the automated UI test, on top of a thin C layer. The rule that shapes everything: **the UI never changes data directly**.
 
 ## Data flow
 
@@ -41,6 +41,8 @@ tools/        QA, memory benchmark, screenshots, logo and site generators
 | Theme watcher | Unless disabled | Waits for changes to theme files: inotify on Linux (also pywal's colors), folder change notifications (FindFirstChangeNotification) on Windows (theme folders only) |
 | Video | While playing | One thread downloads, another decodes into a 3-frame ring |
 | Voice | During a call | Voice gateway, UDP, Opus and DAVE |
+
+On Linux, the tray icon isn't a thread: it's a small separate process that speaks the StatusNotifier protocol over D-Bus, about 6 MB with no wake-ups while idle, and it comes back on its own if it dies.
 
 ## Talking to Discord
 

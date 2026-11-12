@@ -65,6 +65,20 @@ After that the app updates itself from Settings → Updates (except the AUR pack
 
 The last row of the table matters if you build from source, below.
 
+## Uninstall
+
+The install scripts also remove the app. This keeps your settings:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.sh | sh -s -- --uninstall
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1))) -Uninstall
+```
+
+With `--purge` on Linux, or `-Purge` on Windows, in place of the uninstall option, it also deletes the settings, the cache, the downloaded FFmpeg, your sounds and the saved accounts: the settings and cache folders, plus each account's entry in the keyring (Linux) or Credential Manager (Windows). It closes larperCord first, so the app can't write its settings back on the way out. On Arch, the AUR package is removed with your package manager, like `pacman -R larpercord-bin`, and the zip or the portable file are just deleted; the settings stay in the folders listed in [Settings and files](page:settings#files-on-disk).
+
 ## Build and run
 
 ```bash

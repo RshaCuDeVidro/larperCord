@@ -1,6 +1,6 @@
 # Status and roadmap
 
-larperCord is a young project: version 0.6.2, with its first commit on November 2, 2026. It's usable, but it isn't complete.
+larperCord is a young project: version 0.6.5, with its first commit on November 2, 2026. It's usable, but it isn't complete.
 
 ## What works today
 
@@ -12,20 +12,23 @@ larperCord is a young project: version 0.6.2, with its first commit on November 
 | Video in chat | **works** | Attachments and direct links. Needs FFmpeg 7, 8 or 9: your distro's on Linux, or the **Download FFmpeg** button in Settings → Chat on Windows |
 | Inbox, saved messages, offline search | **works** | All local, can be turned off and erased |
 | Multiple accounts, proxy, Lua plugins | **works** | |
-| Account settings | **works** | Block, ignore, friend requests, mute and notification levels, status with a duration, custom status, display name, pronouns and About me, synced with your Discord account. The picture and banner are still changed in the official app |
+| Account settings | **works** | Block, ignore, friend requests, mute and notification levels, status with a duration, custom status, display name, pronouns and About me, synced with your Discord account. The picture and banner, and your own server profiles, are still changed in the official app |
+| Server profiles | **works** | Each person's server nickname, picture, bio, pronouns and banner, wherever they appear in that server |
 | Moderation | **works** | Kick, ban, timeout, server mute and deafen, the bans list. Only the actions your role allows appear |
 | Rich Presence | **works** | Off by default |
 | Threads and forums | **works** | Nested threads, forum post lists, creating and editing threads and posts, archived and private ones |
 | Custom emoji, stickers, autocomplete | **works** | Animated too. The picker warns when an emoji needs Nitro, and the GIF picker sends stickers |
-| Arabic, Hebrew and other scripts | partial | They display, and a system font fills in letters any theme lacks. Typed right-to-left text goes left to right in the message box, and scripts that need shaping (Devanagari, Thai…) show their letters without it |
+| Arabic, Hebrew and other scripts | partial | They display in messages and in the message box, and a system font fills in letters any theme lacks. Scripts that need shaping (Devanagari, Bengali, Thai, Khmer…) show their letters one by one, without conjuncts or reordered vowel signs |
+| Languages | **works** | English, Portuguese, Japanese and Russian, one translation file each |
 | Read state, pins, Discord links | **works** | Synced with your other devices |
 | Themes | **works** | 11 built-in, each light and dark, reload on save |
-| Voice | partial | Server voice channels and DM and group calls. E2EE (DAVE), mixer, mute, device picker, push-to-talk, high-pass filter, noise gate and RNNoise noise suppression work. Push-to-talk needs the window focused, and no automated test covers a real call |
+| Voice | partial | Server voice channels and DM and group calls, with the call screen. E2EE (DAVE), the mixer with Remove noise and Even out volume per person, mute, device picker, push-to-talk, high-pass filter, noise gate and RNNoise noise suppression work. On Linux, push-to-talk needs the window focused, and no automated test covers a real call |
 | Permissions | partial | Channels without access get a padlock, voice without permission is blocked, and the message box says why you can't send (no permission, a locked thread, a timeout, slowmode). Those channels still appear, and reactions and the member list don't check permissions |
 | System tray, updates | **works** | The icon stays in the tray while the app runs and closing keeps it there; signed updates from Settings. On Linux the tray needs a StatusNotifier panel |
 | Windows | partial | Windows 10/11 from the same code. Newer than Linux and less used |
 | Notifications | partial | Through `notify-send` on Linux and the tray on Windows. Clicking doesn't open the channel |
-| Accessibility | partial | Font scale, reduced motion, palette and vim navigation. No visible focus and no high contrast |
+| Keyboard shortcuts | **works** | The main ones can be changed in Settings → Keybinds, and vim navigation is optional |
+| Accessibility | partial | Font scale, interface size, reduced motion, palette and vim navigation. No visible focus and no high contrast |
 | First run | partial | Sign-in screen and demo mode, no introduction to the app |
 | Platforms | partial | Linux and Windows. The Linux build needs glibc 2.34 or newer. It's used daily on Arch with Hyprland, and opened in Ubuntu, Debian, Fedora, openSUSE and Arch containers, in demo mode, before each release. The Windows build has only been run in CI and in a sandbox, in demo mode |
 | Joining a server by invite | **works** | From an invite card, a link or a code, with a warning first. Servers with rules or onboarding open them in the app |
@@ -53,6 +56,14 @@ larperCord is a young project: version 0.6.2, with its first commit on November 
 - [x] Account settings synced with Discord: block, ignore, friends, mute, status and profile
 - [x] Arabic and Hebrew, and fonts for any script
 - [x] On the site: a theme builder, a community theme gallery and a demo in the browser
+- [x] Russian interface
+- [x] Push-to-talk from any window, on Windows
+- [x] Call screen, one tile per person, in the theme's style
+- [x] Server profiles: nickname, picture, bio and banner per server
+- [x] Remove noise and Even out volume per person in the mixer
+- [x] Keybinds you can change
+- [x] Typing Arabic and Hebrew in the message box
+- [x] The Terminal mascot, its openings and the corner mascot
 
 **Next**
 
@@ -66,9 +77,9 @@ larperCord is a young project: version 0.6.2, with its first commit on November 
 **To make the app complete**
 
 - [ ] Real permissions: hide what you can't see, disable reactions, filter members
-- [ ] Typing right-to-left text in the message box, and shaping for complex scripts
+- [ ] Shaping for complex scripts (Devanagari, Bengali, Thai, Khmer…)
 - [ ] Native D-Bus notifications with "open conversation"
-- [ ] Voice: a global push-to-talk and an automated call test
+- [ ] Voice: a global push-to-talk on Linux and an automated call test
 - [ ] Accessibility and first run: visible focus, high contrast, a welcome screen
 
 **Themes**

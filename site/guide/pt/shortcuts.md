@@ -1,14 +1,27 @@
 # Atalhos e linha de comando
 
-As mesmas teclas no Linux e no Windows. Não existe versão para macOS, então é sempre `Ctrl`, nunca `Cmd`. Estas tabelas saem de `src/ui/atalhos.zig`, a lista que o próprio app mostra em **Configurações → Atalhos de teclado**, então esta página e o app não ficam diferentes. Essas são as teclas de fábrica: as globais (paleta, busca, configurações, caixa de entrada, salvas, temas, tela cheia, abas, mudo e ensurdecer) dá para trocar lá. Clique numa e aperte as teclas novas; "Padrão" volta.
+As mesmas teclas no Linux e no Windows. Não existe versão para macOS, então é sempre `Ctrl`, nunca `Cmd`. Estas tabelas saem de `src/ui/atalhos.zig`, a lista que o próprio app mostra em **Configurações → Atalhos de teclado**, então esta página e o app não ficam diferentes. Essas são as teclas de fábrica. As marcadas com ✎ (paleta, busca, configurações, caixa de entrada, salvas, temas, tela cheia, abas, mudo e ensurdecer) dá para trocar lá: veja [Trocar um atalho](#trocar-um-atalho).
 
 ## Teclado
 
 {{keys}}
 
+### Trocar um atalho
+
+Em **Configurações → Atalhos de teclado**, clique nas teclas de um atalho marcado com ✎ e aperte a combinação nova. O `Esc` cancela. O app recusa a combinação, e diz o porquê, quando ela:
+
+- já é de outro atalho, que ele diz qual é;
+- já é de algo fixo: selecionar tudo, copiar, recortar, colar, desfazer e refazer, nova linha, o tamanho da interface, `Alt+1…9`, `Esc`, `Alt+F4`, as teclas do vim, e andar ou apagar por palavra na caixa de texto;
+- não tem `Ctrl` nem `Alt` (uma tecla `F` sozinha pode), porque dispararia enquanto você digita;
+- é `Ctrl+Alt` com letra, número ou sinal, que é o AltGr em muitos teclados.
+
+**Padrão** volta o atalho de fábrica. Um atalho trocado tem uma combinação só, guardada no `settings.kdl` numa linha como `keybind "paleta" "Ctrl+J"`. As dicas que citam um atalho, como as dos botões de mudo e de ensurdecer, mostram as teclas de agora.
+
+![Configurações → Atalhos de teclado com a paleta de comandos trocada para Ctrl+J](shot:f-atalhos)
+
 ### Mouse e outras teclas
 
-- **Aperte para falar:** a tecla ou o botão do mouse que você escolher em Configurações → Voz. Só funciona com a janela em foco.
+- **Aperte para falar:** a tecla ou o botão do mouse que você escolher em Configurações → Voz. No Linux, só funciona com a janela em foco. No Windows, funciona também com outra janela em foco, como um jogo, para a maioria das teclas: letras, `F13` a `F24` e os botões laterais do mouse, por exemplo. Configurações → Voz avisa quando a tecla escolhida só funciona com a janela em foco.
 - O **botão direito** funciona em mensagens, usuários, canais e servidores.
 - **Esc** fecha o que estiver por cima: um menu, o visualizador de imagem, a paleta, as configurações.
 - **Zoom:** `Ctrl` com a tecla `=`/`+` ou o `+`, `-` e `0` do teclado numérico. Vai de 75% a 200% e fica salvo.
@@ -32,15 +45,18 @@ larpercord [options]
 | `--theme NAME` | começa com esse tema |
 | `--list-themes` | lista os temas embutidos e sai |
 | `--mode MODE` | `claro` (ou `light`) ou `escuro`, ignorando as suas configurações |
-| `--lang LANG` | `pt` ou `en`, ignorando as suas configurações |
+| `--lang LANG` | `pt`, `en`, `ja` ou `ru`, ignorando as suas configurações |
 | `--demo` | usa os dados de demonstração mesmo com token |
 | `--login` | mostra a tela de login, ignorando o token salvo |
 | `--settings` | abre direto nas configurações |
 | `--no-live` | desliga as mensagens automáticas do modo demonstração |
 | `--shot FILE.png` | salva uma captura de tela quando a tela se acalma e sai |
-| `--stats` | mostra o tempo até o primeiro quadro |
-| `--qa` | roda o teste automático da interface, com capturas de tela em `qa-out/` |
+| `--stats` | imprime a linha do tempo da abertura e o custo de cada quadro |
+| `--qa` | roda o teste automático da interface, com capturas de tela em `qa-out/` (builds de debug, ou com `-Dqa=true`) |
+| `--qa-list` | lista as baterias do QA que o `QA_SUITE` aceita (nos mesmos builds) |
 | `--voice-test GUILD CHANNEL` | entra num canal de voz por 25 s, sempre mudo (precisa de `LARPER_TOKEN`) |
+| `--tls-check URL` | confere se a rede do app funciona neste sistema: um pedido HTTPS ao endereço com as configurações de certificado do app, e se a libcurl tem WebSocket. Imprime o resultado e sai com erro se um dos dois falhar |
+| `--restarted` | usado pelo próprio app quando ele reinicia depois de uma atualização; você não precisa dele |
 | `--help` | mostra o texto de uso |
 | `--version` | mostra a versão e sai |
 
@@ -50,7 +66,7 @@ No Windows o programa é o `larpercord.exe`, e ele não fica no `PATH`. No Power
 & "$env:LOCALAPPDATA\Programs\larperCord\larpercord.exe" --theme vidro
 ```
 
-A versão para Windows não tem console, então as opções que só imprimem texto (`--help`, `--list-themes`, `--stats`, `--version`) não mostram nada no terminal. Para ler esse texto, mande para um arquivo:
+A versão para Windows não tem console, então as opções que só imprimem texto (`--help`, `--list-themes`, `--stats`, `--tls-check`, `--version`) não mostram nada no terminal. Para ler esse texto, mande para um arquivo:
 
 ```powershell
 Start-Process "$env:LOCALAPPDATA\Programs\larperCord\larpercord.exe" -ArgumentList '--list-themes' -NoNewWindow -Wait -RedirectStandardError saida.txt; Get-Content saida.txt
@@ -60,7 +76,7 @@ O `--version` escreve na saída padrão, então para ele use `-RedirectStandardO
 
 Os temas embutidos também aparecem em Configurações → Aparência.
 
-Nos dois sistemas, se o larperCord já estiver aberto, mesmo só na bandeja, abrir de novo só traz aquela janela de volta e ignora as outras opções. Encerre antes (**Sair** no menu do ícone da bandeja). `--demo`, `--shot`, `--list-themes`, `--help`, `--version` e `--voice-test` funcionam de qualquer jeito.
+Nos dois sistemas, se o larperCord já estiver aberto, mesmo só na bandeja, abrir de novo só traz aquela janela de volta e ignora as outras opções. Encerre antes (**Sair** no menu do ícone da bandeja). `--demo`, `--shot`, `--list-themes`, `--help`, `--version`, `--tls-check` e `--voice-test` funcionam de qualquer jeito.
 
 ## Variáveis de ambiente
 
@@ -86,10 +102,15 @@ No `cmd`, é `set LARPER_RENDERER=software` antes de rodar o `.exe`. As variáve
 | `LARPER_BENCH` | redesenha sem parar, para medir o custo de um quadro |
 | `LARPER_VOICE_DEBUG` | imprime no terminal o que acontece numa call (opcodes, códigos de fechamento, DAVE). Nunca imprime tokens nem chaves. No Windows não há terminal: ligue Configurações → Avançado → Salvar registro de depuração, que grava o mesmo |
 | `LARPER_DEBUG_MEDIA` | registra por que uma imagem não carregou. No Windows, use o registro de depuração, como acima |
+| `LARPER_READ_DEBUG` | registra por que um canal ficou não lido: uma mensagem nova, ou uma confirmação de leitura do Discord. O registro de depuração grava o mesmo |
 | `LARPER_NO_FFMPEG` | finge que o FFmpeg não está instalado |
 | `LARPER_EGL_ALL` | só no Linux: desliga o truque que pula drivers EGL desnecessários |
 | `LARPER_SCENE` | monta uma cena para as capturas de tela da documentação |
 | `LARPER_RECORD`, `LARPER_RECORD_FRAMES` | grava a tela de login como quadros numa pasta |
 | `LARPER_FLOOD` | manda N mudanças de presença por segundo no modo demonstração (teste de carga) |
+| `LARPER_DEMO_VIDEO` | troca o vídeo da demonstração por um `.mp4` seu (testes) |
+| `LARPER_NO_PICS`, `LARPER_SQUARE` | desenham os avatares sem foto, ou quadrados, para medir quanto as fotos custam |
+| `LARPER_INSTANCE` | mantém a regra de uma cópia por vez também no modo demonstração e nas capturas de tela (testes) |
+| `LARPER_SHOT_REAL` | com `--shot`, usa a conta salva no lugar dos dados de demonstração |
 
 `XDG_CONFIG_HOME` e `XDG_CACHE_HOME` são respeitadas nos dois sistemas (no Windows elas tomam o lugar de `%APPDATA%` e `%LOCALAPPDATA%`), e ajudam a rodar com uma configuração limpa.

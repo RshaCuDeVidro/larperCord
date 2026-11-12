@@ -1,6 +1,6 @@
 # Arquitetura
 
-Cerca de 34.000 linhas de Zig sobre uma camada fina de C. A regra que molda tudo: **a interface nunca muda dados diretamente**.
+Cerca de 135.000 linhas de Zig, um sexto delas o teste automático da interface, sobre uma camada fina de C. A regra que molda tudo: **a interface nunca muda dados diretamente**.
 
 ## Fluxo de dados
 
@@ -41,6 +41,8 @@ tools/        QA, benchmark de memória, capturas de tela, geradores de logo e d
 | Vigia de temas | A menos que desligada | Espera mudanças nos arquivos de tema: inotify no Linux (também nas cores do pywal), aviso de mudança na pasta (FindFirstChangeNotification) no Windows (só as pastas de tema) |
 | Vídeo | Enquanto toca | Uma thread baixa, outra decodifica num anel de 3 quadros |
 | Voz | Durante uma call | Gateway de voz, UDP, Opus e DAVE |
+
+No Linux, o ícone da bandeja não é uma thread: é um processo pequeno à parte que fala o protocolo StatusNotifier pelo D-Bus, com cerca de 6 MB e sem despertar nenhum parado, e que volta sozinho se cair.
 
 ## Conversando com o Discord
 

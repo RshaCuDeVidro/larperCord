@@ -1,6 +1,6 @@
 # Configurações e arquivos
 
-Abra as configurações com `Ctrl+,`. As mudanças valem na hora e são salvas no `settings.kdl`, na pasta do larperCord: `~/.config/larpercord/` no Linux e `%APPDATA%\larpercord\` no Windows.
+Abra as configurações com `Ctrl+,`. As mudanças valem na hora e são salvas no `settings.kdl`, na pasta do larperCord: `~/.config/larpercord/` no Linux e `%APPDATA%\larpercord\` no Windows. São 19 páginas, em três grupos: o seu usuário, o app e o próprio larperCord.
 
 ## As páginas
 
@@ -9,18 +9,24 @@ Abra as configurações com `Ctrl+,`. As mudanças valem na hora e são salvas n
 | **Minha conta** | Dados da conta, o nome que aparece, os pronomes e o Sobre mim, e sair |
 | **Privacidade** | Indicador de digitação, animação do Tenor e do Giphy, modo streamer, registro de mensagens, guardar mensagens no disco, limpar o cache, Rich Presence, o aviso antes de entrar num servidor e um botão para a página Rede |
 | **Alertas e filtros** | Palavras de alerta, filtro de palavras, pessoas ignoradas (na conta ou neste computador) e modo foco |
-| **Aparência** | Modo (escuro, claro, seguir o sistema), tema com miniaturas e as opções dele, escala da fonte, modo compacto, avatares, relógio de 24 horas, status em anel, cor de destaque, cantos, cores personalizadas do tema, restaurar a largura dos painéis, lista de membros e barra de status |
+| **Aparência** | Modo (escuro, claro, seguir o sistema), tema com miniaturas e as opções dele, tamanho do texto, tamanho da interface (75 a 200%), modo compacto, avatares, relógio de 24 horas, status em anel, cor de destaque, cantos, cores personalizadas do tema, restaurar a largura dos painéis, lista de membros, barra de status, e o tempo da call nos canais de voz com o formato dele |
+| **Mascote** | Terminal ou Clássico, com a prévia ao vivo, a abertura (o Terminal tem cinco, ou Sortear) e **Ver a abertura de novo**, o mascote no canto, o quanto ele se mexe, as chaves dele e a plantinha. Veja [O mascote](page:mascot) |
 | **Acessibilidade** | Reduzir movimento, cores dos cargos, sublinhar links |
 | **Chat** | Reproduzir GIFs automaticamente, imagens de links, modo economia, vídeo, sempre mostrar spoilers, prévia do markdown, abrir na primeira não lida. **Escolher a pasta do FFmpeg…** aponta o app para um FFmpeg 7, 8 ou 9 "shared" que você já tem. Sem o FFmpeg, a parte de vídeo diz por que ele não foi encontrado, qual pacote instalar no Linux, e tem um botão **Baixar FFmpeg** no Windows |
-| **Voz** | Microfone e saída, volumes, detecção de voz ou aperte para falar, teste do microfone, filtros e um som para cada evento da call. Veja [Chamadas de voz](page:voice) |
+| **Voz** | Microfone e saída, volumes, detecção de voz ou aperte para falar, teste do microfone, filtros, supressão de ruído e um som para cada evento da call. Veja [Chamadas de voz](page:voice) |
 | **Notificações** | Notificações na área de trabalho e piscar na barra de tarefas |
-| **Atalhos de teclado** | A lista de atalhos e a navegação estilo vim |
-| **Idioma** | Seguir o sistema, Português (Brasil), English (US) ou 日本語 (japonês) |
+| **Atalhos de teclado** | A navegação estilo vim e a lista de atalhos. Clique num atalho que dá para trocar e aperte as teclas novas; **Padrão** volta. Veja [Trocar um atalho](page:shortcuts#trocar-um-atalho) |
+| **Idioma** | Seguir o sistema, Português (Brasil), English (US), 日本語 (japonês) ou Русский (russo) |
 | **Rede** | O proxy (tipo, endereço, porta, login e senha) e **Usar o proxy em tudo**. A tela de entrada tem o mesmo formulário em **Conectar por um proxy**. Veja [Proxy](page:privacy#proxy) |
 | **Avançado** | Modo desenvolvedor (IDs das mensagens, "Copiar ID"), recarregar temas ao salvar, fechar para a bandeja, peso do texto, o registro de depuração e quantas vezes o Discord pediu captcha ou verificação |
-| **Desempenho** | RAM, CPU por quadro, CPU parado e mensagens por canal |
+| **Desempenho** | RAM ao vivo, CPU por quadro, quadros pulados porque nada mudou, CPU parado e mensagens por canal; para onde vai a memória; limites de memória para imagens, cada GIF e mensagens; e o **Renderizador** (abaixo) |
+| **Erros no código** | Um servidor de linguagem que confere o bloco de código que você está digitando, desligado por padrão. Veja [Erros no código](page:lsp) |
 | **Plugins** | Um cartão para cada plugin (o que ele é e o que pede), ligar e desligar, erros, aprovação de hosts, o painel dele, Recarregar e Instalar os incluídos |
-| **Sobre** | Versão e com o que foi feito |
+| **Atualizações** | A versão atual, **Verificar atualizações**, **Verificar ao abrir**, **Baixar e instalar** quando há versão nova, e **Reiniciar o larperCord** |
+| **Novidades** | O que mudou em cada versão |
+| **Sobre** | Versão e com o que foi feito. Clique no mascote e ele reage |
+
+O **Renderizador**, em Configurações → Desempenho, é **Automático** ou um dos backends de renderização que o SDL tem no seu computador (Vulkan, OpenGL, Direct3D…). Ele é lido antes de a janela abrir, então vale na próxima vez que o app abrir. Se o escolhido não abrir, o app abre no automático e a página avisa. Serve para quando um deles se dá mal com o driver da sua placa de vídeo. A variável `LARPER_RENDERER` vale mais que essa escolha ([Variáveis de ambiente](page:shortcuts#variaveis-de-ambiente)).
 
 **Fechar para a bandeja** vem ligado: o ícone do larperCord fica na bandeja do sistema da abertura até sair, com **Abrir o larperCord** e **Sair** no menu dele mesmo com a janela aberta, e fechar a janela deixa o app conectado lá. O clique esquerdo no ícone traz a janela para a frente, ou a esconde na bandeja se ela já está aberta na frente, e o direito abre o menu. Desligado, não há ícone nenhum e fechar a janela encerra o app. O Windows sempre tem bandeja. No Linux ela precisa de um painel com bandeja StatusNotifier: sem ele a opção fica apagada, com o motivo, e fechar a janela encerra o app. No Linux o ícone mora num processo pequeno à parte (cerca de 6 MB, sem despertar nenhum parado), que volta sozinho se cair.
 
@@ -51,7 +57,7 @@ Na pasta de configurações:
 
 | Arquivo | O que é |
 |---|---|
-| `settings.kdl` | Configurações, incluindo as opções e cores de cada tema |
+| `settings.kdl` | Configurações, incluindo as opções e cores de cada tema, os atalhos que você trocou (linhas `keybind`), o renderizador, e o volume, o Silenciar para mim, o Tirar ruído e o Igualar volume de cada pessoa na call (pelo ID dela) |
 | `themes/*.kdl` | Seus temas. Crie a pasta antes de abrir o app, ou reinicie ele uma vez (Configurações → Atualizações → Reiniciar o larperCord) |
 | `plugins/*.lua` | Seus plugins |
 | `plugins.kdl` | Quais plugins estão desligados, os hosts aprovados e o painel lateral |
@@ -81,4 +87,6 @@ Mais dois, que ficam na sua pasta pessoal mesmo com `XDG_CONFIG_HOME` ou `XDG_CA
 | `~/.config/larpercord/token` | Só no Linux: arquivo de token opcional (`chmod 600`), de antes das várias contas |
 | `~/.cache/wal/colors` | Só leitura: a paleta do pywal, para os temas que a usam. No Windows só é lida quando `HOME` existe (`%HOME%\.cache\wal\colors`), e as mudanças não são acompanhadas |
 
-Para voltar ao padrão, encerre o app e apague o `settings.kdl` da pasta de configurações (`~/.config/larpercord/` no Linux, `%APPDATA%\larpercord\` no Windows). Fechar a janela não basta enquanto o app fica na bandeja: use **Sair** no menu do ícone da bandeja.
+No Linux, escolher o mascote Clássico grava o ícone do menu de aplicativos em `~/.local/share/icons/hicolor/128x128/apps/larpercord.png` (dentro de `XDG_DATA_HOME` quando ela existe), e voltar para o Terminal põe o Terminal lá, para o menu e as barras de tarefas do Wayland mostrarem o mascote escolhido.
+
+Para voltar ao padrão, encerre o app e apague o `settings.kdl` da pasta de configurações (`~/.config/larpercord/` no Linux, `%APPDATA%\larpercord\` no Windows). Fechar a janela não basta enquanto o app fica na bandeja: use **Sair** no menu do ícone da bandeja. Para tirar o app e tudo o que ele guardou, veja [Desinstalar](page:getting-started#desinstalar).

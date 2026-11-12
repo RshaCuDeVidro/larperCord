@@ -65,6 +65,20 @@ Depois disso o app se atualiza sozinho em Configurações → Atualizações (me
 
 A última linha da tabela vale para quem compila do código, abaixo.
 
+## Desinstalar
+
+Os scripts de instalação também tiram o app. Assim as configurações ficam:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.sh | sh -s -- --uninstall
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1))) -Uninstall
+```
+
+Com `--purge` no Linux, ou `-Purge` no Windows, no lugar da opção de desinstalar, ele também apaga as configurações, o cache, o FFmpeg baixado, os seus sons e as contas salvas: as pastas de configurações e de cache, e a entrada de cada conta no chaveiro (Linux) ou no Gerenciador de Credenciais (Windows). Ele fecha o larperCord antes, para o app não gravar as configurações de volta ao sair. No Arch, o pacote do AUR sai pelo seu gerenciador de pacotes, como `pacman -R larpercord-bin`, e o zip ou o arquivo portátil é só apagar; as configurações ficam nas pastas listadas em [Configurações e arquivos](page:settings#arquivos-no-disco).
+
 ## Compilar e rodar
 
 ```bash

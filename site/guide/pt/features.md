@@ -10,7 +10,7 @@ Tudo aqui funciona no modo demonstração, exceto onde precisa da rede de verdad
 - **Reações**, um seletor de emoji e uma barra de ações ao passar o mouse em cada mensagem. Botão direito numa reação, ou Ver reações, mostra quem reagiu.
 - **Enquetes**: vote, tire o voto ou veja o resultado antes, e clique numa resposta para ver quem votou nela.
 - **Seleção de texto** entre várias mensagens com o mouse, depois `Ctrl+C`.
-- **Caixa de texto com várias linhas**: quebra o texto longo e cresce até 10 linhas. `Enter` envia e `Shift+Enter` abre uma linha nova.
+- **Caixa de texto com várias linhas**: quebra o texto longo e cresce até 10 linhas. `Enter` envia e `Shift+Enter` abre uma linha nova. Árabe e hebraico digitados aparecem na ordem certa e alinhados à direita, como nas mensagens enviadas, e o cursor, o clique, a seleção, o `Backspace`, o `←` e o `→` seguem o texto na tela.
 - **Rascunhos** por canal: o texto não enviado volta quando você retorna ao canal, mesmo depois de fechar o app.
 - **Histórico** carregado conforme você rola para cima, sem a tela pular, numa lista virtualizada.
 - **Mensagens de sistema**: entradas, calls, fixadas, boosts.
@@ -99,17 +99,22 @@ A busca ignora maiúsculas e acentos, então `nao` encontra `não`.
 - **Painéis ajustáveis**: arraste a borda da lista de canais, da lista de membros ou dos painéis da tela dividida. Duplo clique volta à largura do tema. A escolha fica salva, vale nos outros temas e cede quando a janela fica pequena demais para a conversa; Configurações → Aparência restaura tudo.
 - **Esconder a lista de membros ou a barra de status** em Configurações → Aparência, e a conversa ocupa o espaço.
 - **Pastas de servidores** das suas configurações do Discord, atualizadas ao vivo.
+- **A lista de DMs** deixa a conversa mais recente em cima, ao vivo: uma mensagem que chega ou que você manda sobe a DM na hora, e uma DM que você fechou volta quando chega mensagem nova nela.
+- **Tamanho da interface** de 75 a 200% em Configurações → Aparência, ou `Ctrl` `+`, `Ctrl` `-` e `Ctrl` `0` de qualquer lugar. `F11` ou `Alt+Enter` liga e desliga a tela cheia.
 - **Tela de amigos**: pedidos, aceitar e cancelar, começar DMs e uma aba **Adicionar amigo** que aceita o nome de usuário. DMs de quem não é seu amigo vão para **Pedidos de mensagem**, com uma aba de Spam, e não notificam.
 
 ## Pessoas
 
 - **Cartão de perfil** com banner, cor de destaque, bio em markdown, pronomes, amigos e servidores em comum, jogo atual com o tempo decorrido, e a call em que a pessoa está, com um botão Entrar.
+- **Perfil do servidor**: num servidor, cada pessoa aparece com o apelido e a foto que escolheu para ele, no lugar dos globais, em todo lugar: mensagens, respostas e menções, a lista de membros, a lista da call no canal de voz, a tela da call e o mixer, e a lista do `@` na caixa de mensagem, que acha pelos dois nomes. O cartão de perfil mostra o apelido do servidor com o nome global menor embaixo, e a bio, os pronomes e o banner do servidor quando a pessoa tem. Em DM e grupo continuam o nome e a foto globais.
 - **Perfil completo** com abas: atividade, amigos e servidores em comum, conexões, emblemas e a sua nota privada.
 - **Ver maior**: clique no banner ou na foto de um perfil para abrir a imagem inteira. O banner de um servidor abre do mesmo jeito na lista de canais, e os menus do servidor e da pessoa têm Ver ícone e Ver foto de perfil.
 - **Seletor de status**: online, ausente, não perturbe, invisível, de 15 minutos a 3 dias ou até você mudar, gravado na sua conta. Clique no seu nome para um **status personalizado** com emoji e quando ele some.
 - **Bloquear, desbloquear e Adicionar amigo** pelo menu ou pelo perfil da pessoa. Configurações → Minha conta edita o nome que aparece, os pronomes e o Sobre mim.
 - **Rich Presence** (desligado por padrão, em Configurações → Privacidade): jogos com suporte mostram o que você está jogando.
 - **Cargos**: lista de membros por cargo com as cores reais, e dar ou tirar cargos quando você tem permissão.
+
+![Um cartão de perfil num servidor: o apelido do servidor, com o nome global embaixo](shot:f-perfil-servidor)
 
 ## Atenção
 
@@ -133,16 +138,26 @@ Se um servidor pede para aceitar as regras, a caixa de mensagem avisa e abre as 
 
 ## Calls
 
-Voz de verdade com criptografia de ponta a ponta, mixer por pessoa, seletor de dispositivo, aperte para falar e filtros, nos canais de voz dos servidores e nas calls em DM e grupo. Veja [Chamadas de voz](page:voice).
+Voz de verdade com criptografia de ponta a ponta, nos canais de voz dos servidores e nas calls em DM e grupo. Clicar num canal de voz abre a **tela da call**, com um quadro por pessoa no estilo do tema. O **mixer** tem um volume para cada pessoa, e mais **Tirar ruído** e **Igualar volume** por pessoa, desligados de começo. Os canais de voz mostram há quanto tempo a call está rolando. Também tem seletor de dispositivo, aperte para falar e filtros. Veja [Chamadas de voz](page:voice).
+
+![A tela da call](shot:f-call)
+
+## O mascote
+
+O Terminal, o mascote principal, faz uma abertura enquanto o app conecta (cinco para escolher), cochila onde uma lista está vazia e, como **mascote no canto**, senta em cima da caixa de mensagem: segue o mouse, reage ao que você escreve, dá para pegar e jogar, e faz coisas sozinho quando você deixa ele à toa. Configurações → Mascote troca para o mascote Clássico, escolhe o quanto ele se mexe ou desliga o mascote no canto. Veja [O mascote](page:mascot).
+
+![O mascote no canto, em cima da caixa de mensagem](shot:f-mascote)
 
 ## Rede e idiomas
 
 - **Proxy** para HTTP, HTTPS, SOCKS5 e SOCKS5h (Tor em `127.0.0.1:9050`), com campos separados para endereço, porta, login e senha, só para mídia externa ou para tudo menos as calls de voz, que sempre conectam direto. Fica em Configurações → Rede e na tela de entrada, que oferece o proxy quando não chega ao Discord.
-- **Inglês e português** em toda a interface, nos avisos de rede, nos dados de demonstração e nas opções dos temas, e a interface inteira em **japonês**. As traduções ficam num arquivo por idioma (`i18n/ja.kdl`), então um idioma novo não precisa de código. Por padrão, segue o seu sistema.
-- **Texto em qualquer idioma**: as letras árabes saem ligadas e o texto da direita para a esquerda vem na ordem certa. Uma letra que falta na fonte do tema, em qualquer escrita, vem de uma fonte do sistema que a tenha. Texto da direita para a esquerda digitado ainda vai da esquerda para a direita na caixa de mensagem, e escritas que precisam de composição, como devanágari ou tailandês, mostram as letras uma a uma.
+- **Inglês e português** em toda a interface, nos avisos de rede, nos dados de demonstração e nas opções dos temas, e a interface inteira em **japonês** e em **russo**, inclusive as descrições e as opções dos temas embutidos. Os horários do Discord, os relativos também ("3日前", "3 дня назад"), seguem o idioma. As traduções ficam num arquivo por idioma (`i18n/ja.kdl`, `i18n/ru.kdl`), então um idioma novo não precisa de código. Por padrão, segue o seu sistema.
+- **Texto em qualquer idioma**: as letras árabes saem ligadas e o texto da direita para a esquerda vem na ordem certa, nas mensagens e na caixa de mensagem. Uma letra que falta na fonte do tema, em qualquer escrita, vem de uma fonte do sistema que a tenha. Escritas que precisam de composição, como devanágari ou tailandês, mostram as letras uma a uma.
 
 ## Deixe do seu jeito
 
 - Os [temas](page:themes) reorganizam a interface inteira e recarregam ao salvar. No Linux, temas com `palette "wal"` acompanham o seu wallpaper pelo pywal, e o fundo transparente do tema `vidro` é desfocado pelo seu compositor (Hyprland, KDE…). No Windows não tem blur, e as cores do pywal só são lidas quando a variável `HOME` existe, sem acompanhar o wallpaper ao vivo.
 - Os [plugins](page:plugins) em Lua somam painéis, entradas no botão direito, notas embaixo das mensagens, comandos e atalhos. Anti-golpe, radar de CVE, cartões do GitHub, o que perdi, tradução, lembretes, destaques, links limpos, e links e arquivos vêm com o app.
+- **Atalhos do seu jeito**: paleta, busca, configurações, caixa de entrada, salvas, temas, tela cheia, abas, mudo e ensurdecer aceitam outras teclas em Configurações → Atalhos de teclado. Veja [Trocar um atalho](page:shortcuts#trocar-um-atalho).
 - **Navegação estilo vim opcional**: veja [Atalhos](page:shortcuts).
+- **[O mascote](page:mascot)**: escolha o Terminal ou o Clássico, a abertura e o quanto ele se mexe, ou desligue o mascote no canto.
