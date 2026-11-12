@@ -86,7 +86,7 @@ pub const Goal = enum { none, home, msg, members, header, channels, typing, jump
 /// Os lugares da interface aonde ele pode ir (cada componente avisa onde está a cada
 /// quadro; o que não apareceu no quadro, como a lista de membros num tema sem ela, fica
 /// de fora).
-pub const Anchor = enum { members, header, channels, guilds, last_msg, typing, jump, input };
+pub const Anchor = enum { members, header, channels, dm_icon, last_msg, typing, jump, input };
 
 /// Os jeitos de emburrar: encolher, afundar na caixa (só as orelhas de fora), inflar
 /// vermelho soltando fumaça, e virar de costas (espia quando o mouse passa).
@@ -173,6 +173,8 @@ const State = struct {
     perch_until: i64 = 0,
     /// Pendurado ou espiando: o retângulo que corta o desenho (largura 0 = nenhum).
     clip: d.Rect = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+    /// Onde estava o lugar em que ele pousou (se o lugar some ou muda de posição, ele volta).
+    perch_at: ?d.Rect = null,
     /// A torre montada e o rabisco na caixa (ficam até você mexer ou digitar): 0 = nenhum,
     /// 1 = coração, 2 = estrela.
     tower: bool = false,
@@ -204,16 +206,19 @@ const State = struct {
     /// O canal de antes (para pular junto) e onde era a casa nele.
     last_channel: types.Id = 0,
     last_home: [2]f32 = .{ 0, 0 },
-    /// A plantinha: o dia já foi contado nesta abertura, e se está murcha.
+    /// A plantinha: o dia de hoje já foi conferido nesta abertura.
     plant_checked: bool = false,
-    plant_wilted: bool = false,
     /// A pescaria começou e ainda falta escolher o emoji (precisa da conversa).
     need_catch: bool = false,
-    /// Uma viagem pedida pelo QA (sai no próximo quadro, que tem os lugares da tela).
+    /// Uma viagem pedida pelo QA (sai no próximo quadro, que tem os lugares da tela) e
+    /// se o lugar não estava na tela.
     qa_goal: Goal = .none,
+    qa_go_failed: bool = false,
 };
 
 var s: State = .{};
+/// O último quadro em que ele apareceu (o QA confere se o tema tem lugar para ele).
+var shown_ms: i64 = -100_000;
 /// O lugar reservado para ele na barra da caixa de mensagem (ver comp_messages).
 var home_slot: d.Rect = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
 var slot_ms: i64 = -100_000;
@@ -237,10 +242,27 @@ pub fn anchor(a: Anchor, r: d.Rect, now: i64) void {
     anchors[@intFromEnum(a)] = .{ .r = r, .ms = now };
 }
 
+/// Um lugar que só vale inteiro dentro de `area` (um ícone rolado para fora da barra
+/// não conta).
+pub fn anchorIn(a: Anchor, r: d.Rect, area: d.Rect, now: i64) void {
+    if (r.x >= area.x - 1 and r.y >= area.y - 1 and r.right() <= area.right() + 1 and r.bottom() <= area.bottom() + 1) anchor(a, r, now);
+}
+
+const component_anchors = [_]struct { []const u8, Anchor }{ .{ "member-list", .members }, .{ "header", .header }, .{ "channel-list", .channels }, .{ "guild-bar", .dm_icon } };
+var veiled_ms: [@typeInfo(Anchor).@"enum".field_names.len]i64 = @splat(-100_000);
+
 /// Um componente do tema foi desenhado (ui/root.zig): os que servem de lugar para ele.
 pub fn component(name: []const u8, r: d.Rect, now: i64) void {
-    const map = [_]struct { []const u8, Anchor }{ .{ "member-list", .members }, .{ "header", .header }, .{ "channel-list", .channels }, .{ "guild-bar", .guilds } };
-    for (map) |m| if (std.mem.eql(u8, name, m[0])) anchor(m[1], r, now);
+    for (component_anchors) |m| if (std.mem.eql(u8, name, m[0]) and m[1] != .dm_icon) anchor(m[1], r, now);
+}
+
+/// Um componente está escondido atrás do véu do `autohide` (ui/root.zig): os lugares
+/// dele não valem neste quadro.
+pub fn veiled(name: []const u8, now: i64) void {
+    for (component_anchors) |m| if (std.mem.eql(u8, name, m[0])) {
+        anchors[@intFromEnum(m[1])].ms = -100_000;
+        veiled_ms[@intFromEnum(m[1])] = now;
+    };
 }
 
 fn anchorRect(a: Anchor, now: i64) ?d.Rect {
@@ -389,9 +411,11 @@ fn goTo(ctx: *d.Ctx, goal: Goal, now: i64) bool {
             break :blk .{ r.x + r.w * 0.55, r.bottom() + (99 + 14) * kk };
         },
         .channels => blk: {
-            // Quase todo atrás da lista de canais, só o rosto de fora.
+            // Quase todo atrás da lista de canais, só o rosto de fora, do lado da
+            // conversa (a lista fica à direita em alguns temas).
             const r = anchorRect(.channels, now) orelse return false;
-            break :blk .{ r.right() - base_size * 0.1, r.y + r.h * 0.42 };
+            const right_side = r.x + r.w / 2 > win.x + win.w / 2;
+            break :blk .{ if (right_side) r.x + base_size * 0.1 else r.right() - base_size * 0.1, r.y + r.h * 0.42 };
         },
         .typing => blk: {
             const r = anchorRect(.typing, now) orelse return false;
@@ -402,9 +426,13 @@ fn goTo(ctx: *d.Ctx, goal: Goal, now: i64) bool {
             break :blk .{ r.x - base_size * 0.36, r.bottom() };
         },
         .dm => blk: {
-            // O ícone das DMs é o primeiro da barra de servidores.
-            const r = anchorRect(.guilds, now) orelse return false;
-            break :blk .{ r.x + r.w / 2, r.y + r.w + 4 };
+            // Logo embaixo do ícone das DMs (ui/comp_rail.zig avisa onde ele está, em
+            // qualquer formato da barra).
+            // Ícone em cima (barra de servidores, lista): ele fica logo embaixo; ícone
+            // embaixo (o dock do Cupertino): senta em cima dele.
+            const r = anchorRect(.dm_icon, now) orelse return false;
+            const low = r.y + r.h / 2 > win.y + win.h / 2;
+            break :blk .{ r.x + r.w / 2, if (low) r.y + 2 else r.bottom() + 4 };
         },
         .cursor => .{ ctx.mouse.x + 3, ctx.mouse.y - 1 },
         .mouse => .{ ctx.mouse.x, home_feet[1] },
@@ -414,7 +442,23 @@ fn goTo(ctx: *d.Ctx, goal: Goal, now: i64) bool {
     const dy = std.math.clamp(dest[1], win.y + 30, win.bottom() - 2);
     if (std.math.hypot(dx - s.x, dy - (s.y + foot_off)) < 8) return false;
     startTrip(goal, .{ dx, dy }, now);
+    // O lugar como estava na saída: mudou ou sumiu até ele chegar (ou depois), ele volta.
+    s.perch_at = anchorFor(goal, now);
     return true;
+}
+
+/// O lugar da tela de cada destino (o mouse não é um lugar).
+fn anchorFor(goal: Goal, now: i64) ?d.Rect {
+    return switch (goal) {
+        .msg => anchorRect(.last_msg, now),
+        .members => anchorRect(.members, now),
+        .header => anchorRect(.header, now),
+        .channels => anchorRect(.channels, now),
+        .typing => anchorRect(.typing, now),
+        .jump => anchorRect(.jump, now),
+        .dm => anchorRect(.dm_icon, now),
+        .none, .home, .cursor, .mouse => null,
+    };
 }
 
 /// Quanto ele fica em cada lugar.
@@ -442,10 +486,14 @@ fn arrive(now: i64) void {
     s.mode = .perch;
     s.perch_ms = now;
     s.perch_until = now + perchMs(s.goal);
-    // Atrás da lista de canais: o que passa para a esquerda da borda some.
+    // Atrás da lista de canais: o que passa da borda dela para dentro some.
     if (s.goal == .channels) if (anchorRect(.channels, now)) |r| {
-        s.clip = .{ .x = r.right(), .y = -100_000, .w = 200_000, .h = 200_000 };
+        s.clip = if (s.x > r.x + r.w / 2)
+            .{ .x = r.right(), .y = -100_000, .w = 200_000, .h = 200_000 }
+        else
+            .{ .x = -100_000, .y = -100_000, .w = r.x + 100_000, .h = 200_000 };
     };
+
 }
 
 /// O emoji para pescar: uma das reações das últimas mensagens da conversa aberta.
@@ -475,14 +523,15 @@ fn pickLife(ctx: *d.Ctx, now: i64) void {
         const first = rand() % goals.len;
         for (0..goals.len) |j| if (goTo(ctx, goals[(first + j) % goals.len], now)) return;
     }
-    if (set.mascot_plant and s.plant_wilted) return startAct(.water, now);
+    if (set.mascot_plant and set.mascot_plant_wilted) return startAct(.water, now);
     var pool: [16]Act = undefined;
     var n: usize = 0;
     for ([_]Act{ .scratch, .char_play, .coffee, .book, .game, .gum, .whistle, .clean, .nap_sit, .exercise, .fly, .fish }) |a| {
         pool[n] = a;
         n += 1;
     }
-    if (!s.tower) {
+    // A torre fica do lado da caixa: só com ela vazia (não cobre o texto).
+    if (!s.tower and ctx.st.input[0] == 0) {
         pool[n] = .tower;
         n += 1;
     }
@@ -505,22 +554,27 @@ fn endAct(ctx: *d.Ctx, now: i64) void {
     s.act = .none;
     switch (a) {
         .tower => s.tower = true,
-        .water => s.plant_wilted = false,
-        .pack => _ = goTo(ctx, .mouse, now),
+        .water => if (ctx.st.settings.mascot_plant_wilted) {
+            ctx.st.settings.mascot_plant_wilted = false;
+            ctx.act(.save_settings);
+        },
+        .pack => if (ctx.mouse.x > -1000) {
+            _ = goTo(ctx, .mouse, now);
+        },
         .tower_fall => start(.dizzy, now),
         else => {},
     }
 }
 
-/// A plantinha cresce um dia por dia de uso (contado uma vez por abertura). Mais de
-/// uma semana sem você, ela murcha até ele regar.
+/// A plantinha cresce um dia por dia de uso: o primeiro toque seu em cada dia conta
+/// (com o app aberto por dias, cada dia em que você mexe). Mais de uma semana sem
+/// você, ela murcha, e fica murcha (guardado nas configurações) até ele regar.
 fn plantDay(ctx: *d.Ctx, today: i64) void {
-    s.plant_checked = true;
     const set = &ctx.st.settings;
     const t: i16 = @intCast(std.math.clamp(today, 1, 32767));
     const last = set.mascot_plant_day;
     if (last == t) return;
-    if (last != 0 and t - last > 7) s.plant_wilted = true;
+    if (last != 0 and t - last > 7) set.mascot_plant_wilted = true;
     if (set.mascot_plant_days < 255) set.mascot_plant_days += 1;
     set.mascot_plant_day = t;
     ctx.act(.save_settings);
@@ -669,8 +723,15 @@ pub fn draw(ctx: *d.Ctx) void {
         s.goal = .none;
         s.act = .none;
         s.clip.w = 0;
+        // O que aconteceu com ele escondido (a janela mudando de tamanho ao abrir, uma
+        // mensagem apagada) não vale para depois.
+        s.pend_delete = false;
+        s.pend_edit = false;
+        s.pend_dm = false;
+        s.pend_resize = false;
         return;
     }
+    shown_ms = now;
     // A escala da interface já vale para tudo (ver App.uiScale).
     const size = base_size;
     const k = size * 0.78 / 127.14;
@@ -687,6 +748,9 @@ pub fn draw(ctx: *d.Ctx) void {
         s.mode = .home;
         s.placed = true;
         s.last_input_ms = now;
+        // Logo que aparece, a janela ainda pode estar se ajeitando (o compositor muda o
+        // tamanho dela ao abrir): nada de se segurar por isso.
+        s.resize_ms = now;
     }
     const dt = std.math.clamp(anim.dt, 0.001, 1.0 / 30.0);
     const mouse = ctx.mouse;
@@ -739,7 +803,10 @@ pub fn draw(ctx: *d.Ctx) void {
     } else s.next_yawn_ms = 0;
 
     // --- Vida própria: a plantinha, a volta, o canal novo --------------------------------
-    if (!s.plant_checked) plantDay(ctx, lt.day_index);
+    if (moved or typed or !s.plant_checked) {
+        s.plant_checked = true;
+        plantDay(ctx, lt.day_index);
+    }
     const away_on = set.mascot_away;
     if (!focused) {
         if (s.away_ms == 0) s.away_ms = now;
@@ -774,14 +841,14 @@ pub fn draw(ctx: *d.Ctx) void {
         // o acampamento.)
         if (ch != s.last_channel and s.last_channel != 0 and ch != 0 and set.mascot_roam and set.mascot_life > 0 and s.mode == .home and s.act != .pack) {
             const old = s.last_home;
-            if (std.math.hypot(old[0] - home_feet[0], old[1] - home_feet[1]) > 40) {
+            const thread = if (ctx.store.channel(ch)) |cs| cs.info.thread != null else false;
+            if (thread) {
+                startAct(.peek, now);
+            } else if (std.math.hypot(old[0] - home_feet[0], old[1] - home_feet[1]) > 40) {
                 s.x = old[0];
                 s.y = old[1] - foot_off;
                 startTrip(.home, home_feet, now);
-            } else {
-                const thread = if (ctx.store.channel(ch)) |cs| cs.info.thread != null else false;
-                startAct(if (thread) .peek else .portal, now);
-            }
+            } else startAct(.portal, now);
         }
         s.last_channel = ch;
         s.last_home = home_feet;
@@ -802,7 +869,15 @@ pub fn draw(ctx: *d.Ctx) void {
     const at_home = s.mode == .home or s.mode == .away;
     const hit_w = if (at_home) home_slot.w else size * 0.86;
     const hit_h = if (at_home) home_slot.h else size * 0.8;
-    const hit_min = if (at_home) d.v(home_slot.x, home_slot.y) else d.v(s.x - hit_w / 2, s.y - hit_h / 2);
+    var hit_box: d.Rect = if (at_home) home_slot else .{ .x = s.x - hit_w / 2, .y = s.y - hit_h / 2, .w = hit_w, .h = hit_h };
+    // Espiando atrás da lista de canais: só a parte de fora pega o clique.
+    if (!at_home and s.clip.w > 0) {
+        const l = @max(hit_box.x, s.clip.x);
+        const rr = @min(hit_box.right(), s.clip.right());
+        hit_box.x = l;
+        hit_box.w = @max(1, rr - l);
+    }
+    const hit_min = d.v(hit_box.x, hit_box.y);
     const under = underPopup(ctx);
     // Um popup abriu no meio do arrasto: ele cai de onde estava.
     if (under and s.dragging) {
@@ -813,7 +888,7 @@ pub fn draw(ctx: *d.Ctx) void {
         }
     }
     c.ImGui_SetNextWindowPos(hit_min, 0);
-    c.ImGui_SetNextWindowSize(d.v(hit_w, hit_h), 0);
+    c.ImGui_SetNextWindowSize(d.v(hit_box.w, hit_box.h), 0);
     _ = c.ImGui_Begin("##pet", null, c.ImGuiWindowFlags_NoDecoration | c.ImGuiWindowFlags_NoBackground |
         c.ImGuiWindowFlags_NoSavedSettings | c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoScrollWithMouse | c.ImGuiWindowFlags_NoNav |
         c.ImGuiWindowFlags_NoFocusOnAppearing | (if (under) c.ImGuiWindowFlags_NoInputs else 0));
@@ -822,13 +897,13 @@ pub fn draw(ctx: *d.Ctx) void {
     const dl = c.ImGui_GetWindowDrawList();
     if (!under) d.windowToFront();
     c.ImGui_SetCursorScreenPos(hit_min);
-    _ = c.ImGui_InvisibleButton("##pet-hit", d.v(hit_w, hit_h), c.ImGuiButtonFlags_MouseButtonLeft);
+    _ = c.ImGui_InvisibleButton("##pet-hit", d.v(hit_box.w, hit_box.h), c.ImGuiButtonFlags_MouseButtonLeft);
     const hovered = c.ImGui_IsItemHovered(0);
     const active = c.ImGui_IsItemActive();
     const pressed = c.ImGui_IsItemActivated();
     const released = c.ImGui_IsItemDeactivated();
     c.ImGui_End();
-    qa.markTop(.{ .x = hit_min.x, .y = hit_min.y, .w = hit_w, .h = hit_h }, "pet", .{});
+    qa.markTop(hit_box, "pet", .{});
     if (hovered or active) c.ImGui_SetMouseCursor(if (active and s.dragging) c.ImGuiMouseCursor_ResizeAll else c.ImGuiMouseCursor_Hand);
 
     // Botão direito: o menu dele (truque, dormir, esconder, trocar de mascote).
@@ -931,7 +1006,7 @@ pub fn draw(ctx: *d.Ctx) void {
     // --- Vida própria: a interface, o mouse e o que fazer à toa --------------------------
     const idle_ms = now - s.last_input_ms;
     const awake = s.mode == .home and !s.nap and idle_ms < sleep_ms and !s.camped;
-    const ui_ok = set.mascot_ui and awake and s.react == .none;
+    const ui_ok = set.mascot_ui and awake and focused and s.react == .none;
     if (s.pend_delete) {
         s.pend_delete = false;
         if (ui_ok and s.act == .none) startAct(.trash, now);
@@ -954,8 +1029,12 @@ pub fn draw(ctx: *d.Ctx) void {
         }
     }
     if (s.pend_dm) {
+        // A DM chega junto com o susto da menção (onPing): a cartinha vale mais.
         s.pend_dm = false;
-        if (ui_ok and now - s.dm_trip_ms > 90_000 and goTo(ctx, .dm, now)) s.dm_trip_ms = now;
+        if (set.mascot_ui and awake and focused and now - s.dm_trip_ms > 90_000 and goTo(ctx, .dm, now)) {
+            s.dm_trip_ms = now;
+            s.react = .none;
+        }
     }
     // Alguém digitando: senta em cima do "digitando…" (não enquanto você mesmo digita).
     if (ui_ok and s.mode == .home and s.act == .none and now - s.typing_trip_ms > 45_000 and now - s.type_ms > 2000 and anchorRect(.typing, now) != null) {
@@ -975,7 +1054,7 @@ pub fn draw(ctx: *d.Ctx) void {
         s.still_y = mouse.y;
         s.still_ms = now;
     }
-    const cursor_on = set.mascot_cursor and awake and s.act == .none and s.react == .none and mouse.x > -1000 and !active;
+    const cursor_on = set.mascot_cursor and awake and focused and s.act == .none and s.react == .none and mouse.x > -1000 and !active;
     if (cursor_on) {
         const still_for = now - s.still_ms;
         const near = dist(mouse.x, mouse.y, s.x, s.y);
@@ -991,7 +1070,7 @@ pub fn draw(ctx: *d.Ctx) void {
         pickCatch(ctx);
     }
     if (s.qa_goal != .none) {
-        _ = goTo(ctx, s.qa_goal, now);
+        s.qa_go_failed = !goTo(ctx, s.qa_goal, now);
         s.qa_goal = .none;
     }
     // À toa: de vez em quando ele faz alguma coisa sozinho (até dormir).
@@ -1002,7 +1081,9 @@ pub fn draw(ctx: *d.Ctx) void {
         2 => 45_000,
         else => 22_000,
     };
-    const life_ready = life > 0 and awake and focused and s.react == .none and s.act == .none and s.trick_ms == 0;
+    const life_ready = life > 0 and awake and s.mode == .home and focused and s.react == .none and s.act == .none and s.trick_ms == 0;
+    // A plantinha murcha é regada mesmo com a vida própria desligada (a chave dela promete).
+    if (life == 0 and set.mascot_plant and set.mascot_plant_wilted and awake and s.mode == .home and focused and s.react == .none and s.act == .none and idle_ms >= 8000) startAct(.water, now);
     if (life_ready) {
         if (s.next_act_ms <= s.last_input_ms) s.next_act_ms = s.last_input_ms + 8000 + @mod(@as(i64, rand()), interval);
         if (now >= s.next_act_ms) {
@@ -1121,6 +1202,18 @@ pub fn draw(ctx: *d.Ctx) void {
                     s.vy = 0;
                     s.goal = .none;
                     done = false;
+                },
+                else => {},
+            }
+            // O lugar em que ele pousou sumiu ou mudou de posição (mensagem nova,
+            // rolagem, a lista de membros que some): volta em vez de ficar no ar.
+            switch (s.goal) {
+                .msg, .members, .header, .channels => {
+                    const was = s.perch_at;
+                    const cur = anchorFor(s.goal, now);
+                    if (was == null or cur == null) {
+                        done = true;
+                    } else if (@abs(cur.?.x - was.?.x) > 3 or @abs(cur.?.y - was.?.y) > 3 or @abs(cur.?.w - was.?.w) > 3 or @abs(cur.?.h - was.?.h) > 3) done = true;
                 },
                 else => {},
             }
@@ -1547,7 +1640,8 @@ pub fn draw(ctx: *d.Ctx) void {
                 if (pt < 3) anim_until = @max(anim_until, now + 40);
             },
             .channels => {
-                pl.look = .{ 1, 0 };
+                // Olhando para a conversa, do lado de onde ele espia.
+                pl.look = .{ if (s.clip.x < 0) -1 else 1, 0 };
                 pl.face = .happy;
             },
             .typing => {
@@ -1616,6 +1710,8 @@ pub fn draw(ctx: *d.Ctx) void {
             // quadro em cada uma, e nada no meio.
             var wake = s.last_input_ms + sleep_ms + 10;
             if (life_ready) wake = @min(wake, @max(s.next_act_ms, now + 50));
+            // A planta murcha com a vida própria desligada: um quadro na hora de regar.
+            if (life == 0 and set.mascot_plant and set.mascot_plant_wilted) wake = @min(wake, @max(s.last_input_ms + 8010, now + 50));
             if (cursor_on and now - s.still_ms < 2600) wake = @min(wake, s.still_ms + (if (now - s.still_ms < 1500) @as(i64, 1510) else 2510));
             anim.at(wake);
         }
@@ -1635,7 +1731,7 @@ pub fn draw(ctx: *d.Ctx) void {
     const feet_y = home_slot.bottom() - 4;
     const tsec = @as(f32, @floatFromInt(@mod(now, 60_000))) / 1000.0;
     // A plantinha, à esquerda dele no lugar da barra.
-    if (pw > 0) props.plant(dl, d.v(home_slot.x + pw / 2 + 1, home_slot.bottom() - 5), 22, set.mascot_plant_days, s.plant_wilted);
+    if (pw > 0) props.plant(dl, d.v(home_slot.x + pw / 2 + 1, home_slot.bottom() - 5), 22, set.mascot_plant_days, set.mascot_plant_wilted);
     // Acampado: a barraca e a fogueira do lado (desmontando na volta).
     if (s.camped or s.act == .pack) {
         const fold: f32 = if (s.act == .pack) std.math.clamp(at / 1.0, 0, 1) else 0;
@@ -1732,10 +1828,10 @@ pub fn draw(ctx: *d.Ctx) void {
     if (s.goal == .dm) {
         if (s.mode == .trip) {
             props.letter(dl, body.p(64, -16), 18, 0.1 * @sin(tsec * 6));
-        } else if (s.mode == .perch) if (anchorRect(.guilds, now)) |gr| {
+        } else if (s.mode == .perch) if (anchorRect(.dm_icon, now)) |gr| {
             const g = std.math.clamp(secs(now, s.perch_ms) / 0.7, 0, 1);
             const from = body.p(64, -16);
-            const to = d.v(gr.x + gr.w / 2, gr.y + gr.w / 2);
+            const to = d.v(gr.x + gr.w / 2, gr.y + gr.h / 2);
             if (g < 1) props.letter(dl, d.v(from.x + (to.x - from.x) * g, from.y + (to.y - from.y) * g - @sin(std.math.pi * g) * 20), 18 * (1 - g * 0.5), g * 6);
         };
     }
@@ -1951,8 +2047,25 @@ pub fn doodleKind() u8 {
 pub fn balloonOn(now: i64) bool {
     return now < s.balloon_until;
 }
-pub fn plantWilted() bool {
-    return s.plant_wilted;
+pub fn qaShown(now: i64) bool {
+    return now - shown_ms < 300;
+}
+pub fn qaVeiled(a: Anchor, now: i64) bool {
+    return now - veiled_ms[@intFromEnum(a)] < 300;
+}
+pub fn qaGoFailed() bool {
+    return s.qa_go_failed;
+}
+/// Quanto do corpo dele está de fora do corte (espiando atrás da lista de canais).
+pub fn qaVisibleWidth() f32 {
+    const half = base_size * 0.39;
+    var l = s.x - half;
+    var r = s.x + half;
+    if (s.clip.w > 0) {
+        l = @max(l, s.clip.x);
+        r = @min(r, s.clip.right());
+    }
+    return @max(0, r - l);
 }
 /// Faz agora uma das coisas da vida própria (o QA não espera a vez dele). `variant`
 /// escolhe o tipo de exercício.
@@ -1972,9 +2085,6 @@ pub fn qaGo(g: Goal) void {
 pub fn qaLifeNow() void {
     s.next_act_ms = s.last_input_ms + 1;
 }
-pub fn qaWilt() void {
-    s.plant_wilted = true;
-}
 /// A janela está sem foco há tanto tempo.
 pub fn qaAwayFor(ms: i64, now: i64) void {
     s.away_ms = now - ms;
@@ -1992,6 +2102,9 @@ pub fn qaLifeReset(now: i64) void {
     s.away_ms = 0;
     s.balloon_until = 0;
     s.next_act_ms = now + 3_600_000;
+    s.qa_goal = .none;
+    s.qa_go_failed = false;
+    s.perch_at = null;
     s.trip_ms = -100_000;
     s.typing_trip_ms = -100_000;
     s.jump_trip_ms = -100_000;

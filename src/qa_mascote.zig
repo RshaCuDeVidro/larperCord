@@ -7,6 +7,7 @@
 const std = @import("std");
 const c = @import("c");
 const App = @import("app.zig").App;
+const Id = @import("core/types.zig").Id;
 const R = @import("qa_runner.zig");
 const Op = R.Op;
 const qa = @import("ui/qa.zig");
@@ -463,7 +464,9 @@ fn toTop(app: *App) void {
 fn toBottom(app: *App) void {
     if (app.st.activeChannel()) |id| app.st.scrollOf(id).stick_bottom = true;
 }
-fn dmArrives(_: *App) void {
+fn dmArrives(app: *App) void {
+    // Como o app avisa: o susto da menção e, sendo DM, a cartinha.
+    pet.onPing(app.images.now_ms);
     pet.onDm();
 }
 fn carryingLetter(_: *App) bool {
@@ -487,11 +490,11 @@ fn plantTree(app: *App) void {
 fn plantSprout(app: *App) void {
     app.st.settings.mascot_plant_days = 3;
 }
-fn plantWilt(_: *App) void {
-    pet.qaWilt();
+fn plantWilt(app: *App) void {
+    app.st.settings.mascot_plant_wilted = true;
 }
-fn plantWatered(_: *App) bool {
-    return !pet.plantWilted() and pet.activity() == .none;
+fn plantWatered(app: *App) bool {
+    return !app.st.settings.mascot_plant_wilted and pet.activity() == .none;
 }
 fn blur(app: *App) void {
     app.qa_blur = true;
@@ -520,6 +523,36 @@ fn lifeOff(app: *App) void {
 fn uiOff(app: *App) void {
     app.st.settings.mascot_ui = false;
 }
+fn mouseAway(app: *App) void {
+    R.mouse_out = true;
+    c.ImGuiIO_AddMousePosEvent(app.io, -std.math.floatMax(f32), -std.math.floatMax(f32));
+}
+fn homeNoTrip(_: *App) bool {
+    return pet.mode() == .home and pet.goalNow() == .none and pet.activity() == .none;
+}
+fn resizeNow(_: *App) void {
+    pet.onResize();
+}
+var plant_days_before: u8 = 0;
+fn plantYesterday(app: *App) void {
+    var wall: c.SDL_Time = 0;
+    _ = c.SDL_GetCurrentTime(&wall);
+    const today = @import("ui/widgets.zig").localTime(@divTrunc(wall, 1_000_000_000)).day_index;
+    app.st.settings.mascot_plant_day = @intCast(today - 1);
+    app.st.settings.mascot_plant_days = 5;
+    plant_days_before = 5;
+}
+fn plantGrew(app: *App) bool {
+    return app.st.settings.mascot_plant_days == plant_days_before + 1;
+}
+fn nudgeChat(app: *App) void {
+    const sc = app.st.scrollOf(app.st.activeChannel() orelse return);
+    sc.stick_bottom = false;
+    sc.target = @max(0, sc.pos - 60);
+}
+fn leftPerch(_: *App) bool {
+    return pet.mode() != .perch;
+}
 fn stillHome(_: *App) bool {
     return pet.activity() == .none and pet.mode() == .home;
 }
@@ -529,18 +562,67 @@ fn otherChannel(_: *App, b: []u8) []const u8 {
 fn backToGeral(app: *App) void {
     app.actions.append(app.gpa, .{ .select_channel = 500005 }) catch {};
 }
-/// Abre uma thread qualquer do demo (para ele espiar).
+/// Abre uma thread aberta, sempre a mesma (a de menor id, com o canal pai de texto): uma
+/// arquivada ou trancada não tem caixa de mensagem, e sem caixa ele não aparece. (As
+/// threads do demo moram no servidor delas.)
 fn openAThread(app: *App) void {
+    var best: ?Id = null;
     var it = app.store.channels.iterator();
-    while (it.next()) |e| if (e.value_ptr.*.info.thread != null) {
-        app.actions.append(app.gpa, .{ .select_channel = e.key_ptr.* }) catch {};
-        return;
-    };
+    while (it.next()) |e| {
+        const info = &e.value_ptr.*.info;
+        const t = info.thread orelse continue;
+        if (t.archived or t.locked) continue;
+        const parent = app.store.channel(info.parent orelse continue) orelse continue;
+        if (parent.info.kind != .text) continue;
+        if (best == null or e.key_ptr.* < best.?) best = e.key_ptr.*;
+    }
+    if (best) |id| app.actions.append(app.gpa, .{ .select_channel = id }) catch {};
 }
 fn stopTyping(app: *App) void {
     const ch = app.st.activeChannel() orelse return;
     if (app.store.channel(ch)) |cs| cs.typing.clearRetainingCapacity();
 }
+// --- Em cada tema: aonde ele vai e se aparece lá ------------------------------------
+
+/// O tema não tem o lugar (ou não tem lugar para ele): nada a conferir. Tem: ele pousa
+/// lá e uma parte dele fica à vista.
+fn arrivedVisible(comptime g: pet.Goal) *const fn (*App) bool {
+    return struct {
+        fn f(app: *App) bool {
+            if (!pet.qaShown(app.images.now_ms)) return true;
+            if (g == .dm) {
+                // O ícone das DMs está na tela e não está atrás do véu: ele tem que chegar
+                // lá (debaixo ou em cima do ícone), sem desculpa de "o tema não tem".
+                const icon = qa.find("guild:0") orelse return pet.qaGoFailed();
+                if (pet.qaVeiled(.dm_icon, app.images.now_ms)) return true;
+                const p = pet.position();
+                return pet.mode() == .perch and pet.goalNow() == .dm and @abs(p[0] - (icon.x + icon.w / 2)) < @max(40, icon.w);
+            }
+            if (pet.qaGoFailed()) return true;
+            return pet.mode() == .perch and pet.goalNow() == g and pet.qaVisibleWidth() > 8;
+        }
+    }.f;
+}
+
+pub const ops_theme = [_]Op{
+    s("mascote: passeios no tema"),
+    run(lifeReset),
+    run(goFn(.dm)),
+    .{ .expect = .{ .name = "leva a cartinha até o ícone das DMs deste tema", .check = arrivedVisible(.dm), .timeout_ms = 9000 } },
+    .{ .shot = "mascote-dm" },
+    run(lifeReset),
+    run(goFn(.channels)),
+    .{ .expect = .{ .name = "espia da lista de canais e aparece", .check = arrivedVisible(.channels), .timeout_ms = 9000 } },
+    .{ .shot = "mascote-canais" },
+    run(lifeReset),
+    run(goFn(.members)),
+    .{ .expect = .{ .name = "sobe na lista de membros", .check = arrivedVisible(.members), .timeout_ms = 9000 } },
+    run(lifeReset),
+    run(goFn(.header)),
+    .{ .expect = .{ .name = "fica pendurado no cabeçalho", .check = arrivedVisible(.header), .timeout_ms = 9000 } },
+    run(lifeReset),
+};
+
 fn dropTarget(_: *App, b: []u8) []const u8 {
     return std.fmt.bufPrint(b, "composer", .{}) catch "";
 }
@@ -994,11 +1076,53 @@ pub const ops = [_]Op{
     run(lifeNow),
     .{ .wait = 500 },
     expect("vida própria desligada: ele fica quieto", stillHome),
+    run(plantWilt),
+    run(idleShort),
+    expect("mas a plantinha murcha ele rega mesmo assim", isAct(.water)),
+    .{ .expect = .{ .name = "e ela fica de pé", .check = plantWatered, .timeout_ms = 4000 } },
     run(lifeReset),
     run(uiOff),
     run(msgDeleted),
     .{ .wait = 300 },
     expect("sem \"Brinca com a interface\": mensagem apagada não mexe nele", stillHome),
+    run(lifeReset),
+    run(blur),
+    run(msgDeleted),
+    .{ .wait = 300 },
+    expect("com a janela sem foco, a interface não mexe nele", stillHome),
+    run(unblur),
+    .{ .wait = 100 },
+    run(petOff),
+    .{ .wait = 100 },
+    run(msgDeleted),
+    .{ .wait = 100 },
+    run(petOn),
+    .{ .wait = 300 },
+    expect("o que aconteceu com ele escondido não vale depois", stillHome),
+    run(resizeNow),
+    .{ .wait = 300 },
+    expect("logo que aparece, a janela se ajeitando não faz ele se segurar", stillHome),
+    run(lifeReset),
+    run(plantYesterday),
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.3, .fy = 0.5 } } },
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.35, .fy = 0.5 } } },
+    expect("primeiro toque de um dia novo: a plantinha cresce um dia", plantGrew),
+    run(lifeReset),
+    run(blur),
+    run(awayLong),
+    expect("acampou de novo", camped),
+    run(mouseAway),
+    run(unblur),
+    expect("voltou pelo teclado: desmonta", isAct(.pack)),
+    .{ .wait = 1700 },
+    expect("e, sem o mouse na janela, fica em casa", homeNoTrip),
+    run(lifeReset),
+    run(uiOff),
+    run(goFn(.msg)),
+    .{ .expect = .{ .name = "sentado na última mensagem de novo", .check = perchedAt(.msg), .timeout_ms = 5000 } },
+    run(nudgeChat),
+    .{ .expect = .{ .name = "a conversa rolou e o lugar mudou: ele volta", .check = leftPerch, .timeout_ms = 2000 } },
+    run(toBottom),
     run(lifeReset),
     run(petOff),
     expect("desligado nas Configurações, ele some", petGone),

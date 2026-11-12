@@ -39,6 +39,10 @@ pub const Target = union(enum) {
     dyn_at: struct { f: *const fn (app: *App, buf: []u8) []const u8, fx: f32, fy: f32 },
 };
 
+/// Um passo tirou o cursor da janela (como voltar pelo teclado com o mouse em outra
+/// tela): fica fora até o próximo passo que mexe o mouse.
+pub var mouse_out = false;
+
 pub const Op = union(enum) {
     section: []const u8,
     click: Target,
@@ -3086,7 +3090,7 @@ const ops_theme = [_]Op{
     .{ .shot = "tema-pequena" },
     .{ .resize = .{ 1280, 800 } },
     .{ .wait = 200 },
-} ++ @import("qa_plugins.zig").ops_theme ++ @import("qa_rtl.zig").ops_theme ++ @import("qa_fontes.zig").ops_theme ++ @import("qa_mencao.zig").ops_theme ++ @import("qa_cronometro.zig").ops_theme;
+} ++ @import("qa_plugins.zig").ops_theme ++ @import("qa_rtl.zig").ops_theme ++ @import("qa_fontes.zig").ops_theme ++ @import("qa_mencao.zig").ops_theme ++ @import("qa_cronometro.zig").ops_theme ++ @import("qa_mascote.zig").ops_theme;
 
 // --- Tela de login -------------------------------------------------------------
 
@@ -3629,10 +3633,13 @@ pub const Runner = struct {
     /// cursor do sistema no lugar do mouse a cada quadro. Aconteceu no Windows da
     /// CI ao encolher a janela: o clique do roteiro ia parar em outro lugar.
     pub fn holdMouse(r: *Runner, app: *App) void {
-        if (r.mouse_set) c.ImGuiIO_AddMousePosEvent(app.io, r.mouse[0], r.mouse[1]);
+        if (mouse_out) {
+            c.ImGuiIO_AddMousePosEvent(app.io, -std.math.floatMax(f32), -std.math.floatMax(f32));
+        } else if (r.mouse_set) c.ImGuiIO_AddMousePosEvent(app.io, r.mouse[0], r.mouse[1]);
     }
 
     fn pos(r: *Runner, app: *App, p: [2]f32) void {
+        mouse_out = false;
         r.mouse_set = true;
         r.mouse = p;
         c.ImGuiIO_AddMousePosEvent(app.io, p[0], p[1]);
