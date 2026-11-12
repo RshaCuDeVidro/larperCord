@@ -43,6 +43,7 @@
 - Com árabe ou hebraico no fim da conversa, o botão de voltar ao fim vai para o canto esquerdo em vez de cobrir o começo dessas linhas.
 
 **Mais leve**
+- O larperCord agora abre direto nos seus servidores, canais e conversas recentes a partir do que guardou da última vez, sem esperar o Discord: nos nossos testes, a primeira tela útil passou de uns 1,6 s para uns 0,1 s. Enquanto conecta, a caixa diz que dá para enviar quando conectar, e nada pula quando os dados de verdade chegam; o conjunto de abas em uso volta junto. Segue Configurações → Privacidade → "Guardar mensagens no disco", e Apagar cache apaga junto.
 - No Linux, a memória não se acumula mais depois de horas de uso: os buffers de imagem liberados voltam ao sistema em vez de ficar presos nas arenas da glibc de cada thread. Na conta do desenvolvedor, depois de 4h30, eram uns 190 MB parados à toa.
 - Configurações → Desempenho deixa escolher o renderizador: Automático ou um dos que o SDL tem no seu computador (Vulkan, OpenGL, Direct3D…). Vale na próxima vez que o app abrir; se o escolhido não abrir, o app abre no automático e avisa. Serve para quando um deles se dá mal com o driver da sua placa de vídeo.
 

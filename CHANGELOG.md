@@ -43,6 +43,7 @@
 - With Arabic or Hebrew at the bottom of the conversation, the jump-to-present button moves to the left corner instead of covering the start of those lines.
 
 **Lighter**
+- larperCord now opens straight into your servers, channels and recent conversations from what it saved last time, without waiting for Discord: in our tests the first usable screen went from about 1.6 s to about 0.1 s. While it connects, the message box says you can send once connected, and nothing jumps when the live data arrives; your active tab set comes back too. It follows Settings → Privacy → "Keep messages on disk", and Clear cache removes it.
 - On Linux, memory no longer piles up after hours of use: freed image buffers go back to the system instead of staying inside glibc's per-thread arenas. On the developer's account, after 4.5 hours, that was about 190 MB held for nothing.
 - Settings → Performance lets you pick the renderer: Automatic or one of the ones SDL has on your computer (Vulkan, OpenGL, Direct3D…). It applies the next time the app opens; if the chosen one doesn't open, the app starts with the automatic one and says so. Handy when one of them misbehaves with your graphics driver.
 
