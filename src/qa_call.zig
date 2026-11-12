@@ -346,14 +346,18 @@ pub const ops = [_]Op{
 /// tema) ou, sem ela, pela ação.
 fn joinCall(app: *App) void {
     app.handle(.{ .select_guild = g0 });
-    if (qa.find("channel:500014") == null) app.handle(.{ .toggle_voice = call0 });
 }
+/// O canal de voz à vista (nos temas de linha alta ele fica abaixo da dobra): o
+/// clique; senão, a ação.
 fn joinedOrList(app: *App, _: []u8) []const u8 {
-    return if (app.st.voice == null and qa.find("channel:500014") != null) "channel:500014" else "";
+    if (app.st.voice != null) return "";
+    if (qa.visiblePart("channel:500014") != null) return "channel:500014";
+    app.handle(.{ .toggle_voice = call0 });
+    return "";
 }
 /// "Ver a call" na faixa de voz (no terminal, o [ver]); sem a faixa, pela ação.
 fn viewMark(app: *App, _: []u8) []const u8 {
-    if (qa.find("voice-view") == null) {
+    if (qa.visiblePart("voice-view") == null) {
         app.handle(.{ .show_call = call0 });
         return "";
     }
