@@ -147,7 +147,7 @@ fn cardShown(_: *App) bool {
 /// Na tela: a bio e o banner do perfil do servidor (e os pronomes de lá no Store, à
 /// parte dos globais).
 fn cardServerProfile(app: *App) bool {
-    const p = app.store.profiles.get(ana) orelse return false;
+    const p = app.store.profile(ana, g0) orelse return false;
     return p.guild == g0 and std.mem.eql(u8, p.guild_pronouns, "ela/elu") and !std.mem.eql(u8, p.pronouns, "ela/elu") and
         qa.find("profile-bio-srv") != null and qa.find("profile-banner-srv") != null;
 }
@@ -188,7 +188,7 @@ fn voiceList1(app: *App) bool {
 }
 fn cardGlobal(app: *App) bool {
     const av = qa.find("profile-avatar") orelse return false;
-    const p = app.store.profiles.get(ana) orelse return false;
+    const p = app.store.profile(ana, g1) orelse return false;
     return named("card", ana, "ana.exe") and find("nome:global:{d}:ana.exe", .{ana}) == null and !serverAvatarIn(ana, av) and
         p.guild == g1 and qa.find("profile-bio-srv") == null and qa.find("profile-banner-srv") == null;
 }
@@ -196,7 +196,7 @@ fn cardGlobal(app: *App) bool {
 /// De volta ao primeiro servidor, o cartão pede o perfil de lá de novo (o Store tinha o
 /// do outro servidor).
 fn cardServerAgain(app: *App) bool {
-    const p = app.store.profiles.get(ana) orelse return false;
+    const p = app.store.profile(ana, g0) orelse return false;
     return app.st.guild == g0 and p.guild == g0 and named("card", ana, "Aninha") and qa.find("profile-bio-srv") != null;
 }
 

@@ -41,6 +41,9 @@ const entrada = @import("../core/entrada.zig");
 /// para perguntar). Lido da thread da interface.
 pub const sent = struct {
     const A = sys.Atomic(u64);
+    /// GET /users/{id}/profile pedidos (o QA confere que o cartão e Minha conta abertos
+    /// juntos não viram uma tempestade).
+    pub var profile_fetches: A = .init(0);
     pub var acks: A = .init(0);
     pub var ack_channel: A = .init(0);
     pub var ack_message: A = .init(0);
@@ -757,6 +760,7 @@ pub const Gateway = struct {
                     g.emit(.{ .relationship = .{ .user = r.user, .kind = if (r.accept) .friend else .none } });
                 },
                 .fetch_profile => |fp| {
+                    _ = sent.profile_fetches.fetchAdd(1, .monotonic);
                     const seed = for (users) |x| {
                         if (x.id == fp.user) break x;
                     } else continue;

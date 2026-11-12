@@ -187,10 +187,9 @@ pub const App = struct {
     gw_signaled: std.atomic.Value(bool) = .init(false),
     /// Perfis já pedidos nesta sessão (um pedido por pessoa).
     asked_profiles: std.AutoHashMapUnmanaged(types.Id, void) = .empty,
-    /// O último perfil pedido de cada pessoa: de que servidor e quando. O Store guarda
-    /// um perfil por pessoa, e ele muda com o servidor ("no servidor desde", o perfil
-    /// de lá): outro servidor pede de novo, e o mesmo só se não chegou em 30 s.
-    profile_asks: std.AutoHashMapUnmanaged(types.Id, struct { guild: types.Id, ms: i64 }) = .empty,
+    /// Quando cada perfil (pessoa, servidor; 0 = o global) foi pedido. O Store guarda um
+    /// por par: cada um é pedido uma vez, e de novo só se não chegou em 30 s.
+    profile_asks: std.AutoHashMapUnmanaged([2]types.Id, i64) = .empty,
     profiles_gen: u32 = 0,
     /// Cópia do tema com a cor de destaque e os cantos das configurações.
     th_custom: @import("theme/theme.zig").Theme = undefined,
@@ -1509,12 +1508,11 @@ pub const App = struct {
                     app.profiles_gen = app.store.profiles_gen;
                     app.profile_asks.clearRetainingCapacity();
                 }
+                const key: [2]types.Id = .{ user, wp.guild };
+                if (app.store.profiles.contains(key)) return;
                 const now_ms = now();
-                if (app.profile_asks.get(user)) |ask| if (ask.guild == wp.guild) {
-                    const have = if (app.store.profiles.get(user)) |p| p.guild == wp.guild else false;
-                    if (have or now_ms - ask.ms < 30_000) return;
-                };
-                app.profile_asks.put(app.gpa, user, .{ .guild = wp.guild, .ms = now_ms }) catch return;
+                if (app.profile_asks.get(key)) |ms| if (now_ms - ms < 30_000) return;
+                app.profile_asks.put(app.gpa, key, now_ms) catch return;
                 app.cmd(.{ .fetch_profile = .{ .user = user, .guild = wp.guild } });
             },
             .open_full_profile => |fp| {

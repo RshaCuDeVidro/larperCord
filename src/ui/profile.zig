@@ -104,7 +104,7 @@ fn accountMs(uid: Id) i64 {
 /// servidor e a pessoa tem (o de outro servidor mostra os globais até o daqui
 /// chegar). `guild_bio` fica preenchido só quando a bio mostrada é a de lá.
 fn profileFor(ctx: *const d.Ctx, uid: Id, gid: Id) ?types.Profile {
-    var p = ctx.store.profiles.get(uid) orelse return null;
+    var p = ctx.store.profile(uid, gid) orelse ctx.store.profile(uid, 0) orelse return null;
     const here = gid != 0 and p.guild == gid;
     if (here and p.guild_bio.len > 0) p.bio = p.guild_bio else p.guild_bio = "";
     if (here and p.guild_pronouns.len > 0) p.pronouns = p.guild_pronouns;
@@ -230,7 +230,8 @@ fn bio(col: *Col, uid: Id, pf: ?types.Profile, heading: bool) void {
     const ctx = col.ctx;
     // A do perfil do servidor (ver `profileFor`) ou a global.
     const server = p.guild_bio.len > 0;
-    const spans = (if (server) ctx.store.guild_bios.get(uid) else ctx.store.bios.get(uid)) orelse return;
+    const key: [2]Id = .{ uid, p.guild };
+    const spans = (if (server) ctx.store.guild_bios.get(key) else ctx.store.bios.get(key)) orelse return;
     if (server and col.dl != null) qa.mark(.{ .x = col.x, .y = col.y, .w = col.w, .h = 19 }, "profile-bio-srv", .{});
     const opts: rich.Opts = .{ .family = ctx.ui, .size = 13.5, .line_h = 19, .color = ctx.col(.text).mix(ctx.col(.muted), 0.1), .underline_links = ctx.st.settings.underline_links };
     if (heading) col.label(i18n.tr("SOBRE MIM", "ABOUT ME"));
