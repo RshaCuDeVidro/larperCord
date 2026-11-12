@@ -7,7 +7,10 @@ pub const Grid = struct { cols: usize = 0, rows: usize = 0, tile_w: f32 = 0, til
 /// que cabe, até `max_w`. Abaixo de `min_w`, fica no mínimo, com quantas colunas
 /// couberem, e a grade rola.
 pub fn layout(n: usize, area_w: f32, area_h: f32, gap: f32, min_w: f32, max_w: f32) Grid {
-    if (n == 0 or area_w <= 0) return .{};
+    if (n == 0) return .{};
+    // Sem largura nenhuma (a janela arrastada bem estreita): uma coluna de 1 px, sem
+    // dividir por zero lá fora.
+    if (area_w < 1) return .{ .cols = 1, .rows = n, .tile_w = 1, .tile_h = 9.0 / 16.0 };
     var best: Grid = .{};
     var cols: usize = 1;
     while (cols <= n) : (cols += 1) {
@@ -17,7 +20,8 @@ pub fn layout(n: usize, area_w: f32, area_h: f32, gap: f32, min_w: f32, max_w: f
         const by_w = (area_w - gap * (fc - 1)) / fc;
         const by_h = (area_h - gap * (fr - 1)) / fr * 16.0 / 9.0;
         const tw = @min(@min(by_w, by_h), max_w);
-        if (tw > best.tile_w) best = .{ .cols = cols, .rows = rows, .tile_w = tw, .tile_h = tw * 9.0 / 16.0 };
+        // Empate (os dois no máximo): mais colunas, e duas pessoas ficam lado a lado.
+        if (tw >= best.tile_w) best = .{ .cols = cols, .rows = rows, .tile_w = tw, .tile_h = tw * 9.0 / 16.0 };
     }
     if (best.tile_w >= min_w) return best;
     const tw = @min(min_w, area_w);
@@ -46,4 +50,13 @@ test "grade da call: o maior quadro que cabe, e o mínimo com rolagem" {
     try std.testing.expectEqual(@as(usize, 1), narrow.cols);
     try std.testing.expectEqual(@as(f32, 120), narrow.tile_w);
     try std.testing.expectEqual(@as(usize, 0), layout(0, 500, 500, 10, 176, 560).cols);
+    // Janela maximizada (1336×918): duas pessoas lado a lado, não empilhadas; três, 2+1.
+    const two = layout(2, 1336, 918, 10, 176, 560);
+    try std.testing.expectEqual(@as(usize, 2), two.cols);
+    try std.testing.expectEqual(@as(usize, 1), two.rows);
+    const three = layout(3, 1336, 1000, 10, 176, 560);
+    try std.testing.expectEqual(@as(usize, 2), three.cols);
+    // Área de largura zero ou negativa: uma coluna, nada de zero (quem chama divide).
+    const none = layout(4, -20, 300, 10, 176, 560);
+    try std.testing.expect(none.cols >= 1 and none.rows >= 1);
 }

@@ -78,7 +78,7 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, uid: Id, r: d.Rect, idx: usiz
     const url = w.avatarUrl(ctx, &ub, guild, uid);
     // O fundo: a cor da foto (quando ela já carregou) ou a do cargo, escura o
     // bastante para o nome em branco.
-    const photo: ?d.Rgba = if (url.len == 0) null else if (ctx.images.tint(url, av * scale, av * scale)) |t| d.Rgba.hex(t) else null;
+    const photo: ?d.Rgba = if (url.len == 0) null else if (ctx.images.tint(url, photo_px * scale, photo_px * scale)) |t| d.Rgba.hex(t) else null;
     const fill = (photo orelse ctx.th.role(if (u) |x| x.role else 0)).mix(d.Rgba.black, 0.5);
     d.rect(dl, r, fill, radius);
     const hb = d.hit(ctx, 8900 + idx, r);
@@ -93,7 +93,7 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, uid: Id, r: d.Rect, idx: usiz
         c.ImDrawList_AddCircleEx(dl, d.v(cx, cy), av / 2 + 4, ctx.col(.online).u(), 0, 3, 0);
         qa.mark(r, "grid-speaking:{d}", .{uid});
     }
-    w.avatarAt(ctx, dl, guild, cx, cy, av, uid, .circle, null, 1, false);
+    w.avatarAt(ctx, dl, guild, cx, cy, av, uid, .circle, null, 1, .{ .animate = false, .request = photo_px });
 
     // O nome e, embaixo, a atividade, centrados.
     const name = ctx.store.nameIn(guild, uid) orelse "?";
@@ -115,12 +115,13 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, guild: Id, uid: Id, r: d.Rect, idx: usiz
         }
     };
 
-    // Microfone e fone desligados, no canto de baixo (vermelho: foi o servidor).
+    // Microfone e fone desligados, no canto de cima (longe do nome e da atividade;
+    // vermelho: foi o servidor).
     const mic_off = vf.self_mute or vf.serverMuted();
     const deaf = vf.deafened();
     if (mic_off or deaf) {
         const iw: f32 = (if (deaf) @as(f32, 22) else 0) + (if (mic_off) @as(f32, 22) else 0);
-        const pr: d.Rect = .{ .x = r.right() - 10 - iw - 8, .y = r.bottom() - 36, .w = iw + 8, .h = 26 };
+        const pr: d.Rect = .{ .x = r.right() - 10 - iw - 8, .y = r.y + 10, .w = iw + 8, .h = 26 };
         d.rect(dl, pr, d.Rgba.black.alpha(0.45), 13);
         var x = pr.right() - 4;
         const my = pr.y + pr.h / 2;
@@ -201,6 +202,8 @@ fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bo
         return d.endRegion(ctx, y + 8, r.x);
     }
     const g = layout(list.len, r.w - pad * 2, r.h - pad * 2, tile_gap, tile_min, tile_max);
+    // Área estreita demais para um quadro (a janela sendo arrastada bem pequena).
+    if (g.cols == 0 or g.rows == 0) return d.endRegion(ctx, top + r.h, r.x);
     const rows_f: f32 = @floatFromInt(g.rows);
     const block_h = rows_f * g.tile_h + (rows_f - 1) * tile_gap;
     const y0 = top + @max(pad, (r.h - block_h) / 2);
