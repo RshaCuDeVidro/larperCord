@@ -256,7 +256,7 @@ fn connectionBanner(ctx: *d.Ctx) void {
     const tw = d.width(font, fs, text);
     const toast_on = ctx.now_ms < ctx.st.toast.until_ms;
     const r: d.Rect = .{ .x = ctx.win.x + (ctx.win.w - tw - 64) / 2, .y = ctx.win.y + (if (toast_on) @as(f32, 56) else 14) - (1 - k) * 10, .w = tw + 64, .h = 38 };
-    qa.mark(r, "conn-banner", .{});
+    qa.markTop(r, "conn-banner", .{});
     d.shadow(ctx.fg, r, 19, 12, ctx.col(.shadow).alpha(k));
     d.rect(ctx.fg, r, ctx.col(.overlay).alpha(k), 19);
     d.border(ctx.fg, r, (if (conn == .reconnecting) ctx.col(.idle) else ctx.col(.danger)).alpha(0.7 * k), 19, 1);

@@ -62,6 +62,19 @@ pub fn mark(r: layout.Rect, comptime fmt: []const u8, args: anytype) void {
     count += 1;
 }
 
+/// Como `mark`, para o que é desenhado fora de qualquer janela do ImGui (por cima de
+/// tudo): não pede a janela atual, que fora de uma janela é a "Debug" escondida do
+/// ImGui; pedir a lista de desenho dela a mostra na tela, e ela engole os cliques.
+pub fn markTop(r: layout.Rect, comptime fmt: []const u8, args: anytype) void {
+    if (!on() or count >= marks.len) return;
+    var m: Mark = .{ .key = undefined, .len = 0, .rect = r, .clip = .{ .x = -100_000, .y = -100_000, .w = 200_000, .h = 200_000 } };
+    @memcpy(m.key[0..scope_len], scope_buf[0..scope_len]);
+    const s = std.fmt.bufPrint(m.key[scope_len..], fmt, args) catch return;
+    m.len = @intCast(scope_len + s.len);
+    marks[count] = m;
+    count += 1;
+}
+
 pub fn find(key: []const u8) ?layout.Rect {
     // A última marcação com o nome vence (o que foi desenhado por cima).
     var i = prev_count;
@@ -135,7 +148,7 @@ pub fn overlapping(prefixes: []const []const u8) ?[2]layout.Rect {
     const slack: f32 = 1;
     for (prev[0..prev_count], 0..) |*a, i| {
         if (!has(a, prefixes)) continue;
-        for (prev[i + 1..prev_count]) |*b| {
+        for (prev[i + 1 .. prev_count]) |*b| {
             if (!has(b, prefixes)) continue;
             const ra = a.rect;
             const rb = b.rect;

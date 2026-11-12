@@ -5,10 +5,12 @@
 //! Clássico continua o de antes, e a abertura do demo espera a animação inteira
 //! antes de sair para o app. Sozinho: QA_SUITE=mascote.
 const std = @import("std");
+const c = @import("c");
 const App = @import("app.zig").App;
 const R = @import("qa_runner.zig");
 const Op = R.Op;
 const qa = @import("ui/qa.zig");
+const mascote = @import("ui/mascote.zig");
 const platform = @import("platform/window.zig");
 
 fn s(name: []const u8) Op {
@@ -249,6 +251,124 @@ fn petGone(_: *App) bool {
 fn petOn(app: *App) void {
     app.st.settings.mascot_pet = true;
 }
+fn tricked(_: *App) bool {
+    return pet.reaction() == .trick;
+}
+fn typeOne(app: *App) void {
+    const n = std.mem.indexOfScalar(u8, &app.st.input, 0) orelse return;
+    if (n + 1 >= app.st.input.len) return;
+    app.st.input[n] = 'a';
+    app.st.input[n + 1] = 0;
+}
+fn clearInput(app: *App) void {
+    @memset(&app.st.input, 0);
+    app.st.input_sync = true;
+}
+fn onFire(app: *App) bool {
+    return pet.onFire(app.images.now_ms);
+}
+fn wheelFast(app: *App) void {
+    c.ImGuiIO_AddMouseWheelEvent(app.io, 0, -20);
+}
+fn dizzyReact(_: *App) bool {
+    return pet.reaction() == .dizzy;
+}
+fn pushDrop(kind: c_uint) void {
+    var e = std.mem.zeroes(c.SDL_Event);
+    e.type = kind;
+    _ = c.SDL_PushEvent(&e);
+}
+fn dragOver(_: *App) void {
+    pushDrop(c.SDL_EVENT_DROP_POSITION);
+}
+fn dropIt(_: *App) void {
+    pushDrop(c.SDL_EVENT_DROP_FILE);
+}
+fn eating(_: *App) bool {
+    return pet.reaction() == .eat;
+}
+fn sendBlocked(app: *App) void {
+    pet.onSendBlocked(app.images.now_ms);
+}
+fn worried(_: *App) bool {
+    return pet.reaction() == .worried;
+}
+fn joinCall(app: *App) void {
+    app.actions.append(app.gpa, .{ .toggle_voice = 500014 }) catch {};
+}
+fn inCall(app: *App) bool {
+    return app.st.voice != null;
+}
+fn muteMic(app: *App) void {
+    app.st.muted = true;
+}
+fn leaveCall(app: *App) void {
+    app.st.muted = false;
+    app.actions.append(app.gpa, .{ .toggle_voice = 500014 }) catch {};
+}
+fn outOfCall(app: *App) bool {
+    return app.st.voice == null;
+}
+fn sulkSink(_: *App) bool {
+    return pet.mode() == .away and pet.sulkKind() == .sink;
+}
+fn sulkInflate(_: *App) bool {
+    return pet.mode() == .away and pet.sulkKind() == .inflate;
+}
+fn sulkBack(_: *App) bool {
+    return pet.mode() == .away and pet.sulkKind() == .back;
+}
+fn napping(app: *App) bool {
+    return pet.isAsleep(app.images.now_ms);
+}
+fn awake(app: *App) bool {
+    return !pet.isAsleep(app.images.now_ms);
+}
+fn petHidden(app: *App) bool {
+    return pet.isHidden(app.images.now_ms) and qa.find("pet") == null;
+}
+fn unhide(_: *App) void {
+    pet.qaUnhide();
+}
+fn isClassic(app: *App) bool {
+    return mascote.Kind.of(app.st.settings.mascot) == .classico;
+}
+fn backToTerminal(app: *App) void {
+    app.st.settings.mascot = 0;
+}
+fn emojiLaugh(app: *App) void {
+    pet.onEmoji("😂", app.images.now_ms);
+}
+fn emojiFire(app: *App) void {
+    pet.onEmoji("🔥", app.images.now_ms);
+}
+fn statusDnd(app: *App) void {
+    app.st.settings.my_status = 2;
+}
+fn statusInvisible(app: *App) void {
+    app.st.settings.my_status = 3;
+}
+fn statusOnline(app: *App) void {
+    app.st.settings.my_status = 0;
+}
+fn noMention(app: *App) void {
+    pet.onPing(app.images.now_ms);
+}
+fn notStartled(_: *App) bool {
+    return pet.reaction() != .ping;
+}
+fn cloned(_: *App) bool {
+    return pet.reaction() == .clone;
+}
+fn walkedBack(_: *App) bool {
+    return pet.reaction() == .undo;
+}
+fn wheelSoft(app: *App) void {
+    c.ImGuiIO_AddMouseWheelEvent(app.io, 0, -1);
+}
+fn tickled(_: *App) bool {
+    return pet.reaction() == .tickle;
+}
 fn dropTarget(_: *App, b: []u8) []const u8 {
     return std.fmt.bufPrint(b, "composer", .{}) catch "";
 }
@@ -403,6 +523,127 @@ pub const ops = [_]Op{
     .{ .wait = 500 },
     .{ .shot = "pet-bravo" },
     run(home),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    expect("emburrado de novo: agora afunda na caixa, só as orelhas de fora", sulkSink),
+    .{ .wait = 600 },
+    .{ .shot = "pet-emburrado-afunda" },
+    run(home),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    expect("e na terceira infla vermelho soltando fumaça", sulkInflate),
+    .{ .wait = 600 },
+    .{ .shot = "pet-emburrado-infla" },
+    run(home),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    expect("e na quarta vira de costas", sulkBack),
+    .{ .hover = .{ .mark = "pet" } },
+    .{ .wait = 400 },
+    .{ .shot = "pet-emburrado-costas" },
+    run(home),
+    .{ .wait = 100 },
+    .{ .dclick = .{ .mark = "pet" } },
+    expect("dois cliques: um truque", tricked),
+    .{ .wait = 500 },
+    .{ .shot = "pet-truque" },
+    run(home),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    run(typeOne),
+    expect("digitando muito rápido: pega fogo", onFire),
+    .{ .shot = "pet-fogo" },
+    run(clearInput),
+    run(home),
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.2, .fy = 0.5 } } },
+    run(wheelFast),
+    expect("a conversa rolando rápido demais: fica tonto", dizzyReact),
+    .{ .wait = 300 },
+    .{ .shot = "pet-tonto" },
+    run(home),
+    run(dragOver),
+    .{ .wait = 150 },
+    .{ .shot = "pet-boca-aberta" },
+    run(dropIt),
+    expect("soltou o arquivo na janela: ele come", eating),
+    run(home),
+    run(sendBlocked),
+    expect("a mensagem não pôde sair: fica preocupado", worried),
+    .{ .wait = 600 },
+    .{ .shot = "pet-preocupado" },
+    run(home),
+    run(joinCall),
+    expect("em call: fone de ouvido", inCall),
+    run(muteMic),
+    .{ .wait = 150 },
+    .{ .shot = "pet-call-mudo" },
+    run(leaveCall),
+    expect("saiu da call", outOfCall),
+    run(home),
+    run(emojiLaugh),
+    expect("reagiu com 😂 numa mensagem: ele ri", laughing),
+    run(home),
+    run(emojiFire),
+    expect("reagiu com 🔥: pega fogo", onFire),
+    run(home),
+    run(statusDnd),
+    run(noMention),
+    expect("no não perturbe, menção não assusta", notStartled),
+    .{ .wait = 100 },
+    .{ .shot = "pet-nao-perturbe" },
+    run(statusInvisible),
+    .{ .wait = 100 },
+    .{ .shot = "pet-invisivel" },
+    run(statusOnline),
+    run(home),
+    .{ .key = .{ .key = c.ImGuiKey_C, .ctrl = true } },
+    expect("Ctrl+C: faz um clone", cloned),
+    .{ .wait = 300 },
+    .{ .shot = "pet-clone" },
+    run(home),
+    .{ .key = .{ .key = c.ImGuiKey_Z, .ctrl = true } },
+    expect("Ctrl+Z: anda para trás", walkedBack),
+    run(home),
+    .{ .hover = .{ .mark = "pet" } },
+    run(wheelSoft),
+    expect("a roda do mouse em cima dele: cócegas", tickled),
+    run(home),
+    .{ .rclick = .{ .mark = "pet" } },
+    click("menu:Fazer um truque"),
+    expect("botão direito → Fazer um truque", tricked),
+    run(home),
+    .{ .rclick = .{ .mark = "pet" } },
+    .{ .wait = 150 },
+    .{ .shot = "pet-menu" },
+    click("menu:Dormir"),
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.2, .fy = 0.5 } } },
+    expect("botão direito → Dormir: dorme, e mexer o mouse não acorda", napping),
+    click("pet"),
+    expect("um clique nele acorda", awake),
+    .{ .rclick = .{ .mark = "pet" } },
+    click("menu:Esconder por 1 hora"),
+    expect("botão direito → Esconder por 1 hora: some", petHidden),
+    run(unhide),
+    .{ .wait = 100 },
+    .{ .rclick = .{ .mark = "pet" } },
+    click("menu:Trocar de mascote"),
+    expect("botão direito → Trocar de mascote: vira o Clássico", isClassic),
+    run(backToTerminal),
     .{ .wait = 100 },
     run(notePos),
     .{ .drag = .{ .from = .{ .mark = "pet" }, .to = .{ .at = .{ .key = "composer", .fx = 0.3, .fy = -6 } } } },

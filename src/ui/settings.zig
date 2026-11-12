@@ -699,17 +699,6 @@ fn page(p: *Page, previews: []const Preview) void {
             p.swatches(&@import("../app.zig").App.accents, &s.accent);
             p.heading(i18n.tr("Cantos", "Corners"));
             p.segmented(&.{ i18n.tr("Do tema", "Theme"), i18n.tr("Retos", "Square"), i18n.tr("Suaves", "Soft"), i18n.tr("Redondos", "Round") }, &s.corners);
-            p.heading(i18n.tr("Mascote", "Mascot"));
-            mascotPicker(p, &s.mascot);
-            if (mascote.Kind.of(s.mascot) == .terminal) {
-                p.heading(i18n.tr("Abertura", "Opening"));
-                const before = s.mascot_opening;
-                p.segmented(&.{ i18n.tr("Boot", "Boot"), i18n.tr("Código", "Code"), i18n.tr("TV", "TV"), i18n.tr("Pixels", "Pixels"), i18n.tr("Portal", "Portal"), i18n.tr("Sortear", "Shuffle") }, &s.mascot_opening);
-                if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
-            }
-            p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
-            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho e cutucar.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it and poke it."), &s.mascot_pet);
-            if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
             p.divider();
             themeColors(p);
             p.heading("Layout");
@@ -724,6 +713,19 @@ fn page(p: *Page, previews: []const Preview) void {
             }
             p.divider();
             @import("settings_timer.zig").section(p);
+            // O mascote por último: o que já existia na página não muda de lugar.
+            p.divider();
+            p.heading(i18n.tr("Mascote", "Mascot"));
+            mascotPicker(p, &s.mascot);
+            if (mascote.Kind.of(s.mascot) == .terminal) {
+                p.heading(i18n.tr("Abertura", "Opening"));
+                const before = s.mascot_opening;
+                p.segmented(&.{ i18n.tr("Boot", "Boot"), i18n.tr("Código", "Code"), i18n.tr("TV", "TV"), i18n.tr("Pixels", "Pixels"), i18n.tr("Portal", "Portal"), i18n.tr("Sortear", "Shuffle") }, &s.mascot_opening);
+                if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
+            }
+            p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
+            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
+            if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
         },
         .acessibilidade => {
             p.title(i18n.tr("Acessibilidade", "Accessibility"));

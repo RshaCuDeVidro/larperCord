@@ -225,6 +225,12 @@ const Pose = struct {
     xeyes: bool = false,
     /// Expressões dos momentos dentro do app (ver `moment`); `.prompt` é o ">_".
     face: Face = .prompt,
+    /// Cores do corpo (topo e base do degradê) no lugar das da marca.
+    head: ?[2]Rgba = null,
+    /// De costas: sem rosto.
+    no_face: bool = false,
+    /// Boca aberta (comendo, bocejando): 0 = a boca normal.
+    mouth_open: f32 = 0,
     smile: f32 = 1,
     /// Pulinho do rosto a cada tecla.
     pop: f32 = 0,
@@ -365,8 +371,8 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
     // Degradê único para orelhas e corpo (sem emenda entre as peças).
     const ga = base.ap(14, -16);
     const gb = base.ap(113, 96);
-    var top = tint orelse head_top;
-    var bottom = tint orelse head_bottom;
+    var top = tint orelse if (p.head) |hc| hc[0] else head_top;
+    var bottom = tint orelse if (p.head) |hc| hc[1] else head_bottom;
     if (p.flash > 0) {
         top = top.mix(cream, p.flash);
         bottom = bottom.mix(cream, p.flash);
@@ -407,7 +413,9 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
     const fk = face.k();
     const eye_w = (if (small) @as(f32, 7.6) else 5.4) * fk;
     const ink_c = ink.alpha(alpha * (1 - p.flash));
-    if (p.face != .prompt and !p.xeyes) {
+    if (p.no_face) {
+        // De costas: nada de rosto.
+    } else if (p.face != .prompt and !p.xeyes) {
         faceOf(dl, face, p.face, eye_w, fk, ink_c, small);
     } else if (p.xeyes) {
         // Olhos de "x" (o erro).
@@ -434,8 +442,11 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
             stroke(dl, &.{ face.ap(73, 58), face.ap(73 + 22 * p.under, 58) }, eye_w, ink_c);
         }
     }
-    // Boca.
-    if (p.smile > 0 and (p.face == .prompt or p.xeyes)) {
+    // Boca aberta (comendo, bocejando) no lugar da boca de cada cara.
+    if (p.mouth_open > 0.01 and !p.no_face) {
+        c.ImDrawList_AddEllipseFilled(dl, face.ap(mid_x, 70), d.v((4 + 5 * p.mouth_open) * fk, (2 + 7 * p.mouth_open) * fk), ink_c.u());
+        c.ImDrawList_AddEllipseFilled(dl, face.ap(mid_x, 72 + 3 * p.mouth_open), d.v((2.4 + 3 * p.mouth_open) * fk, (1 + 2.6 * p.mouth_open) * fk), Rgba.hex(0xFF6B9A).col(alpha));
+    } else if (p.smile > 0 and !p.no_face and (p.face == .prompt or p.xeyes)) {
         var pts: [17]c.ImVec2 = undefined;
         const steps: usize = 16;
         const upto: usize = @max(1, @as(usize, @intFromFloat(@round(@as(f32, @floatFromInt(steps)) * std.math.clamp(p.smile, 0, 1)))));
@@ -1177,8 +1188,30 @@ pub fn moment(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, mood: Mood, t: f32
 
 // --- O mascote do canto -----------------------------------------------------------
 
+/// Os chapéus das datas especiais (ui/mascote_contas.zig).
+pub const Hat = contas.Hat;
+
 /// Como o mascote do canto (ui/mascote_pet.zig) aparece neste quadro.
 pub const PetLook = struct {
+    hat: Hat = .none,
+    /// Fone de ouvido (em call) e fita na boca (microfone mudo).
+    headset: bool = false,
+    tape: bool = false,
+    /// Olheiras (madrugada).
+    bags: bool = false,
+    /// De costas (emburrado); `peek` espia de lado (-1..1, 0 = não).
+    back: bool = false,
+    peek: f32 = 0,
+    /// Cores do corpo no lugar das da marca (a cor de destaque do tema).
+    colors: ?[2]Rgba = null,
+    /// Boca aberta (comendo, bocejando).
+    mouth: f32 = 0,
+    /// Vermelho de raiva (0..1) e o relógio da fumaça das orelhas.
+    red: f32 = 0,
+    smoke_t: f32 = -1,
+    /// Fogo no teclado (0..1) e o relógio das chamas.
+    flames: f32 = 0,
+    flames_t: f32 = 0,
     face: Face = .prompt,
     look: [2]f32 = .{ 0, 0 },
     /// Giro do corpo inteiro (radianos), achatar (+) ou esticar (-).
@@ -1194,7 +1227,15 @@ pub const PetLook = struct {
     /// Gota de suor (0 = nenhuma) e o quanto ela escorreu.
     drop: f32 = 0,
     drop_slide: f32 = 0,
+    /// Transparência (invisível: um fantasminha; o clone sumindo).
+    alpha: f32 = 1,
 };
+
+/// Onde fica, na tela, o ponto (x, y) do desenho do mascote do canto (sem giro).
+pub fn petPoint(cx: f32, cy: f32, size: f32, x: f32, y: f32) c.ImVec2 {
+    const k = size * 0.78 / body_w;
+    return d.v(cx + (x - mid_x) * k, cy + (y - mid_y) * k);
+}
 
 /// O mascote do canto centrado em (cx, cy).
 pub fn pet(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, pl: PetLook) void {
@@ -1207,7 +1248,123 @@ pub fn pet(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, pl: PetLook) void {
     p.turn_r = pl.ears - pl.wave;
     p.drop = pl.drop;
     p.drop_slide = pl.drop_slide;
-    figure(dl, base, p, 1, null, size < 64);
+    p.mouth_open = pl.mouth;
+    p.no_face = pl.back and pl.peek == 0;
+    if (pl.back and pl.peek != 0) p.look = .{ pl.peek * 2.2, 0 };
+    var cols = pl.colors orelse [2]Rgba{ head_top, head_bottom };
+    if (pl.back) cols = .{ cols[0].mix(ink, 0.18), cols[1].mix(ink, 0.25) };
+    if (pl.red > 0) cols = .{ cols[0].mix(Rgba.hex(0xFF4A5A), pl.red), cols[1].mix(Rgba.hex(0xD9223A), pl.red) };
+    p.head = cols;
+    if (pl.headset) headsetBand(dl, base, false);
+    figure(dl, base, p, pl.alpha, null, size < 64);
+    if (pl.flames > 0) flames(dl, base, pl.flames, pl.flames_t);
+    if (pl.bags and !p.no_face) {
+        const face = base.mul(Af.move(pl.look[0] * 4, pl.look[1] * 2.6));
+        const fk = face.k();
+        for ([_][2]f32{ .{ 40, 60 }, .{ 84, 64 } }) |e| {
+            var pts: [9]c.ImVec2 = undefined;
+            for (0..9) |i| {
+                const a = std.math.pi * (0.15 + 0.7 * @as(f32, @floatFromInt(i)) / 8.0);
+                pts[i] = face.ap(e[0] + @cos(a) * 7, e[1] + @sin(a) * 2.5);
+            }
+            c.ImDrawList_AddPolyline(dl, &pts, pts.len, Rgba.hex(0x4A1A8A).col(0.85), @max(1.6 * fk, 0.8), 0);
+        }
+    }
+    if (pl.tape and !p.no_face) {
+        const face = base.mul(Af.move(pl.look[0] * 4, pl.look[1] * 2.6));
+        const m = face.around(mid_x, 70, Af.turn(-0.12));
+        c.ImDrawList_AddQuadFilled(dl, m.ap(48, 65), m.ap(80, 65), m.ap(80, 75), m.ap(48, 75), Rgba.hex(0xD8D2C4).col(1));
+        stroke(dl, &.{ m.ap(56, 67), m.ap(62, 73) }, @max(1.4 * face.k(), 0.8), Rgba.hex(0x9E978A));
+        stroke(dl, &.{ m.ap(62, 67), m.ap(56, 73) }, @max(1.4 * face.k(), 0.8), Rgba.hex(0x9E978A));
+    }
+    if (pl.headset) headsetBand(dl, base, true);
+    switch (pl.hat) {
+        .none => {},
+        .santa => santaHat(dl, base),
+        .witch => witchHat(dl, base),
+        .party => partyHat(dl, base),
+    }
+    if (pl.smoke_t >= 0) smoke(dl, base, pl.smoke_t);
+}
+
+/// O fone de ouvido: o arco por trás da cabeça (`front` = falso) e as conchas e o
+/// microfone pela frente.
+fn headsetBand(dl: *c.ImDrawList, m: Af, front: bool) void {
+    const k = m.k();
+    const band = Rgba.hex(0x22182E);
+    if (!front) {
+        var pts: [21]c.ImVec2 = undefined;
+        for (0..21) |i| {
+            const a = std.math.pi * (1 + @as(f32, @floatFromInt(i)) / 20.0);
+            pts[i] = m.ap(mid_x + @cos(a) * 58, 30 + @sin(a) * 44);
+        }
+        c.ImDrawList_AddPolyline(dl, &pts, pts.len, band.u(), 6 * k, 0);
+        return;
+    }
+    for ([_]f32{ 4, 112 }) |x| {
+        c.ImDrawList_AddRectFilledEx(dl, m.ap(x, 22), m.ap(x + 12, 46), band.u(), 4 * k, 0);
+        c.ImDrawList_AddRectFilledEx(dl, m.ap(x + 2, 25), m.ap(x + 10, 43), Rgba.hex(0x9D40FF).u(), 3 * k, 0);
+    }
+    stroke(dl, &.{ m.ap(118, 44), m.ap(112, 64), m.ap(94, 70) }, 2.6 * k, band);
+    c.ImDrawList_AddCircleFilled(dl, m.ap(92, 70), 3.6 * k, band.u(), 0);
+}
+
+fn santaHat(dl: *c.ImDrawList, m: Af) void {
+    const k = m.k();
+    c.ImDrawList_PathLineTo(dl, m.ap(38, 2));
+    c.ImDrawList_PathBezierQuadraticCurveTo(dl, m.ap(70, -44), m.ap(104, -26), 10);
+    c.ImDrawList_PathLineTo(dl, m.ap(90, 2));
+    fillPath(dl, Rgba.hex(0xE0303A).u());
+    c.ImDrawList_AddRectFilledEx(dl, m.ap(33, -4), m.ap(95, 7), Rgba.hex(0xF6F2EE).u(), 5 * k, 0);
+    c.ImDrawList_AddCircleFilled(dl, m.ap(104, -26), 6 * k, Rgba.hex(0xF6F2EE).u(), 0);
+}
+
+fn witchHat(dl: *c.ImDrawList, m: Af) void {
+    const k = m.k();
+    c.ImDrawList_AddEllipseFilled(dl, m.ap(mid_x, 2), d.v(44 * k, 7 * k), Rgba.hex(0x1B1030).u());
+    c.ImDrawList_PathLineTo(dl, m.ap(44, 1));
+    c.ImDrawList_PathBezierQuadraticCurveTo(dl, m.ap(64, -30), m.ap(84, -46), 10);
+    c.ImDrawList_PathBezierQuadraticCurveTo(dl, m.ap(78, -22), m.ap(84, 1), 10);
+    fillPath(dl, Rgba.hex(0x241540).u());
+    c.ImDrawList_AddQuadFilled(dl, m.ap(46, -4), m.ap(82, -4), m.ap(83, 1), m.ap(45, 1), Rgba.hex(0x9D40FF).u());
+}
+
+fn partyHat(dl: *c.ImDrawList, m: Af) void {
+    const k = m.k();
+    c.ImDrawList_AddTriangleFilled(dl, m.ap(50, 3), m.ap(78, 3), m.ap(64, -38), Rgba.hex(0x29E6FF).u());
+    for ([_]f32{ -8, -20 }) |y| {
+        const w = (y + 38) / 41 * 14;
+        c.ImDrawList_AddLineEx(dl, m.ap(64 - w, y), m.ap(64 + w, y), Rgba.hex(0xFF5FA8).u(), 3 * k, 0);
+    }
+    c.ImDrawList_AddCircleFilled(dl, m.ap(64, -39), 4.5 * k, Rgba.hex(0xF7E04A).u(), 0);
+}
+
+/// Fumaça saindo das orelhas (raiva), em ciclos.
+fn smoke(dl: *c.ImDrawList, m: Af, t: f32) void {
+    const k = m.k();
+    for ([_]f32{ 21, body_w - 21 }) |x| {
+        for (0..3) |i| {
+            const f = @mod(t * 1.4 + @as(f32, @floatFromInt(i)) / 3.0, 1);
+            const p = m.ap(x + (if (x < 64) @as(f32, -1) else 1) * f * 10, -16 - f * 26);
+            c.ImDrawList_AddCircleFilled(dl, p, (3 + 5 * f) * k, Rgba.hex(0x8A8496).col(0.7 * (1 - f)), 0);
+        }
+    }
+}
+
+/// Chamas nos pés (fogo no teclado): sobem da linha dos pés por cima da parte de
+/// baixo do corpo.
+fn flames(dl: *c.ImDrawList, m: Af, amount: f32, t: f32) void {
+    const k = m.k();
+    for (0..6) |i| {
+        const fi: f32 = @floatFromInt(i);
+        const x = 14 + fi * 20;
+        const flick = 0.75 + 0.25 * @sin(t * 22 + fi * 1.7);
+        const h = (34 + 12 * @sin(t * 15 + fi * 2.3)) * amount * flick;
+        const base_pt = m.ap(x, 104);
+        const tip = m.ap(x + @sin(t * 18 + fi) * 4, 104 - h);
+        c.ImDrawList_AddTriangleFilled(dl, d.v(base_pt.x - 10 * k, base_pt.y), d.v(base_pt.x + 10 * k, base_pt.y), tip, Rgba.hex(0xFF6A1A).col(0.92 * amount));
+        c.ImDrawList_AddTriangleFilled(dl, d.v(base_pt.x - 5 * k, base_pt.y), d.v(base_pt.x + 5 * k, base_pt.y), m.ap(x, 104 - h * 0.6), Rgba.hex(0xFFE04A).col(amount));
+    }
 }
 
 /// Mascote pequeno e parado ("Sobre", barra de título).

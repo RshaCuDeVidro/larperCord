@@ -452,6 +452,7 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
             n += conta_menu.statusItems(ctx, items[n..]);
             add(&items, &n, .{ .label = "Ver perfil", .en = "View Profile", .id = 84, .sep = true });
         },
+        .pet => for (@import("mascote_pet.zig").menu_items, 1..) |it, i| add(&items, &n, .{ .label = it.pt, .en = it.en, .id = @intCast(i) }),
         .notif => n += conta_menu.notifItems(ctx, id, items[n..]),
         .block_confirm => n += conta_menu.blockItems(ctx, id, items[n..]),
         .voice_move => {
@@ -675,6 +676,7 @@ fn guildPart(buf: []u8, guild: Id) []const u8 {
 fn choose(ctx: *d.Ctx, kind: state.MenuKind, id: Id, item: u8, r: d.Rect) void {
     const st = ctx.st;
     close(ctx);
+    if (kind == .pet) return @import("mascote_pet.zig").menuChoose(ctx, item);
     if (kind == .plugin_choices) {
         const host = @import("../plugins/host.zig");
         const hit = host.menuEntry(host.appOf(), choice_kind, choice_index) orelse return;

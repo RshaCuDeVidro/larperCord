@@ -53,7 +53,37 @@ pub fn pickOpening(setting: u8, seed: u64) Opening {
 }
 
 /// As reações do mascote do canto (ui/mascote_pet.zig).
-pub const Reaction = enum { none, hop, ping, laugh, gg, sad, wave, love, angry, wake, poke };
+pub const Reaction = enum { none, hop, ping, laugh, gg, sad, wave, love, angry, wake, poke, trick, dizzy, eat, stretch, yawn, worried, clone, undo, search, tickle, startle };
+
+/// Os chapéus das datas especiais.
+pub const Hat = enum { none, santa, witch, party };
+
+/// O chapéu do dia: gorro de 20 a 26 de dezembro, chapéu de bruxa de 25 de outubro a
+/// 1º de novembro, chapéu de festa no 31 de dezembro e no 1º de janeiro.
+pub fn hatFor(month: u8, day: u8) Hat {
+    if (month == 12 and day >= 20 and day <= 26) return .santa;
+    if ((month == 10 and day >= 25) or (month == 11 and day == 1)) return .witch;
+    if ((month == 12 and day == 31) or (month == 1 and day == 1)) return .party;
+    return .none;
+}
+
+/// Os emojis que viram cada reação (o resto é um pulinho).
+const emoji_reactions = [_]struct { r: Reaction, list: []const []const u8 }{
+    .{ .r = .laugh, .list = &.{ "😂", "🤣", "😆", "😹", "💀", "😅" } },
+    .{ .r = .love, .list = &.{ "❤", "💜", "💖", "💕", "💗", "🥰", "😍", "😻", "🫶" } },
+    .{ .r = .gg, .list = &.{ "🎉", "🥳", "🏆", "👑", "🎊" } },
+    .{ .r = .sad, .list = &.{ "😢", "😭", "😞", "💔", "🥺" } },
+    .{ .r = .wave, .list = &.{"👋"} },
+    .{ .r = .angry, .list = &.{ "😡", "🤬", "😠", "👎" } },
+    .{ .r = .startle, .list = &.{ "😮", "😱", "😲", "🤯", "👀" } },
+};
+
+/// A reação do mascote do canto a um emoji que você pôs numa mensagem (🔥 é à
+/// parte: pega fogo).
+pub fn reactionForEmoji(e: []const u8) Reaction {
+    for (emoji_reactions) |g| for (g.list) |x| if (std.mem.startsWith(u8, e, x)) return g.r;
+    return .hop;
+}
 
 /// Algo em minúsculas (só ASCII) contém `needle`?
 pub fn has(text: []const u8, needle: []const u8) bool {
@@ -235,4 +265,25 @@ test "a reação ao que você escreve" {
     try std.testing.expectEqual(Reaction.hop, reactionFor("oito horas"));
     try std.testing.expectEqual(Reaction.love, reactionFor("vcs <3"));
     try std.testing.expectEqual(Reaction.hop, reactionFor("bora jogar"));
+}
+
+test "o chapéu do dia" {
+    try std.testing.expectEqual(Hat.santa, hatFor(12, 24));
+    try std.testing.expectEqual(Hat.none, hatFor(12, 27));
+    try std.testing.expectEqual(Hat.witch, hatFor(10, 31));
+    try std.testing.expectEqual(Hat.witch, hatFor(11, 1));
+    try std.testing.expectEqual(Hat.none, hatFor(11, 2));
+    try std.testing.expectEqual(Hat.party, hatFor(12, 31));
+    try std.testing.expectEqual(Hat.party, hatFor(1, 1));
+    try std.testing.expectEqual(Hat.none, hatFor(7, 4));
+}
+
+test "a reação ao emoji" {
+    try std.testing.expectEqual(Reaction.laugh, reactionForEmoji("😂"));
+    try std.testing.expectEqual(Reaction.love, reactionForEmoji("❤️"));
+    try std.testing.expectEqual(Reaction.gg, reactionForEmoji("🎉"));
+    try std.testing.expectEqual(Reaction.sad, reactionForEmoji("😭"));
+    try std.testing.expectEqual(Reaction.startle, reactionForEmoji("👀"));
+    try std.testing.expectEqual(Reaction.hop, reactionForEmoji("👍"));
+    try std.testing.expectEqual(Reaction.hop, reactionForEmoji("pepe_dance"));
 }

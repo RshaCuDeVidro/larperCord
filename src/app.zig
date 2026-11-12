@@ -1266,6 +1266,7 @@ pub const App = struct {
         if (b.reason == .none) return true;
         var buf: [240]u8 = undefined;
         app.st.showToast(now(), !b.reason.cooling(), "{s}", "{s}", .{send_limits.reasonText(&buf, b, now())});
+        @import("ui/mascote_pet.zig").onSendBlocked(now());
         return false;
     }
 
@@ -1870,6 +1871,8 @@ pub const App = struct {
                     mine = x.me;
                 };
                 app.store.react(f.m, r.emoji, true, !mine);
+                // O mascote do canto reage ao emoji que você pôs.
+                if (!mine) @import("ui/mascote_pet.zig").onEmoji(r.emoji.text(), now());
                 app.cmd(.{ .react = .{ .channel = f.cs.info.id, .id = r.id, .emoji = r.emoji, .add = !mine } });
             },
             .open_dm => |user| {
@@ -2866,9 +2869,12 @@ pub const App = struct {
                         // Some da tela na hora; o resto do encerramento é por trás.
                         _ = c.SDL_HideWindow(app.win.window);
                     }
-                    // Arquivo arrastado para a janela: vai para a bandeja.
-                    if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null)
+                    // Arquivo arrastado para a janela: vai para a bandeja (e o mascote do canto come).
+                    if (e.type == c.SDL_EVENT_DROP_POSITION) @import("ui/mascote_pet.zig").onDragOver(now());
+                    if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
                         if (e.drop.data) |p| app.attachFile(std.mem.span(p));
+                        @import("ui/mascote_pet.zig").onDrop(now());
+                    }
                 }
                 got = c.SDL_PollEvent(&e);
             }

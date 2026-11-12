@@ -1821,7 +1821,7 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     }
     // O lugar do mascote do canto, à esquerda dos botões: ele mora ali dentro e não
     // cobre nada da conversa nem da caixa.
-    if (ctx.st.settings.mascot_pet and r.w > 320) {
+    if (mascote_pet.wantsSlot(ctx.st.settings.mascot_pet, ctx.now_ms) and r.w > 320) {
         const slot_w: f32 = 46;
         input_r -= slot_w;
         mascote_pet.slot(.{ .x = input_r + 2, .y = r.y, .w = slot_w, .h = r.h }, ctx.now_ms);
