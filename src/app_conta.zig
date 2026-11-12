@@ -133,7 +133,7 @@ fn saveProfile(app: *App, name: []const u8, pronouns: []const u8, bio: []const u
     if (st.conta.profile_busy) return;
     const me = app.store.me;
     const cur_name = userName(app, me);
-    const pf = app.store.profiles.get(me);
+    const pf = app.store.profile(me, 0);
     const name_t = std.mem.trim(u8, name, " \t\r\n");
     const want_name = !std.mem.eql(u8, name_t, cur_name);
     const want_profile = !std.mem.eql(u8, std.mem.trim(u8, pronouns, " \t\r\n"), if (pf) |x| x.pronouns else "") or

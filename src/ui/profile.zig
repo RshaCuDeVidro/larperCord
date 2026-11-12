@@ -104,7 +104,7 @@ fn accountMs(uid: Id) i64 {
 /// servidor e a pessoa tem (o de outro servidor mostra os globais até o daqui
 /// chegar). `guild_bio` fica preenchido só quando a bio mostrada é a de lá.
 fn profileFor(ctx: *const d.Ctx, uid: Id, gid: Id) ?types.Profile {
-    var p = ctx.store.profiles.get(uid) orelse return null;
+    var p = ctx.store.profile(uid, gid) orelse ctx.store.profile(uid, 0) orelse return null;
     const here = gid != 0 and p.guild == gid;
     if (here and p.guild_bio.len > 0) p.bio = p.guild_bio else p.guild_bio = "";
     if (here and p.guild_pronouns.len > 0) p.pronouns = p.guild_pronouns;
@@ -131,7 +131,7 @@ fn names(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, big: bool) void {
         const hb = col.hit(1, nr);
         if (col.dl != null) qa.mark(nr, "profile-name", .{});
         if (hb.hovered) if (col.dl) |dl| d.line(dl, nr.x, nr.bottom() - 1, nr.right(), nr.bottom() - 1, ctx.col(.text).alpha(0.6), 1);
-        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid } });
+        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid, .guild = gid } });
     }
     col.y += ns + 8;
     if (!std.mem.eql(u8, name, u.name)) {
@@ -179,7 +179,7 @@ fn names(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, big: bool) void {
 }
 
 /// "N amigos em comum • M servidores em comum" (abre a aba no perfil grande).
-fn mutuals(col: *Col, uid: Id, pf: ?types.Profile) void {
+fn mutuals(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
     const p = pf orelse return;
     if (uid == col.ctx.store.me) return;
     const nf = @max(p.mutual_friends_count, @as(u32, @intCast(p.mutual_friends.len)));
@@ -218,7 +218,7 @@ fn mutuals(col: *Col, uid: Id, pf: ?types.Profile) void {
             qa.mark(r, "profile-mutual:{d}", .{part.tab});
             d.text(dl, font, 13, x, col.y + 2, if (hb.hovered) ctx.col(.text) else ctx.col(.muted), part.s);
         }
-        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid, .tab = part.tab } });
+        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid, .tab = part.tab, .guild = gid } });
         x += tw + 6;
     }
     col.y += 28;
@@ -230,7 +230,8 @@ fn bio(col: *Col, uid: Id, pf: ?types.Profile, heading: bool) void {
     const ctx = col.ctx;
     // A do perfil do servidor (ver `profileFor`) ou a global.
     const server = p.guild_bio.len > 0;
-    const spans = (if (server) ctx.store.guild_bios.get(uid) else ctx.store.bios.get(uid)) orelse return;
+    const key: [2]Id = .{ uid, p.guild };
+    const spans = (if (server) ctx.store.guild_bios.get(key) else ctx.store.bios.get(key)) orelse return;
     if (server and col.dl != null) qa.mark(.{ .x = col.x, .y = col.y, .w = col.w, .h = 19 }, "profile-bio-srv", .{});
     const opts: rich.Opts = .{ .family = ctx.ui, .size = 13.5, .line_h = 19, .color = ctx.col(.text).mix(ctx.col(.muted), 0.1), .underline_links = ctx.st.settings.underline_links };
     if (heading) col.label(i18n.tr("SOBRE MIM", "ABOUT ME"));
@@ -770,7 +771,7 @@ pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32, gid: Id) void {
 /// O miolo do cartão pequeno.
 fn body(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
     names(col, uid, pf, gid, false);
-    mutuals(col, uid, pf);
+    mutuals(col, uid, pf, gid);
     bio(col, uid, pf, false);
     activities(col, uid, false);
     voice(col, uid);

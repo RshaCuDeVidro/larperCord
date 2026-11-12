@@ -375,22 +375,24 @@ fn enterDidNotSend(app: *App) bool {
 fn escapeKept(app: *App) bool {
     return !autocomplete.open() and std.mem.eql(u8, input(app), "@an") and app.st.reply_to == 0;
 }
+// A mari: sem apelido no servidor (o do kaique, "Kaká do Zig", entraria no lugar do
+// nome global, como deve).
 fn renameBia(app: *App) void {
-    app.store.apply(.{ .user_update = .{ .id = 1003, .name = std.heap.c_allocator.dupe(u8, "Bia de Souza") catch return } }, 0) catch {};
+    app.store.apply(.{ .user_update = .{ .id = 1007, .name = std.heap.c_allocator.dupe(u8, "Bia de Souza") catch return } }, 0) catch {};
 }
 fn renameBack(app: *App) void {
-    app.store.apply(.{ .user_update = .{ .id = 1003, .name = std.heap.c_allocator.dupe(u8, "kaique") catch return } }, 0) catch {};
+    app.store.apply(.{ .user_update = .{ .id = 1007, .name = std.heap.c_allocator.dupe(u8, "mari") catch return } }, 0) catch {};
 }
 fn biaInserted(app: *App) bool {
     return std.mem.eql(u8, input(app), "@Bia de Souza ") and !autocomplete.open();
 }
 fn biaSent(app: *App) bool {
     const m = lastSent(app) orelse return false;
-    return !m.pending and std.mem.eql(u8, m.msg.content, "<@1003> oi");
+    return !m.pending and std.mem.eql(u8, m.msg.content, "<@1007> oi");
 }
 fn handTypedSpace(app: *App) bool {
     const m = lastSent(app) orelse return false;
-    return !m.pending and std.mem.eql(u8, m.msg.content, "e <@1003> de novo");
+    return !m.pending and std.mem.eql(u8, m.msg.content, "e <@1007> de novo");
 }
 fn channelInserted(app: *App) bool {
     return std.mem.eql(u8, input(app), "#geral ");
