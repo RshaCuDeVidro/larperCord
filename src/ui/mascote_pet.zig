@@ -234,13 +234,18 @@ fn secs(now: i64, ms: i64) f32 {
     return @as(f32, @floatFromInt(now - ms)) / 1000.0;
 }
 
-/// Está escondido neste quadro? (Configurações, paleta, menu ou tela cheia por cima.)
+/// Está escondido neste quadro? (Desligado, Configurações ou imagem em tela cheia por
+/// cima, a caixa de mensagem fora da tela, ou "Esconder por 1 hora".)
 fn hidden(ctx: *d.Ctx) bool {
     const st = ctx.st;
-    // O menu dele mesmo não o esconde.
-    const own_menu = st.popup == .menu and st.popup.menu.kind == .pet;
-    return !st.settings.mascot_pet or st.settings.open or st.palette.open or (st.popup != .none and !own_menu) or
+    return !st.settings.mascot_pet or st.settings.open or st.viewer != null or
         ctx.now_ms - slot_ms > 250 or ctx.now_ms < s.hide_until;
+}
+
+/// Um popup ou a paleta aberta: ele continua na tela, mas por baixo deles e sem pegar
+/// o mouse.
+fn underPopup(ctx: *d.Ctx) bool {
+    return ctx.st.popup != .none or ctx.st.palette.open;
 }
 
 /// Desenha e anima o mascote do canto (por cima de tudo, depois da interface).
@@ -322,12 +327,24 @@ pub fn draw(ctx: *d.Ctx) void {
     const hit_w = if (at_home) home_slot.w else size * 0.86;
     const hit_h = if (at_home) home_slot.h else size * 0.8;
     const hit_min = if (at_home) d.v(home_slot.x, home_slot.y) else d.v(s.x - hit_w / 2, s.y - hit_h / 2);
+    const under = underPopup(ctx);
+    // Um popup abriu no meio do arrasto: ele cai de onde estava.
+    if (under and s.dragging) {
+        s.dragging = false;
+        if (s.mode == .grabbed) {
+            s.mode = .flying;
+            s.mode_ms = now;
+        }
+    }
     c.ImGui_SetNextWindowPos(hit_min, 0);
     c.ImGui_SetNextWindowSize(d.v(hit_w, hit_h), 0);
     _ = c.ImGui_Begin("##pet", null, c.ImGuiWindowFlags_NoDecoration | c.ImGuiWindowFlags_NoBackground |
         c.ImGuiWindowFlags_NoSavedSettings | c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoScrollWithMouse | c.ImGuiWindowFlags_NoNav |
-        c.ImGuiWindowFlags_NoFocusOnAppearing);
-    d.windowToFront();
+        c.ImGuiWindowFlags_NoFocusOnAppearing | (if (under) c.ImGuiWindowFlags_NoInputs else 0));
+    // Ele se desenha na lista da própria janela: fica por cima da interface e, com um
+    // popup aberto (que vem para a frente ao aparecer), por baixo dele.
+    const dl = c.ImGui_GetWindowDrawList();
+    if (!under) d.windowToFront();
     c.ImGui_SetCursorScreenPos(hit_min);
     _ = c.ImGui_InvisibleButton("##pet-hit", d.v(hit_w, hit_h), c.ImGuiButtonFlags_MouseButtonLeft);
     const hovered = c.ImGui_IsItemHovered(0);
@@ -788,7 +805,8 @@ pub fn draw(ctx: *d.Ctx) void {
     }
 
     // --- Desenho (por cima de tudo) ------------------------------------------------------
-    const dl = ctx.fg;
+    c.ImDrawList_PushClipRectFullScreen(dl);
+    defer c.ImDrawList_PopClipRect(dl);
     const cx = s.x + slide;
     // Encolhido ou inflado, os pés ficam no mesmo lugar. Afundado, só as orelhas
     // passam da linha dos pés.
