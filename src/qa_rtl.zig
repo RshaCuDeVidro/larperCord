@@ -294,6 +294,24 @@ fn shortShown(_: *App) bool {
     return t.y - row.y < 12 and linesRight(short_id, 0);
 }
 
+/// Sobe a conversa um pouco: o botão de voltar ao fim aparece, com a curta embaixo dele.
+fn nudgeUp(app: *App) void {
+    const sc = app.st.scrollOf(gw.rtl_channel);
+    sc.stick_bottom = false;
+    sc.target = @max(0, sc.pos - 12);
+}
+
+fn stickBottom(app: *App) void {
+    app.st.scrollOf(gw.rtl_channel).stick_bottom = true;
+}
+
+/// A curta começa na borda direita: o botão foi para o canto esquerdo, longe dela.
+fn jumpLeftOfShort(_: *App) bool {
+    const jb = qa.find("jump-bottom") orelse return false;
+    const t = markOf("msgtext:{d}", short_id) orelse return false;
+    return jb.right() < t.x;
+}
+
 fn overlaps(a: Rect, b: Rect) bool {
     return a.x < b.right() and b.x < a.right() and a.y < b.bottom() and b.y < a.bottom();
 }
@@ -844,6 +862,13 @@ pub const ops_theme = [_]Op{
     expect("no modo compacto, a barra de ações também não cobre a mensagem curta", shortUncovered),
     .{ .shot = "rtl-curta" },
     run(compactBack),
+    .{ .wait = 300 },
+    run(nudgeUp),
+    .{ .hover = .{ .dyn_at = .{ .f = tShort, .fx = 0.5, .fy = -60 } } },
+    .{ .wait = 400 },
+    expect("com a curta em árabe embaixo dele, o botão de voltar ao fim fica à esquerda", jumpLeftOfShort),
+    .{ .shot = "rtl-voltar-ao-fim" },
+    run(stickBottom),
     run(dropShort),
     expect("a mensagem curta sai", shortGone),
     // Issue #9: os casos do leitor de árabe, cada um num print (comparar com o Discord).

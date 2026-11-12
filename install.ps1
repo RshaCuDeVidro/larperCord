@@ -1,7 +1,8 @@
 # Installs larperCord for the current user, no administrator needed.
 #   irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1 | iex
 #   Uninstall: & ([scriptblock]::Create((irm .../install.ps1))) -Uninstall
-param([switch]$Uninstall)
+#   Also delete settings, cache, FFmpeg, sounds and saved accounts: the same with -Purge
+param([switch]$Uninstall, [switch]$Purge)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -10,11 +11,41 @@ $repo = 'RshaCuDeVidro/larperCord'
 $dir = Join-Path $env:LOCALAPPDATA 'Programs\larperCord'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'larperCord.lnk'
 
-if ($Uninstall) {
+if ($Uninstall -or $Purge) {
     Get-Process larpercord -ErrorAction SilentlyContinue | Stop-Process -Force
     Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
-    Write-Host 'larperCord removed. Your settings are still in %APPDATA%\larpercord.'
+    if (-not $Purge) {
+        Write-Host 'larperCord removed. Your settings are still in %APPDATA%\larpercord (-Purge deletes them too).'
+        return
+    }
+    Start-Sleep -Milliseconds 500
+    Remove-Item (Join-Path $env:APPDATA 'larpercord') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $env:LOCALAPPDATA 'larpercord') -Recurse -Force -ErrorAction SilentlyContinue
+    # Saved accounts: one Credential Manager entry each (larperCord/account/<id>). Through the
+    # API, since cmdkey's output changes with the Windows language.
+    if (-not ('LarperCordPurge.Cred' -as [type])) {
+        Add-Type -Namespace LarperCordPurge -Name Cred -MemberDefinition @'
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern bool CredEnumerate(string filter, int flags, out int count, out IntPtr credentials);
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern bool CredDelete(string target, int type, int flags);
+[DllImport("advapi32.dll")]
+public static extern void CredFree(IntPtr buffer);
+'@
+    }
+    $count = 0
+    $list = [IntPtr]::Zero
+    if ([LarperCordPurge.Cred]::CredEnumerate('larperCord/account/*', 0, [ref]$count, [ref]$list)) {
+        $marshal = [Runtime.InteropServices.Marshal]
+        # CREDENTIALW: Flags and Type (4 bytes each), then TargetName.
+        $targets = for ($i = 0; $i -lt $count; $i++) {
+            $marshal::PtrToStringUni($marshal::ReadIntPtr($marshal::ReadIntPtr($list, $i * [IntPtr]::Size), 8))
+        }
+        [LarperCordPurge.Cred]::CredFree($list)
+        foreach ($t in $targets) { [void][LarperCordPurge.Cred]::CredDelete($t, 1, 0) }
+    }
+    Write-Host 'larperCord removed, with its settings, cache, FFmpeg, sounds and saved accounts.'
     return
 }
 

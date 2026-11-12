@@ -394,6 +394,9 @@
   var screens = $$("[data-screen]").map(function (sc) { return { el: sc, fbox: $("[data-fbox]", sc), frame: $("[data-frame]", sc), cap: $("[data-cap]", sc), mode: "dark", k: 1 }; });
   // A janela que a prévia imita (fit() escolhe pelo espaço do palco) e a escala de agora.
   var frameSize = { w: W, h: H }, curK = 1, fitK = 1, stacked = false, pinch = null;
+  // Os dois modos lado a lado: a parte da largura que fica com o escuro (o divisor muda), a
+  // escala de cada tela quando ela não é igual e o espaço entre as telas.
+  var handle = $("[data-split-handle]"), splitAt = clamp(+store("tbx-split") || 0.5, 0.2, 0.8), splitK = null, screensGap = 0, sideBySide = false;
   // Com o editor de cor aberto numa tela estreita (popKind), só o modo que está sendo editado:
   // os dois lado a lado ficariam pequenos demais no espaço acima do editor.
   var popKind = "";
@@ -440,9 +443,17 @@
     }
     // Um pixel de folga contra o arredondamento.
     var aw = cw - padX - 1, ah = ch - padY - 1;
-    var row = P.frameFit(two ? (aw - gap) / 2 : aw, ah - capH), col = two ? P.frameFit(aw, (ah - gap) / 2 - capH) : null;
-    var g = col && col.k > row.k + 0.001 ? col : row;
+    screensGap = gap;
+    // Lado a lado com o divisor fora do meio: a mesma janela imitada nas duas telas, do tamanho
+    // que cabe na mais larga, e a outra a mostra menor.
+    var a1 = two ? (aw - gap) * splitAt : aw, a2 = two ? aw - gap - a1 : 0;
+    var row = P.frameFit(Math.max(a1, a2), ah - capH), col = two ? P.frameFit(aw, (ah - gap) / 2 - capH) : null;
+    var small = two ? Math.min(row.k, Math.min(a1, a2) / row.w, (ah - capH) / row.h) : row.k;
+    // Quem mexeu no divisor quer os dois lado a lado: não troca para um embaixo do outro.
+    var g = col && Math.abs(splitAt - 0.5) < 0.01 && col.k > row.k + 0.001 ? col : row;
     stacked = g === col;
+    sideBySide = two && !stacked;
+    splitK = sideBySide && Math.abs(splitAt - 0.5) >= 0.01 ? (a1 >= a2 ? [row.k, small] : [small, row.k]) : null;
     fitK = g.k;
     var changedSize = !pinch && (g.w !== frameSize.w || g.h !== frameSize.h);
     if (!pinch) frameSize = { w: g.w, h: g.h };
@@ -450,14 +461,15 @@
     return changedSize;
   }
   function applyScale() {
-    var k = curK, fw = Math.floor(frameSize.w * k), fh = Math.floor(frameSize.h * k);
+    var k = curK;
     screensBox.style.flexDirection = stacked ? "column" : "row";
-    screens.forEach(function (sc) {
-      sc.k = k;
+    screens.forEach(function (sc, i) {
+      var sk = zoom === "fit" && splitK ? splitK[i] : k, fw = Math.floor(frameSize.w * sk), fh = Math.floor(frameSize.h * sk);
+      sc.k = sk;
       sc.el.style.width = fw + "px";
       sc.fbox.style.width = fw + "px";
       sc.fbox.style.height = fh + "px";
-      sc.frame.style.transform = "scale(" + k + ")";
+      sc.frame.style.transform = "scale(" + sk + ")";
     });
     canvas.classList.toggle("fits", zoom === "fit");
     var pct = Math.round(k * 100) + "%", lbl = $("[data-zoom-label]"), tg = $("[data-zoom-toggle]");
@@ -468,7 +480,49 @@
     tg.title = info + " · " + (zoom === "fit" ? S.zoomTo100 + " (1)" : S.zoomToFit + " (0)");
     tg.setAttribute("aria-label", info + ". " + (zoom === "fit" ? S.zoomTo100 : S.zoomToFit));
     hideHl();
+    placeHandle();
   }
+  // O divisor fica no meio do espaço entre as duas telas, na altura do palco inteiro.
+  function placeHandle() {
+    handle.hidden = !(sideBySide && zoom === "fit");
+    if (handle.hidden) return;
+    var a = screens[0].el.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+    handle.style.left = (a.right - c.left + canvas.scrollLeft + screensGap / 2) + "px";
+    handle.setAttribute("aria-valuenow", String(Math.round(splitAt * 100)));
+  }
+  function setSplit(v) {
+    splitAt = clamp(v, 0.2, 0.8);
+    if (Math.abs(splitAt - 0.5) < 0.02) splitAt = 0.5;
+    store("tbx-split", String(splitAt));
+    fit();
+  }
+  var dragQueued = false;
+  handle.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("drag");
+  });
+  handle.addEventListener("pointermove", function (e) {
+    if (!handle.hasPointerCapture(e.pointerId) || dragQueued) return;
+    var x = e.clientX;
+    dragQueued = true;
+    requestAnimationFrame(function () {
+      dragQueued = false;
+      var cs = getComputedStyle(screensBox), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+      var left = canvas.getBoundingClientRect().left + pl, avail = canvas.offsetWidth - pl - pr - screensGap;
+      setSplit((x - left - screensGap / 2) / avail);
+    });
+  });
+  handle.addEventListener("pointerup", function (e) { handle.releasePointerCapture(e.pointerId); handle.classList.remove("drag"); });
+  handle.addEventListener("lostpointercapture", function () { handle.classList.remove("drag"); });
+  handle.addEventListener("dblclick", function () { setSplit(0.5); });
+  handle.addEventListener("keydown", function (e) {
+    var d = e.key === "ArrowLeft" ? -0.05 : e.key === "ArrowRight" ? 0.05 : 0;
+    if (e.key === "Home" || e.key === "Enter") { e.preventDefault(); setSplit(0.5); return; }
+    if (!d) return;
+    e.preventDefault();
+    setSplit(splitAt + d);
+  });
   function fit() {
     if (measure() && state) renderPreviews();
     applyScale();

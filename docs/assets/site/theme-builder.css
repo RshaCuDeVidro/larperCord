@@ -424,6 +424,10 @@ html:not(.js)[data-page=builder],html:not(.js)[data-page=builder] body{overflow:
 .tbx-stage:not(.tbx-split) .tbx-cap{display:none}
 .tbx-cap svg{width:13px;height:13px}
 .tbx-fbox{position:relative;overflow:hidden;border-radius:12px;background:var(--pv-bg,#111);box-shadow:0 0 0 1px color-mix(in srgb,var(--text) 12%,transparent),0 34px 90px -34px rgba(0,0,0,.7);transition:box-shadow .2s;cursor:crosshair}
+/* Entre os dois modos lado a lado: arrastar dá mais largura a um deles. */
+.tbx-divider{position:absolute;top:0;bottom:0;z-index:3;width:14px;margin-left:-7px;cursor:col-resize;touch-action:none;outline:0}
+.tbx-divider::before{content:"";position:absolute;left:6px;top:20px;bottom:20px;width:2px;border-radius:2px;background:var(--border);transition:background-color .12s}
+.tbx-divider:hover::before,.tbx-divider:focus-visible::before,.tbx-divider.drag::before{background:var(--accent)}
 .tbx-split .tbx-screen.edit .tbx-fbox{box-shadow:0 0 0 2px var(--accent),0 34px 90px -34px rgba(0,0,0,.7)}
 .tbx-split .tbx-screen.edit .tbx-cap{color:var(--text)}
 .tbx-split .tbx-screen.edit .tbx-cap svg{color:var(--accent)}

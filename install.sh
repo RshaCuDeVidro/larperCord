@@ -2,15 +2,31 @@
 # Installs larperCord into ~/.local (no sudo) from the latest published version.
 #   curl -fsSL https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.sh | sh
 #   sh install.sh --uninstall
+#   sh install.sh --purge    removes it and deletes settings, cache, FFmpeg, sounds and saved accounts
+#   (through the pipe: curl -fsSL .../install.sh | sh -s -- --purge)
 set -eu
 repo="RshaCuDeVidro/larperCord"
 bin_dir="${HOME}/.local/bin"
 app_dir="${HOME}/.local/share/applications"
 icon_dir="${HOME}/.local/share/icons/hicolor/128x128/apps"
 
-if [ "${1:-}" = "--uninstall" ]; then
+if [ "${1:-}" = "--uninstall" ] || [ "${1:-}" = "--purge" ]; then
+    if [ "$1" = "--purge" ] && command -v pkill >/dev/null; then
+        # An open app would write its settings back on the way out.
+        pkill -x larpercord 2>/dev/null && sleep 1 || true
+    fi
     rm -f "$bin_dir/larpercord" "$bin_dir/larpercord.old" "$app_dir/dev.larpercord.desktop" "$app_dir/larpercord.desktop" "$icon_dir/larpercord.png"
-    echo "larperCord removed. Your settings are still in ~/.config/larpercord."
+    if [ "$1" = "--purge" ]; then
+        rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/larpercord" "${XDG_CACHE_HOME:-$HOME/.cache}/larpercord"
+        # Saved accounts: one keyring entry each, plus the one from before multiple accounts.
+        if command -v secret-tool >/dev/null; then
+            secret-tool clear service larpercord-account 2>/dev/null || true
+            secret-tool clear service larpercord 2>/dev/null || true
+        fi
+        echo "larperCord removed, with its settings, cache, FFmpeg, sounds and saved accounts."
+    else
+        echo "larperCord removed. Your settings are still in ~/.config/larpercord (sh install.sh --purge deletes them too)."
+    fi
     exit 0
 fi
 
