@@ -358,6 +358,25 @@ test "caixa de entrada: DMs não lidas, menções e marcador de leitura" {
     try std.testing.expectEqual(@as(usize, 1), m.n);
 }
 
+test "prévia: a menção mostra o apelido do servidor da mensagem" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    const markdown = @import("markdown.zig");
+    try s.apply(.{ .user_upsert = .{ .id = 2, .name = try c_alloc.dupe(u8, "ana.exe") } }, 0);
+    try s.apply(.{ .channel_upsert = .{ .id = 50, .guild = 5, .name = try c_alloc.dupe(u8, "geral"), .topic = "" } }, 0);
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = .{ .nick = try c_alloc.dupe(u8, "Aninha") } } }, 0);
+    const text = "olha <@2>";
+    const spans = try markdown.parse(std.testing.allocator, text);
+    defer std.testing.allocator.free(spans);
+    var buf: [64]u8 = undefined;
+    const in_guild: StoredMessage = .{ .msg = .{ .id = 1, .channel = 50, .author = 3, .timestamp = 0, .content = text }, .spans = spans };
+    try std.testing.expectEqualStrings("olha @Aninha", preview(&buf, &s, &in_guild));
+    // Numa conversa sem servidor (o canal 1 não é de nenhum), o nome global.
+    const in_dm: StoredMessage = .{ .msg = .{ .id = 2, .channel = 1, .author = 3, .timestamp = 0, .content = text }, .spans = spans };
+    try std.testing.expectEqualStrings("olha @ana.exe", preview(&buf, &s, &in_dm));
+}
+
 test "prévia corta UTF-8 inteiro e esconde spoiler" {
     var s = Store.init(std.testing.allocator);
     defer s.deinit();
