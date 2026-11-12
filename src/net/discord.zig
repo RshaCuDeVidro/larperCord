@@ -3621,8 +3621,6 @@ pub const Gateway = struct {
         var arena = std.heap.ArenaAllocator.init(alloc);
         defer arena.deinit();
         const a = arena.allocator();
-        const failed_pt = "não deu para salvar o GIF favorito";
-        const failed_en = "couldn't save the favorite GIF";
         // A resposta vai com o pedido mais novo: a tela ignora as dos anteriores.
         const req = batch[batch.len - 1].req;
         const changes = a.alloc(gf.Change, batch.len) catch return g.emit(.{ .gifs = .{ .req = req, .favorites = true, .ok = false } });
@@ -3632,23 +3630,23 @@ pub const Gateway = struct {
         var tries: u8 = 0;
         while (true) : (tries += 1) {
             const raw = g.frecency(a) orelse {
-                g.notice(failed_pt, failed_en, .{});
+                g.notice("não deu para salvar o GIF favorito", "couldn't save the favorite GIF", .{});
                 return g.emit(.{ .gifs = .{ .req = req, .favorites = true, .ok = false } });
             };
             const out = gf.editAll(a, raw, changes) catch {
-                g.notice("{s}: as configurações da conta vieram num formato que o app não entende", "{s}: the account settings came in a format the app doesn't understand", .{i18n.tr(failed_pt, failed_en)});
+                g.notice("{s}: as configurações da conta vieram num formato que o app não entende", "{s}: the account settings came in a format the app doesn't understand", .{i18n.tr("não deu para salvar o GIF favorito", "couldn't save the favorite GIF")});
                 return g.emitFavorites(req, raw);
             } orelse return g.emitFavorites(req, raw);
             // Sem a versão (o formato mudou), o corpo vai sem ela.
             const version = status_proto.dataVersion(raw) catch null;
             const body = gf.patchBody(a, out, version) catch return g.emitFavorites(req, raw);
             var resp = g.request("PATCH", "/users/@me/settings-proto/2", body) orelse {
-                g.notice(failed_pt, failed_en, .{});
+                g.notice("não deu para salvar o GIF favorito", "couldn't save the favorite GIF", .{});
                 return g.emitFavorites(req, raw);
             };
             defer resp.body.deinit(alloc);
             if (resp.status >= 300) {
-                g.noticeHttp(i18n.tr(failed_pt, failed_en), &resp);
+                g.noticeHttp(i18n.tr("não deu para salvar o GIF favorito", "couldn't save the favorite GIF"), &resp);
                 return g.emitFavorites(req, raw);
             }
             const v = std.json.parseFromSliceLeaky(Value, a, resp.body.items, .{}) catch null;
