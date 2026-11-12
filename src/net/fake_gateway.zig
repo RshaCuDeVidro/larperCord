@@ -1817,6 +1817,11 @@ pub const Gateway = struct {
     }
 };
 
+/// O relógio da fila do op 8 (o mesmo do gateway de verdade).
+pub fn monoMs() i64 {
+    return @intCast(c.SDL_GetTicks());
+}
+
 pub fn nowMs() i64 {
     var t: c.SDL_Time = 0;
     _ = c.SDL_GetCurrentTime(&t);

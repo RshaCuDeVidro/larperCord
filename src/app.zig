@@ -2312,7 +2312,8 @@ pub const App = struct {
                     } else false;
                     // Lendo o passado: aquela página continua valendo.
                     if (open or unsent) {
-                        if (!cs.detached) app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (open) cs.info.guild else 0 } });
+                        // (Membros só para a conversa na tela, não para cada aba aberta.)
+                        if (!cs.detached) app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (app.st.activeChannel() == cs.info.id) cs.info.guild else 0 } });
                     } else app.store.unload(cs);
                 }
             }

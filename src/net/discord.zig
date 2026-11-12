@@ -22,6 +22,9 @@ const ev = @import("../core/event.zig");
 const Queue = @import("queue.zig").Queue;
 const Sink = @import("fake_gateway.zig").Sink;
 const nowMs = @import("fake_gateway.zig").nowMs;
+/// Relógio da fila do teto: monotônico (o de parede pode andar para trás ou pular, e a
+/// janela de 30 s do op 8 não pode encurtar por isso).
+const monoMs = @import("fake_gateway.zig").monoMs;
 const j = @import("jsonx.zig");
 const moderacao = @import("../core/moderacao.zig");
 const Retry = @import("retry.zig").Retry;
@@ -75,6 +78,9 @@ const identity_props = web.super_properties;
 const client_state_json =
     \\{"guild_hashes":{},"highest_last_message_id":"0","read_state_version":0,"user_guild_settings_version":-1,"user_settings_version":-1}
 ;
+
+/// Um op 8 que saiu (`req.guild` 0 = vaga).
+const SentMembers = struct { seq: u32 = 0, req: member_ask.Request = .{ .guild = 0 } };
 
 pub const Gateway = struct {
     commands: Queue(ev.Command),
@@ -134,9 +140,9 @@ pub const Gateway = struct {
     faces: face_json.Tracker = .{},
     /// Quem já tem membro conhecido ou pedido (op 8) em cada servidor (net/member_ask.zig).
     members_ask: member_ask.Asker = .{},
-    /// Os últimos op 8 que saíram, pelo número no `nonce` (o pedido N fica em N % 4):
-    /// um RATE_LIMITED devolve o pedido para a fila.
-    members_sent: [4]member_ask.Request = undefined,
+    /// Os últimos op 8 que saíram, com o número do `nonce`: um RATE_LIMITED devolve o
+    /// pedido recusado para a fila (achado pelo nonce, ou o mais novo daquele servidor).
+    members_sent: [8]SentMembers = @splat(.{}),
     members_seq: u32 = 0,
     /// Última lista de membros pedida (op 14): repetida depois de um READY.
     sub_guild: Id = 0,
@@ -574,7 +580,12 @@ pub const Gateway = struct {
             const now = nowMs();
             const voice_busy = g.voice != null or g.voice_wait_until != 0;
             const cap: i64 = if (voice_busy or !sys.valid(g.wake.read)) 50 else 1000;
-            const queued = if (g.ws_ready) g.outbox.due(now) else std.math.maxInt(i64);
+            // (A fila vai no relógio monotônico: aqui só importa quanto falta.)
+            const queued = if (g.ws_ready) blk: {
+                const mono = monoMs();
+                const at = g.outbox.due(mono);
+                break :blk if (at == std.math.maxInt(i64)) at else now + (at - mono);
+            } else std.math.maxInt(i64);
             const due = @min(@min(if (g.next_hb == std.math.maxInt(i64)) g.hello_until else g.next_hb, g.acks.nextDue()), queued);
             const wait: c_int = @intCast(std.math.clamp(due - now, 0, cap));
             var pfd = [2]sys.PollFd{
@@ -659,7 +670,7 @@ pub const Gateway = struct {
     /// (o resto passa por `queueOp`).
     fn send(g: *Gateway, payload: []const u8) void {
         if (g.ws == null or !g.ws_live) return;
-        g.outbox.budget.note(nowMs());
+        g.outbox.budget.note(monoMs());
         // Falhando, a conexão cai (`writeWs`) e o RESUME/IDENTIFY sai de novo na próxima.
         _ = g.writeWs(payload);
     }
@@ -670,7 +681,19 @@ pub const Gateway = struct {
         switch (g.outbox.push(it)) {
             .queued, .coalesced => {},
             .merged => if (debug_log.isOn()) std.log.info("gateway: fila do op 4 cheia; o último estado de voz ficou no lugar do anterior", .{}),
-            .replaced_oldest => if (debug_log.isOn()) std.log.info("gateway: op 14, 43 ou 8 de muitos servidores na fila; o mais antigo deu lugar ao novo", .{}),
+            .replaced_oldest => if (debug_log.isOn()) std.log.info("gateway: op 14 ou 43 de muitos servidores na fila; o mais antigo deu lugar ao novo", .{}),
+        }
+        g.flushOutbox();
+    }
+
+    /// Um op 8 entra na fila, que solta no máximo um por servidor a cada 30 s e junta as
+    /// páginas que chegam enquanto isso (net/gw_budget.zig). Fila cheia: quem não entrou
+    /// volta a poder ser pedido numa próxima página.
+    fn queueMembers(g: *Gateway, r: member_ask.Request) void {
+        var rest = r;
+        if (!g.outbox.pushMembers(&rest, monoMs())) {
+            g.members_ask.unmark(&rest);
+            if (debug_log.isOn()) std.log.info("gateway: fila do op 8 cheia; {d} pessoa(s) ficam para depois", .{rest.n});
         }
         g.flushOutbox();
     }
@@ -679,7 +702,7 @@ pub const Gateway = struct {
     /// fecha com 4003).
     fn flushOutbox(g: *Gateway) void {
         if (!g.ws_live or !g.ws_ready or g.ws_end != null) return;
-        const now = nowMs();
+        const now = monoMs();
         // Uma escrita que falha derruba a conexão: o item volta para a frente da fila e
         // sai depois do RESUME, com o que estava atrás dele (nada vai para um socket morto).
         g.outbox.drainTo(now, OutboxWriter{ .g = g });
@@ -720,7 +743,7 @@ pub const Gateway = struct {
                 const p = member_ask.payload(&buf, &r, seq) orelse return true;
                 if (debug_log.isOn()) std.log.info("gateway: op 8 com {d} pessoa(s) do servidor {d}", .{ r.n, r.guild });
                 if (!g.writeWs(p)) return false;
-                g.members_sent[seq % g.members_sent.len] = r;
+                g.members_sent[seq % g.members_sent.len] = .{ .seq = seq, .req = r };
                 g.members_seq +%= 1;
                 return true;
             },
@@ -1388,7 +1411,13 @@ pub const Gateway = struct {
             if (j.get(d, "unavailable")) |u| if (u == .bool and u.bool) return;
             if (j.id(j.get(d, "id"))) |id| {
                 g.faces.forgetGuild(id);
+                // O op 8 de lá sai da fila e da espera, e um RATE_LIMITED atrasado não o
+                // traz de volta.
                 g.members_ask.forgetGuild(id);
+                g.outbox.forgetMembers(id);
+                for (&g.members_sent) |*x| if (x.req.guild == id) {
+                    x.req.guild = 0;
+                };
                 g.emit(.{ .guild_delete = id });
             }
             return;
@@ -1611,6 +1640,10 @@ pub const Gateway = struct {
             return;
         }
         if (std.mem.eql(u8, t, "GUILD_MEMBERS_CHUNK")) {
+            // Respondido: um RATE_LIMITED atrasado não manda este pedido de novo.
+            if (j.str(j.get(d, "nonce"))) |nonce| if (member_ask.nonceSeq(nonce)) |seq| for (&g.members_sent) |*x| if (x.seq == seq) {
+                x.req.guild = 0;
+            };
             g.ingestMembers(j.id(j.get(d, "guild_id")) orelse 0, d);
             return;
         }
@@ -1795,14 +1828,32 @@ pub const Gateway = struct {
         }
     }
 
-    /// Um op 8 nosso foi limitado: o mesmo pedido volta para a fila e espera o
-    /// `retry_after` (até 10 min). Sem o `nonce` (ou de um pedido já esquecido), nada.
+    /// Um op 8 nosso foi recusado: o servidor dele (meta.guild_id) não pede nada pelo
+    /// `retry_after`, nunca menos que a janela de 30 s, com ou sem nonce. O pedido
+    /// recusado (pelo nonce, ou o mais novo daquele servidor) volta para a fila; sem
+    /// servidor nenhum, todo op 8 espera.
     fn membersLimited(g: *Gateway, d: Value, secs: f64) void {
-        const nonce = j.str(j.get(j.get(d, "meta") orelse .null, "nonce")) orelse return;
-        const seq = member_ask.nonceSeq(nonce) orelse return;
-        if (seq >= g.members_seq or g.members_seq - seq > g.members_sent.len) return;
+        const meta = j.get(d, "meta") orelse Value.null;
+        var guild = j.id(j.get(meta, "guild_id")) orelse 0;
+        var pick: ?*SentMembers = null;
+        if (j.str(j.get(meta, "nonce"))) |nonce| if (member_ask.nonceSeq(nonce)) |seq| {
+            for (&g.members_sent) |*x| if (x.req.guild != 0 and x.seq == seq) {
+                pick = x;
+            };
+        };
+        if (pick == null and guild != 0) for (&g.members_sent) |*x| if (x.req.guild == guild) {
+            if (pick == null or x.seq -% pick.?.seq < 1 << 31) pick = x;
+        };
+        var back: ?member_ask.Request = null;
+        if (pick) |x| {
+            back = x.req;
+            if (guild == 0) guild = x.req.guild;
+            // Um segundo RATE_LIMITED do mesmo pedido não o põe na fila duas vezes.
+            x.req.guild = 0;
+        }
         const wait_ms: i64 = @intFromFloat(std.math.clamp(secs, 0, 600) * 1000);
-        g.outbox.holdMembers(nowMs(), wait_ms, g.members_sent[seq % g.members_sent.len]);
+        if (!g.outbox.holdMembers(monoMs(), guild, wait_ms, if (back) |*r| r else null)) g.members_ask.unmark(&back.?);
+        g.flushOutbox();
     }
 
     /// Os `members` de um GUILD_CREATE ou da resposta de um op 8 (GUILD_MEMBERS_CHUNK):
@@ -2770,7 +2821,9 @@ pub const Gateway = struct {
         const me = j.get(d, "user") orelse return;
         g.me = j.id(j.get(me, "id")) orelse return;
         // Sessão nova: o que esperava o teto de envio era da anterior (o que
-        // ainda vale sai de novo logo abaixo e no fim).
+        // ainda vale sai de novo logo abaixo e no fim). Quem estava num op 8 que
+        // não saiu volta a poder ser pedido.
+        for (g.outbox.members[0..g.outbox.members_n]) |*w| g.members_ask.unmark(&w.req);
         g.outbox.forgetPending();
         g.voice_unconfirmed = null;
         // O pedido de voz pode ter chegado antes do READY; agora o gateway
@@ -4754,7 +4807,7 @@ pub const Gateway = struct {
             var authors: [member_ask.max_ids]Id = undefined;
             const n = @min(items.len, authors.len);
             for (items[0..n], authors[0..n]) |m, *a| a.* = user_json.authorId(m);
-            if (g.members_ask.page(alloc, members, authors[0..n])) |r| g.queueOp(.{ .members = r });
+            if (g.members_ask.page(alloc, members, authors[0..n])) |r| g.queueMembers(r);
         }
     }
 };
