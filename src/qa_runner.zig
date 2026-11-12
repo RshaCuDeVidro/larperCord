@@ -3266,6 +3266,9 @@ const ops_perfil_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @
 const ops_call = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops;
 const ops_call_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops_theme;
 const ops_membros = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_membros.zig").ops;
+const ops_cache_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_cache.zig").ops_a;
+// Sem esperar o READY: o começo é justamente o que aparece antes dele.
+const ops_cache_b = @import("qa_cache.zig").ops_b;
 const ops_mascote = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote.zig").ops;
 const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_real;
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
@@ -3317,6 +3320,8 @@ fn script() []const Op {
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "call")) return &ops_call;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "call-tema")) return &ops_call_tema;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "membros")) return &ops_membros;
+    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "cache-a")) return &ops_cache_a;
+    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "cache-b")) return &ops_cache_b;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "mascote")) return &ops_mascote;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-real")) return &ops_plugins_real;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "vitrine")) return &ops_vitrine;
