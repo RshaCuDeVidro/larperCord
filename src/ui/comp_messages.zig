@@ -612,7 +612,9 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
     const first_hit = if (show_bar) d.hit(ctx, 0xF10A7_01, bar.first) else none;
     const read_hit = if (show_bar) d.hit(ctx, 0xF10A7_02, bar.read) else none;
     const present_hit = if (cs.detached) d.hit(ctx, 0xF10A7_03, presentRect(r)) else none;
-    const bottom_r: d.Rect = .{ .x = r.right() - 52, .y = r.bottom() - 52, .w = 36, .h = 36 };
+    const bottom_r: d.Rect = .{ .x = if (sc.jump_left) r.x + 16 else r.right() - 52, .y = r.bottom() - 52, .w = 36, .h = 36 };
+    jump_band = .{ bottom_r.y, bottom_r.bottom() };
+    rtl_under_jump = false;
     const bottom_hit = if (!sc.stick_bottom) d.hit(ctx, 0xF10A7_04, bottom_r) else none;
     const over_float = first_hit.hovered or read_hit.hovered or present_hit.hovered or bottom_hit.hovered;
     if (first_new) |k| newLine(ctx, dl, g, r, base + st.offsets.items[k] - new_line_h);
@@ -690,6 +692,7 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
         if (popup.selectionText(ctx)) |txt| ctx.act(.{ .copy = txt });
     }
     channelFade(ctx, dl, fade_start, region, ch_id, r);
+    sc.jump_left = rtl_under_jump;
     // Voltar para o fim: desenhado dentro da própria região (fica por baixo
     // das configurações e de menus) e com o clique direto pelo mouse.
     if (!sc.stick_bottom) {
@@ -713,6 +716,15 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
 }
 
 const new_line_h: f32 = 24;
+
+/// A faixa de altura do botão de voltar ao fim neste quadro, e se um texto alinhado à
+/// direita passou nela (o botão vai para a esquerda no próximo quadro).
+var jump_band: [2]f32 = .{ 0, 0 };
+var rtl_under_jump = false;
+
+fn noteRtlText(y: f32, t: rich.Measure) void {
+    if (t.last_right and y < jump_band[1] and y + t.h > jump_band[0]) rtl_under_jump = true;
+}
 const unread_bar_h: f32 = 30;
 
 /// A linha vermelha "NOVAS MENSAGENS" entre a última lida e a primeira não lida.
@@ -1380,6 +1392,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 }
             }
             const t = rich.layout(dl, ctx.store, ctx.th, m.spans, tx, y, g.wrap, o, ctx.mouse);
+            noteRtlText(y, t);
             const er = editedMark(ctx, dl, g, m, tx, y, t);
             textMarks(m, tx, y, g.wrap, t);
             const th = textH(g, m, t);
@@ -1459,6 +1472,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             x += col_w;
             d.text(dl, fam.get(.regular), g.size, x, ty, ctx.col(.border).mix(ctx.col(.faint), 0.6), " │ ");
             const t = rich.layout(dl, ctx.store, ctx.th, m.spans, r.x + g.content_x, y, g.wrap, o, ctx.mouse);
+            noteRtlText(y, t);
             _ = editedMark(ctx, dl, g, m, r.x + g.content_x, y, t);
             textMarks(m, r.x + g.content_x, y, g.wrap, t);
             const th = textH(g, m, t);
@@ -1520,6 +1534,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             var ob = o;
             ob.align_w = bw - 28;
             const t = rich.layout(dl, ctx.store, ctx.th, m.spans, br.x + 14, ty, g.wrap, ob, ctx.mouse);
+            noteRtlText(ty, t);
             _ = editedMark(ctx, dl, g, m, br.x + 14, ty, t);
             textMarks(m, br.x + 14, ty, ob.align_w, t);
             att.draw(ctx, dl, m, br.x + 14, ty + textH(g, m, t), g.wrap, alpha);

@@ -122,6 +122,10 @@ pub const Scroll = struct {
     /// rolagem anda junto e o que a pessoa está lendo não pula.
     anchor_id: Id = 0,
     anchor_off: f32 = 0,
+    /// O botão de voltar ao fim fica no canto esquerdo: no quadro anterior, um texto
+    /// alinhado à direita (árabe, hebraico), que começa justamente no canto direito,
+    /// passava embaixo dele.
+    jump_left: bool = false,
 };
 
 pub const Toast = struct {
