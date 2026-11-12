@@ -1281,7 +1281,7 @@ pub const App = struct {
         const b = send_limits.blockForId(&app.store, ch, now());
         if (b.reason == .none) return true;
         var buf: [240]u8 = undefined;
-        app.st.showToast(now(), !b.reason.cooling(), "{s}", "{s}", .{send_limits.reasonText(&buf, b, now())});
+        app.st.showToast(now(), !b.reason.cooling() and b.reason != .connecting, "{s}", "{s}", .{send_limits.reasonText(&buf, b, now())});
         @import("ui/mascote_pet.zig").onSendBlocked(now());
         return false;
     }
