@@ -524,6 +524,7 @@ pub const Gateway = struct {
         g.emit(.{ .my_limits = .{ .guild = guildId(timeout_guild), .timeout_until_ms = nowMs() + 3 * 3_600_000 } });
         g.emit(.{ .my_limits = .{ .guild = guildId(quarantine_guild), .member_flags = 1 << 7 } });
         try g.demoActivities();
+        try g.demoFaces();
         g.emit(.{ .guild_folders = try demoFolders() });
         try g.demoThreads();
         try g.demoEmojis();
@@ -768,13 +769,19 @@ pub const Gateway = struct {
                     cns[0] = .{ .kind = try alloc.dupe(u8, "github"), .name = try alloc.dupe(u8, seed.name), .url = try std.fmt.allocPrint(alloc, "https://github.com/{s}", .{seed.name}) };
                     cns[1] = .{ .kind = try alloc.dupe(u8, "steam"), .name = try alloc.dupe(u8, seed.name), .url = "" };
                     const nf: u32 = @intCast(mf.items.len);
+                    // A ana tem perfil no primeiro servidor: bio, pronomes e banner de lá.
+                    const server = fp.guild == guildId(0) and fp.user == 1001;
                     g.emit(.{ .profile = .{ .user = fp.user, .profile = .{
-                        .banner = if (fp.user % 2 == 1) try alloc.dupe(u8, "demo:1") else "",
+                        .banner = if (server) try alloc.dupe(u8, "demo:3") else if (fp.user % 2 == 1) try alloc.dupe(u8, "demo:1") else "",
                         .accent = 0x5865F2,
-                        .bio = try i18n.allocPrint(alloc, "oi! sou **{s}** 👋\nfalo de zig, rice e café.", "hi! I'm **{s}** 👋\ninto zig, ricing and coffee.", .{seed.name}),
-                        .pronouns = try alloc.dupe(u8, if (fp.user % 3 == 0) "ela/dela" else "ele/dele"),
+                        .bio = if (server)
+                            try i18n.allocPrint(alloc, "aqui eu cuido dos **temas** do larperCord 🎨", "here I look after larperCord's **themes** 🎨", .{})
+                        else
+                            try i18n.allocPrint(alloc, "oi! sou **{s}** 👋\nfalo de zig, rice e café.", "hi! I'm **{s}** 👋\ninto zig, ricing and coffee.", .{seed.name}),
+                        .pronouns = try alloc.dupe(u8, if (server) "ela/elu" else if (fp.user % 3 == 0) "ela/dela" else "ele/dele"),
                         .username = try std.fmt.allocPrint(alloc, "{s}_{d}", .{ seed.name, fp.user % 100 }),
                         .guild = fp.guild,
+                        .server = server,
                         .joined_ms = if (fp.guild != 0) nowMs() - @as(i64, @intCast(fp.user % 40 + 3)) * 30 * 86_400_000 else 0,
                         .mutual_guilds = try mg.toOwnedSlice(alloc),
                         .mutual_friends = try mf.toOwnedSlice(alloc),
@@ -1211,6 +1218,14 @@ pub const Gateway = struct {
     }
 
     /// Jogos da demonstração (com tempo de jogo, para o cartão de perfil).
+    /// Os perfis de servidor (`demo_faces`), todos no primeiro servidor.
+    fn demoFaces(g: *Gateway) !void {
+        for (demo_faces) |f| g.emit(.{ .member_face = .{ .guild = guildId(0), .user = f.user, .face = .{
+            .nick = if (f.nick) |n| try alloc.dupe(u8, n) else null,
+            .avatar = if (f.avatar) try std.fmt.allocPrint(alloc, "demo:av:{d}", .{demo_face_avatar + f.user}) else null,
+        } } });
+    }
+
     fn demoActivities(g: *Gateway) !void {
         const list = [_]struct { user: Id, name: []const u8, details: []const u8, mins: i64 }{
             .{ .user = 1002, .name = "Hollow Knight", .details = "Cidade das Lágrimas", .mins = 68 },
@@ -1833,10 +1848,22 @@ pub const webhook_user: Id = types.webhook_id_bit | 0x77;
 const GuildSeed = struct { name: []const u8, acronym: []const u8, color: u8, name_en: ?[]const u8 = null, acronym_en: ?[]const u8 = null, icon: bool = false };
 
 /// Mudo/surdo de quem já está em call ao conectar.
+/// Perfis de servidor da demonstração, no primeiro servidor: apelido e foto
+/// (ana.exe), só apelido (kaique) e só foto (brunão). Os três estão na lista de
+/// membros e nas calls de lá, e a ana é mencionada no #interface. Nos outros
+/// servidores, as mesmas pessoas aparecem com o nome e a foto globais.
+pub const demo_faces = [_]struct { user: Id, nick: ?[]const u8 = null, avatar: bool = false }{
+    .{ .user = 1001, .nick = "Aninha", .avatar = true },
+    .{ .user = 1003, .nick = "Kaká do Zig" },
+    .{ .user = 1002, .avatar = true },
+};
+/// A foto do servidor é a "demo:av:N" de outro N: outra cor, outro desenho.
+pub const demo_face_avatar: Id = 90_000;
+
 const demo_vflags = [_]struct { user: Id, flags: ev.VoiceFlags }{
     .{ .user = 1001, .flags = .{ .self_mute = true } },
     .{ .user = 1005, .flags = .{ .self_mute = true, .self_deaf = true } },
-    .{ .user = 1003, .flags = .{ .mute = true } },
+    .{ .user = 1003, .flags = .{ .mute = true, .self_stream = true } },
 };
 
 /// Servidor onde somos da Moderação (abaixo da Fundação, acima dos Membros), com

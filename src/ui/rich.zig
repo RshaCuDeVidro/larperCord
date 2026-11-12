@@ -54,6 +54,8 @@ pub const Opts = struct {
     /// Onde termina, a partir do começo do texto, um parágrafo da direita para a esquerda
     /// (alinhado à direita). Zero: na largura de quebra. O balão usa a largura dele.
     align_w: f32 = 0,
+    /// Servidor do texto (0 = DM ou grupo): a menção a alguém mostra o apelido de lá.
+    guild: u64 = 0,
 };
 
 /// Tamanho de um trecho em relação ao texto normal (títulos e `-#`).
@@ -199,12 +201,12 @@ fn fontFor(o: Opts, sp: *const md.Span) *c.ImFont {
     return o.family.get(.regular);
 }
 
-pub fn label(store: *const Store, sp: *const md.Span, buf: []u8) []const u8 {
+pub fn label(store: *const Store, guild: u64, sp: *const md.Span, buf: []u8) []const u8 {
     if (sp.flags.bullet) return "•";
     if (sp.emoji != 0) return std.fmt.bufPrint(buf, ":{s}:", .{sp.emojiName()}) catch sp.text;
     return switch (sp.mention) {
         .none => sp.text,
-        .user => |id| std.fmt.bufPrint(buf, "@{s}", .{if (store.user(id)) |u| u.name else i18n.tr("desconhecido", "unknown-user")}) catch sp.text,
+        .user => |id| std.fmt.bufPrint(buf, "@{s}", .{store.nameIn(guild, id) orelse i18n.tr("desconhecido", "unknown-user")}) catch sp.text,
         .channel => |id| std.fmt.bufPrint(buf, "#{s}", .{if (store.channel(id)) |ch| ch.info.name else i18n.tr("canal", "unknown")}) catch sp.text,
         .role => |id| std.fmt.bufPrint(buf, "@{s}", .{if (store.roles.get(id)) |r| r.name else i18n.tr("cargo", "unknown-role")}) catch sp.text,
         .stamp => |v| stampText(buf, v),
@@ -363,7 +365,7 @@ pub fn layout(dl: ?*c.ImDrawList, store: *const Store, th_col: anytype, spans: [
             const as_image = sp.emoji != 0 and emoji_images;
             const marker = isMarker(sp);
             const atomic = isAtomic(sp);
-            var s = if (sp.flags.bullet or sp.mention != .none or sp.emoji != 0) label(store, sp, &buf) else word.text;
+            var s = if (sp.flags.bullet or sp.mention != .none or sp.emoji != 0) label(store, o.guild, sp, &buf) else word.text;
             const scaled = o.size * scaleOf(sp);
             const size = if (sp.flags.code) scaled - 1.5 else scaled;
             const pad: f32 = if (sp.flags.code) 5 else if (sp.mention != .none) 3 else 0;
@@ -692,6 +694,7 @@ fn drawWord(dl: *c.ImDrawList, th: anytype, sp: *const md.Span, font: *c.ImFont,
     if (sp.mention != .none) {
         d.rect(dl, r, if (o.on_accent) d.Rgba.white.alpha(0.22) else th.c(.mention).alpha(0.22), 4);
         d.text(dl, font, size, x + pad, ty, if (o.on_accent) o.color else th.c(.mention).mix(th.c(.text), 0.45), s);
+        if (sp.mention == .user and s.len > 1) qa.mark(r, "nome:mention:{d}:{s}", .{ sp.mention.user, d.utf8Prefix(s[1..], 20) });
         if (o.ctx) |ctx| mentionClick(ctx, sp, r, mouse);
         return;
     }

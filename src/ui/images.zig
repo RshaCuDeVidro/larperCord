@@ -76,6 +76,8 @@ pub const Entry = struct {
     /// Animação longa demais para caber inteira: `frames` tem só o primeiro quadro
     /// (o parado) e ela toca por aqui.
     stream: ?*gif_stream.Stream = null,
+    /// A cor dela por alto (`tintOf`), com o bit 24 ligado; 0 = não deu.
+    tint: u32 = 0,
 
     fn free(e: *Entry) void {
         for (e.frames) |f| c.SDL_DestroyTexture(f.tex);
@@ -158,6 +160,8 @@ const Pixels = struct {
 };
 
 const PixFrame = struct { data: []u8, delay_ms: u32 };
+const tintOf = @import("tint.zig").tintOf;
+
 
 const Result = struct {
     key: []u8,
@@ -277,6 +281,15 @@ pub const Cache = struct {
 
     pub fn getStill(cache: *Cache, url: []const u8, max_w: f32, max_h: f32) Lookup {
         return cache.getEx(url, max_w, max_h, false);
+    }
+
+    /// A cor de uma imagem já pronta nesse tamanho (0xRRGGBB; ver `tintOf`).
+    pub fn tint(cache: *Cache, url: []const u8, max_w: f32, max_h: f32) ?u32 {
+        var kbuf: [2200]u8 = undefined;
+        const key = std.fmt.bufPrint(&kbuf, "{d}x{d} {s}", .{ media_url.sizeBucket(max_w), media_url.sizeBucket(max_h), url }) catch return null;
+        const e = cache.map.getPtr(key) orelse return null;
+        if (e.state != .ready or e.tint == 0) return null;
+        return e.tint & 0xffffff;
     }
 
     /// No modo economia, `url` ainda espera um clique para baixar (quem
@@ -488,7 +501,7 @@ pub const Cache = struct {
             stream = gif_stream.create(cache.renderer, sd, px.w, px.h);
             if (stream) |st| bytes += st.bytes;
         }
-        e.* = .{ .state = .ready, .frames = alloc.realloc(done.frames, done.n) catch done.frames[0..done.n], .w = px.w, .h = px.h, .bytes = bytes, .used_ms = cache.now_ms, .stream = stream };
+        e.* = .{ .state = .ready, .frames = alloc.realloc(done.frames, done.n) catch done.frames[0..done.n], .w = px.w, .h = px.h, .bytes = bytes, .used_ms = cache.now_ms, .stream = stream, .tint = tintOf(px.frames[0].data, px.w, px.h) };
         cache.bytes += bytes;
     }
 

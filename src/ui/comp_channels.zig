@@ -249,7 +249,8 @@ fn rowHeight(ctx: *d.Ctx, variant: Variant, cs: anytype) f32 {
 
 fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: anytype, idx: usize, r: d.Rect, y: f32, last: bool) f32 {
     const ch = &cs.info;
-    const selected = (ch.kind == .text or ch.kind == .forum) and ctx.st.activeChannel() == ch.id;
+    // Na tela da call, o canal de voz dela fica marcado (e não o de texto da aba).
+    const selected = if (ctx.st.call_view and ctx.st.voice != null) ch.kind == .voice and ctx.st.voice == ch.id else (ch.kind == .text or ch.kind == .forum) and ctx.st.activeChannel() == ch.id;
     const in_voice = ch.kind == .voice and ctx.st.voice == ch.id;
     const row_h: f32 = switch (variant) {
         .tree => 24,
@@ -263,7 +264,11 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
     if (hb.right) ctx.popup(.{ .menu = .{ .kind = .channel, .id = ch.id, .x = ctx.mouse.x, .y = ctx.mouse.y } });
     if (hb.clicked or hb.middle) switch (ch.kind) {
         .text, .forum => ctx.act(.{ .select_channel = ch.id }),
-        .voice => ctx.act(.{ .toggle_voice = ch.id }),
+        // Entra (se ainda não está) e abre a tela da call, como no Discord.
+        .voice => {
+            if (ctx.st.voice != ch.id) ctx.act(.{ .toggle_voice = ch.id });
+            ctx.act(.{ .show_call = ch.id });
+        },
         .category => {},
     };
 
@@ -353,6 +358,8 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
     if (ch.kind == .voice) {
         for (cs.voice_members.items) |uid| {
             const u = ctx.store.user(uid) orelse continue;
+            // O apelido e a foto do perfil do servidor, como no Discord (#19).
+            const name = ctx.store.nameIn(ch.guild, uid) orelse u.name;
             const speaking = ctx.store.isSpeaking(uid, ctx.now_ms);
             const vf = ctx.store.voiceFlags(uid);
             // Clicar em quem está na call abre o perfil (botão direito: menu).
@@ -368,17 +375,19 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
             switch (variant) {
                 .tree => {
                     var buf: [80]u8 = undefined;
-                    const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", u.name, w.botSuffix(u), voiceFlagsTty(vf) }) catch u.name;
+                    const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", name, w.botSuffix(u), voiceFlagsTty(vf) }) catch name;
                     d.text(dl, fam.get(.regular), fs - 2, rr.x + 4, y2 + 2, if (speaking) ctx.col(.online) else ctx.col(.muted), t);
+                    w.markName(vr, "voice", uid, name);
                     y2 += 20;
                 },
                 else => {
                     const ax = rr.x + 40;
                     const acy = y2 + 13;
                     if (speaking) c.ImDrawList_AddCircleEx(dl, d.v(ax, acy), 12.5, ctx.col(.online).u(), 0, 2, 0);
-                    w.avatar(ctx, dl, ax, acy, 21, uid, .circle, null, 1);
+                    w.avatarIn(ctx, dl, ch.guild, ax, acy, 21, uid, .circle, null, 1);
                     const icons_w = voiceFlagIcons(ctx, dl, vf, vr.right() - 6, acy);
-                    const vn = d.textClipped(dl, fam.get(.medium), 14, ax + 18, acy - 9, if (speaking) ctx.col(.text) else ctx.col(.muted), u.name, vr.right() - (ax + 18) - icons_w - 6 - w.botTagSpace(ctx, u, false));
+                    const vn = d.textClipped(dl, fam.get(.medium), 14, ax + 18, acy - 9, if (speaking) ctx.col(.text) else ctx.col(.muted), name, vr.right() - (ax + 18) - icons_w - 6 - w.botTagSpace(ctx, u, false));
+                    w.markName(vr, "voice", uid, name);
                     _ = w.botTag(ctx, dl, ax + 18 + vn, acy, u, false, 1);
                     y2 += 28;
                 },
@@ -408,7 +417,7 @@ fn badgeWidth(fam: *d.Family, count: u16) f32 {
 
 /// Mudo e surdo de alguém na lista da call; devolve a largura ocupada.
 /// Vermelho quando foi o servidor que impôs.
-fn voiceFlagIcons(ctx: *d.Ctx, dl: *c.ImDrawList, f: ev.VoiceFlags, right: f32, cy: f32) f32 {
+pub fn voiceFlagIcons(ctx: *d.Ctx, dl: *c.ImDrawList, f: ev.VoiceFlags, right: f32, cy: f32) f32 {
     var x = right;
     if (f.deafened()) {
         x -= 11;
@@ -434,7 +443,7 @@ fn smallIcon(dl: *c.ImDrawList, kind: enum { mic, headset }, cx: f32, cy: f32, c
     d.line(dl, cx - 8, cy - 8, cx + 8, cy + 8, col, 1.8);
 }
 
-fn voiceFlagsTty(f: ev.VoiceFlags) []const u8 {
+pub fn voiceFlagsTty(f: ev.VoiceFlags) []const u8 {
     if (f.deaf) return i18n.tr(" [surdo:srv]", " [deaf:srv]");
     if (f.serverMuted()) return i18n.tr(" [mudo:srv]", " [mute:srv]");
     if (f.self_deaf) return i18n.tr(" [surdo]", " [deaf]");
@@ -703,20 +712,27 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
         // [mixer] e [sair] logo depois do nome, cada um medido com a fonte e o tamanho
         // em que é desenhado: a área de clique fica em cima do rótulo em qualquer
         // escala e com qualquer nome. Nome comprido corta, os dois continuam à vista.
+        const view_t = i18n.tr("[ver]", "[view]");
         const mix_t = i18n.tr("[mixer]", "[mixer]");
         const leave_t = i18n.tr("[sair]", "[leave]");
         const sp = d.width(bold, fs, " ");
+        const view_w = d.width(bold, fs, view_t);
         const mix_w = d.width(bold, fs, mix_t);
         const leave_w = d.width(bold, fs, leave_t);
         const x0 = r.x + 10;
-        const btns_w = sp * 2 + mix_w + sp + leave_w;
+        const btns_w = sp * 2 + view_w + sp + mix_w + sp + leave_w;
         const name_w = d.textClipped(ctx.dl, bold, fs, x0, r.y + 3, col, t, @max(r.right() - 8 - x0 - btns_w, 24));
-        const mix_x = x0 + name_w + sp * 2;
+        const view_x = x0 + name_w + sp * 2;
+        const mix_x = view_x + view_w + sp;
         const leave_x = mix_x + mix_w + sp;
+        d.text(ctx.dl, bold, fs, view_x, r.y + 3, if (ctx.st.call_view) ctx.col(.accent) else col, view_t);
         d.text(ctx.dl, bold, fs, mix_x, r.y + 3, col, mix_t);
         d.text(ctx.dl, bold, fs, leave_x, r.y + 3, col, leave_t);
+        const view_r: d.Rect = .{ .x = view_x - sp / 2, .y = r.y, .w = view_w + sp, .h = 22 };
         const leave_r: d.Rect = .{ .x = leave_x - sp / 2, .y = r.y, .w = leave_w + sp, .h = 22 };
         const mix_r: d.Rect = .{ .x = mix_x - sp / 2, .y = r.y, .w = mix_w + sp, .h = 22 };
+        qa.mark(view_r, "voice-view", .{});
+        if (d.hitRaw(ctx, view_r).clicked) ctx.act(.{ .show_call = vc });
         qa.mark(leave_r, "hangup", .{});
         if (d.hitRaw(ctx, leave_r).clicked) ctx.act(.leave_voice);
         qa.mark(mix_r, "voice-mixer", .{});
@@ -727,13 +743,13 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
     d.line(ctx.dl, r.x + 8, r.bottom() - 0.5, r.right() - 8, r.bottom() - 0.5, ctx.col(.border), 1);
     signalBars(ctx, r.x + 14, r.y + 22, q, if (connected) qcol else ctx.col(.idle));
     const status_txt = if (connected) i18n.tr("Voz conectada", "Voice Connected") else i18n.tr("Conectando à call…", "Connecting to the call…");
-    _ = d.textClipped(ctx.dl, fam.get(.semibold), 14, r.x + 33, r.y + 7, if (connected) qcol else ctx.col(.idle), status_txt, r.w - 33 - 88);
+    _ = d.textClipped(ctx.dl, fam.get(.semibold), 14, r.x + 33, r.y + 7, if (connected) qcol else ctx.col(.idle), status_txt, r.w - 33 - 106);
     var sb: [160]u8 = undefined;
     const sub = if (g) |x|
         std.fmt.bufPrint(&sb, "{s} / {s}", .{ cs.info.name, x.name }) catch cs.info.name
     else
         cs.info.name;
-    _ = d.textClipped(ctx.dl, fam.get(.regular), 12, r.x + 14, r.y + 28, ctx.col(.muted), sub, r.w - 98);
+    _ = d.textClipped(ctx.dl, fam.get(.regular), 12, r.x + 14, r.y + 28, ctx.col(.muted), sub, r.w - 116);
 
     // A última linha: transmitindo, aperte para falar ou o problema.
     if (lh.hovered) d.rect(ctx.dl, lr, ctx.col(.hover), ctx.th.radius);
@@ -756,13 +772,30 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
     }
     _ = d.textClipped(ctx.dl, fam.get(if (vl.tone == .quiet) .regular else .semibold), 12, r.x + 28, d.centerY(lr, 12), vl_col, vl.text, r.w - 40 - ping_w);
 
+    // Ver a call: a grade com cada um no lugar da conversa (ui/call_grid.zig).
+    {
+        const vr: d.Rect = .{ .x = r.right() - 104, .y = r.y + 9, .w = 28, .h = 32 };
+        const vh = d.hitRaw(ctx, vr);
+        qa.mark(vr, "voice-view", .{});
+        const vk = anim.to(anim.id("voice-view", 0), if (vh.hovered) 1 else 0, 24);
+        d.rect(ctx.dl, vr, ctx.col(.hover).alpha(vk * 1.5), ctx.th.radius);
+        const vink = if (ctx.st.call_view) ctx.col(.accent) else ctx.col(.muted).mix(ctx.col(.text), vk);
+        // Quatro quadradinhos: a grade.
+        for (0..4) |i| {
+            const qx = vr.x + 7 + @as(f32, @floatFromInt(i % 2)) * 8;
+            const qy = vr.y + 9 + @as(f32, @floatFromInt(i / 2)) * 8;
+            d.border(ctx.dl, .{ .x = qx, .y = qy, .w = 6, .h = 6 }, vink, 1.5, 1.4);
+        }
+        d.tip(ctx, vr, i18n.tr("Ver a call", "View call"), vh.hovered);
+        if (vh.clicked) ctx.act(.{ .show_call = vc });
+    }
     // Mixer: três faders.
-    const mr: d.Rect = .{ .x = r.right() - 80, .y = r.y + 9, .w = 32, .h = 32 };
+    const mr: d.Rect = .{ .x = r.right() - 74, .y = r.y + 9, .w = 28, .h = 32 };
     const mh = d.hitRaw(ctx, mr);
     qa.mark(mr, "voice-mixer", .{});
     const mk = anim.to(anim.id("voice-mixer", 0), if (mh.hovered) 1 else 0, 24);
     d.rect(ctx.dl, mr, ctx.col(.hover).alpha(mk * 1.5), ctx.th.radius);
-    const mx = mr.x + 16;
+    const mx = mr.x + 14;
     const my = mr.y + 16;
     const mink = ctx.col(.muted).mix(ctx.col(.text), mk);
     for (0..3) |i| {
@@ -774,12 +807,12 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
     d.tip(ctx, mr, i18n.tr("Mixer da call", "Call mixer"), mh.hovered);
     if (mh.clicked) ctx.popup(.{ .mixer = .{ .x = r.x + 4, .y = r.y - 300 } });
 
-    const br: d.Rect = .{ .x = r.right() - 44, .y = r.y + 9, .w = 32, .h = 32 };
+    const br: d.Rect = .{ .x = r.right() - 44, .y = r.y + 9, .w = 30, .h = 32 };
     const hb = d.hitRaw(ctx, br);
     qa.mark(br, "hangup", .{});
     const k = anim.to(anim.id("hangup", 0), if (hb.hovered) 1 else 0, 24);
     d.rect(ctx.dl, br, ctx.col(.hover).alpha(k * 1.5), ctx.th.radius);
-    const cx = br.x + 16;
+    const cx = br.x + 15;
     const cy = br.y + 16;
     const ink = ctx.col(.muted).mix(ctx.col(.danger), k);
     d.line(ctx.dl, cx - 5, cy - 5, cx + 5, cy + 5, ink, 2.2);

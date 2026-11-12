@@ -166,9 +166,9 @@ fn messageRow(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, hit_id: usize, m: *cons
     if (hb.hovered) d.rect(dl, r, ctx.col(.hover), @max(ctx.th.radius - 2, 3));
     if (mention) d.rect(dl, .{ .x = r.x, .y = r.y + 6, .w = 2, .h = r.h - 12 }, ctx.col(.mention), 1);
     const fam = ctx.ui;
-    w.avatar(ctx, dl, r.x + 22, r.y + r.h / 2, 28, m.msg.author, .circle, null, 1);
+    w.avatarIn(ctx, dl, guild, r.x + 22, r.y + r.h / 2, 28, m.msg.author, .circle, null, 1);
     const author = ctx.store.user(m.msg.author);
-    const name = if (author) |u| u.name else "?";
+    const name = ctx.store.nameIn(guild, m.msg.author) orelse "?";
     const nx = r.x + 44;
     const nw = d.textClipped(dl, fam.get(.semibold), 14, nx, r.y + 5, w.nameColor(ctx, guild, m.msg.author), name, r.w * 0.5);
     const tag_w = w.botTag(ctx, dl, nx + nw, r.y + 13, author, false, 1);

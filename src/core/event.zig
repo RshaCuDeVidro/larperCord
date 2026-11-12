@@ -201,6 +201,8 @@ pub const Event = union(enum) {
     my_roles: struct { guild: Id, roles: []Id },
     /// Cargos e cor do nome de alguém num servidor.
     member_info: struct { guild: Id, user: Id, info: types.MemberInfo },
+    /// Apelido e foto de alguém num servidor (os dois null: não tem mais).
+    member_face: struct { guild: Id, user: Id, face: types.Face = .{} },
     /// Ordem dos servidores e pastas (READY / mudança nas configurações).
     guild_folders: []types.GuildFolder,
     /// Perfil completo de alguém (o Store assume os textos).
@@ -268,7 +270,9 @@ pub const VoiceFlags = packed struct(u8) {
     mute: bool = false,
     deaf: bool = false,
     suppress: bool = false,
-    _pad: u3 = 0,
+    /// Transmitindo a tela (`self_stream`): a tela da call mostra só o selo AO VIVO.
+    self_stream: bool = false,
+    _pad: u2 = 0,
 
     pub fn serverMuted(f: VoiceFlags) bool {
         return f.mute or f.suppress;
@@ -469,6 +473,9 @@ pub const Action = union(enum) {
     next_tab: i32,
     send_message: []const u8,
     toggle_voice: Id,
+    /// A tela da call `id` (a nossa) no lugar da conversa; 0 volta para a conversa.
+    /// Numa call de DM ou grupo, abre a conversa dela (a grade fica em cima).
+    show_call: Id,
     leave_voice,
     toggle_mute,
     toggle_deafen,

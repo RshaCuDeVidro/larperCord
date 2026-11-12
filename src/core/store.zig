@@ -322,6 +322,12 @@ pub const Store = struct {
     member_lists: std.AutoHashMapUnmanaged(Id, MemberList) = .empty,
     /// (servidor, usuário) -> cor do nome e cargos.
     members: std.AutoHashMapUnmanaged([2]Id, types.MemberInfo) = .empty,
+    /// (servidor, usuário) -> apelido e foto do perfil do servidor; só de quem
+    /// tem algum (os outros aparecem com o nome e a foto globais).
+    faces: std.AutoHashMapUnmanaged([2]Id, types.Face) = .empty,
+    /// Muda quando um apelido muda: a menção a essa pessoa numa mensagem muda
+    /// de largura, e a altura medida da mensagem deixa de valer.
+    nicks_gen: u32 = 0,
     /// Alguém já apareceu de castigo nesta sessão: sem isso, a lista de membros
     /// nem procura o reloginho.
     algum_castigo: bool = false,
@@ -434,6 +440,9 @@ pub const Store = struct {
         while (mi.next()) |ml| ml.items.deinit(s.gpa);
         s.member_lists.deinit(s.gpa);
         s.members.deinit(s.gpa);
+        var fi = s.faces.valueIterator();
+        while (fi.next()) |f| freeFace(f.*);
+        s.faces.deinit(s.gpa);
         s.relationships.deinit(s.gpa);
         freeFolders(s.folders);
         var pi = s.profiles.valueIterator();
@@ -594,6 +603,17 @@ pub const Store = struct {
     /// (fica com eles ou os libera).
     fn takeAvatar(old: *types.User, fresh: ?[]const u8) void {
         takeOpt(&old.avatar, fresh);
+    }
+
+    fn freeFace(f: types.Face) void {
+        if (f.nick) |t| ev_alloc.free(t);
+        if (f.avatar) |t| ev_alloc.free(t);
+    }
+
+    fn sameOpt(a: ?[]const u8, b: ?[]const u8) bool {
+        const x = a orelse return b == null;
+        const y = b orelse return false;
+        return std.mem.eql(u8, x, y);
     }
 
     fn takeOpt(slot: *?[]const u8, fresh: ?[]const u8) void {
@@ -1133,7 +1153,7 @@ pub const Store = struct {
     pub fn apply(s: *Store, ev: Event, now_ms: i64) !void {
         // O que chega o tempo todo e não aparece na caixa de entrada não conta.
         switch (ev) {
-            .typing_start, .presence_update, .voice_state, .voice_member_flags, .voice_speaking, .voice_ping, .voice_audio, .voice_status, .call, .channel_info, .voice_start, .latency, .status, .net_fail, .notice, .member_list, .profile, .relationship, .note, .app_icon, .pins, .pins_changed, .invite, .read, .thread_members, .thread_joined, .thread_open, .threads_page, .conta => {},
+            .typing_start, .presence_update, .member_face, .voice_state, .voice_member_flags, .voice_speaking, .voice_ping, .voice_audio, .voice_status, .call, .channel_info, .voice_start, .latency, .status, .net_fail, .notice, .member_list, .profile, .relationship, .note, .app_icon, .pins, .pins_changed, .invite, .read, .thread_members, .thread_joined, .thread_open, .threads_page, .conta => {},
             else => s.rev +%= 1,
         }
         switch (ev) {
@@ -1668,6 +1688,7 @@ pub const Store = struct {
                 };
             },
             .member_info => |mi| try s.putMember(mi.guild, mi.user, mi.info),
+            .member_face => |mf| try s.putFace(mf.guild, mf.user, mf.face),
             .my_roles => |mr| {
                 const gop = try s.my_roles.getOrPut(s.gpa, mr.guild);
                 if (gop.found_existing) ev_alloc.free(gop.value_ptr.*);
@@ -1680,6 +1701,7 @@ pub const Store = struct {
             .member_remove => |mr| {
                 if (mr.user == s.me) s.me_rev +%= 1;
                 _ = s.members.remove(.{ mr.guild, mr.user });
+                try s.putFace(mr.guild, mr.user, .{});
             },
             .guild_folders => |list| {
                 freeFolders(s.folders);
@@ -1961,6 +1983,42 @@ pub const Store = struct {
     pub fn memberInfo(s: *const Store, guild_id: Id, user_id: Id) ?types.MemberInfo {
         if (guild_id == 0) return null;
         return s.members.get(.{ guild_id, user_id });
+    }
+
+    /// Apelido e foto de alguém num servidor, se tem (0 = DM ou grupo: nunca).
+    pub fn face(s: *const Store, guild_id: Id, user_id: Id) ?*const types.Face {
+        if (guild_id == 0 or s.faces.count() == 0) return null;
+        return s.faces.getPtr(.{ guild_id, user_id });
+    }
+
+    /// Como alguém aparece num servidor: o apelido de lá, ou o nome de sempre
+    /// (null = não conhecemos a pessoa).
+    pub fn nameIn(s: *const Store, guild_id: Id, user_id: Id) ?[]const u8 {
+        if (s.face(guild_id, user_id)) |f| if (f.nick) |n| return n;
+        return if (s.users.getPtr(user_id)) |u| u.name else null;
+    }
+
+    /// Guarda o apelido e a foto de alguém num servidor (os dois null tira).
+    /// O mesmo de novo (cada mensagem traz o membro) não mexe em nada.
+    fn putFace(s: *Store, guild_id: Id, user_id: Id, f: types.Face) !void {
+        const key: [2]Id = .{ guild_id, user_id };
+        if (f.nick == null and f.avatar == null) {
+            const kv = s.faces.fetchRemove(key) orelse return;
+            if (kv.value.nick != null) s.nicks_gen +%= 1;
+            freeFace(kv.value);
+            return;
+        }
+        const gop = s.faces.getOrPut(s.gpa, key) catch |e| {
+            freeFace(f);
+            return e;
+        };
+        if (gop.found_existing) {
+            const old = gop.value_ptr.*;
+            if (sameOpt(old.nick, f.nick) and sameOpt(old.avatar, f.avatar)) return freeFace(f);
+            if (!sameOpt(old.nick, f.nick)) s.nicks_gen +%= 1;
+            freeFace(old);
+        } else if (f.nick != null) s.nicks_gen +%= 1;
+        gop.value_ptr.* = f;
     }
 
     /// Servidores na ordem da barra lateral: primeiro os que não estão na
@@ -2578,6 +2636,52 @@ test "menção numa thread: cargo que chega depois, @everyone e as supressões" 
     // Editada para não chamar mais ninguém.
     try s.apply(.{ .message_update = .{ .channel = 11, .id = 101, .content = null, .mentions = .{} } }, 0);
     try std.testing.expect(!s.mentionsMeCached(5, &items[1]));
+}
+
+test "perfil do servidor: apelido e foto por servidor, iguais não mexem, vazio tira" {
+    const c_alloc = std.heap.c_allocator;
+    var s = Store.init(std.testing.allocator);
+    defer s.deinit();
+    const users = try c_alloc.alloc(types.User, 1);
+    users[0] = .{ .id = 2, .name = try c_alloc.dupe(u8, "ana.exe"), .avatar = try c_alloc.dupe(u8, "global") };
+    try s.apply(.{ .ready = .{ .me = 1, .users = users, .guilds = try c_alloc.alloc(types.Guild, 0), .channels = try c_alloc.alloc(types.Channel, 0), .voice = try c_alloc.alloc([2]Id, 0) } }, 0);
+    try std.testing.expectEqualStrings("ana.exe", s.nameIn(5, 2).?);
+    try std.testing.expect(s.nameIn(5, 3) == null);
+
+    const face = struct {
+        fn f(nick: ?[]const u8, avatar: ?[]const u8) !types.Face {
+            return .{
+                .nick = if (nick) |n| try std.heap.c_allocator.dupe(u8, n) else null,
+                .avatar = if (avatar) |a| try std.heap.c_allocator.dupe(u8, a) else null,
+            };
+        }
+    }.f;
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face("Aninha", "guilds/5/users/2/avatars/x") } }, 0);
+    try std.testing.expectEqualStrings("Aninha", s.nameIn(5, 2).?);
+    try std.testing.expectEqualStrings("guilds/5/users/2/avatars/x", s.face(5, 2).?.avatar.?);
+    // Em outro servidor e em DM (0), o nome global.
+    try std.testing.expectEqualStrings("ana.exe", s.nameIn(6, 2).?);
+    try std.testing.expectEqualStrings("ana.exe", s.nameIn(0, 2).?);
+    const gen = s.nicks_gen;
+    // O mesmo de novo (cada mensagem traz o membro): nada muda.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face("Aninha", "guilds/5/users/2/avatars/x") } }, 0);
+    try std.testing.expectEqual(gen, s.nicks_gen);
+    // Só a foto mudou: a medida das mensagens continua valendo.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face("Aninha", "guilds/5/users/2/avatars/y") } }, 0);
+    try std.testing.expectEqual(gen, s.nicks_gen);
+    try std.testing.expectEqualStrings("guilds/5/users/2/avatars/y", s.face(5, 2).?.avatar.?);
+    // Tirou o apelido e ficou a foto.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2, .face = try face(null, "guilds/5/users/2/avatars/y") } }, 0);
+    try std.testing.expect(s.nicks_gen != gen);
+    try std.testing.expectEqualStrings("ana.exe", s.nameIn(5, 2).?);
+    // Os dois vazios tiram a pessoa; sair do servidor também.
+    try s.apply(.{ .member_face = .{ .guild = 5, .user = 2 } }, 0);
+    try std.testing.expect(s.face(5, 2) == null);
+    try s.apply(.{ .member_face = .{ .guild = 6, .user = 2, .face = try face("Ana no 6", null) } }, 0);
+    try std.testing.expectEqualStrings("Ana no 6", s.nameIn(6, 2).?);
+    try s.apply(.{ .member_remove = .{ .guild = 6, .user = 2 } }, 0);
+    try std.testing.expect(s.face(6, 2) == null);
+    try std.testing.expectEqual(@as(u32, 0), s.faces.count());
 }
 
 test "limite de mensagens por canal libera as antigas" {

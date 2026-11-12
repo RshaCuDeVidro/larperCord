@@ -145,9 +145,9 @@ fn card(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y0: f32, m: *const StoredM
     qa.mark(r, "pin-open:{d}", .{m.msg.id});
     if (hb.hovered) d.rect(dl, r, ctx.col(.hover), @max(ctx.th.radius, 6));
     d.border(dl, r, ctx.col(.border), @max(ctx.th.radius, 6), 1);
-    w.avatar(ctx, dl, inner + 13, y0 + 22, 26, m.msg.author, .circle, null, 1);
+    w.avatarIn(ctx, dl, guild, inner + 13, y0 + 22, 26, m.msg.author, .circle, null, 1);
     const author = ctx.store.user(m.msg.author);
-    const name = if (author) |u| u.name else "?";
+    const name = ctx.store.nameIn(guild, m.msg.author) orelse "?";
     const nw = d.textClipped(dl, fam.get(.semibold), 14, tx, y0 + 9, w.nameColor(ctx, guild, m.msg.author), name, tw * 0.6);
     const tag_w = w.botTag(ctx, dl, tx + nw, y0 + 17, author, false, 1);
     var tb: [48]u8 = undefined;
