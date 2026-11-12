@@ -644,6 +644,8 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
         };
         drawMessage(ctx, dl, g, &msgs[i], st.groups.items[i], r, y, under, from, to, if (under) &probe else null);
         qa.mark(.{ .x = r.x, .y = y, .w = r.w, .h = msgs[i].height }, "msg:{d}", .{msgs[i].msg.id});
+        // A última mensagem inteira na tela: o mascote do canto pode sentar em cima dela.
+        if (y >= r.y and y + msgs[i].height <= r.bottom()) mascote_pet.anchor(.last_msg, .{ .x = r.x, .y = y, .w = r.w, .h = msgs[i].height }, ctx.now_ms);
         qa.mark(.{ .x = r.x, .y = y, .w = r.w, .h = msgs[i].height }, "msg-index:{d}", .{msgs.len - 1 - i});
     }
 
@@ -701,6 +703,7 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
         const br = bottom_r;
         const hb = bottom_hit;
         qa.mark(br, "jump-bottom", .{});
+        mascote_pet.anchor(.jump, br, ctx.now_ms);
         d.shadow(dl, br, 18, 8, ctx.col(.shadow));
         d.circle(dl, br.x + 18, br.y + 18, 18, if (hb.hovered) ctx.col(.accent) else ctx.col(.elevated));
         icons.chevron(dl, br.x + 18, br.y + 19, (if (hb.hovered) ctx.col(.accent_text) else ctx.col(.text)).u(), 1);
@@ -1757,6 +1760,7 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
         const tx = r.x + (if (prompt) @as(f32, 10) else 6);
         w.typingDots(dl, tx + 4, ty + 8, ctx.col(.muted), ctx.now_ms);
         d.text(dl, fam.get(.semibold), 13, tx + 24, ty, ctx.col(.muted), t);
+        mascote_pet.anchor(.typing, .{ .x = tx, .y = ty, .w = 24 + d.width(fam.get(.semibold), 13, t), .h = 16 }, ctx.now_ms);
     }
     // Modo lento: na mesma linha, à direita.
     send_limits.slowmodeLabel(ctx, fam, limit, r.right() - (if (pill) @as(f32, 24) else 6), top - 19);
@@ -1840,7 +1844,7 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     // O lugar do mascote do canto, à esquerda dos botões: ele mora ali dentro e não
     // cobre nada da conversa nem da caixa.
     if (mascote_pet.wantsSlot(ctx.st.settings.mascot_pet, ctx.now_ms) and r.w > 320) {
-        const slot_w: f32 = 46;
+        const slot_w = mascote_pet.slotWidth(ctx.st.settings.mascot_plant);
         input_r -= slot_w;
         mascote_pet.slot(.{ .x = input_r + 2, .y = r.y, .w = slot_w, .h = r.h }, ctx.now_ms);
     }
@@ -1871,6 +1875,7 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     const input_y = r.y + (r.h - frame_h) / 2;
     c.ImGui_SetCursorScreenPos(d.v(input_x, input_y));
     qa.mark(.{ .x = input_x, .y = r.y, .w = input_w, .h = r.h }, "composer", .{});
+    mascote_pet.anchor(.input, .{ .x = input_x, .y = r.y, .w = input_w, .h = r.h }, ctx.now_ms);
     if (st.focus_input and !st.palette.open and !st.settings.open and st.popup == .none) {
         c.ImGui_SetKeyboardFocusHere();
         st.focus_input = false;

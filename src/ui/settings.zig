@@ -35,6 +35,7 @@ pub const sections = [_]Section{
     } },
     .{ .title = "CONFIGURAÇÕES DO APLICATIVO", .title_en = "APP SETTINGS", .items = &.{
         .{ .page = .aparencia, .label = "Aparência", .label_en = "Appearance" },
+        .{ .page = .mascote, .label = "Mascote", .label_en = "Mascot" },
         .{ .page = .acessibilidade, .label = "Acessibilidade", .label_en = "Accessibility" },
         .{ .page = .chat, .label = "Chat", .label_en = "Chat" },
         .{ .page = .voz, .label = "Voz", .label_en = "Voice" },
@@ -749,9 +750,9 @@ fn page(p: *Page, previews: []const Preview) void {
             }
             p.divider();
             @import("settings_timer.zig").section(p);
-            // O mascote por último: o que já existia na página não muda de lugar.
-            p.divider();
-            p.heading(i18n.tr("Mascote", "Mascot"));
+        },
+        .mascote => {
+            p.title(i18n.tr("Mascote", "Mascot"));
             mascotPicker(p, &s.mascot);
             if (mascote.Kind.of(s.mascot) == .terminal) {
                 p.heading(i18n.tr("Abertura", "Opening"));
@@ -760,8 +761,23 @@ fn page(p: *Page, previews: []const Preview) void {
                 if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
             }
             p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
-            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
             if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
+            p.divider();
+            p.heading(i18n.tr("Mascote no canto", "Corner mascot"));
+            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
+            const pet_on = s.mascot_pet;
+            p.heading(i18n.tr("Vida própria", "A life of its own"));
+            p.segmented(&.{ i18n.tr("Desligada", "Off"), i18n.tr("Calma", "Calm"), i18n.tr("Normal", "Normal"), i18n.tr("Agitada", "Lively") }, &s.mascot_life);
+            p.note(i18n.tr("Parado, ele faz coisas sozinho de vez em quando: toma café, lê, pesca um emoji da conversa, caça uma mosquinha, empilha blocos. Só com a janela em foco e por poucos segundos; depois de uns minutos sem você mexer, ele dorme e para de gastar.", "When you leave it alone, it does things on its own now and then: drinks coffee, reads, fishes an emoji out of the chat, chases a fly, stacks blocks. Only while the window is focused and only for a few seconds; after a few idle minutes it falls asleep and stops using anything."));
+            const life_on = pet_on and s.mascot_life > 0;
+            p.toggleIf(i18n.tr("Passeia pela janela", "Wanders around the window"), i18n.tr("Sobe na lista de membros, senta em cima da última mensagem, fica pendurado no cabeçalho, espia por trás da lista de canais. Trocando de canal, ele pula junto.", "Climbs onto the member list, sits on the last message, hangs from the header, peeks out from behind the channel list. When you switch channels, it jumps along."), &s.mascot_roam, life_on);
+            p.toggleIf(i18n.tr("Brinca com a interface", "Plays with the interface"), i18n.tr("Senta no \"digitando…\", leva mensagem apagada para o lixo, passa a borracha na editada, empurra o botão de voltar ao fim, se segura quando a janela muda de tamanho e leva a cartinha da DM até o ícone.", "Sits on the \"is typing…\" line, takes deleted messages to the trash, erases edited ones, pushes the jump-to-present button, holds on when the window is resized and carries a letter to the DM icon."), &s.mascot_ui, pet_on);
+            p.toggleIf(i18n.tr("Brinca com o mouse", "Plays with the mouse"), i18n.tr("Com a setinha parada perto dele, tenta pegar; parada em cima dele, senta nela (e cai quando você mexe).", "With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move)."), &s.mascot_cursor, pet_on);
+            p.toggleIf(i18n.tr("Espera você voltar", "Waits for you to come back"), i18n.tr("Com a janela sem foco, fica esperando; se você some por muito tempo, monta um acampamento. Na volta, corre até o mouse (e, depois de horas, diz que sentiu saudade).", "With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you)."), &s.mascot_away, pet_on);
+            p.heading(i18n.tr("Plantinha", "Little plant"));
+            p.toggleIf(i18n.tr("Plantinha", "Little plant"), i18n.tr("Um vasinho do lado dele que ele rega e que cresce um pouco a cada dia em que você usa o app. Some por muito tempo e ela murcha, até ele regar de novo.", "A little pot next to it that it waters and that grows a bit each day you use the app. Stay away too long and it wilts, until it waters it again."), &s.mascot_plant, pet_on);
+            var pb: [96]u8 = undefined;
+            p.note(i18n.fmt(&pb, "Ela já cresceu {d} de 30 dias.", "It has grown for {d} of 30 days.", .{@min(s.mascot_plant_days, 30)}));
         },
         .acessibilidade => {
             p.title(i18n.tr("Acessibilidade", "Accessibility"));

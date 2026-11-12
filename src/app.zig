@@ -2306,6 +2306,13 @@ pub const App = struct {
     /// chega no canal aberto é lido pela conversa: ver `channel_seen`.)
     fn afterEvent(app: *App, e: ev.Event) void {
         const st = &app.st;
+        // Na conversa aberta, o mascote do canto leva a mensagem apagada para o lixo e
+        // passa a borracha na editada.
+        switch (e) {
+            .message_delete => |x| if (!x.local and x.channel == (st.activeChannel() orelse 0)) @import("ui/mascote_pet.zig").onMessageDeleted(),
+            .message_update => |x| if (!x.local and x.content != null and x.channel == (st.activeChannel() orelse 0)) @import("ui/mascote_pet.zig").onMessageEdited(),
+            else => {},
+        }
         switch (e) {
             .search_results => |r| @import("ui/search.zig").deliver(r),
             .invite_created => |r| @import("ui/invites.zig").created(r),
@@ -2385,6 +2392,7 @@ pub const App = struct {
         if (verdict != .hidden and @import("app_conta.zig").allowsNotify(app, m, cs, verdict == .important)) {
             f.notified +%= 1;
             @import("ui/mascote_pet.zig").onPing(now());
+            if (cs.info.guild == 0 and app.st.activeChannel() != m.channel) @import("ui/mascote_pet.zig").onDm();
             app.notify(m, cs);
         }
         if (verdict != .important and f.focusOn(now()) and !cs.info.unread and app.st.activeChannel() != m.channel) return m.channel;
@@ -2871,6 +2879,7 @@ pub const App = struct {
                     }
                     // Arquivo arrastado para a janela: vai para a bandeja (e o mascote do canto come).
                     if (e.type == c.SDL_EVENT_DROP_POSITION) @import("ui/mascote_pet.zig").onDragOver(now());
+                    if (e.type == c.SDL_EVENT_WINDOW_RESIZED) @import("ui/mascote_pet.zig").onResize();
                     if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
                         if (e.drop.data) |p| app.attachFile(std.mem.span(p));
                         @import("ui/mascote_pet.zig").onDrop(now());

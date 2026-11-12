@@ -164,6 +164,8 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
                 const t0 = if (profile) c.SDL_GetTicksNS() else 0;
                 // (Uma régua pode ter 1 pixel de altura.)
                 if ((inner.w > 4 and inner.h > 4) or (draw == &extra.rule and inner.w > 0 and inner.h > 0)) draw(ctx, p.node, inner);
+                // Os lugares aonde o mascote do canto pode ir passear.
+                @import("mascote_pet.zig").component(p.node.name, inner, ctx.now_ms);
                 if (profile) profAdd(p.node.name, (c.SDL_GetTicksNS() - t0) / 1000);
             } else unknown(ctx, p);
             if (d.pflag(p.node, "autohide", false)) autohide(ctx, p, i);
