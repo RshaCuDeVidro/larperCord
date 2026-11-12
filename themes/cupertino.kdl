@@ -86,6 +86,7 @@ styles {
     style "lateral" radius=12 corners=left gradient="alpha(@sidebar, 0.74) alpha(@sidebar, 0.60)" grain="alpha(@text, 0.028)"
     style "conteudo" radius=12 corners=right gradient="@surface @surface"
     style "menus" gradient="alpha(@bg, 0.42) alpha(@bg, 0.30)" border-bottom="alpha(white, 0.08)"
+    style "quadro" radius=14 gradient="lighten(@elevated, 0.03) @elevated" border-gradient="alpha(white, 0.24) alpha(white, 0.05) alpha(white, 0.12)" border-width=1 drop-shadow="alpha(black, 0.22)" drop-shadow-size=18 drop-shadow-y=6
 }
 
 layout {
@@ -113,8 +114,8 @@ layout {
                     column flex=1 {
                         header height=56 variant=minimal inset-x=18 border-bottom=border
                         tabs height=38 variant=pills when=abas border-bottom=border
-                        messages flex=1 variant=bubbles avatar=circle avatar-size=28 spacing=12 ticks=#true typing-bubble=#true when=baloes
-                        messages flex=1 variant=cozy avatar=circle avatar-size=34 spacing=14 unless=baloes
+                        messages flex=1 variant=bubbles avatar=circle avatar-size=28 spacing=12 ticks=#true typing-bubble=#true when=baloes call-style=quadro call-tint=0.18
+                        messages flex=1 variant=cozy avatar=circle avatar-size=34 spacing=14 unless=baloes call-style=quadro call-tint=0.18
                         column height=70 padding-x=16 {
                             spacer flex=1
                             composer height=42 variant=pill

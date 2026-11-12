@@ -86,7 +86,7 @@ layout {
             column flex=1 style=sheet {
                 header height=64 variant=minimal inset-x=22
                 tabs height=44 variant=pills style=bar when=abas
-                messages flex=1 variant=bubbles avatar=circle avatar-size=30 spacing=14 ticks="$entregue" typing-bubble="$digitando"
+                messages flex=1 variant=bubbles avatar=circle avatar-size=30 spacing=14 call-style=sheet call-tint=0.18 ticks="$entregue" typing-bubble="$digitando"
                 column height=94 padding-x=20 {
                     spacer flex=1
                     composer height=52 variant=pill typing="$!digitando"

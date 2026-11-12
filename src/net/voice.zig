@@ -274,6 +274,8 @@ const Worker = struct {
     talk: voz.Talk = .{},
     speaking_now: bool = false,
     speaking_emit_ms: i64 = 0,
+    /// O nível do microfone como o medidor mostra: sobe na hora e cai devagar.
+    shown_db: f32 = voz.db_silence,
     trailing_silence: u8 = 0,
     /// O próximo pacote é o primeiro de uma fala (bit de marcação do RTP).
     spurt_start: bool = true,
@@ -412,6 +414,7 @@ const Worker = struct {
     }
 
     fn cleanup(w: *Worker) void {
+        voz_audio.sh.call_level_db.store(voz.db_silence, .monotonic);
         for (w.sources[0..w.n_sources]) |*s| s.deinit();
         w.n_sources = 0;
         w.cap.release();
@@ -909,11 +912,17 @@ const Worker = struct {
         // Mudo não gasta nada com o supressor: nem o estado fica.
         if (blocked or w.mic.stream == null or idle) w.cap.release();
         var voice = false;
+        var db: f32 = voz.db_silence;
         if (have and !idle) {
             const res = w.cap.process(&pcm, sh.captureCfg());
             voice = res.voice;
+            db = res.db;
+            sh.call_threshold_db.store(res.threshold_db, .monotonic);
             w.mic_peak_rms = @max(w.mic_peak_rms, res.rms);
         }
+        // Para o medidor do seu quadro na tela da call (só lido com o mouse em cima).
+        w.shown_db = @max(db, w.shown_db - 1.5);
+        sh.call_level_db.store(w.shown_db, .monotonic);
         const talking = w.talk.update(now, .{
             .voice = voice,
             .ptt = ptt,

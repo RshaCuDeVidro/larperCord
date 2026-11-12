@@ -53,7 +53,8 @@ Alguns itens aqui são o jeito como o larperCord fica leve, e o app oficial pode
 
 ## Voz
 
-- **[Mixer da call](page:voice#usando)** com o volume e um botão de mudo de cada pessoa numa janela só. O app oficial ajusta uma pessoa por vez, pelo menu de cada uma.
+- **[Mixer da call](page:voice#volume-por-pessoa)** com o volume e um botão de mudo de cada pessoa numa janela só. O app oficial ajusta uma pessoa por vez, pelo menu de cada uma.
+- **[Tirar ruído e Igualar volume para cada pessoa](page:voice#volume-por-pessoa)**, no mesmo mixer e desligados de começo: supressão de ruído no som de outra pessoa, e uma voz baixa ou alta levada para perto do volume dos outros.
 
 ## Temas e plugins
 
@@ -67,10 +68,14 @@ Alguns itens aqui são o jeito como o larperCord fica leve, e o app oficial pode
 - **[Plugins num sandbox](page:plugins#limites).** Uma thread separada da interface, um Lua e 8 MB para cada plugin, cerca de 5 milhões de instruções por chamada, sem arquivos, processos nem sockets, e HTTPS só para hosts que você aprova. Eles nunca veem o seu token.
 - **[Nove plugins vêm com o app](page:plugins#os-plugins-que-vem-com-o-app):** anti-golpe, radar de CVE, cartões do GitHub, o que perdi, tradução, lembretes, destaques, links limpos, e links e arquivos.
 
+## O mascote
+
+- **[Um mascote em cima da caixa de mensagem](page:mascot)** que segue o mouse, reage ao que você escreve e faz coisas sozinho, com cinco aberturas para escolher. Uma chave desliga o mascote do canto.
+
 ## O que o app oficial tem e o larperCord não
 
 - **[Compartilhar tela (mandar ou assistir), câmera e chamada de vídeo](page:voice#limites-hoje).** O larperCord só faz voz, e isso não está nos planos.
-- **[Aperte para falar fora da janela](page:voice#limites-hoje).** Aqui só funciona com a janela em foco, porque o SDL não tem atalho global portátil. Um atalho global está no roteiro.
+- **[Aperte para falar fora da janela, no Linux](page:voice#limites-hoje).** No Linux só funciona com a janela em foco, porque o SDL não tem atalho global portátil. Um atalho global está no roteiro. No Windows funciona de qualquer janela.
 - **[Notificação que abre a conversa](page:status#o-que-funciona-hoje).** Clicar numa ainda não abre o canal.
 - **[Configurações de servidor e de cargos](page:features#servidores-e-grupos).** Aqui dá para editar nome, descrição, ícone e banner de um servidor, dar ou tirar cargos, e expulsar, banir, castigar, ou silenciar e ensurdecer membros no servidor. O resto está no roteiro.
 - **Criar servidores e canais.** Dá para criar threads e posts de fórum, mas não servidores nem canais.

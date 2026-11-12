@@ -93,7 +93,7 @@ layout {
                 column flex=1 style=card {
                     header height=50 divider=#false
                     tabs height=44 variant=pills when=abas
-                    messages flex=1 avatar=squircle inset-x=4
+                    messages flex=1 avatar=squircle inset-x=4 call-style=card call-tint=0.16
                     column height=92 padding-x=16 {
                         spacer flex=1
                         composer height=48 variant=pill

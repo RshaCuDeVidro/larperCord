@@ -73,9 +73,11 @@ metrics radius=0
 // O grão e o escurecimento das bordas mudam com o papel.
 styles mode=light {
     style "pagina" gradient="lighten(@bg, 0.02) darken(@bg, 0.025)" grain="alpha(@text, 0.075)" vignette="alpha(@muted, 0.16)" vignette-size=0.45
+    style "recorte" bg="lighten(@bg, 0.03)" border="@text" border-width=1 grain="alpha(@text, 0.06)"
 }
 styles mode=dark {
     style "pagina" gradient="lighten(@bg, 0.015) darken(@bg, 0.2)" grain="alpha(@text, 0.026)" vignette="alpha(black, 0.45)" vignette-size=0.45
+    style "recorte" bg="lighten(@bg, 0.04)" border="alpha(@text, 0.55)" border-width=1 grain="alpha(@text, 0.03)"
 }
 
 layout {
@@ -126,7 +128,7 @@ layout {
                 tabs height=36 variant=underline when=abas
                 header height=66 variant=minimal font="Liberation Serif"
                 rule height=9 color="alpha(@text, 0.45)" ornament=diamond ornament-color=accent ornament-size=6
-                messages flex=1 avatar=none spacing=20 font="Liberation Serif"
+                messages flex=1 avatar=none spacing=20 font="Liberation Serif" call-style=recorte call-tint=0
                 column height=76 {
                     spacer flex=1
                     composer height=44 variant=box font="Liberation Serif"

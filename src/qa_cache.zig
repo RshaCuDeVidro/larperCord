@@ -16,6 +16,9 @@ const gw = @import("net/fake_gateway.zig");
 const msg_cache = @import("net/msg_cache.zig");
 const state_cache = @import("net/state_cache.zig");
 const send_limits = @import("ui/composer_limits.zig");
+const ui_cj = @import("ui/conjuntos.zig");
+const app_cj = @import("app_conjuntos.zig");
+const c = @import("c");
 const Rect = @import("theme/layout.zig").Rect;
 const Id = @import("core/types.zig").Id;
 
@@ -41,6 +44,30 @@ fn find(comptime fmt: []const u8, args: anytype) ?Rect {
 
 // --- Primeiro processo: conecta, grava e fecha ---------------------------------------
 
+/// Um conjunto de abas em uso, com outra ordem que a do demo (#zig e #geral, a ativa é
+/// o #geral): ele volta na abertura pelo retrato, antes do READY, e fica depois dele.
+const set_tabs = [_]Id{ gw.channelId(0, 9), gw.channelId(0, 4) };
+fn saveTabSet(app: *App) void {
+    ui_cj.qa_read = true;
+    var buf: [256]u8 = undefined;
+    if (ui_cj.filePath(&buf, app.store.me)) |p| _ = c.SDL_RemovePath(p.ptr);
+    app.st.tabs.clearRetainingCapacity();
+    app.st.tabs.appendSlice(app.gpa, &set_tabs) catch return;
+    app.st.tab = 1;
+    const name = app.st.gpa.dupe(u8, "retrato") catch return;
+    app_cj.handle(app, .{ .save = name });
+}
+fn tabSetOn(app: *App) bool {
+    const set = app.st.conjuntos.activeSet() orelse return false;
+    return std.mem.eql(u8, set.name, "retrato") and std.mem.eql(Id, app.st.tabs.items, &set_tabs) and app.st.tab == 1;
+}
+fn tabSetSaved(app: *App) bool {
+    var buf: [256]u8 = undefined;
+    const p = ui_cj.filePath(&buf, app.store.me) orelse return false;
+    var info: c.SDL_PathInfo = undefined;
+    return tabSetOn(app) and c.SDL_GetPathInfo(p.ptr, &info);
+}
+
 var saved_ok = false;
 fn saveNow(app: *App) void {
     msg_cache.flushDirty(&app.store);
@@ -56,6 +83,8 @@ fn snapshotSaved(app: *App) bool {
 
 pub const ops_a = [_]Op{
     s("abrir pelo retrato: antes de fechar"),
+    run(saveTabSet),
+    expect("um conjunto de abas em uso, gravado (outra ordem que a do demo)", tabSetSaved),
     run(saveNow),
     expect("o retrato da conta e a conversa aberta vão para o disco", snapshotSaved),
 };
@@ -161,8 +190,8 @@ fn noJump(app: *App) bool {
     if (lastId(app) != before_last) return false;
     const m = find("msg:{d}", .{before_last}) orelse return false;
     const g = find("guild:{d}", .{app.store.guilds.items[0].id}) orelse return false;
-    const c = find("channel:{d}", .{before_channel}) orelse return false;
-    return near(m.y, before_msg_y) and near(g.y, before_guild_y) and near(c.y, before_chan_y);
+    const row = find("channel:{d}", .{before_channel}) orelse return false;
+    return near(m.y, before_msg_y) and near(g.y, before_guild_y) and near(row.y, before_chan_y);
 }
 fn sendsAgain(app: *App) bool {
     const cs = active(app) orelse return false;
@@ -176,6 +205,7 @@ pub const ops_b = [_]Op{
     .{ .shot = "cache-0" },
     expect("os servidores na barra", railShown),
     expect("o canal aberto está na lista de canais", channelListed),
+    expect("o conjunto de abas que estava em uso voltou, com a aba ativa dele, antes do READY", tabSetOn),
     expect("a conversa aberta mostra as mensagens do cache", cachedMessages),
     expect("os nomes com o apelido do servidor e a nossa linha com o status escolhido, antes do READY", facesAndStatus),
     expect("a caixa diz que só dá para enviar depois de conectar", connectingNote),
@@ -192,5 +222,6 @@ pub const ops_b = [_]Op{
     .{ .wait = 300 },
     expect("nada pulou: a mesma conversa, a última mensagem e as listas no mesmo lugar", noJump),
     expect("a caixa volta a enviar", sendsAgain),
+    expect("e o conjunto de abas continua em uso, com as mesmas abas", tabSetOn),
     .{ .shot = "cache-depois" },
 };

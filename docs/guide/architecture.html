@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Architecture · larperCord</title>
-<meta name="description" content="About 34,000 lines of Zig on top of a thin C layer. The rule that shapes everything: the UI never changes data directly . # Data flow text copy UI → Action">
+<meta name="description" content="About 135,000 lines of Zig, a sixth of them the automated UI test, on top of a thin C layer. The rule that shapes everything: the UI never changes data dir">
 <meta name="color-scheme" content="dark light">
 <link rel="canonical" href="https://rshacudevidro.github.io/larperCord/guide/architecture.html">
 <link rel="alternate" hreflang="en" href="https://rshacudevidro.github.io/larperCord/guide/architecture.html">
 <link rel="alternate" hreflang="pt-BR" href="https://rshacudevidro.github.io/larperCord/pt/guide/architecture.html">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Architecture · larperCord">
-<meta property="og:description" content="About 34,000 lines of Zig on top of a thin C layer. The rule that shapes everything: the UI never changes data directly . # Data flow text copy UI → Action">
+<meta property="og:description" content="About 135,000 lines of Zig, a sixth of them the automated UI test, on top of a thin C layer. The rule that shapes everything: the UI never changes data dir">
 <meta property="og:image" content="https://rshacudevidro.github.io/larperCord/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="../assets/icon-live.svg">
@@ -42,11 +42,11 @@
 <div class="guide">
 <aside class="side" aria-label="Guide pages">
 <button type="button" class="side-search" data-open-palette>Search the guide<span><kbd>Ctrl</kbd><kbd>K</kbd></span></button>
-<div class="side-group"><p>Start</p><a href="../guide/getting-started.html">Getting started</a><a href="../guide/account.html">Connect your account</a><a href="../guide/vs-discord.html">What Discord doesn't have</a></div><div class="side-group"><p>Use</p><a href="../guide/features.html">Feature tour</a><a href="../guide/shortcuts.html">Shortcuts and CLI</a><a href="../guide/settings.html">Settings and files</a><a href="../guide/voice.html">Voice calls</a></div><div class="side-group"><p>Customize</p><a href="../guide/themes.html">Writing themes</a><a href="../guide/theme-gallery.html">Built-in themes</a><a href="../guide/plugins.html">Lua plugins</a><a href="../guide/plugin-directory.html">Plugin directory</a><a href="../guide/plugin-starter.html">Plugin starter</a><a href="../guide/lsp.html">Code diagnostics</a></div><div class="side-group"><p>Internals</p><a href="../guide/architecture.html" aria-current=page>Architecture</a><a href="../guide/performance.html">Performance</a><a href="../guide/privacy.html">Privacy and security</a></div><div class="side-group"><p>Project</p><a href="../guide/status.html">Status and roadmap</a><a href="../guide/contributing.html">Contributing</a></div>
+<div class="side-group"><p>Start</p><a href="../guide/getting-started.html">Getting started</a><a href="../guide/account.html">Connect your account</a><a href="../guide/vs-discord.html">What Discord doesn't have</a></div><div class="side-group"><p>Use</p><a href="../guide/features.html">Feature tour</a><a href="../guide/shortcuts.html">Shortcuts and CLI</a><a href="../guide/settings.html">Settings and files</a><a href="../guide/voice.html">Voice calls</a></div><div class="side-group"><p>Customize</p><a href="../guide/themes.html">Writing themes</a><a href="../guide/theme-gallery.html">Built-in themes</a><a href="../guide/mascot.html">The mascot</a><a href="../guide/plugins.html">Lua plugins</a><a href="../guide/plugin-directory.html">Plugin directory</a><a href="../guide/plugin-starter.html">Plugin starter</a><a href="../guide/lsp.html">Code diagnostics</a></div><div class="side-group"><p>Internals</p><a href="../guide/architecture.html" aria-current=page>Architecture</a><a href="../guide/performance.html">Performance</a><a href="../guide/privacy.html">Privacy and security</a></div><div class="side-group"><p>Project</p><a href="../guide/status.html">Status and roadmap</a><a href="../guide/contributing.html">Contributing</a></div>
 </aside>
 <main id="main" class="prose">
 <h1>Architecture</h1>
-<p>About 34,000 lines of Zig on top of a thin C layer. The rule that shapes everything: <strong>the UI never changes data directly</strong>.</p>
+<p>About 135,000 lines of Zig, a sixth of them the automated UI test, on top of a thin C layer. The rule that shapes everything: <strong>the UI never changes data directly</strong>.</p>
 <h2 id="data-flow"><a class="anchor" href="#data-flow" aria-hidden="true">#</a>Data flow</h2>
 <div class="code" data-lang="text"><span class="code-lang">text</span><button class="copy" type="button" data-copy>copy</button><pre><code>UI → Action → app → Command → gateway → Event → Store → UI</code></pre></div>
 <p>The UI only reads the Store and requests actions. The app turns them into commands for the gateway, which runs on its own thread, and events come back through a queue into the Store. That's why swapping the demo gateway for the real one doesn't touch the UI.</p>
@@ -67,6 +67,7 @@ third_party/  vendored code: Dear ImGui, dear_bindings, Lua, stb_image, libdave,
 tools/        QA, memory benchmark, screenshots, logo and site generators</code></pre></div>
 <h2 id="threads"><a class="anchor" href="#threads" aria-hidden="true">#</a>Threads</h2>
 <div class="table-wrap"><table><thead><tr><th>Thread</th><th>When it exists</th><th>Job</th></tr></thead><tbody><tr><td>UI</td><td>Always</td><td>The main loop, sleeping in <code>SDL_WaitEvent</code> when nothing happens</td></tr><tr><td>Plugins</td><td>With a plugin on</td><td>All Lua runs here. It talks to the UI through two queues and sleeps when nothing happens</td></tr><tr><td>Gateway</td><td>With a token</td><td>WebSocket with heartbeat, RESUME, zlib-stream and reconnects, plus REST, one request at a time</td></tr><tr><td>Demo gateway</td><td>Without a token</td><td>Fake servers, people and messages</td></tr><tr><td>Media</td><td>Always, mostly asleep</td><td>Downloads and decodes images at low priority, at most 2 decodes at a time</td></tr><tr><td>Theme watcher</td><td>Unless disabled</td><td>Waits for changes to theme files: inotify on Linux (also pywal's colors), folder change notifications (FindFirstChangeNotification) on Windows (theme folders only)</td></tr><tr><td>Video</td><td>While playing</td><td>One thread downloads, another decodes into a 3-frame ring</td></tr><tr><td>Voice</td><td>During a call</td><td>Voice gateway, UDP, Opus and DAVE</td></tr></tbody></table></div>
+<p>On Linux, the tray icon isn't a thread: it's a small separate process that speaks the StatusNotifier protocol over D-Bus, about 6 MB with no wake-ups while idle, and it comes back on its own if it dies.</p>
 <h2 id="talking-to-discord"><a class="anchor" href="#talking-to-discord" aria-hidden="true">#</a>Talking to Discord</h2>
 <p>The gateway uses WebSocket (<code>v=10</code>, JSON, <code>zlib-stream</code>) with heartbeat, session RESUME and reconnects. It connects the way the web client does. REST handles history, sending, editing, deleting, reactions and "typing", one request at a time and respecting rate limits.</p>
 <h2 id="the-rendering"><a class="anchor" href="#the-rendering" aria-hidden="true">#</a>The rendering</h2>

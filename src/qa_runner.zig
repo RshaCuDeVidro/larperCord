@@ -3301,6 +3301,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "render", &@import("qa_render.zig").ops },
     .{ "render-falha", &@import("qa_render.zig").ops_fail },
     .{ "atalhos", &@import("qa_atalhos.zig").ops },
+    .{ "abas-conjuntos", &@import("qa_conjuntos.zig").ops },
     .{ "chamada", &ops_chamada },
     .{ "lsp", &ops_lsp },
     .{ "lsp-quit", &ops_lsp_quit },

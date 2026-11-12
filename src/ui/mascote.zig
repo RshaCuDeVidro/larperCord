@@ -82,7 +82,7 @@ pub fn moment(kind: Kind, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, mood: 
 }
 
 /// Onde cada momento aparece (cada lugar conta o próprio tempo).
-pub const Spot = enum(u8) { inbox, pins, saved, friends, history, offline, about, login };
+pub const Spot = enum(u8) { inbox, pins, saved, friends, history, offline, about, login, call };
 
 var spot_from: [@typeInfo(Spot).@"enum".field_names.len]i64 = @splat(0);
 var spot_seen: [@typeInfo(Spot).@"enum".field_names.len]i64 = @splat(-100_000);

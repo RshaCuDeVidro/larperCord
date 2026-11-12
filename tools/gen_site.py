@@ -730,7 +730,9 @@ def keys_md(lang, which):
         out += [t(lang, "| Action | Keys |", "| Ação | Teclas |"), "|---|---|"]
         for r in mine:
             spec = r.get("teclas_pt") if lang == "pt" and r.get("teclas_pt") else r["teclas"]
-            out.append(f"| {r['en'] if lang == 'en' else r['pt']} | {keys_html(spec)} |")
+            # Os que têm `.acao` dá para trocar em Configurações → Atalhos de teclado.
+            mark = " ✎" if r.get("acao") else ""
+            out.append(f"| {r['en'] if lang == 'en' else r['pt']}{mark} | {keys_html(spec)} |")
         out.append("")
     return "\n".join(out)
 
@@ -1580,6 +1582,7 @@ GUIDE = [
     ("Customize", "Personalize", [
         ("themes", "Writing themes", "Escrevendo temas"),
         ("theme-gallery", "Built-in themes", "Temas embutidos"),
+        ("mascot", "The mascot", "O mascote"),
         ("plugins", "Lua plugins", "Plugins em Lua"),
         ("plugin-directory", "Plugin directory", "Diretório de plugins"),
         ("plugin-starter", "Plugin starter", "Gerador de plugin"),
@@ -1875,6 +1878,14 @@ def build_guide(lang, themes):
         m = re.search(r"^#\s+.*$", src, re.M)
         body_md = src[m.end():] if m else src
         content, heads = markdown(body_md, rw)
+        # Âncora no estilo do GitHub que não bate com o id daqui (`larper.http` é
+        # #larperhttp lá e larper-http aqui): aponta para o título certo.
+        ids = {hid for _, _, hid in heads}
+        github = {}
+        for _, text, hid in heads:
+            github.setdefault(re.sub(r"[^\w\- ]", "", re.sub(r"<[^>]+>", "", text).lower()).replace(" ", "-"), hid)
+        content = re.sub(r'href="#([^"]+)"', lambda m, ids=ids, github=github: f'href="#{github[m.group(1)]}"'
+                         if m.group(1) not in ids and m.group(1) in github else m.group(0), content)
         for n, block in enumerate(embeds):
             content = content.replace(f"<p>@@embed-{n}@@</p>", block)
         content = content.replace("@@ROOT@@", root_of(path))

@@ -47,6 +47,7 @@ const interact = @import("ui/interact.zig");
 const inbox_core = @import("core/inbox.zig");
 const leitura = @import("core/leitura.zig");
 const saved_ui = @import("ui/saved.zig");
+const app_conjuntos = @import("app_conjuntos.zig");
 const msg_cache = @import("net/msg_cache.zig");
 const state_cache = @import("net/state_cache.zig");
 const state_snapshot = @import("core/state_snapshot.zig");
@@ -296,6 +297,12 @@ pub const App = struct {
         // Cache de mensagens e contas: o QA e os prints nunca usam os de verdade.
         msg_cache.init(opts.qa);
         msg_cache.off = opts.shot != null;
+        // O modo QA já desde aqui: a abertura pelo retrato lê arquivos (os conjuntos de
+        // abas) antes do laço, e no QA eles ficam em qa-out/, nunca nos de verdade.
+        if (opts.qa) qa_mod.enable();
+        // QA_TABSETS_READ: o QA lê os conjuntos de abas desde a abertura (o da abertura
+        // pelo retrato confere o conjunto em uso voltando antes do READY).
+        if (opts.qa and c.SDL_getenv("QA_TABSETS_READ") != null) @import("ui/conjuntos.zig").qa_read = true;
         accounts_store.memory_only = opts.qa or opts.shot != null;
         accounts_store.load();
 
@@ -569,6 +576,8 @@ pub const App = struct {
         sys.toastExpire(0, true);
         instance.stopListening();
         app.saveSettings();
+        // A aba ativa do conjunto em uso (o resto já foi gravado na hora).
+        if (app.store.ready or app.store.from_cache) app_conjuntos.flush(app);
         // Primeiro: mesmo com um servidor travado, o filho morre antes do vigia de main.zig.
         lsp_net.shutdown();
         voz_audio.shutdown();
@@ -604,6 +613,7 @@ pub const App = struct {
         // (Por último, lá dentro: as threads de mídia e de vídeo usam o libcurl.)
         app.images.deinit();
         app.st.saved.deinit(app.gpa);
+        app.st.conjuntos.deinit(app.gpa);
         app.store.deinit();
         send_limits.reset();
         app.themes.deinit();
@@ -801,11 +811,13 @@ pub const App = struct {
 
     /// Volta ao estado de antes do login: sem conta, sem abas, sem nada.
     pub fn resetSession(app: *App) void {
-        // O que estava na tela vai para o cache antes de sumir.
+        // O que estava na tela vai para o cache antes de sumir, e os conjuntos de
+        // abas da conta para o arquivo dela.
         msg_cache.flushDirty(&app.store);
         _ = state_cache.save(&app.store);
         app.cache_opened = false;
         app.state_saved = false;
+        app_conjuntos.reset(app);
         interact.reset();
         @import("ui/search.zig").close();
         _ = app.st.drafts.switchTo(app.gpa, 0, &app.st.input, app.st.editing == 0);
@@ -1273,7 +1285,7 @@ pub const App = struct {
 
     // --- Ações da interface ------------------------------------------------
 
-    fn openChannel(app: *App, id: types.Id, new_tab: bool) void {
+    pub fn openChannel(app: *App, id: types.Id, new_tab: bool) void {
         const cs = app.store.channel(id) orelse return;
         if (cs.info.kind != .text and cs.info.kind != .forum) return;
         app.st.guild = cs.info.guild;
@@ -1821,6 +1833,7 @@ pub const App = struct {
             .set_setting => |ss| if (settings_state.setByte(&st.settings, ss.index, ss.value)) app.saveSettings(),
             .accept_friend => |rel| app.cmd(.{ .relationship = .{ .user = rel.user, .accept = true, .from = rel.from } }),
             .conta => |ca| @import("app_conta.zig").handle(app, ca),
+            .conjunto => |cj| app_conjuntos.handle(app, cj),
             .remove_relationship => |rel| app.cmd(.{ .relationship = .{ .user = rel.user, .accept = false, .from = rel.from } }),
             .select_channel => |ch| {
                 if (app.opts.qa and c.SDL_getenv("QA_DEBUG") != null) std.debug.print("[ação] select_channel ctrl={}\n", .{app.io.*.KeyCtrl});
@@ -2347,7 +2360,9 @@ pub const App = struct {
             timeline.mark(.store);
             // O texto do READY e a arena dele já foram: devolve a memória ao sistema.
             app.trim_wanted.store(true, .release);
-        } else if (reconnected and was_ready) {
+        } else if (reconnected and was_ready and (new_session or now() - app.ready_ms >= 3000)) {
+            // (O "pronto" logo depois do primeiro READY, num lote seguinte, é a mesma
+            // conexão: o que o READY abriu já pediu o histórico, nada vai duas vezes.)
             // Voltou a conexão: as conversas que ficaram só no cache do disco
             // (abertas sem rede) buscam o histórico de novo.
             var it = app.store.channels.valueIterator();
@@ -2630,6 +2645,8 @@ pub const App = struct {
     /// Onde a sessão começa: as DMs (ou o primeiro servidor); no demo, umas abas.
     fn firstView(app: *App) void {
         if (!app.store.demo) {
+            // O conjunto de abas em uso quando o app fechou volta (só a aba ativa carrega).
+            if (app_conjuntos.ready(app)) return;
             // Conta real: começa pelas DMs (ou pelo primeiro servidor).
             const g0: types.Id = if (app.store.channelsOf(0).len > 0) 0 else if (app.store.guilds.items.len > 0) app.store.guilds.items[0].id else 0;
             app.handle(.{ .select_guild = g0 });
@@ -2641,6 +2658,7 @@ pub const App = struct {
         // Algumas abas abertas para mostrar o recurso.
         for ([_]usize{ 4, 9, 5 }) |ci| app.openChannel(gw.channelId(0, ci), true);
         app.handle(.{ .focus_tab = 0 });
+        _ = app_conjuntos.ready(app);
         const call = gw.channelId(0, 13);
         _ = call;
     }
@@ -2693,7 +2711,9 @@ pub const App = struct {
         var it = app.store.channels.valueIterator();
         while (it.next()) |p| {
             const cs = p.*;
-            if (cs.history == .loading) app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (active == cs.info.id) cs.info.guild else 0 } });
+            // A conversa que abriu pelo cache em disco fica `loaded` (e `cached`): o
+            // pedido dela, sem conexão, não saiu. A que esperava sem cache também.
+            if (cs.cached or cs.history == .loading) app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (active == cs.info.id) cs.info.guild else 0 } });
         }
         if (active) |id| if (app.store.channel(id)) |cs| app.subscribeTo(cs);
     }
@@ -3240,9 +3260,11 @@ pub const App = struct {
                 app.saveSettings();
             }
             // (Aberta pelo retrato em disco, a tela já está em uso: o rascunho de cada
-            // conversa acompanha desde já.)
+            // conversa e o conjunto de abas acompanham desde já.)
             const usable = app.store.ready or app.store.from_cache;
             if (usable) app.syncDraft();
+            // O que mudou nas abas vai para o conjunto em uso (app_conjuntos.zig).
+            if (usable) app_conjuntos.sync(app);
             const key = set.layoutKey();
             if (key != app.layout_key) {
                 app.layout_key = key;

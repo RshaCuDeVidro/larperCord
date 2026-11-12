@@ -19,7 +19,7 @@ tools/membench.sh 50                # RAM e CPU parado por tema, com um orçamen
 | `tools/site_shots.sh` | Regenera as imagens do site |
 | `python3 tools/gen_site.py` | Regenera o site em `docs/` |
 
-O QA controla a interface de verdade: ele clica nos elementos, e um botão sem efeito conta como falha. Roda em modo demonstração, sem janela, e nunca toca na sua conta.
+O QA controla a interface de verdade: ele clica nos elementos, e um botão sem efeito conta como falha. Roda em modo demonstração, sem janela, e nunca toca na sua conta. Depois que o `tools/qa.sh` compilou, uma bateria roda sozinha com `QA_SUITE=call ./.zig-cache/qa/bin/larpercord --qa`, e o `--qa-list` imprime o nome de todas.
 
 O CI (`.github/workflows/ci.yml`) roda os testes, depois compila o app no Arch e roda o QA completo a cada push e pull request.
 

@@ -86,7 +86,7 @@ layout {
             column flex=1 bg=surface {
                 header height=52 border-bottom="@border" c-rail="#ffffff" c-sidebar="#f1f1f3" cd-rail="#222529" cd-sidebar="#2a2d31"
                 tabs height=36 variant=underline when=abas
-                messages flex=1 avatar=square avatar-size=36 c-rail="#f4f4f6" cd-rail="#222529"
+                messages flex=1 avatar=square avatar-size=36 call-tint=0.3 c-rail="#f4f4f6" cd-rail="#222529"
                 column height=90 padding-x=18 {
                     spacer flex=1
                     composer height=46

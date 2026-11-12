@@ -16,6 +16,7 @@ const teclas = @import("teclas.zig");
 const plugin_panel = @import("plugin_panel.zig");
 const chamada = @import("chamada.zig");
 const thread_settings = @import("thread_settings.zig");
+const conjuntos = @import("conjuntos.zig");
 const engine = @import("../plugins/engine.zig");
 const types = @import("../core/types.zig");
 const Id = types.Id;
@@ -274,6 +275,12 @@ pub fn tabs(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     const fs: f32 = if (tty) ctx.th.font_size - 1 else 14;
     var x = r.x + (if (tty) @as(f32, 4) else 8);
     var buf: [96]u8 = undefined;
+    // Botão direito em qualquer lugar da barra: o menu dos conjuntos de abas.
+    qa.mark(r, "tabs-bar", .{});
+    if (ctx.st.popup == .none and ctx.hovering(r) and c.ImGui_IsMouseClicked(1) and c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_RootAndChildWindows))
+        conjuntos.openMenu(ctx, ctx.mouse.x, ctx.mouse.y);
+    // O conjunto em uso, antes das abas.
+    x = conjuntos.chip(ctx, fam, if (tty) .tty else if (underline) .underline else .pills, x, r);
 
     for (ctx.st.tabs.items, 0..) |id, i| {
         const cs = ctx.store.channel(id) orelse continue;
