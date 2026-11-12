@@ -2646,15 +2646,15 @@ pub const Gateway = struct {
         defer arena.deinit();
         const v = std.json.parseFromSliceLeaky(Value, arena.allocator(), body, .{}) catch return;
         const u = j.get(v, "user") orelse return;
-        const up = j.get(v, "user_profile");
         g.upsert(u);
         for (j.array(j.get(v, "mutual_friends"))) |f| g.upsert(f);
-        const bio = (if (up) |p| j.str(j.get(p, "bio")) else null) orelse j.str(j.get(u, "bio")) orelse "";
+        // A bio e os pronomes globais e os do servidor, sempre à parte (face_json).
+        const tx = face_json.profileTexts(v);
         var pf: types.Profile = .{
             .banner = dupeOpt(j.str(j.get(u, "banner")) orelse "") catch "",
             .accent = @intCast(std.math.clamp(j.int(j.get(u, "accent_color")) orelse 0, 0, 0xffffff)),
-            .bio = dupeOpt(bio) catch "",
-            .pronouns = dupeOpt((if (up) |p| j.str(j.get(p, "pronouns")) else null) orelse "") catch "",
+            .bio = dupeOpt(tx.bio) catch "",
+            .pronouns = dupeOpt(tx.pronouns) catch "",
             .username = dupeOpt(j.str(j.get(u, "username")) orelse "") catch "",
             .guild = guild,
         };
@@ -2666,7 +2666,7 @@ pub const Gateway = struct {
         // O perfil do servidor fica à parte dos globais (o cartão mostra o de lá; as
         // Configurações, os globais).
         if (guild != 0) {
-            const sp = face_json.serverProfile(v);
+            const sp = tx.server;
             var bb: [128]u8 = undefined;
             pf.guild_bio = dupeOpt(sp.bio) catch "";
             pf.guild_pronouns = dupeOpt(sp.pronouns) catch "";

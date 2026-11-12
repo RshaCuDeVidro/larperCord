@@ -128,6 +128,20 @@ pub fn mergedGuild(d: Value, gi: usize) ?Id {
     return j.id(j.get(gs[gi], "id"));
 }
 
+/// Os textos do perfil (GET /users/{id}/profile): os globais (de `user_profile`, ou do
+/// `user`) e os do servidor (`guild_member_profile`), que nunca entram no lugar deles.
+pub const ProfileTexts = struct { bio: []const u8, pronouns: []const u8, server: ServerProfile };
+
+pub fn profileTexts(v: Value) ProfileTexts {
+    const u = j.get(v, "user");
+    const up = j.get(v, "user_profile");
+    return .{
+        .bio = (if (up) |p| j.str(j.get(p, "bio")) else null) orelse (if (u) |x| j.str(j.get(x, "bio")) else null) orelse "",
+        .pronouns = (if (up) |p| j.str(j.get(p, "pronouns")) else null) orelse "",
+        .server = serverProfile(v),
+    };
+}
+
 /// A bio, os pronomes e o hash do banner do perfil do servidor (vazio = não tem).
 pub const ServerProfile = struct { bio: []const u8 = "", pronouns: []const u8 = "", banner: []const u8 = "" };
 
@@ -216,6 +230,11 @@ test "perfil do servidor no GET /users/{id}/profile" {
         \\ "guild_member":{"nick":"Aninha","avatar":null,"joined_at":"2024-01-01T00:00:00+00:00"},
         \\ "guild_member_profile":{"guild_id":"5","bio":"no servidor","pronouns":"","banner":"b1"}}
     );
+    // Os globais continuam os globais (Configurações → Minha conta grava estes).
+    const tx = profileTexts(v);
+    try std.testing.expectEqualStrings("global", tx.bio);
+    try std.testing.expectEqualStrings("ela", tx.pronouns);
+    try std.testing.expectEqualStrings("no servidor", tx.server.bio);
     const sp = serverProfile(v);
     try std.testing.expectEqualStrings("no servidor", sp.bio);
     try std.testing.expectEqualStrings("", sp.pronouns);
