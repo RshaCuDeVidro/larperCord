@@ -82,6 +82,12 @@ pub const Tracker = struct {
         return c;
     }
 
+    /// A pessoa saiu do servidor (o Store soltou o apelido dela): se voltar com o
+    /// mesmo, ele vai de novo.
+    pub fn forget(t: *Tracker, guild: Id, user: Id) void {
+        _ = t.sent.remove(.{ guild, user });
+    }
+
     /// Saímos do servidor: esquece o que foi mandado dele.
     pub fn forgetGuild(t: *Tracker, guild: Id) void {
         var it = t.sent.iterator();
@@ -180,6 +186,10 @@ test "tracker: sem nada não vira evento, o igual de novo também não, o pedaç
     try std.testing.expect(t.filter(gpa, 5, 7, .{ .nick = .clear, .avatar = .clear }) == null);
     // Saímos do servidor 6: o que foi mandado dele é esquecido.
     t.forgetGuild(6);
+    try std.testing.expect(t.filter(gpa, 6, 7, full) != null);
+    // Saiu do servidor (GUILD_MEMBER_REMOVE) e voltou com o mesmo apelido: vai de novo.
+    try std.testing.expect(t.filter(gpa, 6, 7, full) == null);
+    t.forget(6, 7);
     try std.testing.expect(t.filter(gpa, 6, 7, full) != null);
 }
 

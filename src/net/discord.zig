@@ -1463,7 +1463,10 @@ pub const Gateway = struct {
         if (std.mem.eql(u8, t, "GUILD_MEMBER_REMOVE")) {
             const gid = j.id(j.get(d, "guild_id")) orelse return;
             const u = j.get(d, "user") orelse return;
-            g.emit(.{ .member_remove = .{ .guild = gid, .user = j.id(j.get(u, "id")) orelse return } });
+            const uid = j.id(j.get(u, "id")) orelse return;
+            // O Store solta o apelido de quem saiu: voltando com o mesmo, ele vai de novo.
+            g.faces.forget(gid, uid);
+            g.emit(.{ .member_remove = .{ .guild = gid, .user = uid } });
             return;
         }
         if (std.mem.eql(u8, t, "GUILD_MEMBER_LIST_UPDATE")) {
