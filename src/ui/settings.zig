@@ -295,7 +295,10 @@ const Page = struct {
             qa.mark(r, "seg:{s}", .{o});
             if (hb.clicked) value.* = @intCast(i);
             const sel = value.* == i;
-            const k = anim.to(anim.id("seg", i + @as(usize, @intFromPtr(value))), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
+            // A chave é o endereço da configuração e a opção, misturados: somar os dois
+            // fazia a opção 4 de uma configuração bater com a 2 da que fica 2 bytes depois
+            // (dois seletores na mesma página piscavam puxando a mesma animação).
+            const k = anim.to(anim.id("seg", (@as(u64, @intFromPtr(value)) << 8) | i), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
             d.rect(p.dl, r, ctx.col(.rail).alpha(0.6).mix(ctx.col(.accent).alpha(0.22), k), ctx.th.radius + 2);
             d.border(p.dl, r, if (sel) ctx.col(.accent) else ctx.col(.border), ctx.th.radius + 2, if (sel) 2 else 1);
             // Uma opção longa (russo, alemão) diminui a fonte em vez de passar da borda.
