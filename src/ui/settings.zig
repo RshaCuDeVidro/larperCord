@@ -32,7 +32,9 @@ const Section = struct {
 /// A troca de atalho que não deu (Page.keyRowEditable): em qual ação, o porquê e, se
 /// já é de outra, de qual.
 var key_problem_for: ?teclas.Acao = null;
-var key_problem: @import("atalhos.zig").Personalizados.Porque = .ok;
+/// O que não deu na última troca: o motivo de `pode`, ou o "Padrão" que bateria em outra ação.
+const KeyProblem = enum { sem_modificador, reservado, altgr, em_uso, padrao_em_uso };
+var key_problem: KeyProblem = .em_uso;
 var key_problem_owner: teclas.Acao = .paleta;
 
 pub const sections = [_]Section{
@@ -398,19 +400,20 @@ const Page = struct {
         const capturing = teclas.capturing == acao;
         if (capturing) {
             if (c.ImGui_IsKeyPressedEx(c.ImGuiKey_Escape, false)) {
-                teclas.endCapture();
+                teclas.endCapture(c.ImGuiKey_Escape);
                 key_problem_for = null;
             } else if (teclas.captured(ctx.io)) |cb| {
                 key_problem_for = acao;
                 switch (kb.pode(acao, cb)) {
                     .ok => {
                         kb.set(acao, cb);
-                        teclas.endCapture();
+                        teclas.endCapture(teclas.imguiKey(cb.key));
                         key_problem_for = null;
                         ctx.act(.save_settings);
                     },
                     .sem_modificador => key_problem = .sem_modificador,
                     .reservado => key_problem = .reservado,
+                    .altgr => key_problem = .altgr,
                     .em_uso => {
                         key_problem = .em_uso;
                         key_problem_owner = kb.dono(cb, acao) orelse acao;
@@ -465,21 +468,35 @@ const Page = struct {
             d.rect(p.dl, rr, if (rh.hovered) ctx.col(.hover) else ctx.col(.elevated), ctx.th.radius);
             d.text(p.dl, p.font(.medium), 12, rr.x + 8, d.centerY(rr, 12), ctx.col(.muted), reset);
             if (rh.clicked) {
-                kb.set(acao, null);
-                ctx.act(.save_settings);
+                // Outra ação pegou uma tecla do padrão dela enquanto estava trocada:
+                // voltar deixaria as duas na mesma tecla. Diz qual, e não volta.
+                if (kb.donoDoPadrao(acao)) |o| {
+                    key_problem_for = acao;
+                    key_problem = .padrao_em_uso;
+                    key_problem_owner = o;
+                } else {
+                    kb.set(acao, null);
+                    key_problem_for = null;
+                    ctx.act(.save_settings);
+                }
             }
         }
         p.y += 44;
         if (key_problem_for == acao) {
-            var mb: [160]u8 = undefined;
+            // Em russo e japonês o texto passa de 160 bytes.
+            var mb: [400]u8 = undefined;
             const msg = switch (key_problem) {
                 .sem_modificador => i18n.tr("Use junto Ctrl ou Alt (ou uma tecla F): uma letra sozinha dispararia ao digitar.", "Add Ctrl or Alt (or use an F key): a letter alone would fire while typing."),
                 .reservado => i18n.tr("Essa combinação já é de outra coisa do app (copiar, colar, nova linha, tamanho da interface…).", "That combination already belongs to something else in the app (copy, paste, new line, interface size…)."),
+                .altgr => i18n.tr("Ctrl+Alt com letra, número ou sinal é o AltGr em muitos teclados: dispararia ao digitar.", "Ctrl+Alt with a letter, number or symbol is AltGr on many keyboards: it would fire while typing."),
                 .em_uso => blk: {
                     const o = atalhos_mod.deAcao(key_problem_owner);
                     break :blk i18n.fmt(&mb, "Essa já é o atalho de \"{s}\".", "That's already the shortcut for \"{s}\".", .{i18n.tr(o.pt, o.en)});
                 },
-                .ok => "",
+                .padrao_em_uso => blk: {
+                    const o = atalhos_mod.deAcao(key_problem_owner);
+                    break :blk i18n.fmt(&mb, "O padrão desta agora é o atalho de \"{s}\": troque aquele primeiro.", "Its default is now the shortcut for \"{s}\": change that one first.", .{i18n.tr(o.pt, o.en)});
+                },
             };
             qa.mark(.{ .x = p.x, .y = p.y - 6, .w = p.w, .h = 18 }, "keybind-problem", .{});
             d.text(p.dl, p.font(.regular), 12.5, p.x, p.y - 6, ctx.col(.danger), msg);
@@ -939,7 +956,11 @@ fn page(p: *Page, previews: []const Preview) void {
             p.toggle(i18n.tr("Modo streamer", "Streamer Mode"), i18n.tr("Esconde o e-mail e o nome de usuário nas configurações.", "Hides your email and username in settings."), &s.streamer_mode);
             p.toggle(i18n.tr("Avisar antes de entrar num servidor", "Warn before joining a server"), i18n.tr("Entrar e sair de muitos servidores seguidos é o que mais bloqueia contas em clientes de terceiros.", "Joining and leaving many servers in a row is what most often gets third-party client accounts locked."), &s.join_warning);
             p.toggle(i18n.tr("Registro de mensagens", "Message log"), i18n.tr("Apagadas continuam na tela (marcadas) e editadas guardam o original. Só aqui.", "Deleted messages stay visible (marked) and edits keep the original. Local only."), &s.message_log);
-            p.toggle(i18n.tr("Guardar mensagens no disco", "Keep messages on disk"), i18n.tr("Conversas abrem na hora e a busca (Ctrl+F) funciona sem internet. Só o seu usuário lê.", "Chats open instantly and search (Ctrl+F) works offline. Only your user can read it."), &s.message_cache);
+            {
+                var fk: [48]u8 = undefined;
+                var cd: [400]u8 = undefined;
+                p.toggle(i18n.tr("Guardar mensagens no disco", "Keep messages on disk"), i18n.fmt(&cd, "Conversas abrem na hora e a busca ({s}) funciona sem internet. Só o seu usuário lê.", "Chats open instantly and search ({s}) works offline. Only your user can read it.", .{teclas.first(&p.ctx.st.teclas, .buscar, &fk)}), &s.message_cache);
+            }
             {
                 const msg_cache = @import("../net/msg_cache.zig");
                 var sb: [24]u8 = undefined;
@@ -1348,13 +1369,20 @@ fn rendererSection(p: *Page) void {
         labels[n] = rendererLabel(names[n]);
         n += 1;
     }
-    var cur: u8 = 0;
+    // Um nome que o SDL daqui não tem (settings.kdl de outro computador, editado à
+    // mão) não marca nenhum: assim clicar em Automático limpa o nome salvo.
+    var cur: u8 = if (s.renderer.len == 0) 0 else std.math.maxInt(u8);
     for (names[1..n], 1..) |nm, i| if (std.mem.eql(u8, nm, s.renderer.slice())) {
         cur = @intCast(i);
     };
     var sel = cur;
     p.radio(labels[0..n], &.{}, &sel);
     if (sel != cur) s.renderer.set(names[sel]);
+    if (cur == std.math.maxInt(u8)) {
+        var ub: [200]u8 = undefined;
+        p.note(i18n.fmt(&ub, "O renderizador salvo, \"{s}\", não existe neste computador: está no automático.", "The saved renderer, \"{s}\", doesn't exist on this computer: the automatic one is in use.", .{s.renderer.slice()}));
+        qa.mark(.{ .x = p.x, .y = p.y - 20, .w = 10, .h = 10 }, "renderer-unlisted", .{});
+    }
     const win = @import("../platform/window.zig");
     const active = std.mem.sliceTo(&win.active_renderer, 0);
     var buf: [200]u8 = undefined;
@@ -1362,6 +1390,12 @@ fn rendererSection(p: *Page) void {
     qa.mark(.{ .x = p.x, .y = p.y - 20, .w = 10, .h = 10 }, "renderer-active:{s}", .{active});
     if (win.renderer_fallback) qa.mark(.{ .x = p.x, .y = p.y, .w = 10, .h = 10 }, "renderer-fallback", .{});
     if (win.renderer_fallback) p.note(i18n.tr("O renderizador escolhido não abriu neste computador, então ficou o automático.", "The chosen renderer didn't open on this computer, so the automatic one is in use."));
+    // A variável vale mais que a escolha daqui (platform/window.zig): sem avisar,
+    // trocar aqui pareceria não funcionar.
+    if (c.SDL_getenv("LARPER_RENDERER") != null) {
+        p.note(i18n.tr("A variável LARPER_RENDERER está definida e vale mais que esta escolha.", "The LARPER_RENDERER variable is set and wins over this choice."));
+        qa.mark(.{ .x = p.x, .y = p.y - 20, .w = 10, .h = 10 }, "renderer-env", .{});
+    }
 }
 
 fn textSection(p: *Page) void {

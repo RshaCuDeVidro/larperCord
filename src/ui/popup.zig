@@ -956,7 +956,8 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         const local_mute = ctx.st.volumes.isMuted(uid);
         const off = vol <= 0.001 or local_mute;
         const tr: d.Rect = .{ .x = rowr.x + 140, .y = rowr.y + rowr.h / 2 - 2, .w = 92, .h = 6 };
-        const hr: d.Rect = .{ .x = tr.x - 6, .y = tr.y - 9, .w = tr.w + 12, .h = 24 };
+        // A área do slider acaba antes dos botões de baixo (tirar ruído, igualar volume).
+        const hr: d.Rect = .{ .x = tr.x - 6, .y = tr.y - 9, .w = tr.w + 12, .h = 20 };
         const hb = d.hit(ctx, 7200 +% @as(usize, @truncate(uid)), hr);
         qa.mark(hr, "voice-volume:{d}", .{uid});
         if (hb.held) ctx.act(.{ .set_voice_volume = .{ .user = uid, .volume = volumeAt(ctx.mouse.x, tr) } });
@@ -991,7 +992,7 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         const dn = ctx.st.volumes.denoiseOn(uid);
         const lv = ctx.st.volumes.levelOn(uid);
         var cx = rowr.x + 46;
-        const cy = rowr.y + 42;
+        const cy = rowr.y + 44;
         if (dspChip(ctx, dl, &cx, cy, 7400 +% @as(usize, @truncate(uid)), i18n.tr("Tirar ruído", "Remove noise"), dn, i18n.tr("Tira o chiado e o barulho de fundo do som desta pessoa, só aqui. Usa um pouco de CPU enquanto ela fala.", "Removes hiss and background noise from this person's sound, only here. Uses a little CPU while they talk."), "voice-denoise", uid))
             ctx.act(.{ .set_voice_dsp = .{ .user = uid, .denoise = !dn, .level = lv } });
         if (dspChip(ctx, dl, &cx, cy, 7500 +% @as(usize, @truncate(uid)), i18n.tr("Igualar volume", "Even out volume"), lv, i18n.tr("Sobe quem fala baixo e desce quem fala alto, para perto do mesmo volume dos outros.", "Raises a quiet voice and lowers a loud one, close to everyone else's level."), "voice-level", uid))

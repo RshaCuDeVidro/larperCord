@@ -233,10 +233,13 @@ pub const App = struct {
         // O fontconfig se prepara enquanto a janela abre (ver fc_warm.zig).
         const fc_warm = @import("platform/fc_warm.zig").start();
         // O renderizador escolhido vem antes do resto das configurações (só ele importa
-        // para abrir a janela).
+        // para abrir a janela). Os prints não leem as configurações (para saírem iguais
+        // em qualquer máquina), então nem ele; o QA lê, mas do settings.kdl dele, numa
+        // pasta à parte (o render-falha depende disso).
         var rbuf: [32]u8 = undefined;
         var rz: [33]u8 = @splat(0);
         const wanted = blk: {
+            if (opts.shot != null) break :blk null;
             var pbuf: [512]u8 = undefined;
             const path = settingsPath(&pbuf) orelse break :blk null;
             var size: usize = 0;
@@ -1141,6 +1144,8 @@ pub const App = struct {
                 }
             }
         }
+        // Os atalhos trocados só se conferem entre si com todos lidos.
+        app.st.teclas.settle();
         return theme_name;
     }
 
@@ -2197,7 +2202,8 @@ pub const App = struct {
             .save_message => |id| switch (st.saved.add(app.gpa, &app.store, id, @divTrunc(now(), 1000)) catch .missing) {
                 .added => {
                     app.persistSaved();
-                    st.showToast(now(), false, "mensagem salva ✓ (Ctrl+Shift+S mostra as salvas)", "message saved ✓ (Ctrl+Shift+S shows them)", .{});
+                    var kb: [48]u8 = undefined;
+                    st.showToast(now(), false, "mensagem salva ✓ ({s} mostra as salvas)", "message saved ✓ ({s} shows them)", .{@import("ui/teclas.zig").first(&st.teclas, .salvas, &kb)});
                 },
                 .already => st.showToast(now(), false, "essa mensagem já está nas salvas", "that message is already saved", .{}),
                 .full => st.showToast(now(), true, "limite de {d} mensagens salvas", "limit of {d} saved messages", .{@import("core/saved.zig").max_items}),

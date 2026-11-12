@@ -65,6 +65,12 @@ pub const Key = enum {
     pub fn isF(key: Key) bool {
         return @intFromEnum(key) >= @intFromEnum(Key.f1) and @intFromEnum(key) <= @intFromEnum(Key.f12);
     }
+
+    /// Escreve um caractere: letra, número, sinal ou espaço.
+    pub fn printable(key: Key) bool {
+        const k = @intFromEnum(key);
+        return k <= @intFromEnum(Key.@"9") or key == .space or (k >= @intFromEnum(Key.comma) and k <= @intFromEnum(Key.grave));
+    }
 };
 
 pub const Combinacao = struct {
@@ -167,4 +173,9 @@ test "lista de alternativas e o que serve de atalho global" {
     try std.testing.expect((Combinacao.parse("Alt+J") orelse unreachable).usable());
     try std.testing.expect(!(Combinacao.parse("J") orelse unreachable).usable());
     try std.testing.expect(!(Combinacao.parse("Shift+J") orelse unreachable).usable());
+}
+
+test "o que escreve um caractere" {
+    for ([_]Key{ .a, .z, .@"0", .@"9", .space, .comma, .backslash, .grave }) |k| try std.testing.expect(k.printable());
+    for ([_]Key{ .f1, .tab, .enter, .left, .home, .escape, .delete }) |k| try std.testing.expect(!k.printable());
 }

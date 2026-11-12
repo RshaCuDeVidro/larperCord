@@ -26,7 +26,7 @@
 - No mixer da call, cada pessoa ganhou "Tirar ruído" e "Igualar volume", os dois desligados de começo e só para aquela pessoa. Tirar ruído usa no som dela o mesmo supressor de ruído do seu microfone (gasta um pouco de CPU enquanto ela fala, por isso é por pessoa). Igualar volume sobe quem fala baixo e desce quem fala alto, para perto do volume dos outros, sem subir o chiado das pausas. As escolhas ficam guardadas e valem em toda call.
 
 **Atalhos de teclado**
-- Dá para trocar os atalhos, do pedido do ShuyaGit (#18). Em Configurações → Atalhos de teclado, clique num atalho e aperte as teclas novas. Combinação já usada, as fixas (copiar, colar, nova linha) e letra sozinha são recusadas com o motivo; "Padrão" volta. As dicas dos botões de mudo e ensurdecer mostram as teclas de agora.
+- Dá para trocar os atalhos, do pedido do ShuyaGit (#18). Em Configurações → Atalhos de teclado, clique num atalho e aperte as teclas novas. Combinação já usada, as fixas (copiar, colar, nova linha, andar no texto), letra sozinha e Ctrl+Alt com letra (o AltGr em muitos teclados) são recusadas com o motivo; "Padrão" volta. As dicas que citam um atalho mostram as teclas de agora.
 
 **Texto em qualquer idioma**
 - "Online", "Offline", "Proxy" e outras palavras que faltavam nos arquivos de tradução agora aparecem em japonês e em russo, assim como as descrições e as opções dos temas embutidos, o submenu de prazo do status, as dicas da caixa de mensagem e as ações das imagens, do relato do DivannKokos (#20). O cartão do tema mostra a descrição inteira, em até duas linhas, e o resto ao passar o mouse.
