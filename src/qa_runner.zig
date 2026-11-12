@@ -3281,6 +3281,8 @@ const ops_call = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import(
 const ops_call_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops_theme;
 const ops_membros = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_membros.zig").ops;
 const ops_mascote = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote.zig").ops;
+const ops_mascote_visual = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote_visual.zig").ops;
+const ops_mascote_folha = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote_visual.zig").ops_folha;
 const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_real;
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
 const ops_plugins_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_a;
@@ -3338,6 +3340,8 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "call-tema", &ops_call_tema },
     .{ "membros", &ops_membros },
     .{ "mascote", &ops_mascote },
+    .{ "mascote-visual", &ops_mascote_visual },
+    .{ "mascote-folha", &ops_mascote_folha },
     .{ "plugins-real", &ops_plugins_real },
     .{ "vitrine", &ops_vitrine },
     .{ "plugins-a", &ops_plugins_a },

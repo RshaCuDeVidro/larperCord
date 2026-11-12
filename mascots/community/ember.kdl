@@ -1,0 +1,38 @@
+// Ember: a little dragon with wings behind it and horns in front.
+// Shows: your own five colors, reptile eyes that change with the face, the
+// back layer (behind the body) and the front layer.
+mascot "Ember" author="larperCord" license="CC0-1.0" description="A little fire dragon with wings, horns and a fang."
+
+look mouth="fang" ears="none"
+colors body-top="#FF8A3D" body-bottom="#C9301E" ink="#2A0A04" tufts="#FFD27A" accent="#FFD23F"
+
+eyes {
+    ellipse cx=40 cy=50 rx=6.4 ry=5.2 fill="accent" stroke="ink" width=1.4
+    ellipse cx=40.6 cy=50 rx=1.4 ry=4.4 fill="ink"
+    ellipse cx=84 cy=55 rx=6.4 ry=5.2 fill="accent" stroke="ink" width=1.4
+    ellipse cx=84.6 cy=55 rx=1.4 ry=4.4 fill="ink"
+    when "angry" {
+        polygon points="32 47 49 50 48 54 33 53" fill="accent" stroke="ink" width=1.4
+        polygon points="92 52 75 55 76 59 91 58" fill="accent" stroke="ink" width=1.4
+        line x1=30 y1=44 x2=49 y2=49 stroke="ink" width=3.6
+        line x1=94 y1=49 x2=75 y2=54 stroke="ink" width=3.6
+    }
+    when "happy" "laugh" {
+        path d="M 32 53 Q 40 44 48 53" stroke="ink" width=4
+        path d="M 76 58 Q 84 49 92 58" stroke="ink" width=4
+    }
+}
+
+layer "back" {
+    // Wings: drawn behind the body, so only the tips stick out.
+    polygon points="14 38 -6 12 -4 26 -11 30 -3 40 -9 47 6 50" fill="#8E2416" stroke="ink" width=1.2
+    polygon points="113 38 133 12 131 26 138 30 130 40 136 47 121 50" fill="#8E2416" stroke="ink" width=1.2
+}
+
+layer "front" {
+    polygon points="43 7 39 -11 51 3" fill="tufts" stroke="ink" width=1
+    polygon points="84 7 88 -11 76 3" fill="tufts" stroke="ink" width=1
+    // Nostrils and a little belly patch.
+    ellipse cx=59.5 cy=63.6 rx=1.2 ry=0.9 fill="ink"
+    ellipse cx=67.5 cy=63.3 rx=1.2 ry=0.9 fill="ink"
+}

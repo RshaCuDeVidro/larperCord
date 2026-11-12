@@ -57,6 +57,18 @@ Quatro chaves escolhem o que mais ele faz. O passeio precisa da vida própria li
 
 **Plantinha** põe um vasinho do lado dele. A planta cresce um pouco a cada dia em que você usa o app, por 30 dias, até virar uma arvorezinha. Depois de uma semana sem você, ela murcha, até o mascote regar. Configurações → Mascote mostra quantos dias ela já cresceu.
 
+## Personalizar o mascote
+
+Configurações → Mascote → **Personalizar** veste o mascote Terminal. Uma prévia grande mostra o visual, e os botões embaixo dela trocam a cara (Normal, Feliz, Rindo, Susto, Bravo, Triste, Dormindo, Tonto) e põem o fone da call e a fita do mudo, para ver como as peças combinam.
+
+- **Visuais prontos**: 16 visuais completos, do Hacker ao Anjinho. **Sortear visual** escolhe um que combina, **Padrão** volta ao mascote de sempre e **Desfazer** desfaz a última troca.
+- **Olhos, Boca, Chapéu, Acessórios, Orelhas, Cores**: uma grade de imagens para cada. 15 olhos, 16 bocas, 22 chapéus, 12 acessórios (óculos e o que vai no pescoço, um de cada vez), 6 orelhas, 14 paletas, ou um hex seu para cada uma das cinco cores, ou a cor de destaque do tema.
+- O visual aparece onde o mascote aparece: nas aberturas, no Sobre, nas listas vazias e no mascote do canto. Com um chapéu escolhido, o mascote do canto não troca pelo das datas; **Chapéu nas datas**, em Mascote no canto, desliga esses. O mascote Clássico continua como é.
+
+### Arquivos de mascote
+
+Um mascote também pode ser um arquivo `.kdl` na pasta de mascotes (`~/.config/larpercord/mascots`, ou `%APPDATA%\larpercord\mascots` no Windows). Ele escolhe peças e cores como a personalização, ou desenha olhos, boca e camadas na frente ou atrás do corpo com formas, um desenho por expressão. **Salvar como arquivo** grava o visual de agora lá e passa a usar o arquivo. Em **Arquivos de mascote**, escolha um arquivo ou aperte **Abrir pasta**; salvar o arquivo atualiza o mascote na hora, e um arquivo com problema mostra `arquivo:linha:coluna` no cartão dele. O formato está em [Escrevendo mascotes](https://github.com/RshaCuDeVidro/larperCord/blob/main/mascots/README.pt-BR.md), e os mascotes feitos por outras pessoas estão na [galeria de mascotes da comunidade](https://rshacudevidro.github.io/larperCord/pt/community-mascots.html).
+
 ## Quanto custa
 
 Ele só desenha quadros a mais por um instante quando algo acontece, e só com a janela em foco. A vida própria começa depois de 8 segundos sem você mexer em nada e para quando ele dorme, depois de uns minutos parado. Medido no demo, são uns 0,5% de um núcleo enquanto ele está acordado e à toa. Os números de CPU parado em [Desempenho](page:performance#os-numeros) vêm de uma janela num workspace escondido, sem foco, então não incluem o mascote.

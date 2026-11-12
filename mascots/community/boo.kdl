@@ -1,0 +1,37 @@
+// Boo: a friendly ghost.
+// Shows: a back layer that changes the body's shape, drawn eyes and mouth with
+// an expression each, and parts from the library (blush, no ears).
+mascot "Boo" author="larperCord" license="CC0-1.0" description="A friendly little ghost that floats and blushes."
+
+look ears="none" accessories="blush"
+colors body-top="#FFFFFF" body-bottom="#D6CCF5" ink="#2B2340" tufts="#C9B8FF" accent="#8F7CFF"
+
+layer "back" {
+    // The wavy sheet under the head hides the feet: it looks like it floats.
+    polygon points="3 74 124 74 125 97 115 104 105 95 95 104 84.5 95 74 104 63.5 95 53 104 42.5 95 32 104 22 95 12 104 2 97" fill="body-bottom"
+}
+
+eyes {
+    ellipse cx=41 cy=51 rx=5 ry=7.5
+    circle cx=42.8 cy=47.6 r=1.7 fill="white"
+    ellipse cx=85 cy=56 rx=5 ry=7.5
+    circle cx=86.8 cy=52.6 r=1.7 fill="white"
+    when "startled" {
+        ellipse cx=41 cy=50 rx=6.4 ry=9.4
+        circle cx=43 cy=46 r=2 fill="white"
+        ellipse cx=85 cy=55 rx=6.4 ry=9.4
+        circle cx=87 cy=51 r=2 fill="white"
+    }
+    when "happy" "laugh" {
+        path d="M 33 54 Q 41 45 49 54" stroke="ink" width=4
+        path d="M 77 59 Q 85 50 93 59" stroke="ink" width=4
+    }
+}
+
+mouth {
+    ellipse cx=63.5 cy=71 rx=3.2 ry=4
+    when "happy" { path d="M 57 69 Q 63.5 76 70 69" stroke="ink" width=2.6 }
+    when "laugh" "eat" { ellipse cx=63.5 cy=72 rx=5.4 ry=6.4 }
+    when "sad" "worried" "angry" { path d="M 58 73 Q 63.5 68 69 73" stroke="ink" width=2.6 }
+    when "sleep" { ellipse cx=63.5 cy=71 rx=2 ry=2.4 fill="none" stroke="ink" width=2 }
+}

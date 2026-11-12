@@ -1,0 +1,15 @@
+// Rusty: a retro robot made only of parts from the library and a few rivets.
+// Shows: the short form (look and colors), plus a small front layer.
+mascot "Rusty" author="larperCord" license="CC0-1.0" description="A retro tin robot with a visor, antennae and a bow tie."
+
+look eyes="visor" mouth="grin" hat="antenna" ears="none" accessories="bowtie"
+colors body-top="#EFE0C2" body-bottom="#B8976A" ink="#3A2A1A" tufts="#F7EBD3" accent="#FF7A3D"
+
+layer "front" {
+    // Rivets and a seam: tin plates.
+    circle cx=24 cy=22 r=1.9 fill="#8C7552"
+    circle cx=103 cy=22 r=1.9 fill="#8C7552"
+    circle cx=10 cy=62 r=1.9 fill="#8C7552"
+    circle cx=117 cy=62 r=1.9 fill="#8C7552"
+    line x1=32 y1=12 x2=95 y2=12 stroke="#8C7552" width=1.2 opacity=0.7
+}

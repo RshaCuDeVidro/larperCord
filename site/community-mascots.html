@@ -1,0 +1,50 @@
+<main id="main" class="tb cg mg">
+<style>
+.mg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,520px),1fr));gap:clamp(16px,2.4vw,28px);margin-top:28px}
+.mg-pic{display:block;width:100%;aspect-ratio:720/176;object-fit:cover;background:#26272c;border-bottom:1px solid var(--border)}
+.mg-faces{display:flex;gap:6px;margin:0;padding:0;list-style:none;font:400 11px var(--mono);color:var(--muted)}
+.mg-faces li{flex:1;text-align:center}
+.mg-what{margin-top:clamp(36px,5vw,56px)}
+.mg-what .tb-steps code,.mg-what .tb-facts code,.mg .cg-desc code{background:var(--code-bg);border:1px solid var(--border);padding:.02em .32em;border-radius:3px;color:var(--text);font-size:.86em;overflow-wrap:anywhere}
+.mg-what a{color:var(--link)}
+</style>
+
+<section class="tb-head">
+  <span class="tag"><b>mascots</b> <i>"community" {</i> &nbsp;// {{drawn in a file||desenhados num arquivo}}</span>
+  <h1 class="h">{{Community mascots. <em>Drawn in a file, worn in the app.</em>||Mascotes da comunidade. <em>Desenhados num arquivo, usados no app.</em>}}</h1>
+  <p class="lede">{{The Terminal mascot can wear anything: in Settings → Mascot → Customize you pick eyes, mouths, hats, accessories, ears and colors, and a mascot file can draw its own parts with shapes, one drawing per expression. These are files people made and sent to the repository. Download one, put it in your mascots folder and press <strong>Use</strong> on its card in the app. How to write one is in <a href="%MASCOT_GUIDE%">Writing mascots</a>.||O mascote Terminal veste qualquer coisa: em Configurações → Mascote → Personalizar você escolhe olhos, bocas, chapéus, acessórios, orelhas e cores, e um arquivo de mascote pode desenhar as próprias peças com formas, um desenho por expressão. Estes são arquivos que as pessoas fizeram e mandaram para o repositório. Baixe um, coloque na sua pasta de mascotes e aperte <strong>Usar</strong> no cartão dele no app. Como escrever um está em <a href="%MASCOT_GUIDE%">Escrevendo mascotes</a>.}}</p>
+</section>
+
+<!--MASCOTS-->
+<div class="cg-bar"><span class="cg-count">%COUNT%</span></div>
+<div class="mg-grid">
+%CARDS%
+</div>
+<p class="tb-note">{{Each picture is the mascot drawn by the app itself, in four of its expressions: normal, happy, startled and asleep.||Cada imagem é o mascote desenhado pelo próprio app, em quatro das expressões dele: normal, feliz, susto e dormindo.}}</p>
+<!--/MASCOTS-->
+<!--EMPTY-->
+<section class="cg-empty" aria-labelledby="cg-empty-h">
+  <h2 id="cg-empty-h" class="h">{{No community mascots yet. <em>Be the first.</em>||Ainda não há mascotes da comunidade. <em>Seja a primeira pessoa.</em>}}</h2>
+  <p class="lede">{{This gallery is built from <code>mascots/community/</code> in the repository. Make a mascot, send it in a pull request, and it shows up here.||Esta galeria sai de <code>mascots/community/</code> no repositório. Faça um mascote, mande num pull request, e ele aparece aqui.}}</p>
+</section>
+<!--/EMPTY-->
+
+<section class="tb-out cg-send mg-what" id="send" aria-labelledby="mg-send-h">
+  <span class="tag"><b>pull request</b> <i>{</i> // {{how to send yours||como mandar o seu}}</span>
+  <h2 class="h" id="mg-send-h">{{Send yours. <em>One file, one pull request.</em>||Mande o seu. <em>Um arquivo, um pull request.</em>}}</h2>
+  <div class="tb-out-grid">
+    <ol class="tb-steps">
+      <li>{{Build a look in Settings → Mascot → Customize and press <strong>Save as file</strong>, or write the file by hand with <a href="%MASCOT_GUIDE%">Writing mascots</a>. The app watches the folder: saving the file updates the mascot right away.||Monte um visual em Configurações → Mascote → Personalizar e aperte <strong>Salvar como arquivo</strong>, ou escreva o arquivo à mão com <a href="%MASCOT_GUIDE%">Escrevendo mascotes</a>. O app vigia a pasta: salvar o arquivo atualiza o mascote na hora.}}</li>
+      <li>{{Check it in the app: no error on its card under <strong>Mascot files</strong>, and every expression looks right in the big preview (the buttons under it switch the face, the headset and the tape).||Confira no app: nenhum erro no cartão dele em <strong>Arquivos de mascote</strong>, e toda expressão bonita na prévia grande (os botões embaixo dela trocam a cara, o fone e a fita).}}</li>
+      <li>{{Fill in the <code>mascot</code> node: a name, <code>author=</code>, <code>license=</code> and <code>description=</code>.||Preencha o nó <code>mascot</code>: um nome, <code>author=</code>, <code>license=</code> e <code>description=</code>.}}</li>
+      <li>{{Fork <a href="%REPO%">the repository</a>, add the file to <code>mascots/community/</code> and open a pull request. One mascot per pull request; a screenshot in the pull request helps.||Faça um fork do <a href="%REPO%">repositório</a>, coloque o arquivo em <code>mascots/community/</code> e abra um pull request. Um mascote por pull request; uma captura de tela no pull request ajuda.}}</li>
+    </ol>
+    <ul class="tb-facts">
+      <li>{{<strong>Data, not code.</strong> A mascot file only picks parts, colors and shapes. The app limits it to 64 KB, 256 shapes and 4096 points, and stops at the first problem with <code>file:line:column</code>.||<strong>Dado, não código.</strong> Um arquivo de mascote só escolhe peças, cores e formas. O app limita a 64 KB, 256 formas e 4096 pontos, e para no primeiro problema com <code>arquivo:linha:coluna</code>.}}</li>
+      <li>{{<strong>A name of its own</strong> and an original drawing: don't redraw someone else's character or logo.||<strong>Um nome só dele</strong> e um desenho original: nada de redesenhar personagem ou logo de outra pessoa.}}</li>
+      <li>{{<strong>An open license.</strong> <code>license=</code> written as its SPDX identifier (<code>CC0-1.0</code>, <code>CC-BY-4.0</code>, <code>MIT</code>…), so people know they may use and change it.||<strong>Uma licença aberta.</strong> <code>license=</code> escrita pelo identificador SPDX (<code>CC0-1.0</code>, <code>CC-BY-4.0</code>, <code>MIT</code>…), para todo mundo saber que pode usar e mudar.}}</li>
+      <li>{{<strong>Only <code>.kdl</code> files</strong> go in the folder. The picture on this page is made when the gallery is updated.||<strong>Só arquivos <code>.kdl</code></strong> na pasta. A imagem desta página é feita quando a galeria é atualizada.}}</li>
+    </ul>
+  </div>
+</section>
+</main>

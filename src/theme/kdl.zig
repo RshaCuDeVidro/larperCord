@@ -43,6 +43,8 @@ pub const Node = struct {
     props: []const Prop = &.{},
     children: []const Node = &.{},
     line: u32 = 0,
+    /// Coluna onde o nó começa (1 = a primeira), para erros com arquivo:linha:coluna.
+    col: u32 = 0,
 
     pub fn prop(n: *const Node, key: []const u8) ?Value {
         // A última ocorrência vence, como no KDL.
@@ -195,6 +197,7 @@ const Parser = struct {
 
     fn node(p: *Parser) Error!Node {
         const line = p.line;
+        const col: u32 = @intCast(p.i - p.line_start + 1);
         const name = try p.identOrString();
         var args: std.ArrayList(Value) = .empty;
         var props: std.ArrayList(Prop) = .empty;
@@ -252,6 +255,7 @@ const Parser = struct {
             .props = try props.toOwnedSlice(p.arena),
             .children = children,
             .line = line,
+            .col = col,
         };
     }
 

@@ -57,6 +57,18 @@ Four switches choose what else it does. Wandering needs a life of its own on, an
 
 **Little plant** puts a pot next to it. The plant grows a bit each day you use the app, for 30 days, until it's a small tree. After a week away it wilts, until the mascot waters it. Settings → Mascot shows how many days it has grown.
 
+## Customizing the mascot
+
+Settings → Mascot → **Customize** dresses up the Terminal mascot. A big preview shows the look, and the buttons under it switch the face (Normal, Happy, Laughing, Startled, Angry, Sad, Asleep, Dizzy) and put on the call headset and the mute tape, so you see how the parts combine.
+
+- **Ready-made looks**: 16 complete looks, from Hacker to Little angel. **Random look** picks one that matches, **Default** goes back to the usual mascot and **Undo** takes back the last change.
+- **Eyes, Mouth, Hat, Accessories, Ears, Colors**: a grid of pictures for each. 15 eyes, 16 mouths, 22 hats, 12 accessories (glasses and neckwear one at a time), 6 ear shapes, 14 palettes, or your own hex for each of the five colors, or the theme's accent.
+- The look shows wherever the mascot does: the openings, About, the empty lists and the corner mascot. With a hat picked, the corner mascot doesn't switch to the holiday hat; **Holiday hats** under Corner mascot turns those off. The Classic mascot stays as it is.
+
+### Mascot files
+
+A mascot can also be a `.kdl` file in the mascots folder (`~/.config/larpercord/mascots`, or `%APPDATA%\larpercord\mascots` on Windows). It picks parts and colors like the customizer, or draws its own eyes, mouth and layers in front of or behind the body with shapes, one drawing per expression. **Save as file** writes the current look there and switches to it. Under **Mascot files**, pick a file or press **Open folder**; saving a file updates the mascot right away, and a file with a problem shows `file:line:column` on its card. The format is in [Writing mascots](https://github.com/RshaCuDeVidro/larperCord/blob/main/mascots/README.md), and mascots other people made are in the [community mascot gallery](https://rshacudevidro.github.io/larperCord/community-mascots.html).
+
 ## What it costs
 
 It only draws extra frames for a moment when something happens, and only while the window is focused. Its life of its own starts after 8 seconds without you touching anything and stops when it falls asleep, after a few idle minutes. Measured on the demo, that's about half a percent of one CPU core while it's awake and idle. The idle CPU numbers in [Performance](page:performance#the-numbers) come from a window on a hidden workspace, which doesn't have focus, so they don't include the mascot.

@@ -61,6 +61,7 @@ const updater = @import("net/updater.zig");
 const lsp_ui = @import("ui/lsp_ui.zig");
 const mem_tune = @import("platform/mem_tune.zig");
 const mascote = @import("ui/mascote.zig");
+const mascote_arquivos = @import("ui/mascote_arquivos.zig");
 const icone_sistema = @import("platform/icone_sistema.zig");
 const tray = @import("platform/tray.zig");
 const wl_ativacao = @import("platform/wl_ativacao.zig");
@@ -116,6 +117,10 @@ fn setupLsp(qa_mode: bool) void {
 
 fn wakeTheme() void {
     platform.Window.wake(wake_type_global, .theme);
+}
+
+fn wakeMascot() void {
+    platform.Window.wake(wake_type_global, .mascot);
 }
 
 /// Hora de tentar de novo o ícone da bandeja (ver App.syncTray).
@@ -332,6 +337,7 @@ pub const App = struct {
         app.applyThemeStyle();
         timeline.mark(.fontes_tema);
         app.themes.watch(wakeTheme);
+        mascote_arquivos.setup(wakeMascot);
         // Antes da rede: a thread do gateway inicia o libcurl pelo mesmo caminho.
         app.images = try images.Cache.init(app.win.renderer, app.win.wake_type);
 
@@ -1178,6 +1184,19 @@ pub const App = struct {
         while (dit.next()) |uid| app.cmd(.{ .voice_dsp = .{ .user = uid.*, .denoise = true, .level = vs.levelOn(uid.*) } });
         var lit = vs.leveled.keyIterator();
         while (lit.next()) |uid| if (!vs.denoiseOn(uid.*)) app.cmd(.{ .voice_dsp = .{ .user = uid.*, .denoise = false, .level = true } });
+    }
+
+    /// Um arquivo de mascote mudou: relê a pasta e, se é o escolhido, avisa (recarregado,
+    /// ou o erro com arquivo:linha:coluna; o visual de antes fica).
+    fn mascotReloaded(app: *App) void {
+        mascote_arquivos.reload();
+        const file = app.st.settings.mascot_file.slice();
+        if (file.len == 0) return;
+        const e = mascote_arquivos.find(file) orelse return;
+        if (e.problem) |pr| {
+            const info = @import("ui/mascote_visual.zig").issue_info[@intFromEnum(pr.issue)];
+            app.st.showToast(now(), true, "{s}.kdl:{d}:{d}: {s}", "{s}.kdl:{d}:{d}: {s}", .{ file, pr.line, pr.col, i18n.tr(info.pt, info.en) });
+        } else app.st.showToast(now(), false, "mascote recarregado: {s}", "mascot reloaded: {s}", .{e.title.slice()});
     }
 
     pub fn saveSettings(app: *App) void {
@@ -2940,6 +2959,10 @@ pub const App = struct {
                             app.plugins.drain();
                             pending = @max(pending, 2);
                         },
+                        .mascot => {
+                            app.mascotReloaded();
+                            pending = @max(pending, 2);
+                        },
                     }
                 } else {
                     // Sem botão apertado, passar por cima das coisas pode esperar o
@@ -3145,6 +3168,7 @@ pub const App = struct {
             ffmpeg.setDir(set.ffmpeg_dir.slice());
             voz_audio.apply(set);
             lsp_ui.apply(set);
+            mascote.sync(set.mascot_look.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
             app_presenca.frame(app);
             app.askChannelInfo();
             voz_audio.setPageOpen(set.open and set.page == .voz and app.store.ready);
@@ -3425,7 +3449,7 @@ pub const App = struct {
                         wl.pending = @max(wl.pending, 2);
                     },
                     .quit => return false,
-                    .theme, .token, .show, .toggle, .tray_gone => {},
+                    .theme, .token, .show, .toggle, .tray_gone, .mascot => {},
                 }
                 continue;
             }
@@ -3504,6 +3528,7 @@ pub const App = struct {
             app.st.theme_gen +%= 1;
         }
         anim.instant = set.reduce_motion;
+        mascote.sync(set.mascot_look.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
         plugin_host.frame(app);
         @import("ui/attachments.zig").hide_embeds = !set.show_embeds;
         app.store.keep_log = set.message_log;

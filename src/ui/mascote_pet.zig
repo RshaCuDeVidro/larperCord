@@ -9,8 +9,9 @@
 //! Bota fone em call (e fita na boca com o microfone mudo), pega fogo quando você
 //! digita rápido, fica tonto se a conversa rola rápido demais, come o arquivo que você
 //! arrasta para a janela, fica preocupado quando a mensagem não sai, tem olheiras e
-//! boceja de madrugada, se espreguiça de manhã, usa chapéu nas datas e pega a cor de
-//! destaque do tema.
+//! boceja de madrugada, se espreguiça de manhã, usa chapéu nas datas (se não tem um
+//! escolhido) e pega a cor de destaque do tema, ou veste o visual personalizado
+//! (Configurações → Mascote → Personalizar).
 //!
 //!
 //! Vida própria (Configurações → Mascote): parado, de vez em quando ele faz alguma coisa
@@ -1248,7 +1249,8 @@ pub fn draw(ctx: *d.Ctx) void {
     pl.tape = pl.headset and st.muted;
     // Madrugada: olheiras. Datas especiais: chapéu.
     pl.bags = late;
-    pl.hat = contas.hatFor(lt.month, lt.day);
+    pl.hat = if (st.settings.mascot_date_hats) contas.hatFor(lt.month, lt.day) else .none;
+    pl.clock = @as(f32, @floatFromInt(@mod(now, 60_000))) / 1000.0;
     // O corpo na cor de destaque do tema.
     const acc = ctx.col(.accent);
     pl.colors = .{ acc.mix(Rgba.hex(0xFFFFFF), 0.28), acc.mix(Rgba.hex(0x000000), 0.1) };

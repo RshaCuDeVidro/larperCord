@@ -8,6 +8,7 @@
 //! As pastas são vigiadas com inotify: salvar um .kdl recarrega na hora.
 const std = @import("std");
 const sys = @import("../platform/sys.zig");
+const vigia = @import("../platform/vigia.zig");
 const c = @import("c");
 const builtin_themes = @import("builtin_themes");
 const theme = @import("theme.zig");
@@ -246,65 +247,15 @@ pub const Manager = struct {
         return &m.active.?;
     }
 
-    /// Thread que espera o sistema avisar e chama `wake` quando um tema muda.
+    /// Thread que espera o sistema avisar e chama `wake` quando um tema muda
+    /// (platform/vigia.zig, o mesmo vigia dos arquivos de mascote).
     pub fn watch(m: *Manager, wake: *const fn () void) void {
         // Navegador: os temas são só os embutidos, ninguém edita arquivo.
         if (sys.web) return;
-        if (sys.windows) return m.watchWindows(wake);
-        const fd = c.inotify_init1(c.IN_CLOEXEC);
-        if (fd < 0) return;
-        for (m.dirs.items) |dir| _ = c.inotify_add_watch(fd, dir.ptr, c.IN_CLOSE_WRITE | c.IN_MOVED_TO | c.IN_CREATE | c.IN_DELETE);
-        // Também a pasta do pywal, para o tema seguir o wallpaper.
+        // Também a pasta do pywal, para o tema seguir o wallpaper (no Windows, não).
         var buf: [512]u8 = undefined;
-        if (walDir(&buf)) |wd| _ = c.inotify_add_watch(fd, wd.ptr, c.IN_CLOSE_WRITE | c.IN_MOVED_TO);
-        const W = struct {
-            var wake_fn: *const fn () void = undefined;
-            var watch_fd: c_int = -1;
-            fn run(_: ?*anyopaque) callconv(.c) c_int {
-                var events: [4096]u8 align(@alignOf(c.struct_inotify_event)) = undefined;
-                while (true) {
-                    const n = c.read(watch_fd, &events, events.len);
-                    if (n <= 0) return 0;
-                    // Junta rajadas de eventos (editores salvam em vários passos).
-                    c.SDL_Delay(60);
-                    wake_fn();
-                }
-            }
-        };
-        W.wake_fn = wake;
-        W.watch_fd = fd;
-        if (c.SDL_CreateThread(W.run, "theme-watch", null)) |t| c.SDL_DetachThread(t);
-    }
-
-    /// No Windows: um aviso de mudança por pasta (a maior parte é só uma).
-    fn watchWindows(m: *Manager, wake: *const fn () void) void {
-        const W = struct {
-            var wake_fn: *const fn () void = undefined;
-            var handles: [8]c.HANDLE = undefined;
-            var n: u32 = 0;
-            fn run(_: ?*anyopaque) callconv(.c) c_int {
-                while (true) {
-                    const r = c.WaitForMultipleObjects(n, &handles, 0, c.INFINITE);
-                    if (r >= c.WAIT_OBJECT_0 + n) return 0;
-                    // Junta rajadas de eventos (editores salvam em vários passos).
-                    c.SDL_Delay(60);
-                    _ = c.FindNextChangeNotification(handles[r - c.WAIT_OBJECT_0]);
-                    wake_fn();
-                }
-            }
-        };
-        W.wake_fn = wake;
-        W.n = 0;
-        const what = c.FILE_NOTIFY_CHANGE_LAST_WRITE | c.FILE_NOTIFY_CHANGE_FILE_NAME;
-        for (m.dirs.items) |dir| {
-            if (W.n == W.handles.len) break;
-            const h = c.FindFirstChangeNotificationA(dir.ptr, 0, what);
-            if (h == c.INVALID_HANDLE_VALUE) continue;
-            W.handles[W.n] = h;
-            W.n += 1;
-        }
-        if (W.n == 0) return;
-        if (c.SDL_CreateThread(W.run, "theme-watch", null)) |t| c.SDL_DetachThread(t);
+        const wal = if (sys.windows) null else walDir(&buf);
+        _ = vigia.watch(m.dirs.items, wal, wake, "theme-watch");
     }
 };
 

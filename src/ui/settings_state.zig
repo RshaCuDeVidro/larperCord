@@ -111,6 +111,14 @@ pub const Settings = struct {
     mascot_plant_days: u8 = 0,
     mascot_plant_day: i16 = 0,
     mascot_plant_wilted: bool = false,
+    /// O visual do Terminal (Configurações → Mascote → Personalizar) em uma linha
+    /// (ui/mascote_visual.zig `writeCompact`: só o que não é o padrão); vazio = o de sempre.
+    mascot_look: Text = .{},
+    /// O arquivo de mascote escolhido (<config>/larpercord/mascots/<nome>.kdl, sem o
+    /// ".kdl"); vazio = o visual de `mascot_look`.
+    mascot_file: Text = .{},
+    /// O chapéu das datas especiais no mascote do canto, quando ele não tem um escolhido.
+    mascot_date_hats: bool = true,
     /// O renderizador do SDL (Configurações → Desempenho): "" = automático, ou o nome
     /// de um que o SDL lista ("vulkan", "opengl", "direct3d11"…). Vale no próximo
     /// início; o que não abrir volta para o automático (platform/window.zig).
