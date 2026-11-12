@@ -1,4 +1,4 @@
-//! O mascote que mora num canto do app (Configurações → Aparência → "Mascote no
+//! O mascote que mora num canto do app (Configurações → Mascote → "Mascote no
 //! canto"). Mora num lugar dele na barra da caixa de mensagem, segue o mouse com os olhos,
 //! digita junto, pula quando você manda mensagem e se assusta com menção. Ri, comemora,
 //! fica triste ou acena com o que você escreve (tudo aqui no computador). Dorme depois
@@ -12,9 +12,21 @@
 //! boceja de madrugada, se espreguiça de manhã, usa chapéu nas datas e pega a cor de
 //! destaque do tema.
 //!
+//!
+//! Vida própria (Configurações → Mascote): parado, de vez em quando ele faz alguma coisa
+//! sozinho (toma café, lê, joga, pesca um emoji das reações da conversa, caça uma
+//! mosquinha, empilha blocos, rabisca na caixa, rega a plantinha) ou sai passeando pela
+//! janela em pulos (senta na última mensagem, sobe na lista de membros, fica pendurado no
+//! cabeçalho, espia por trás da lista de canais). Brinca com a interface (senta no
+//! "digitando…", leva mensagem apagada para o lixo, empurra o botão de voltar ao fim, leva
+//! a cartinha da DM até o ícone), com a setinha do mouse, pula junto quando você troca de
+//! canal, espera com a janela sem foco, acampa quando você some e corre até o mouse na volta.
+//!
 //! Leve: parado, ele não acorda o app. Só anima por um instante quando algo acontece
-//! (30 quadros por segundo numa reação, 60 só voando ou sendo arrastado), e só com a
-//! janela em foco. Seguir o mouse com os olhos não custa nada: mexer o mouse já redesenha.
+//! (30 quadros por segundo numa reação, 15 nas que duram mais, 60 só voando ou sendo
+//! arrastado), e só com a janela em foco. A vida própria pede um quadro só na hora da
+//! próxima coisa, e para quando ele dorme. Seguir o mouse com os olhos não custa nada:
+//! mexer o mouse já redesenha.
 const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
@@ -25,13 +37,56 @@ const terminal = @import("mascote_terminal.zig");
 const logo = @import("logo.zig");
 const contas = @import("mascote_contas.zig");
 const types = @import("../core/types.zig");
+const props = @import("mascote_props.zig");
+const i18n = @import("i18n.zig");
 
 const Rgba = d.Rgba;
 
 /// Largura do mascote do canto, em pixels (antes da escala da interface).
 const base_size: f32 = 50;
 
-const Mode = enum { home, grabbed, flying, dizzy, walking, away };
+/// `trip`: pulando de um lugar para outro da janela; `perch`: parado num lugar dela
+/// (em cima da última mensagem, pendurado no cabeçalho…), antes de voltar.
+const Mode = enum { home, grabbed, flying, dizzy, walking, away, trip, perch };
+
+/// O que ele faz sozinho em casa (Configurações → Mascote → Vida própria) e o que faz
+/// quando algo acontece na interface.
+pub const Act = enum {
+    none,
+    // Parado: um destes de vez em quando.
+    scratch,
+    char_play,
+    coffee,
+    book,
+    game,
+    gum,
+    whistle,
+    clean,
+    nap_sit,
+    exercise,
+    fly,
+    fish,
+    tower,
+    doodle,
+    water,
+    // Coisas da interface e da volta.
+    trash,
+    erase,
+    pack,
+    portal,
+    peek,
+    grab,
+    hold,
+    tower_fall,
+};
+
+/// Para onde ele vai quando sai de casa.
+pub const Goal = enum { none, home, msg, members, header, channels, typing, jump, dm, cursor, mouse };
+
+/// Os lugares da interface aonde ele pode ir (cada componente avisa onde está a cada
+/// quadro; o que não apareceu no quadro, como a lista de membros num tema sem ela, fica
+/// de fora).
+pub const Anchor = enum { members, header, channels, guilds, last_msg, typing, jump, input };
 
 /// Os jeitos de emburrar: encolher, afundar na caixa (só as orelhas de fora), inflar
 /// vermelho soltando fumaça, e virar de costas (espia quando o mouse passa).
@@ -97,6 +152,65 @@ const State = struct {
     /// Madrugada: o próximo bocejo. Manhã: já se espreguiçou nesta abertura.
     next_yawn_ms: i64 = 0,
     morning_done: bool = false,
+
+    // --- Vida própria ---------------------------------------------------------------
+    /// O que ele está fazendo em casa, desde quando e qual variação (o tipo de exercício,
+    /// o rabisco…); e a próxima vez que ele faz alguma coisa sozinho.
+    act: Act = .none,
+    act_ms: i64 = 0,
+    act_var: u8 = 0,
+    next_act_ms: i64 = 0,
+    rng: u64 = 0x2545F4914F6CDD1D,
+    /// Viagem: o destino (onde os pés pousam), o pulo de agora e o que fazer ao chegar.
+    goal: Goal = .none,
+    dest: [2]f32 = .{ 0, 0 },
+    hop_from: [2]f32 = .{ 0, 0 },
+    hop_to: [2]f32 = .{ 0, 0 },
+    hop_ms: i64 = 0,
+    hop_len: f32 = 0.5,
+    hop_h: f32 = 30,
+    perch_ms: i64 = 0,
+    perch_until: i64 = 0,
+    /// Pendurado ou espiando: o retângulo que corta o desenho (largura 0 = nenhum).
+    clip: d.Rect = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+    /// A torre montada e o rabisco na caixa (ficam até você mexer ou digitar): 0 = nenhum,
+    /// 1 = coração, 2 = estrela.
+    tower: bool = false,
+    doodle: u8 = 0,
+    /// O que veio no anzol (um emoji das reações da conversa; sem nenhum, um peixe).
+    catch_r: types.Reaction = .{},
+    /// Coisas da interface esperando a vez (os ganchos do app chegam fora do quadro).
+    pend_delete: bool = false,
+    pend_edit: bool = false,
+    pend_dm: bool = false,
+    pend_resize: bool = false,
+    /// Quando ele foi a cada lugar pela última vez (para não ir toda hora).
+    trip_ms: i64 = -100_000,
+    typing_trip_ms: i64 = -100_000,
+    jump_trip_ms: i64 = -100_000,
+    dm_trip_ms: i64 = -100_000,
+    resize_ms: i64 = -100_000,
+    grab_ms: i64 = -100_000,
+    jump_seen: bool = false,
+    /// A setinha do mouse parada: onde e desde quando.
+    still_x: f32 = 0,
+    still_y: f32 = 0,
+    still_ms: i64 = 0,
+    /// Janela sem foco desde quando (0 = com foco), acampado, e o balão de fala.
+    away_ms: i64 = 0,
+    camped: bool = false,
+    camp_ms: i64 = 0,
+    balloon_until: i64 = 0,
+    /// O canal de antes (para pular junto) e onde era a casa nele.
+    last_channel: types.Id = 0,
+    last_home: [2]f32 = .{ 0, 0 },
+    /// A plantinha: o dia já foi contado nesta abertura, e se está murcha.
+    plant_checked: bool = false,
+    plant_wilted: bool = false,
+    /// A pescaria começou e ainda falta escolher o emoji (precisa da conversa).
+    need_catch: bool = false,
+    /// Uma viagem pedida pelo QA (sai no próximo quadro, que tem os lugares da tela).
+    qa_goal: Goal = .none,
 };
 
 var s: State = .{};
@@ -110,10 +224,306 @@ pub fn slot(r: d.Rect, now: i64) void {
     slot_ms = now;
 }
 
-/// Uma reação começa agora (a de agora vale mais que uma pancada de tecla).
+/// A largura do lugar dele na barra (com a plantinha, um pouco mais).
+pub fn slotWidth(plant_on: bool) f32 {
+    return if (plant_on) 46 + plant_w else 46;
+}
+const plant_w: f32 = 18;
+
+var anchors: [@typeInfo(Anchor).@"enum".field_names.len]struct { r: d.Rect, ms: i64 } = @splat(.{ .r = .{ .x = 0, .y = 0, .w = 0, .h = 0 }, .ms = -100_000 });
+
+/// Um lugar da interface neste quadro (ver `Anchor`).
+pub fn anchor(a: Anchor, r: d.Rect, now: i64) void {
+    anchors[@intFromEnum(a)] = .{ .r = r, .ms = now };
+}
+
+/// Um componente do tema foi desenhado (ui/root.zig): os que servem de lugar para ele.
+pub fn component(name: []const u8, r: d.Rect, now: i64) void {
+    const map = [_]struct { []const u8, Anchor }{ .{ "member-list", .members }, .{ "header", .header }, .{ "channel-list", .channels }, .{ "guild-bar", .guilds } };
+    for (map) |m| if (std.mem.eql(u8, name, m[0])) anchor(m[1], r, now);
+}
+
+fn anchorRect(a: Anchor, now: i64) ?d.Rect {
+    const e = anchors[@intFromEnum(a)];
+    if (now - e.ms > 250 or e.r.w < 4 or e.r.h < 4) return null;
+    return e.r;
+}
+
+/// Uma mensagem da conversa aberta foi apagada: ele leva para o lixo.
+pub fn onMessageDeleted() void {
+    s.pend_delete = true;
+}
+
+/// Uma mensagem da conversa aberta foi editada: ele passa a borracha.
+pub fn onMessageEdited() void {
+    s.pend_edit = true;
+}
+
+/// Chegou uma DM: ele leva a cartinha até o ícone das DMs.
+pub fn onDm() void {
+    s.pend_dm = true;
+}
+
+/// A janela mudou de tamanho: ele se segura (ou cai).
+pub fn onResize() void {
+    s.pend_resize = true;
+}
+
+/// Uma reação começa agora (a de agora vale mais que uma pancada de tecla, e mais que o
+/// que ele fazia sozinho).
 fn start(r: Reaction, now: i64) void {
     s.react = r;
     s.react_ms = now;
+    if (isIdleAct(s.act)) s.act = .none;
+}
+
+// --- Vida própria: o que ele faz sozinho e aonde vai ----------------------------------
+
+/// Distância dos pés ao centro do desenho (os destinos das viagens são onde os pés pousam).
+const foot_off: f32 = (99 - 42.5) * base_size * 0.78 / 127.14;
+/// Depois de quanto tempo sem você ele acampa.
+const camp_after_ms: i64 = 20 * 60 * 1000;
+/// Depois de quanto tempo fora ele diz que sentiu saudade.
+const missed_after_ms: i64 = 2 * 60 * 60 * 1000;
+
+fn rand() u32 {
+    var x = s.rng;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    s.rng = x;
+    return @truncate(x >> 16);
+}
+
+fn isIdleAct(a: Act) bool {
+    return @intFromEnum(a) >= @intFromEnum(Act.scratch) and @intFromEnum(a) <= @intFromEnum(Act.water);
+}
+
+fn actSeconds(a: Act) f32 {
+    return switch (a) {
+        .none => 0,
+        .scratch => 2.2,
+        .char_play => 2.6,
+        .coffee => 3.2,
+        .book => 4.0,
+        .game => 4.0,
+        .gum => 3.0,
+        .whistle => 3.2,
+        .clean => 2.4,
+        .nap_sit => 4.5,
+        .exercise => 4.0,
+        .fly => 4.6,
+        .fish => 5.6,
+        .tower => 4.0,
+        .doodle => 2.6,
+        .water => 2.6,
+        .trash => 2.4,
+        .erase => 1.8,
+        .pack => 1.4,
+        .portal => 0.8,
+        .peek => 1.6,
+        .grab => 1.1,
+        .hold => 1.5,
+        .tower_fall => 1.1,
+    };
+}
+
+fn startAct(a: Act, now: i64) void {
+    s.act = a;
+    s.act_ms = now;
+    s.act_var = @truncate(rand());
+    if (a == .fish) s.need_catch = true;
+}
+
+/// Uma viagem até `dest` (onde os pés pousam), em pulos de no máximo 280 px.
+fn startTrip(goal: Goal, dest: [2]f32, now: i64) void {
+    s.goal = goal;
+    s.dest = dest;
+    s.mode = .trip;
+    s.mode_ms = now;
+    s.act = .none;
+    s.clip.w = 0;
+    if (goal != .home) s.trip_ms = now;
+    nextHop(now);
+}
+
+fn nextHop(now: i64) void {
+    const fx = s.x;
+    const fy = s.y + foot_off;
+    const dx = s.dest[0] - fx;
+    const dy = s.dest[1] - fy;
+    const len = std.math.hypot(dx, dy);
+    const step = @min(len, 280);
+    const f = if (len > 0.5) step / len else 1;
+    s.hop_from = .{ fx, fy };
+    s.hop_to = .{ fx + dx * f, fy + dy * f };
+    s.hop_len = 0.3 + step / 1000;
+    s.hop_h = 16 + step * 0.2;
+    s.hop_ms = now;
+}
+
+/// A casa de agora, onde os pés ficam (atualizada a cada quadro).
+var home_feet: [2]f32 = .{ 0, 0 };
+
+fn goHome(now: i64) void {
+    startTrip(.home, home_feet, now);
+}
+
+/// Sai para um lugar da interface. false: o lugar não está na tela (ou já está lá).
+fn goTo(ctx: *d.Ctx, goal: Goal, now: i64) bool {
+    const kk = base_size * 0.78 / 127.14;
+    const win = ctx.win;
+    const dest: [2]f32 = switch (goal) {
+        .msg => blk: {
+            const r = anchorRect(.last_msg, now) orelse return false;
+            break :blk .{ r.right() - 70, r.y + 3 };
+        },
+        .members => blk: {
+            // Na ponta direita da borda de cima (o título dos cargos fica à esquerda).
+            const r = anchorRect(.members, now) orelse return false;
+            break :blk .{ r.right() - 30, r.y + 3 };
+        },
+        .header => blk: {
+            // Pendurado: as pontas das orelhas na borda de baixo do cabeçalho.
+            const r = anchorRect(.header, now) orelse return false;
+            break :blk .{ r.x + r.w * 0.55, r.bottom() + (99 + 14) * kk };
+        },
+        .channels => blk: {
+            // Quase todo atrás da lista de canais, só o rosto de fora.
+            const r = anchorRect(.channels, now) orelse return false;
+            break :blk .{ r.right() - base_size * 0.1, r.y + r.h * 0.42 };
+        },
+        .typing => blk: {
+            const r = anchorRect(.typing, now) orelse return false;
+            break :blk .{ r.x + r.w * 0.5, r.y + 3 };
+        },
+        .jump => blk: {
+            const r = anchorRect(.jump, now) orelse return false;
+            break :blk .{ r.x - base_size * 0.36, r.bottom() };
+        },
+        .dm => blk: {
+            // O ícone das DMs é o primeiro da barra de servidores.
+            const r = anchorRect(.guilds, now) orelse return false;
+            break :blk .{ r.x + r.w / 2, r.y + r.w + 4 };
+        },
+        .cursor => .{ ctx.mouse.x + 3, ctx.mouse.y - 1 },
+        .mouse => .{ ctx.mouse.x, home_feet[1] },
+        .none, .home => return false,
+    };
+    const dx = std.math.clamp(dest[0], win.x + 24, win.right() - 24);
+    const dy = std.math.clamp(dest[1], win.y + 30, win.bottom() - 2);
+    if (std.math.hypot(dx - s.x, dy - (s.y + foot_off)) < 8) return false;
+    startTrip(goal, .{ dx, dy }, now);
+    return true;
+}
+
+/// Quanto ele fica em cada lugar.
+fn perchMs(goal: Goal) i64 {
+    return switch (goal) {
+        .msg, .members => 6000 + @as(i64, rand() % 3000),
+        .header, .channels => 5000,
+        .typing => 8000,
+        .jump => 3500,
+        .dm => 900,
+        .cursor => 30_000,
+        .mouse => 1400,
+        .none, .home => 0,
+    };
+}
+
+fn arrive(now: i64) void {
+    if (s.goal == .home or s.goal == .none) {
+        s.mode = .home;
+        s.goal = .none;
+        s.mode_ms = now;
+        s.clip.w = 0;
+        return;
+    }
+    s.mode = .perch;
+    s.perch_ms = now;
+    s.perch_until = now + perchMs(s.goal);
+    // Atrás da lista de canais: o que passa para a esquerda da borda some.
+    if (s.goal == .channels) if (anchorRect(.channels, now)) |r| {
+        s.clip = .{ .x = r.right(), .y = -100_000, .w = 200_000, .h = 200_000 };
+    };
+}
+
+/// O emoji para pescar: uma das reações das últimas mensagens da conversa aberta.
+fn pickCatch(ctx: *d.Ctx) void {
+    s.catch_r = .{};
+    const ch = ctx.st.activeChannel() orelse return;
+    const cs = ctx.store.channel(ch) orelse return;
+    const items = cs.messages.items;
+    var found: [16]*const types.Reaction = undefined;
+    var n: usize = 0;
+    var i = items.len;
+    while (i > 0 and items.len - i < 40 and n < found.len) {
+        i -= 1;
+        for (items[i].reactionSlice()) |*r| if (n < found.len) {
+            found[n] = r;
+            n += 1;
+        };
+    }
+    if (n > 0) s.catch_r = found[rand() % n].*;
+}
+
+/// Hora de fazer alguma coisa sozinho: passear (se der) ou uma das coisas de ficar parado.
+fn pickLife(ctx: *d.Ctx, now: i64) void {
+    const set = &ctx.st.settings;
+    if (set.mascot_roam and rand() % 100 < 30 and now - s.trip_ms > 30_000) {
+        const goals = [_]Goal{ .msg, .members, .header, .channels };
+        const first = rand() % goals.len;
+        for (0..goals.len) |j| if (goTo(ctx, goals[(first + j) % goals.len], now)) return;
+    }
+    if (set.mascot_plant and s.plant_wilted) return startAct(.water, now);
+    var pool: [16]Act = undefined;
+    var n: usize = 0;
+    for ([_]Act{ .scratch, .char_play, .coffee, .book, .game, .gum, .whistle, .clean, .nap_sit, .exercise, .fly, .fish }) |a| {
+        pool[n] = a;
+        n += 1;
+    }
+    if (!s.tower) {
+        pool[n] = .tower;
+        n += 1;
+    }
+    if (s.doodle == 0 and ctx.st.input[0] == 0 and anchorRect(.input, now) != null) {
+        pool[n] = .doodle;
+        n += 1;
+    }
+    if (set.mascot_plant and rand() % 3 == 0) {
+        pool[n] = .water;
+        n += 1;
+    }
+    const a = pool[rand() % n];
+    startAct(a, now);
+    if (a == .doodle) s.doodle = 1 + @as(u8, @intCast(rand() % 2));
+}
+
+/// Acabou o que ele fazia: o que fica (a torre, a planta regada) e o que vem depois.
+fn endAct(ctx: *d.Ctx, now: i64) void {
+    const a = s.act;
+    s.act = .none;
+    switch (a) {
+        .tower => s.tower = true,
+        .water => s.plant_wilted = false,
+        .pack => _ = goTo(ctx, .mouse, now),
+        .tower_fall => start(.dizzy, now),
+        else => {},
+    }
+}
+
+/// A plantinha cresce um dia por dia de uso (contado uma vez por abertura). Mais de
+/// uma semana sem você, ela murcha até ele regar.
+fn plantDay(ctx: *d.Ctx, today: i64) void {
+    s.plant_checked = true;
+    const set = &ctx.st.settings;
+    const t: i16 = @intCast(std.math.clamp(today, 1, 32767));
+    const last = set.mascot_plant_day;
+    if (last == t) return;
+    if (last != 0 and t - last > 7) s.plant_wilted = true;
+    if (set.mascot_plant_days < 255) set.mascot_plant_days += 1;
+    set.mascot_plant_day = t;
+    ctx.act(.save_settings);
 }
 
 fn reactionSeconds(r: Reaction) f32 {
@@ -256,14 +666,21 @@ pub fn draw(ctx: *d.Ctx) void {
         if (s.mode == .home or ctx.now_ms - slot_ms > 250) s.placed = false;
         s.mode = .home;
         s.dragging = false;
+        s.goal = .none;
+        s.act = .none;
+        s.clip.w = 0;
         return;
     }
     // A escala da interface já vale para tudo (ver App.uiScale).
     const size = base_size;
     const k = size * 0.78 / 127.14;
-    // Em casa: no lugar dele na barra da caixa, com a cabeça espiando por cima.
-    const home_x = home_slot.x + home_slot.w / 2;
+    // Em casa: no lugar dele na barra da caixa, com a cabeça espiando por cima (com a
+    // plantinha, ela fica à esquerda dele, no mesmo lugar).
+    const set = &ctx.st.settings;
+    const pw: f32 = if (set.mascot_plant and home_slot.w > 46) plant_w else 0;
+    const home_x = home_slot.x + pw + (home_slot.w - pw) / 2;
     const home_y = home_slot.bottom() - 4 - (99 - 42.5) * k;
+    home_feet = .{ home_x, home_slot.bottom() - 4 };
     if (!s.placed) {
         s.x = home_x;
         s.y = home_y;
@@ -282,6 +699,7 @@ pub fn draw(ctx: *d.Ctx) void {
     const typed = sig != s.input_sig;
     s.input_sig = sig;
     const asleep_before = now - s.last_input_ms > sleep_ms and s.mode == .home;
+    const idle_before = now - s.last_input_ms;
     if ((moved or typed) and !s.nap) {
         if (asleep_before) start(.wake, now);
         s.last_input_ms = now;
@@ -319,6 +737,64 @@ pub fn draw(ctx: *d.Ctx) void {
             s.next_yawn_ms = now + 40_000 + @mod(now, 25_000);
         }
     } else s.next_yawn_ms = 0;
+
+    // --- Vida própria: a plantinha, a volta, o canal novo --------------------------------
+    if (!s.plant_checked) plantDay(ctx, lt.day_index);
+    const away_on = set.mascot_away;
+    if (!focused) {
+        if (s.away_ms == 0) s.away_ms = now;
+        if (away_on and !s.camped and now - s.away_ms > camp_after_ms) {
+            s.camped = true;
+            s.tower = false;
+        }
+    } else {
+        const gap: i64 = if (s.away_ms != 0) now - s.away_ms else 0;
+        s.away_ms = 0;
+        // Ninguém mexendo há muito tempo, mesmo com a janela em foco: acampa também.
+        if (away_on and !s.camped and s.mode == .home and idle_before > camp_after_ms) {
+            s.camped = true;
+            s.tower = false;
+        }
+        if (!away_on) s.camped = false;
+        if (away_on and (gap > 0 or (s.camped and (moved or typed)))) {
+            // Voltou: desmonta o acampamento e corre até o mouse.
+            const absent = @max(gap, idle_before);
+            if (s.camped) {
+                s.camped = false;
+                startAct(.pack, now);
+            } else if (absent > 60_000 and s.mode == .home and mouse.x > -1000) _ = goTo(ctx, .mouse, now);
+            if (absent > missed_after_ms) s.balloon_until = now + 3500;
+        }
+    }
+    // Trocou de canal: ele pula junto (a caixa mudou de lugar) ou passa por um portal; numa
+    // thread, ele espia.
+    {
+        const ch = ctx.st.activeChannel() orelse 0;
+        // (Trocar de canal é você mexendo: vale mais que o que ele fazia, menos desmontar
+        // o acampamento.)
+        if (ch != s.last_channel and s.last_channel != 0 and ch != 0 and set.mascot_roam and set.mascot_life > 0 and s.mode == .home and s.act != .pack) {
+            const old = s.last_home;
+            if (std.math.hypot(old[0] - home_feet[0], old[1] - home_feet[1]) > 40) {
+                s.x = old[0];
+                s.y = old[1] - foot_off;
+                startTrip(.home, home_feet, now);
+            } else {
+                const thread = if (ctx.store.channel(ch)) |cs| cs.info.thread != null else false;
+                startAct(if (thread) .peek else .portal, now);
+            }
+        }
+        s.last_channel = ch;
+        s.last_home = home_feet;
+    }
+    // Digitou: o rabisco some e o que ele fazia sozinho para. Mexeu: a torre cai nele.
+    if (typed) {
+        s.doodle = 0;
+        if (isIdleAct(s.act)) s.act = .none;
+    }
+    if ((moved or typed) and s.tower and s.act != .tower) {
+        s.tower = false;
+        startAct(.tower_fall, now);
+    }
 
     // --- Clique, arrasto, carinho e cutucada ----------------------------------
     // A área do clique é a janela inteira, e só ela: em casa, o lugar dele na barra
@@ -404,6 +880,9 @@ pub fn draw(ctx: *d.Ctx) void {
         s.mode = .grabbed;
         s.mode_ms = now;
         s.react = .none;
+        s.act = .none;
+        s.goal = .none;
+        s.clip.w = 0;
     }
     if (active and s.dragging) {
         const nx = mouse.x + s.grab_dx;
@@ -421,6 +900,9 @@ pub fn draw(ctx: *d.Ctx) void {
             s.mode_ms = now;
             s.vx = std.math.clamp(s.vx, -2600, 2600);
             s.vy = std.math.clamp(s.vy, -2600, 2600);
+        } else if (s.mode == .trip or s.mode == .perch) {
+            // Clicou nele fora de casa: volta.
+            goHome(now);
         } else if (s.woke) {
             s.woke = false;
         } else if (s.dbl) {
@@ -445,6 +927,89 @@ pub fn draw(ctx: *d.Ctx) void {
             if (s.react != .love or secs(now, s.react_ms) > 0.8) start(.love, now);
         }
     } else s.pet_dist = 0;
+
+    // --- Vida própria: a interface, o mouse e o que fazer à toa --------------------------
+    const idle_ms = now - s.last_input_ms;
+    const awake = s.mode == .home and !s.nap and idle_ms < sleep_ms and !s.camped;
+    const ui_ok = set.mascot_ui and awake and s.react == .none;
+    if (s.pend_delete) {
+        s.pend_delete = false;
+        if (ui_ok and s.act == .none) startAct(.trash, now);
+    }
+    if (s.pend_edit) {
+        s.pend_edit = false;
+        if (ui_ok and s.act == .none) startAct(.erase, now);
+    }
+    if (s.pend_resize) {
+        s.pend_resize = false;
+        if (ui_ok and s.act == .none and now - s.resize_ms > 2000) {
+            s.resize_ms = now;
+            if (rand() % 3 == 0) {
+                // Caiu: quica, fica tonto e volta andando.
+                s.mode = .flying;
+                s.mode_ms = now;
+                s.vx = if (rand() % 2 == 0) -170 else 170;
+                s.vy = -320;
+            } else startAct(.hold, now);
+        }
+    }
+    if (s.pend_dm) {
+        s.pend_dm = false;
+        if (ui_ok and now - s.dm_trip_ms > 90_000 and goTo(ctx, .dm, now)) s.dm_trip_ms = now;
+    }
+    // Alguém digitando: senta em cima do "digitando…" (não enquanto você mesmo digita).
+    if (ui_ok and s.mode == .home and s.act == .none and now - s.typing_trip_ms > 45_000 and now - s.type_ms > 2000 and anchorRect(.typing, now) != null) {
+        if (goTo(ctx, .typing, now)) s.typing_trip_ms = now;
+    }
+    // O botão de voltar ao fim apareceu: vai lá empurrar (assim que estiver livre,
+    // enquanto o botão estiver lá).
+    if (anchorRect(.jump, now) == null) {
+        s.jump_seen = false;
+    } else if (!s.jump_seen and ui_ok and s.mode == .home and s.act == .none and now - s.jump_trip_ms > 60_000) {
+        s.jump_seen = true;
+        if (goTo(ctx, .jump, now)) s.jump_trip_ms = now;
+    }
+    // A setinha parada: perto, ele tenta pegar; em cima dele, senta nela.
+    if (@abs(mouse.x - s.still_x) > 2 or @abs(mouse.y - s.still_y) > 2) {
+        s.still_x = mouse.x;
+        s.still_y = mouse.y;
+        s.still_ms = now;
+    }
+    const cursor_on = set.mascot_cursor and awake and s.act == .none and s.react == .none and mouse.x > -1000 and !active;
+    if (cursor_on) {
+        const still_for = now - s.still_ms;
+        const near = dist(mouse.x, mouse.y, s.x, s.y);
+        if (hovered and still_for > 2500 and now - s.trip_ms > 60_000) {
+            _ = goTo(ctx, .cursor, now);
+        } else if (!hovered and near > 30 and near < 130 and still_for > 1500 and now - s.grab_ms > 20_000) {
+            s.grab_ms = now;
+            startAct(.grab, now);
+        }
+    }
+    if (s.need_catch) {
+        s.need_catch = false;
+        pickCatch(ctx);
+    }
+    if (s.qa_goal != .none) {
+        _ = goTo(ctx, s.qa_goal, now);
+        s.qa_goal = .none;
+    }
+    // À toa: de vez em quando ele faz alguma coisa sozinho (até dormir).
+    const life = set.mascot_life;
+    const interval: i64 = switch (life) {
+        0 => 1,
+        1 => 90_000,
+        2 => 45_000,
+        else => 22_000,
+    };
+    const life_ready = life > 0 and awake and focused and s.react == .none and s.act == .none and s.trick_ms == 0;
+    if (life_ready) {
+        if (s.next_act_ms <= s.last_input_ms) s.next_act_ms = s.last_input_ms + 8000 + @mod(@as(i64, rand()), interval);
+        if (now >= s.next_act_ms) {
+            s.next_act_ms = now + @divTrunc(interval * (70 + @as(i64, rand() % 60)), 100);
+            pickLife(ctx, now);
+        }
+    }
 
     // --- Física e caminhada ----------------------------------------------------------
     const win = ctx.win;
@@ -523,6 +1088,43 @@ pub fn draw(ctx: *d.Ctx) void {
                 s.mode_ms = now;
                 start(.wave, now);
             }
+        },
+        .trip => {
+            // Um pulo em arco do ponto de partida até o próximo ponto do caminho.
+            const f = std.math.clamp(secs(now, s.hop_ms) / s.hop_len, 0, 1);
+            const y0 = s.hop_from[1];
+            const y1 = s.hop_to[1];
+            const lift = 4 * f * (1 - f) * (s.hop_h + @abs(y1 - y0) * 0.5);
+            s.x = s.hop_from[0] + (s.hop_to[0] - s.hop_from[0]) * f;
+            s.y = y0 + (y1 - y0) * f - lift - foot_off;
+            s.spin = 0;
+            if (f >= 1) {
+                // A casa pode ter mudado de lugar no caminho (a janela mudou de tamanho).
+                if (s.goal == .home) s.dest = home_feet;
+                if (std.math.hypot(s.hop_to[0] - s.dest[0], s.hop_to[1] - s.dest[1]) < 1.5) arrive(now) else nextHop(now);
+            }
+        },
+        .perch => {
+            var done = now >= s.perch_until;
+            switch (s.goal) {
+                .typing => if (anchorRect(.typing, now) == null) {
+                    done = true;
+                },
+                .jump => if (anchorRect(.jump, now) == null) {
+                    done = true;
+                },
+                .cursor => if (dist(mouse.x, mouse.y, s.dest[0] - 3, s.dest[1] + 1) > 4) {
+                    // A setinha saiu de baixo dele: cai.
+                    s.mode = .flying;
+                    s.mode_ms = now;
+                    s.vx = 0;
+                    s.vy = 0;
+                    s.goal = .none;
+                    done = false;
+                },
+                else => {},
+            }
+            if (done and s.mode == .perch) goHome(now);
         },
     }
 
@@ -640,7 +1242,7 @@ pub fn draw(ctx: *d.Ctx) void {
             }
             if (at > sulk_s - 0.35) anim_until = now + 50;
         },
-        .home => {},
+        .home, .trip, .perch => {},
     }
     // Reações de um instante.
     const rt = secs(now, s.react_ms);
@@ -786,6 +1388,214 @@ pub fn draw(ctx: *d.Ctx) void {
         }
     }
 
+    // --- Vida própria: as poses ------------------------------------------------------------
+    var fly_pt: ?c.ImVec2 = null;
+    var slow_anim = false;
+    if (s.act != .none and secs(now, s.act_ms) > actSeconds(s.act)) endAct(ctx, now);
+    const at = secs(now, s.act_ms);
+    if (s.act != .none and s.react == .none and s.mode == .home) {
+        anim_until = @max(anim_until, s.act_ms + @as(i64, @intFromFloat(actSeconds(s.act) * 1000)));
+        const f = at / actSeconds(s.act);
+        switch (s.act) {
+            .none => {},
+            .scratch => {
+                pl.wave = if (at < 1.7) @sin(at * 24) * 0.22 else 0;
+                pl.face = .happy;
+                pl.look = .{ 0.6, -0.6 };
+                pl.spin = 0.05;
+            },
+            .char_play => {
+                pl.cursor = @mod(now, 240) < 120;
+                pl.pop = @abs(@sin(at * 7)) * 1.5;
+                pl.look = .{ 0.3, 0.7 };
+                pl.face = .happy;
+            },
+            .coffee => {
+                const lift = sip(at);
+                pl.look = .{ 0.8, 0.1 };
+                if (lift > 0.5) {
+                    pl.face = .happy;
+                    pl.spin = -0.05 * lift;
+                }
+            },
+            .book => pl.look = .{ 0, 0.9 },
+            .game => {
+                pl.look = .{ 0, 0.9 };
+                pl.pop = @abs(@sin(at * 9)) * 0.6;
+                pl.face = if (@mod(at, 1.4) < 0.7) .happy else .startled;
+            },
+            .gum => pl.face = if (at > 2.2 and at < 2.6) .startled else .prompt,
+            .whistle => {
+                pl.mouth = 0.25;
+                pl.look = .{ 0.7, -0.6 };
+                pl.spin = @sin(at * 3) * 0.05;
+            },
+            .clean => {
+                pl.face = .sleep;
+                pl.spin = @sin(at * 9) * 0.03;
+            },
+            .nap_sit => {
+                pl.face = .sleep;
+                pl.ears = 0.25;
+                pl.squash = 0.06;
+                slow_anim = true;
+            },
+            .exercise => switch (s.act_var % 3) {
+                // Flexão.
+                0 => {
+                    pl.squash = 0.22 * @abs(@sin(at * 5));
+                    pl.face = .worried;
+                    pl.drop = 1;
+                    pl.drop_slide = @mod(at * 0.5, 1);
+                },
+                // Alongamento.
+                1 => {
+                    const up = @sin(std.math.pi * f);
+                    pl.squash = -0.25 * up;
+                    pl.ears = -0.3 * up;
+                    pl.face = .sleep;
+                },
+                // Polichinelo.
+                else => {
+                    bob = -@abs(@sin(at * 7)) * size * 0.18;
+                    pl.wave = @sin(at * 14) * 0.35;
+                    pl.face = .happy;
+                },
+            },
+            .fly => {
+                const caught = at > 3.6;
+                if (!caught) fly_pt = d.v(s.x + @sin(at * 2.3) * size * 0.9 + @sin(at * 5.1) * size * 0.2, s.y - size * 0.35 + @cos(at * 3.1) * size * 0.25);
+                if (fly_pt) |fp| pl.look = .{ std.math.clamp((fp.x - s.x) / 60, -1, 1), std.math.clamp((fp.y - s.y) / 50, -1, 1) };
+                // Dois pulos errando e o terceiro pega.
+                for ([_]f32{ 1.2, 2.4, 3.3 }) |j| bob = @min(bob, -kick(at - j, 0.45) * size * 0.5);
+                pl.face = if (caught) .happy else if (at > 1.2) .startled else .prompt;
+                if (at > 3.3 and at < 3.7) pl.mouth = 1;
+            },
+            .fish => {
+                pl.look = .{ -0.5, -0.8 };
+                pl.face = if (at > 3.9) .happy else .prompt;
+            },
+            .tower => {
+                bob = -kick(@mod(at, 0.6), 0.25) * size * 0.08;
+                pl.look = .{ -0.8, 0.3 };
+                pl.face = if (at > 3.6) .happy else .prompt;
+            },
+            .doodle => {
+                pl.look = .{ -0.9, 0.2 };
+                pl.spin = -0.08;
+            },
+            .water => {
+                pl.look = .{ -1, 0.4 };
+                pl.spin = -0.12;
+                pl.face = .happy;
+            },
+            .trash => {
+                slide = -16 * std.math.clamp((at - 0.5) / 0.6, 0, 1) * std.math.clamp((2.4 - at) / 0.5, 0, 1);
+                pl.look = .{ -1, 0 };
+            },
+            .erase => pl.look = .{ 1, 0.4 },
+            .pack => {
+                bob = -@abs(@sin(at * 10)) * size * 0.12;
+                pl.face = if (at < 0.4) .startled else .happy;
+            },
+            .portal => shrink = @max(0.02, @abs(@cos(std.math.pi * f))),
+            .peek => {
+                pl.look = .{ 1, -0.3 };
+                pl.face = if (at < 0.3) .startled else .happy;
+                pl.spin = 0.1 * @sin(std.math.pi * f);
+            },
+            .grab => {
+                const dir: f32 = if (mouse.x < s.x) -1 else 1;
+                slide = dir * std.math.clamp(@abs(mouse.x - s.x) - 20, 0, 50) * @sin(std.math.pi * f);
+                bob = -@sin(std.math.pi * f) * size * 0.45;
+                pl.face = .startled;
+                pl.ears = -0.3;
+                pl.look = .{ dir, -0.6 };
+            },
+            .hold => {
+                pl.ears = -0.35;
+                pl.face = .worried;
+                pl.spin = @sin(at * 14) * 0.1 * (1 - f);
+                pl.squash = -0.12;
+            },
+            .tower_fall => {
+                pl.face = if (at > 0.4) .dizzy else .startled;
+                pl.squash = kick(at - 0.4, 0.3) * 0.3;
+            },
+        }
+    }
+    if (s.mode == .trip) {
+        anim_until = @max(anim_until, now + 40);
+        const hf = std.math.clamp(secs(now, s.hop_ms) / s.hop_len, 0, 1);
+        pl.face = .happy;
+        pl.look = .{ if (s.hop_to[0] < s.hop_from[0]) -1 else 1, if (s.hop_to[1] < s.hop_from[1]) -0.5 else 0.2 };
+        pl.ears = -0.15;
+        pl.squash = -0.1 * @sin(std.math.pi * hf) + kick(hf - 0.85, 0.15) * 0.2;
+    }
+    if (s.mode == .perch) {
+        const pt = secs(now, s.perch_ms);
+        switch (s.goal) {
+            .msg, .members => {
+                pl.squash = 0.06;
+                if (pt < 0.6) pl.face = .happy;
+            },
+            .header => {
+                // Pendurado pelas orelhas, balançando até parar.
+                pl.ears = -0.4;
+                pl.face = .happy;
+                pl.spin = @sin(pt * 2.6) * 0.15 * @max(0, 1 - pt / 3);
+                if (pt < 3) anim_until = @max(anim_until, now + 40);
+            },
+            .channels => {
+                pl.look = .{ 1, 0 };
+                pl.face = .happy;
+            },
+            .typing => {
+                // Balançando as perninhas (devagar: 15 quadros por segundo).
+                pl.wave = @sin(pt * 6) * 0.18;
+                pl.look = .{ 0, 0.6 };
+                pl.face = .happy;
+                slow_anim = true;
+            },
+            .jump => {
+                // Empurrando o botão: "volta lá".
+                pl.spin = 0.16;
+                pl.squash = @sin(pt * 9) * 0.07;
+                pl.face = .worried;
+                pl.look = .{ 1, 0.2 };
+                slow_anim = true;
+            },
+            .dm => {
+                pl.face = .happy;
+                if (pt < 0.9) anim_until = @max(anim_until, now + 40);
+            },
+            .cursor => {
+                pl.face = .happy;
+                pl.squash = 0.05;
+                pl.look = .{ 0, 0.8 };
+            },
+            .mouse => {
+                if (pt < 1.2) {
+                    bob = -@abs(@sin(pt * 9)) * size * 0.2;
+                    anim_until = @max(anim_until, now + 40);
+                }
+                pl.face = .happy;
+                pl.ears = -0.2;
+            },
+            .none, .home => {},
+        }
+    }
+    // Acampado: dormindo do lado da fogueira. Sem foco: esperando você, de olho na porta.
+    if (s.camped and s.mode == .home) {
+        pl.face = .sleep;
+        pl.squash = 0.05;
+        pl.look = .{ -0.3, 0.3 };
+    } else if (!focused and away_on and s.mode == .home and s.react == .none) {
+        pl.face = .prompt;
+        pl.look = .{ -1, -0.6 };
+        pl.ears = -0.1;
+    }
+
     // O truque esperando um terceiro clique: um quadro na hora de decidir.
     if (s.trick_ms != 0) anim_until = @max(anim_until, s.trick_ms + trick_wait_ms + 20);
     // --- Quadros: só enquanto algo anima, e só com a janela em foco ----------------------
@@ -794,14 +1604,23 @@ pub fn draw(ctx: *d.Ctx) void {
             anim.active = true;
         } else if (anim_until > now) {
             anim.at(now + 33);
+        } else if (slow_anim) {
+            anim.at(now + 66);
         } else if (asleep) {
-            // Os "Z" sobem uns segundos depois de dormir e param.
+            // Os "Z" sobem uns segundos depois de dormir e param; mais tarde, um quadro na
+            // hora de acampar.
             const zt = secs(now, sleep_from);
-            if (zt < 8) anim.at(now + 66);
+            if (zt < 8) anim.at(now + 66) else if (away_on and !s.camped and !s.nap) anim.at(s.last_input_ms + camp_after_ms + 10);
         } else if (s.mode == .home) {
-            // A hora de dormir: um quadro só.
-            anim.at(s.last_input_ms + sleep_ms + 10);
+            // A hora de dormir, a próxima coisa que ele faz sozinho e a setinha parada: um
+            // quadro em cada uma, e nada no meio.
+            var wake = s.last_input_ms + sleep_ms + 10;
+            if (life_ready) wake = @min(wake, @max(s.next_act_ms, now + 50));
+            if (cursor_on and now - s.still_ms < 2600) wake = @min(wake, s.still_ms + (if (now - s.still_ms < 1500) @as(i64, 1510) else 2510));
+            anim.at(wake);
         }
+        if (s.mode == .perch) anim.at(s.perch_until);
+        if (s.balloon_until > now) anim.at(s.balloon_until);
     }
 
     // --- Desenho (por cima de tudo) ------------------------------------------------------
@@ -813,6 +1632,28 @@ pub fn draw(ctx: *d.Ctx) void {
     const cy_fx = s.y + bob + (1 - shrink) * (99 - 42.5) * k;
     const cy = cy_fx + sink * (99 - 8) * k;
     const dsize = size * shrink;
+    const feet_y = home_slot.bottom() - 4;
+    const tsec = @as(f32, @floatFromInt(@mod(now, 60_000))) / 1000.0;
+    // A plantinha, à esquerda dele no lugar da barra.
+    if (pw > 0) props.plant(dl, d.v(home_slot.x + pw / 2 + 1, home_slot.bottom() - 5), 22, set.mascot_plant_days, s.plant_wilted);
+    // Acampado: a barraca e a fogueira do lado (desmontando na volta).
+    if (s.camped or s.act == .pack) {
+        const fold: f32 = if (s.act == .pack) std.math.clamp(at / 1.0, 0, 1) else 0;
+        props.tent(dl, d.v(home_slot.x - 26, feet_y), 30, fold);
+        props.campfire(dl, d.v(home_slot.x - 4, feet_y), 18, tsec, 1 - fold);
+    }
+    // A torre de blocos e o rabisco na caixa.
+    if (s.tower or s.act == .tower or s.act == .tower_fall) {
+        const n: f32 = if (s.act == .tower) at / 0.6 else 6;
+        const fall: f32 = if (s.act == .tower_fall) std.math.clamp(at / 0.9, 0, 1) else 0;
+        props.blocks(dl, ctx.ui.get(.bold), d.v(home_slot.x - 12, feet_y), 10, n, fall);
+    }
+    if (s.doodle != 0) if (anchorRect(.input, now)) |ir| {
+        const prog: f32 = if (s.act == .doodle) std.math.clamp(at / 2.2, 0, 1) else 1;
+        props.doodle(dl, d.v(ir.right() - 40, ir.y + ir.h / 2), 9, s.doodle == 2, prog, ctx.col(.accent).alpha(0.55));
+    };
+    // Atrás da lista de canais: o que passa da borda some.
+    if (s.clip.w > 0) c.ImDrawList_PushClipRect(dl, d.v(s.clip.x, s.clip.y), d.v(s.clip.right(), s.clip.bottom()), true);
     if (sink > 0) c.ImDrawList_PushClipRect(dl, d.v(-100_000, -100_000), d.v(100_000, home_y + (99 - 42.5) * k + 1), true);
     const kind = mascote.Kind.of(ctx.st.settings.mascot);
     // Ctrl+C: um clone sai de lado e some.
@@ -840,8 +1681,75 @@ pub fn draw(ctx: *d.Ctx) void {
         },
     }
     if (sink > 0) c.ImDrawList_PopClipRect(dl);
+    if (s.clip.w > 0) c.ImDrawList_PopClipRect(dl);
+    // O que ele segura, na frente dele.
+    const body: props.Body = .{ .cx = cx, .cy = cy, .size = dsize };
+    if (s.mode == .home and s.react == .none) switch (s.act) {
+        .coffee => props.mug(dl, body, sip(at), tsec),
+        .book => props.book(dl, body, at),
+        .game => props.handheld(dl, body, at),
+        .gum => props.gum(dl, body, std.math.clamp(at / 2.2, 0, 1), if (at > 2.2) std.math.clamp((at - 2.2) / 0.4, 0, 1) else 0),
+        // As notas na cor do texto: a de destaque é a do corpo dele.
+        .whistle => props.notes(dl, body, at, ctx.col(.text)),
+        .clean => props.rag(dl, body, at),
+        .fly => if (fly_pt) |fp| props.fly(dl, fp, 7, tsec),
+        .fish => {
+            const cast = std.math.clamp(at / 0.5, 0, 1);
+            const reel = std.math.clamp((at - 3.0) / 0.9, 0, 1);
+            const hook = props.rod(dl, body, cast, reel, @sin(at * 5));
+            const rise = std.math.clamp((at - 4.8) / 0.8, 0, 1);
+            if (reel > 0 and rise < 1) {
+                // Puxou: o emoji vem no anzol e depois ele mostra em cima da cabeça.
+                const p0 = if (at > 3.9) body.p(64, -26 - rise * 40) else hook;
+                const sz = 18 * (1 - rise * 0.3);
+                if (s.catch_r.len > 0) props.caught(ctx, dl, &s.catch_r, p0, sz) else props.fish(dl, p0, sz, @sin(at * 20) * 2);
+            }
+        },
+        .water => props.wateringCan(dl, body.p(-14, 66), 20, std.math.clamp(at / 0.4, 0, 1) * 0.9, at),
+        .trash => {
+            const can = d.v(home_slot.x - 10, feet_y);
+            const lid = std.math.clamp((at - 0.9) / 0.3, 0, 1) * std.math.clamp((2.1 - at) / 0.3, 0, 1);
+            props.trash(dl, can, 16, lid);
+            if (at < 0.5) {
+                props.paperBall(dl, body.p(64, 84), 3 + at * 8);
+            } else if (at < 1.5) {
+                props.paperBall(dl, body.p(64, -12), 6);
+            } else if (at < 1.9) {
+                const g = (at - 1.5) / 0.4;
+                const from = body.p(64, -12);
+                props.paperBall(dl, d.v(from.x + (can.x - from.x) * g, from.y + (can.y - 14 - from.y) * g), 6 * (1 - g * 0.4));
+            }
+        },
+        .erase => props.eraser(dl, body.p(124 + @sin(at * 18) * 8, 82), 18, @sin(at * 18) * 0.4, at),
+        .portal => {
+            const ring = @sin(std.math.pi * std.math.clamp(at / 0.8, 0, 1));
+            c.ImDrawList_AddEllipseFilled(dl, d.v(cx, feet_y), d.v(size * 0.5 * ring, size * 0.12 * ring), ctx.col(.accent).col(0.55 * ring));
+        },
+        .nap_sit => terminal.zzz(dl, d.v(cx + size * 0.3, cy - size * 0.45), size / 150, at, 1),
+        else => {},
+    };
+    // A cartinha da DM: levando na ida e entregando no ícone.
+    if (s.goal == .dm) {
+        if (s.mode == .trip) {
+            props.letter(dl, body.p(64, -16), 18, 0.1 * @sin(tsec * 6));
+        } else if (s.mode == .perch) if (anchorRect(.guilds, now)) |gr| {
+            const g = std.math.clamp(secs(now, s.perch_ms) / 0.7, 0, 1);
+            const from = body.p(64, -16);
+            const to = d.v(gr.x + gr.w / 2, gr.y + gr.w / 2);
+            if (g < 1) props.letter(dl, d.v(from.x + (to.x - from.x) * g, from.y + (to.y - from.y) * g - @sin(std.math.pi * g) * 20), 18 * (1 - g * 0.5), g * 6);
+        };
+    }
     effects(dl, now, cx, cy_fx, size, asleep, sleep_from, rt);
     badge(dl, status, cx, cy_fx, size, asleep);
+    // O balão de fala.
+    if (now < s.balloon_until) props.balloon(dl, ctx.ui.get(.medium), d.v(cx, cy_fx - size * 0.62), i18n.tr("Senti saudade!", "Missed you!"), ctx.col(.elevated), ctx.col(.text), 1, ctx.win);
+}
+
+/// A caneca subindo até a boca nos dois goles.
+fn sip(t: f32) f32 {
+    const one = std.math.clamp((t - 0.6) / 0.15, 0, 1) * std.math.clamp((1.3 - t) / 0.15, 0, 1);
+    const two = std.math.clamp((t - 1.9) / 0.15, 0, 1) * std.math.clamp((2.6 - t) / 0.15, 0, 1);
+    return @max(one, two);
 }
 
 const sleep_ms: i64 = 3 * 60 * 1000;
@@ -1024,6 +1932,76 @@ pub fn isHidden(now: i64) bool {
 pub fn qaUnhide() void {
     s.hide_until = 0;
     s.nap = false;
+}
+pub fn activity() Act {
+    return s.act;
+}
+pub fn goalNow() Goal {
+    return s.goal;
+}
+pub fn isCamped() bool {
+    return s.camped;
+}
+pub fn hasTower() bool {
+    return s.tower;
+}
+pub fn doodleKind() u8 {
+    return s.doodle;
+}
+pub fn balloonOn(now: i64) bool {
+    return now < s.balloon_until;
+}
+pub fn plantWilted() bool {
+    return s.plant_wilted;
+}
+/// Faz agora uma das coisas da vida própria (o QA não espera a vez dele). `variant`
+/// escolhe o tipo de exercício.
+pub fn qaAct(a: Act, variant: u8, now: i64) void {
+    s.mode = .home;
+    s.react = .none;
+    s.goal = .none;
+    startAct(a, now);
+    s.act_var = variant;
+    if (a == .doodle) s.doodle = 1;
+}
+/// Sai para um lugar da tela no próximo quadro.
+pub fn qaGo(g: Goal) void {
+    s.qa_goal = g;
+}
+/// A próxima coisa que ele faz sozinho é agora.
+pub fn qaLifeNow() void {
+    s.next_act_ms = s.last_input_ms + 1;
+}
+pub fn qaWilt() void {
+    s.plant_wilted = true;
+}
+/// A janela está sem foco há tanto tempo.
+pub fn qaAwayFor(ms: i64, now: i64) void {
+    s.away_ms = now - ms;
+}
+/// Tudo da vida própria do começo: em casa, sem nada montado e sem esperar a vez.
+pub fn qaLifeReset(now: i64) void {
+    s.mode = .home;
+    s.react = .none;
+    s.act = .none;
+    s.goal = .none;
+    s.clip.w = 0;
+    s.tower = false;
+    s.doodle = 0;
+    s.camped = false;
+    s.away_ms = 0;
+    s.balloon_until = 0;
+    s.next_act_ms = now + 3_600_000;
+    s.trip_ms = -100_000;
+    s.typing_trip_ms = -100_000;
+    s.jump_trip_ms = -100_000;
+    s.dm_trip_ms = -100_000;
+    s.resize_ms = -100_000;
+    s.grab_ms = -100_000;
+    s.pend_delete = false;
+    s.pend_edit = false;
+    s.pend_dm = false;
+    s.pend_resize = false;
 }
 /// Volta para casa na hora (o QA não espera ele voltar andando).
 pub fn qaHome() void {
