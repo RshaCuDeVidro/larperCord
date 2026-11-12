@@ -48,6 +48,8 @@ const usage =
 ;
 
 pub fn main(init: std.process.Init.Minimal) !void {
+    // Antes de qualquer thread (platform/mem_tune.zig).
+    @import("platform/mem_tune.zig").init();
     sys.init();
     var opts: Options = .{};
     var restarted = false;

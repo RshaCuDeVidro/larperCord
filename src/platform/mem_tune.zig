@@ -5,6 +5,17 @@ const c = @import("c");
 
 const glibc = builtin.os.tag == .linux and builtin.abi.isGnu();
 
+/// No começo do `main`, antes de qualquer thread. O limite de mmap da glibc é
+/// dinâmico: um bloco grande liberado o faz subir, e daí em diante os buffers de
+/// pixels das threads de mídia saem das arenas delas e ficam presos lá. Na conta
+/// real, depois de 4h30: 190 MB livres sem voltar ao sistema, em 4 arenas de
+/// ~40 MB (uma por thread de mídia), com só 43 MB em uso; o malloc_trim não
+/// resolvia. Um valor fixo desliga o ajuste: bloco de 128 KiB ou mais vira um
+/// mmap próprio, que volta ao sistema no free.
+pub fn init() void {
+    if (glibc) _ = c.mallopt(c.M_MMAP_THRESHOLD, 128 * 1024);
+}
+
 /// Devolve ao sistema o que está livre no meio das arenas (só o topo volta
 /// sozinho). Leva milissegundos: fora da thread da UI.
 pub fn trim() void {
