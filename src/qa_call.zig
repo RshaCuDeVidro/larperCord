@@ -132,6 +132,18 @@ fn addCrowd(app: *App) void {
 fn removeCrowd(app: *App) void {
     for (crowd) |uid| push(app, .{ .voice_state = .{ .channel = null, .user = uid } });
 }
+fn wheelGrid(app: *App) void {
+    c.ImGuiIO_AddMouseWheelEvent(app.io, 0, -60);
+}
+/// Rolando a grade, o último quadro aparece.
+fn lastVisible(_: *App) bool {
+    return qa.visiblePart("grid-tile:1013") != null;
+}
+/// Em quadros pequenos, o mudo e o surdo não cobrem o nome nem a atividade.
+fn pillClear(_: *App) bool {
+    return qa.overlapping(&.{ "grid-muted:", "nome:tile:" }) == null and qa.overlapping(&.{ "grid-deaf:", "nome:tile:" }) == null and
+        qa.overlapping(&.{ "grid-muted:", "grid-activity:" }) == null;
+}
 fn crowdScrolls(_: *App) bool {
     const view = qa.find("grid-view") orelse return false;
     var lowest: f32 = 0;
@@ -147,6 +159,70 @@ fn crowdGone(_: *App) bool {
 }
 fn leftCall(app: *App) bool {
     return app.st.voice == null and !app.st.call_view and qa.find("composer") != null;
+}
+
+const g1: Id = gw.guildId(1);
+fn fromGuild1(app: *App) void {
+    app.handle(.{ .select_guild = g1 });
+}
+fn onGuild1(app: *App) bool {
+    const ch = app.st.activeChannel() orelse return false;
+    return app.st.guild == g1 and app.store.guildOfChannel(ch) == g1 and !app.st.call_view;
+}
+fn backToGuild1(app: *App) bool {
+    const ch = app.st.activeChannel() orelse return false;
+    return !app.st.call_view and app.st.guild == g1 and app.store.guildOfChannel(ch) == g1 and qa.find("composer") != null and qa.find("grid-view") == null;
+}
+fn otherTab(app: *App) void {
+    app.st.tabs.append(app.gpa, gw.channelId(1, 5)) catch return;
+    app.handle(.{ .focus_tab = app.st.tabs.items.len - 1 });
+}
+fn tabLeft(app: *App) bool {
+    return !app.st.call_view and app.st.activeChannel() == gw.channelId(1, 5) and qa.find("grid-view") == null;
+}
+fn openSettings(app: *App) void {
+    app.st.settings.open = true;
+}
+fn settingsClosedStillView(app: *App) bool {
+    return !app.st.settings.open and app.st.call_view;
+}
+fn paletteOpen(app: *App) bool {
+    return app.st.palette.open;
+}
+fn paletteClosedStillView(app: *App) bool {
+    return !app.st.palette.open and app.st.call_view;
+}
+fn twoLeave(app: *App) void {
+    push(app, .{ .voice_state = .{ .channel = null, .user = kaique } });
+    push(app, .{ .voice_state = .{ .channel = null, .user = duda } });
+}
+fn sideBySide(_: *App) bool {
+    const a = find("grid-tile:{d}", .{me}) orelse return false;
+    const b = find("grid-tile:{d}", .{ana}) orelse return false;
+    return find("grid-tile:{d}", .{kaique}) == null and @abs(a.y - b.y) < 1 and a.w > 300;
+}
+fn twoBack(app: *App) void {
+    push(app, .{ .voice_state = .{ .channel = call0, .user = kaique } });
+    push(app, .{ .voice_state = .{ .channel = call0, .user = duda } });
+}
+/// No primeiro quadro com o novo tamanho, a foto da ana já está lá (não a letra): o
+/// veredito desse quadro vale, mesmo que a foto chegue depois.
+var photo_w: f32 = 0;
+var photo_verdict: ?bool = null;
+fn notePhotoWidth(_: *App) void {
+    photo_w = if (find("grid-tile:{d}", .{ana})) |r| r.w else 0;
+    photo_verdict = null;
+}
+fn photoStays(_: *App) bool {
+    if (photo_verdict) |v| return v;
+    const r = find("grid-tile:{d}", .{ana}) orelse return false;
+    if (@abs(r.w - photo_w) < 1) return false;
+    photo_verdict = !qa.anyIn("avatar-letter:1001", r) and qa.anyIn("avatar-srv:1001", r);
+    return photo_verdict.?;
+}
+/// (O que importa é não ter quebrado: sem quadro que caiba, a grade não desenha nada.)
+fn stillAlive(app: *App) bool {
+    return app.st.call_view and app.st.voice == call0;
 }
 
 fn openDm0(app: *App) void {
@@ -199,12 +275,55 @@ pub const ops = [_]Op{
     click("channel:500014"),
     expect("clicar no canal da call em que já estamos abre a tela, sem sair", viewOpen),
 
+    s("tela da call: voltar, abas e Esc"),
+    run(fromGuild1),
+    expect("numa aba do segundo servidor", onGuild1),
+    click("voice-view"),
+    expect("\"ver a call\" de outro servidor abre a call do primeiro", viewOpen),
+    key(c.ImGuiKey_Escape),
+    expect("Esc volta para o segundo servidor, com a lista e a conversa dele", backToGuild1),
+    click("voice-view"),
+    run(otherTab),
+    expect("trocar de aba sai da tela da call", tabLeft),
+    click("voice-view"),
+    run(openSettings),
+    key(c.ImGuiKey_Escape),
+    expect("Esc com as Configurações abertas fecha só elas", settingsClosedStillView),
+    .{ .key = .{ .key = c.ImGuiKey_K, .ctrl = true } },
+    expect("a paleta abre", paletteOpen),
+    key(c.ImGuiKey_Escape),
+    expect("Esc com a paleta aberta fecha só ela", paletteClosedStillView),
+    .{ .key = .{ .key = c.ImGuiKey_K, .ctrl = true } },
+    .{ .text = "Call da madrugada" },
+    key(c.ImGuiKey_Enter),
+    expect("a paleta no canal da call em que já estamos abre a tela, sem sair", viewOpen),
+
+    s("tela da call: tamanhos"),
+    .{ .resize = .{ 1920, 1080 } },
+    run(twoLeave),
+    expect("duas pessoas numa janela maximizada ficam lado a lado, não empilhadas", sideBySide),
+    run(twoBack),
+    .{ .resize = .{ 1280, 800 } },
+    .{ .wait = 300 },
+    run(notePhotoWidth),
+    .{ .resize = .{ 1100, 800 } },
+    expect("o quadro muda de tamanho sem a foto sumir (a foto é pedida num tamanho só)", photoStays),
+    .{ .resize = .{ 330, 600 } },
+    .{ .wait = 200 },
+    expect("janela estreita demais para um quadro: nada quebra", stillAlive),
+    .{ .resize = .{ 1280, 800 } },
+
     s("tela da call: muita gente"),
     .{ .resize = .{ 860, 600 } },
     run(addCrowd),
     .{ .wait = 300 },
     expect("com 13 na call numa janela pequena, os quadros ficam no mínimo e a grade rola", crowdScrolls),
+    expect("o mudo e o surdo, em cima, não cobrem o nome nem a atividade", pillClear),
     shot("call-muita-gente"),
+    .{ .hover = .{ .mark = "grid-view" } },
+    run(wheelGrid),
+    run(wheelGrid),
+    expect("rolando a grade, o último quadro aparece", lastVisible),
     run(removeCrowd),
     .{ .resize = .{ 1280, 800 } },
     expect("quem saiu some da grade", crowdGone),
@@ -223,10 +342,41 @@ pub const ops = [_]Op{
 
 // --- Cada tema -----------------------------------------------------------------------
 
-fn joinView(app: *App) void {
+/// Entra na call pelo clique, como uma pessoa: no canal de voz (na lista de canais do
+/// tema) ou, sem ela, pela ação.
+fn joinCall(app: *App) void {
     app.handle(.{ .select_guild = g0 });
-    if (app.st.voice != call0) app.handle(.{ .toggle_voice = call0 });
-    app.handle(.{ .show_call = call0 });
+    if (qa.find("channel:500014") == null) app.handle(.{ .toggle_voice = call0 });
+}
+fn joinedOrList(app: *App, _: []u8) []const u8 {
+    return if (app.st.voice == null and qa.find("channel:500014") != null) "channel:500014" else "";
+}
+/// "Ver a call" na faixa de voz (no terminal, o [ver]); sem a faixa, pela ação.
+fn viewMark(app: *App, _: []u8) []const u8 {
+    if (qa.find("voice-view") == null) {
+        app.handle(.{ .show_call = call0 });
+        return "";
+    }
+    return "voice-view";
+}
+fn inViewNow(app: *App) bool {
+    return app.st.voice == call0 and app.st.call_view;
+}
+fn micMuted(app: *App) bool {
+    return app.st.muted and qa.find("grid-mic") != null;
+}
+fn micBack(app: *App) bool {
+    return !app.st.muted;
+}
+fn statusFits(_: *App) bool {
+    return qa.find("voice-status-cut") == null;
+}
+fn lang(comptime l: @import("ui/i18n.zig").Lang) *const fn (*App) void {
+    return struct {
+        fn f(_: *App) void {
+            @import("ui/i18n.zig").set(l);
+        }
+    }.f;
 }
 fn themeOk(_: *App) bool {
     if (qa.find("grid-view") == null) return false;
@@ -242,9 +392,25 @@ fn left(app: *App) bool {
 
 pub const ops_theme = [_]Op{
     s("tela da call no tema"),
-    run(joinView),
+    run(joinCall),
     .{ .wait = 300 },
+    .{ .click = .{ .dyn = joinedOrList } },
+    .{ .click = .{ .dyn = viewMark } },
+    expect("entra e abre a tela pela faixa de voz", inViewNow),
     expect("a grade com cada um, sem sobrepor", themeOk),
+    click("grid-mic"),
+    expect("o botão do microfone da tela (texto nos temas de terminal) muta", micMuted),
+    click("grid-mic"),
+    expect("e desmuta", micBack),
+    run(lang(.en)),
+    .{ .wait = 100 },
+    expect("\"Voice Connected\" cabe na faixa de voz", statusFits),
+    run(lang(.ru)),
+    .{ .wait = 100 },
+    expect("em russo também", statusFits),
+    run(lang(.pt)),
+    .{ .wait = 100 },
+    expect("\"Voz conectada\" também", statusFits),
     shot("call-grade"),
     run(leave),
     expect("sai da call", left),
