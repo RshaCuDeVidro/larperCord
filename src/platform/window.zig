@@ -35,6 +35,12 @@ pub const Window = struct {
         // Fechar a janela é o app quem decide (ficar na bandeja ou sair). Sem
         // isto o SDL ainda manda um QUIT junto, e QUIT aqui é sempre sair.
         _ = c.SDL_SetHint(c.SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
+        // O IME, por padrão, fica com a janela nativa dele e o SDL nunca manda o
+        // texto em conversão (`SDL_EVENT_TEXT_EDITING`): a caixa de mensagem
+        // ficaria sem nada até escolher o candidato. Dizendo que desenhamos a
+        // composição (ui/ime.zig), o SDL repassa o texto e a lista de candidatos
+        // continua nativa.
+        _ = c.SDL_SetHint(c.SDL_HINT_IME_IMPLEMENTED_UI, "composition");
         _ = c.SDL_SetAppMetadata("larperCord", (@import("build_options").version ++ "\x00").ptr, "dev.larpercord");
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
             std.log.err("SDL video: {s}", .{c.SDL_GetError()});

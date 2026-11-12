@@ -30,7 +30,6 @@ var applied_text: [max_preedit]u8 = undefined;
 var pending = false; // chegou um texto em conversão novo
 var pending_text: [max_preedit]u8 = undefined;
 var pending_len: usize = 0;
-var pending_cursor: usize = 0;
 
 var committing = false; // o texto foi decidido: tira o em conversão do buffer
 
@@ -45,8 +44,6 @@ pub fn onSdlEvent(e: *const c.SDL_Event) void {
         const n = utf8Fit(s, max_preedit);
         @memcpy(pending_text[0..n], s[0..n]);
         pending_len = n;
-        const at: usize = if (e.edit.start > 0) @intCast(e.edit.start) else 0;
-        pending_cursor = @min(at, n);
         pending = true;
         return;
     }
@@ -87,9 +84,11 @@ pub fn applyCallback(data: [*c]c.ImGuiInputTextCallbackData) void {
         const ptr: [*c]const u8 = pending_text[0..].ptr;
         const end: [*c]const u8 = pending_text[pending_len..].ptr;
         c.ImGuiInputTextCallbackData_InsertChars(data, @intCast(at), ptr, end);
-        // O cursor do IME fica dentro do texto em conversão (antes de escolher
-        // o candidato, ele fica no começo).
-        const cur = @min(at + pending_cursor, at + pending_len);
+        // O cursor fica depois do texto em conversão, e não dentro dele: o
+        // ImGui encaixa o texto decidido (o `TEXT_INPUT` que vem logo depois)
+        // exatamente nessa posição, antes de este callback rodar. Com o cursor
+        // dentro, tirar a conversão do buffer levaria o texto decidido junto.
+        const cur = at + pending_len;
         data.*.CursorPos = @intCast(cur);
         data.*.SelectionStart = @intCast(cur);
         data.*.SelectionEnd = @intCast(cur);
