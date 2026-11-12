@@ -1050,9 +1050,13 @@ pub const App = struct {
 
         // Fontes do tema (carregadas sob demanda e reaproveitadas). Sem fonte nenhuma no
         // sistema, a embutida entra aqui, fora do quadro, antes de `uiFamily` pedir.
+        // A escolhida nas Configurações (uma das instaladas no dispositivo) vence a do tema.
+        const set = &app.st.settings;
         app.fonts.forgetMissing();
-        _ = app.fonts.family(th.font_ui) catch app.fonts.family("Inter") catch app.fonts.builtin();
-        _ = app.fonts.family(th.font_mono) catch app.fonts.family("monospace") catch app.fonts.builtin();
+        const ui = if (set.font_ui.len > 0) set.font_ui.slice() else th.font_ui;
+        _ = app.fonts.family(ui) catch app.fonts.family("Inter") catch app.fonts.builtin();
+        const mono = if (set.font_mono.len > 0) set.font_mono.slice() else th.font_mono;
+        _ = app.fonts.family(mono) catch app.fonts.family("monospace") catch app.fonts.builtin();
         // Fontes pedidas por componentes (`font="Liberation Serif"`).
         if (th.layout) |lay| app.loadNodeFonts(lay);
         // O fontconfig guarda o cache de todas as fontes do sistema (~MBs);
@@ -2188,6 +2192,10 @@ pub const App = struct {
                 app.saveSettings();
             },
             .set_theme_color => |cc| app.setThemeColor(cc.slot, cc.rgba),
+            .apply_font => {
+                app.applyThemeStyle();
+                app.saveSettings();
+            },
             .reset_theme_colors => app.resetThemeColors(),
             .set_guild_color => |gc| {
                 guild_color.set(gc.guild, gc.rgb);

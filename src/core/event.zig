@@ -593,6 +593,8 @@ pub const Action = union(enum) {
     set_theme_option: struct { index: usize, value: bool },
     /// Cor personalizada do tema atual/modo atual; rgba null limpa.
     set_theme_color: struct { slot: u8, rgba: ?u32 },
+    /// Família de fonte escolhida nas Configurações (settings.font_ui/font_mono): recarrega.
+    apply_font,
     /// Esquece todas as cores personalizadas do tema atual.
     reset_theme_colors,
     /// "Sair": esquece o token e volta para a tela de login.

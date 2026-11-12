@@ -137,6 +137,45 @@ pub fn scriptsWanted() bool {
     return std.mem.indexOfScalar(bool, &wanted, true) != null or misses.anyWanted();
 }
 
+/// As famílias de fontes instaladas no dispositivo, em ordem alfabética e sem
+/// repetir, para as Configurações listarem. Montada na primeira chamada e guardada
+/// até o fim: fontes não são instaladas com o app aberto.
+pub fn installedNames() []const []const u8 {
+    if (installed_names) |n| return n;
+    if (sys.web) return &.{};
+    const alloc = std.heap.c_allocator;
+    var out: std.ArrayList([]const u8) = .empty;
+    if (sys.windows) {
+        // A lista do Windows é a mesma que resolve as famílias (ver `windowsFonts`).
+        for (windowsFonts()) |f| out.append(alloc, f.name) catch break;
+    } else fcFamilies(alloc, &out) catch {};
+    const slice = out.toOwnedSlice(alloc) catch return &.{};
+    std.mem.sort([]const u8, slice, {}, nameLess);
+    // Juntas no fim da ordenação, as cópias da mesma família saem uma só.
+    var n: usize = 0;
+    for (slice, 0..) |name, i| {
+        if (i == 0 or !std.ascii.eqlIgnoreCase(slice[n - 1], name)) {
+            slice[n] = name;
+            n += 1;
+        }
+    }
+    installed_names = slice[0..n];
+    return slice[0..n];
+}
+
+var installed_names: ?[]const []const u8 = null;
+
+/// Ordem alfabética sem ligar para maiúsculas (a lista das Configurações).
+fn nameLess(_: void, a: []const u8, b: []const u8) bool {
+    var i: usize = 0;
+    while (i < a.len and i < b.len) : (i += 1) {
+        const x = std.ascii.toLower(a[i]);
+        const y = std.ascii.toLower(b[i]);
+        if (x != y) return x < y;
+    }
+    return a.len < b.len;
+}
+
 /// O bloco do Unicode de uma letra (font_blocks.zig), para o QA perguntar por ele.
 pub const blockOf = font_blocks.of;
 
@@ -712,7 +751,214 @@ fn resolveWindows(name: []const u8, weight: c_int, slant: c_int) ?Match {
         const p = std.fmt.bufPrintSentinel(&pb, "{s}/Fonts/{s}.ttf", .{ windir, file }, 0) catch continue;
         if (sys.exists(p.ptr)) return .{ .path = std.heap.c_allocator.dupeSentinel(u8, p, 0) catch return null, .index = 0 };
     }
-    return null;
+    // Último recurso: as fontes lidas das pastas do Windows (ver `windowsFonts`) — o
+    // nome veio do arquivo, então o arquivo resolve a família de volta.
+    const want_bold = weight >= 200;
+    const want_semi = weight >= 180 and !want_bold;
+    const want_italic = slant != 0;
+    var best: ?usize = null;
+    var best_score: i8 = -1;
+    for (windowsFonts(), 0..) |f, i| {
+        if (!std.ascii.eqlIgnoreCase(f.name, name)) continue;
+        const score: i8 = @as(i8, @intFromBool(f.bold == want_bold)) +
+            @as(i8, @intFromBool(f.italic == want_italic)) +
+            @as(i8, @intFromBool(f.semi == want_semi));
+        if (score <= best_score) continue;
+        best_score = score;
+        best = i;
+    }
+    const f = windowsFonts()[best orelse return null];
+    return .{ .path = std.heap.c_allocator.dupeSentinel(u8, f.path, 0) catch return null, .index = f.index };
+}
+
+/// Uma fonte lida das pastas do Windows: o nome da família e o arquivo dela (a
+/// primeira que a tiver), com o que o subgrupo diz do traço.
+const WinFont = struct { name: []u8, path: [:0]u8, index: c_int, bold: bool, italic: bool, semi: bool };
+var win_fonts: ?[]WinFont = null;
+
+/// As fontes do Windows, lidas das pastas do sistema (C:\Windows\Fonts) e da pessoa
+/// (%LOCALAPPDATA%\Microsoft\Windows\Fonts): o nome de cada família está na tabela
+/// "name" do arquivo, junto do subgrupo (Bold, Italic…), que diz o peso. Montada uma
+/// vez (as fontes não são instaladas com o app aberto) e fica até o fim.
+fn windowsFonts() []WinFont {
+    if (win_fonts) |l| return l;
+    const alloc = std.heap.c_allocator;
+    var out: std.ArrayList(WinFont) = .empty;
+    if (c.SDL_getenv("WINDIR")) |w| scanWindowsFonts(alloc, &out, std.mem.span(w), "Fonts");
+    if (c.SDL_getenv("LOCALAPPDATA")) |l| scanWindowsFonts(alloc, &out, std.mem.span(l), "Microsoft/Windows/Fonts");
+    const slice = out.toOwnedSlice(alloc) catch return &.{};
+    std.mem.sort(WinFont, slice, {}, struct {
+        fn less(_: void, a: WinFont, b: WinFont) bool {
+            return nameLess({}, a.name, b.name);
+        }
+    }.less);
+    win_fonts = slice;
+    return slice;
+}
+
+/// Os arquivos de fonte de uma pasta do Windows entram na lista com o nome da família
+/// de cada face (.ttf, .otf, .ttc — o cabeçalho diz quantas faces o arquivo tem).
+const ScanCtx = struct { alloc: std.mem.Allocator, out: *std.ArrayList(WinFont) };
+
+fn scanWindowsFonts(alloc: std.mem.Allocator, out: *std.ArrayList(WinFont), dir: []const u8, rest: []const u8) void {
+    var pb: [520]u8 = undefined;
+    const root = std.fmt.bufPrintSentinel(&pb, "{s}/{s}", .{ dir, rest }, 0) catch return;
+    var ctx = ScanCtx{ .alloc = alloc, .out = out };
+    _ = c.SDL_EnumerateDirectory(root.ptr, enumerateFontFile, &ctx);
+}
+
+fn enumerateFontFile(ud: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8) callconv(.c) c.SDL_EnumerationResult {
+    const ctx: *ScanCtx = @ptrCast(@alignCast(ud.?));
+    const ext = std.fs.path.extension(std.mem.span(fname));
+    if (!std.ascii.eqlIgnoreCase(ext, ".ttf") and !std.ascii.eqlIgnoreCase(ext, ".otf") and
+        !std.ascii.eqlIgnoreCase(ext, ".ttc")) return c.SDL_ENUM_CONTINUE;
+    var fb: [520]u8 = undefined;
+    const file = std.fmt.bufPrintSentinel(&fb, "{s}/{s}", .{ std.mem.span(dirname), std.mem.span(fname) }, 0) catch return c.SDL_ENUM_CONTINUE;
+    const alloc = ctx.alloc;
+    const out = ctx.out;
+    var size: usize = 0;
+    const data = c.SDL_LoadFile(file.ptr, &size) orelse return c.SDL_ENUM_CONTINUE;
+    defer c.SDL_free(data);
+    const bytes: []const u8 = @as([*]const u8, @ptrCast(data))[0..size];
+    for (0..sfntFaceCount(bytes)) |i| {
+        var names: FaceNames = undefined;
+        if (!sfntFaceNames(bytes, i, &names)) continue;
+        const path = alloc.dupeSentinel(u8, file, 0) catch continue;
+        const name = alloc.dupe(u8, names.family()) catch {
+            alloc.free(path);
+            continue;
+        };
+        out.append(alloc, .{
+            .name = name,
+            .path = path,
+            .index = @intCast(i),
+            .bold = names.subHas("bold"),
+            .italic = names.subHas("italic") or names.subHas("oblique"),
+            .semi = names.subHas("semi") or names.subHas("medium"),
+        }) catch {
+            alloc.free(name);
+            alloc.free(path);
+        };
+    }
+    return c.SDL_ENUM_CONTINUE;
+}
+
+/// Cabeçalho sfnt: u16 e u32 grandes, nos offsets das tabelas.
+fn be16(b: []const u8, at: usize) u16 {
+    if (at + 2 > b.len) return 0;
+    return (@as(u16, b[at]) << 8) | b[at + 1];
+}
+
+fn be32(b: []const u8, at: usize) u32 {
+    if (at + 4 > b.len) return 0;
+    return (@as(u32, b[at]) << 24) | (@as(u32, b[at + 1]) << 16) | (@as(u32, b[at + 2]) << 8) | b[at + 3];
+}
+
+/// Os nomes de uma face do arquivo: o da família (nameID 1) e o do subgrupo (nameID 2).
+/// O tamanho é fixo: as configurações são copiadas e comparadas byte a byte, e um nome
+/// que não cabe sai truncado (fonte alguma tem família de 64 bytes).
+const FaceNames = struct {
+    family_buf: [64]u8 = undefined,
+    family_len: usize = 0,
+    sub_buf: [32]u8 = undefined,
+    sub_len: usize = 0,
+
+    fn family(n: *const FaceNames) []const u8 {
+        return n.family_buf[0..n.family_len];
+    }
+
+    /// O subgrupo (em minúsculas, ver `scanWindowsFonts`) tem esta palavra?
+    fn subHas(n: *const FaceNames, word: []const u8) bool {
+        return std.mem.indexOf(u8, n.sub_buf[0..n.sub_len], word) != null;
+    }
+};
+
+/// Quantas faces o arquivo tem (1, salvo nas coleções .ttc).
+fn sfntFaceCount(data: []const u8) usize {
+    if (be32(data, 0) != 0x74746366) return 1; // "ttcf"
+    return be32(data, 8);
+}
+
+/// Os nomes da face `i`: a tabela "name" tem um par por escrita e idioma; fica com a
+/// primeira que decodifique (a da Windows, em utf-16, vem primeiro na tabela).
+fn sfntFaceNames(data: []const u8, i: usize, out: *FaceNames) bool {
+    var face: usize = 0;
+    if (be32(data, 0) == 0x74746366) {
+        if (be32(data, 8) <= i) return false;
+        face = be32(data, 12 + i * 4);
+    } else if (i != 0) return false;
+    const ntables = be16(data, face + 4);
+    var at: usize = face + 12;
+    for (0..ntables) |_| {
+        if (at + 16 > data.len) return false;
+        if (std.mem.eql(u8, data[at .. at + 4], "name")) break;
+        at += 16;
+    } else return false;
+    var fo: usize = be32(data, at + 8);
+    const count = be16(data, fo + 2);
+    const strings = fo + be16(data, fo + 4);
+    fo += 6;
+    for (0..count) |_| {
+        if (fo + 12 > data.len) break;
+        const platform = be16(data, fo);
+        const name_id = be16(data, fo + 6);
+        const len = be16(data, fo + 8);
+        const str = strings + be16(data, fo + 10);
+        fo += 12;
+        if (str + len > data.len) continue;
+        const dst = if (name_id == 1) &out.family_buf else if (name_id == 2) &out.sub_buf else continue;
+        const dn = if (name_id == 1) &out.family_len else &out.sub_len;
+        if (dn.* > 0) continue; // a primeira que veio fica
+        if (platform == 0 or platform == 3) {
+            dn.* = utf16Be(data[str .. str + len], dst);
+        } else if (platform == 1) {
+            const n = @min(len, dst.len);
+            for (data[str .. str + n], 0..) |ch, j| {
+                if (ch < 0x20) continue;
+                dst[j] = ch;
+                dn.* += 1;
+            }
+        }
+    }
+    return out.family_len > 0;
+}
+
+/// Utf-16 (a tabela "name" é big-endian) para utf-8, no buffer `out`.
+fn utf16Be(src: []const u8, out: []u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i + 1 < src.len and n < out.len) {
+        var cp: u32 = be16(src, i);
+        i += 2;
+        if (cp >= 0xD800 and cp < 0xDC00 and i + 1 < src.len) {
+            const lo = be16(src, i);
+            if (lo >= 0xDC00 and lo < 0xE000) {
+                cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                i += 2;
+            }
+        }
+        if (cp == 0 or cp == 0xFFFF) break;
+        n += std.unicode.utf8Encode(@intCast(cp), out[n..]) catch break;
+    }
+    return n;
+}
+
+/// As famílias que o fontconfig conhece (a lista das Configurações nos outros sistemas).
+fn fcFamilies(alloc: std.mem.Allocator, out: *std.ArrayList([]const u8)) !void {
+    const pat = c.FcPatternCreate() orelse return;
+    defer c.FcPatternDestroy(pat);
+    const os = c.FcObjectSetCreate() orelse return;
+    defer c.FcObjectSetDestroy(os);
+    _ = c.FcObjectSetAdd(os, c.FC_FAMILY);
+    const set = c.FcFontList(null, pat, os) orelse return;
+    defer c.FcFontSetDestroy(set);
+    for (set.*.fonts[0..@intCast(set.*.nfont)]) |font| {
+        const f = font orelse continue;
+        var s: [*c]c.FcChar8 = null;
+        if (c.FcPatternGetString(f, c.FC_FAMILY, 0, &s) != c.FcResultMatch) continue;
+        const name = std.mem.span(@as([*:0]const u8, @ptrCast(s)));
+        out.append(alloc, alloc.dupe(u8, name) catch return) catch return;
+    }
 }
 
 /// Navegador: as poucas fontes que a página traz (tools/web/fonts.py), na pasta que a
