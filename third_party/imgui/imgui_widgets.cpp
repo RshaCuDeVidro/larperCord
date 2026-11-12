@@ -4780,6 +4780,153 @@ static ImVec2 InputTextLineIndexGetPosOffset(ImGuiContext& g, ImGuiInputTextStat
     return offset;
 }
 
+// [larperCord] Árabe e hebraico nos campos de texto. O ImGui monta cada linha da esquerda para a
+// direita; o app (ui/bidi.zig) diz, por linha visual, os caracteres moldados na ordem da tela, o
+// byte de onde cada um veio e se ele é da direita para a esquerda, e se a linha termina na borda
+// direita. Devolve quantos; 0 = parágrafo sem letra RTL, e a linha segue o caminho de sempre. O
+// texto guardado continua na ordem lógica: só o desenho, o cursor, a seleção e o clique mudam.
+extern "C" { int (*larper_input_bidi)(const char* line, int line_len, const char* para, int para_len, unsigned int* cp, int* off, unsigned char* rtl, int cap, bool* base_rtl) = nullptr; }
+
+// [larperCord] Onde o cursor do campo ativo foi desenhado (o QA confere em árabe e hebraico).
+extern "C" { float larper_input_caret[2] = { 0.0f, 0.0f }; }
+
+namespace {
+struct LarperBidiLine
+{
+    enum { Cap = 1024 };
+    int N = 0;
+    bool BaseRtl = false;
+    float Width = 0.0f;
+    float Start = 0.0f;     // x da linha a partir do começo do texto: a largura que sobra, se termina à direita
+    unsigned int Cp[Cap];
+    int Off[Cap];           // byte do caractere lógico, a partir do começo da linha
+    unsigned char Rtl[Cap];
+    float X[Cap];           // onde cada caractere começa na tela, a partir de Start
+    float Adv[Cap];
+};
+}
+static LarperBidiLine LarperBidi; // Só na thread da interface.
+
+// Algum byte de escrita da direita para a esquerda (hebraico, árabe, siríaco, thaana, n'ko:
+// U+0590..U+07FF começam em 0xD6..0xDF)? Barato, para o caminho de sempre não pagar nada.
+static bool LarperMaybeRtl(const char* p, const char* p_end)
+{
+    for (; p < p_end; p++)
+        if ((unsigned char)*p >= 0xD6 && (unsigned char)*p <= 0xDF)
+            return true;
+    return false;
+}
+
+// A linha visual [p, p_eol) de `buf`, na ordem da tela. false = linha comum.
+static bool LarperBidiLayout(ImGuiContext& g, const char* buf, const char* buf_end, const char* p, const char* p_eol, float avail, LarperBidiLine* out)
+{
+    out->N = 0;
+    if (!larper_input_bidi)
+        return false;
+    const char* para = p;
+    while (para > buf && para[-1] != '\n')
+        para--;
+    const char* para_end = p_eol;
+    while (para_end < buf_end && *para_end != '\n' && *para_end != 0)
+        para_end++;
+    if (!LarperMaybeRtl(para, para_end))
+        return false;
+    const int n = larper_input_bidi(p, (int)(p_eol - p), para, (int)(para_end - para), out->Cp, out->Off, out->Rtl, LarperBidiLine::Cap, &out->BaseRtl);
+    if (n <= 0)
+        return false;
+    float x = 0.0f;
+    for (int k = 0; k < n; k++)
+    {
+        const unsigned int c = out->Cp[k];
+        // O lugar vazio do lam + alef (U+FEFF) e o fim de linha não ocupam espaço.
+        const float adv = (c == 0xFEFF || c == '\n') ? 0.0f : g.FontBaked->GetCharAdvance((ImWchar)c) * g.FontBakedScale;
+        out->X[k] = x;
+        out->Adv[k] = adv;
+        x += adv;
+    }
+    out->N = n;
+    out->Width = x;
+    out->Start = out->BaseRtl ? ImMax(0.0f, avail - x) : 0.0f;
+    return true;
+}
+
+// Quantos bytes tem o caractere em `s`.
+static int LarperCharLen(const char* s, const char* s_end)
+{
+    unsigned int c;
+    return ImTextCharFromUtf8(&c, s, s_end);
+}
+
+// O x (a partir do começo do texto) do cursor antes do caractere lógico no byte `cur` da linha
+// (`cur` igual ao tamanho da linha: depois do último). Numa letra da direita para a esquerda,
+// "antes" fica à direita dela.
+static float LarperBidiCaretX(const LarperBidiLine& L, int cur)
+{
+    int last = -1;
+    for (int k = 0; k < L.N; k++)
+    {
+        if (L.Off[k] == cur)
+            return L.Start + (L.Rtl[k] ? L.X[k] + L.Adv[k] : L.X[k]);
+        if (last < 0 || L.Off[k] > L.Off[last])
+            last = k;
+    }
+    if (last < 0)
+        return L.Start;
+    return L.Start + (L.Rtl[last] ? L.X[last] : L.X[last] + L.Adv[last]);
+}
+
+// O byte (a partir do começo da linha) do cursor mais perto do x da tela: cada metade de uma
+// letra leva ao lado lógico dela que fica daquele lado na tela.
+static int LarperBidiHit(const LarperBidiLine& L, const char* line, const char* line_end, float x)
+{
+    x -= L.Start;
+    if (L.N == 0)
+        return 0;
+    int k = 0;
+    while (k < L.N - 1 && x >= L.X[k] + L.Adv[k])
+        k++;
+    const bool left_half = x < L.X[k] + L.Adv[k] * 0.5f;
+    const int before = L.Off[k];
+    const int after = L.Off[k] + LarperCharLen(line + L.Off[k], line_end);
+    // Da esquerda para a direita: a metade esquerda é antes da letra. Da direita para a
+    // esquerda, ao contrário.
+    return (left_half != (L.Rtl[k] != 0)) ? before : after;
+}
+
+// [larperCord] Clique e arrasto numa linha com árabe ou hebraico: o x vira o índice lógico pela
+// ordem da tela. false = linha comum, e o stb resolve como sempre.
+static bool LarperBidiMouse(ImGuiContext& g, ImGuiInputTextState* state, ImGuiInputTextFlags flags, float wrap_width, float avail, float mouse_x, float mouse_y, bool drag)
+{
+    if (!larper_input_bidi || !LarperMaybeRtl(state->TextSrc, state->TextSrc + state->TextLen))
+        return false;
+    static ImGuiTextIndex index;
+    index.Offsets.resize(0);
+    const char* buf = state->TextSrc;
+    const char* buf_end = buf + state->TextLen;
+    const int lines = InputTextLineIndexBuild(flags, &index, buf, buf_end, wrap_width, INT_MAX, NULL);
+    index.EndOffset = (int)(buf_end - buf);
+    const int line_n = ImClamp((int)ImFloor(mouse_y / g.FontSize), 0, ImMax(lines - 1, 0));
+    const char* p = index.get_line_begin(buf, line_n);
+    const char* p_eol = index.get_line_end(buf, line_n);
+    if (!LarperBidiLayout(g, buf, buf_end, p, p_eol, avail, &LarperBidi))
+        return false;
+    const int pos = (int)(p - buf) + LarperBidiHit(LarperBidi, p, p_eol, mouse_x);
+    ImStb::STB_TexteditState* stb = state->Stb;
+    if (drag)
+    {
+        if (stb->select_start == stb->select_end)
+            stb->select_start = stb->cursor;
+        stb->cursor = stb->select_end = pos;
+    }
+    else
+    {
+        stb->cursor = pos;
+        stb->select_start = stb->select_end = pos;
+    }
+    stb->has_preferred_x = 0;
+    return true;
+}
+
 // Edit a string of text
 // - buf_size account for the zero-terminator, so a buf_size of 6 can hold "Hello" but not "Hello!".
 //   This is so we can easily call InputText() on static arrays using ARRAYSIZE() and to match
@@ -5092,6 +5239,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         // Edit in progress
         const float mouse_x = (io.MousePos.x - frame_bb.Min.x - style.FramePadding.x) + state->Scroll.x;
         const float mouse_y = (is_multiline ? (io.MousePos.y - draw_window->DC.CursorPos.y) : (g.FontSize * 0.5f));
+        // [larperCord] Onde termina uma linha alinhada à direita (árabe, hebraico).
+        const float larper_avail = wrap_width > 0.0f ? wrap_width : ImMax(1.0f, inner_size.x - style.FramePadding.x * 2.0f);
 
         if (select_all)
         {
@@ -5100,7 +5249,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         }
         else if (hovered && io.MouseClickedCount[0] >= 2 && !io.KeyShift)
         {
-            stb_textedit_click(state, state->Stb, mouse_x, mouse_y);
+            if (!LarperBidiMouse(g, state, flags, wrap_width, larper_avail, mouse_x, mouse_y, false)) // [larperCord]
+                stb_textedit_click(state, state->Stb, mouse_x, mouse_y);
             const int multiclick_count = (io.MouseClickedCount[0] - 2);
             if ((multiclick_count % 2) == 0)
             {
@@ -5139,7 +5289,9 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         {
             if (hovered)
             {
-                if (io.KeyShift)
+                if (LarperBidiMouse(g, state, flags, wrap_width, larper_avail, mouse_x, mouse_y, io.KeyShift)) // [larperCord]
+                    ;
+                else if (io.KeyShift)
                     stb_textedit_drag(state, state->Stb, mouse_x, mouse_y);
                 else
                     stb_textedit_click(state, state->Stb, mouse_x, mouse_y);
@@ -5148,7 +5300,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         }
         else if (io.MouseDown[0] && !state->SelectedAllMouseLock && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
         {
-            stb_textedit_drag(state, state->Stb, mouse_x, mouse_y);
+            if (!LarperBidiMouse(g, state, flags, wrap_width, larper_avail, mouse_x, mouse_y, true)) // [larperCord]
+                stb_textedit_drag(state, state->Stb, mouse_x, mouse_y);
             state->CursorAnimReset();
             state->CursorFollow = true;
         }
@@ -5634,7 +5787,19 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     //GetForegroundDrawList()->AddRect(draw_pos + ImVec2(0, line_visible_n0 * g.FontSize), draw_pos + ImVec2(frame_size.x, line_visible_n1 * g.FontSize), IM_COL32(255, 0, 0, 255));
 
     // Calculate blinking cursor position
-    const ImVec2 cursor_offset = render_cursor && state ? InputTextLineIndexGetPosOffset(g, state, line_index, buf_display, buf_display_end, state->Stb->cursor) : ImVec2(0.0f, 0.0f);
+    ImVec2 cursor_offset = render_cursor && state ? InputTextLineIndexGetPosOffset(g, state, line_index, buf_display, buf_display_end, state->Stb->cursor) : ImVec2(0.0f, 0.0f);
+    // [larperCord] Texto com árabe ou hebraico: as linhas com essas letras vão para a tela na ordem
+    // visual, e as de parágrafo da direita para a esquerda terminam na borda direita.
+    const float larper_avail_r = wrap_width > 0.0f ? wrap_width : ImMax(1.0f, inner_size.x - style.FramePadding.x * 2.0f);
+    const bool larper_rtl_text = larper_input_bidi != nullptr && !is_displaying_hint && LarperMaybeRtl(buf_display, buf_display_end);
+    if (render_cursor && state && larper_rtl_text)
+    {
+        const int line_no = (int)(cursor_offset.y / g.FontSize) - 1;
+        const char* p = line_index->get_line_begin(buf_display, line_no);
+        const char* p_eol = line_index->get_line_end(buf_display, line_no);
+        if (LarperBidiLayout(g, buf_display, buf_display_end, p, p_eol, larper_avail_r, &LarperBidi))
+            cursor_offset.x = LarperBidiCaretX(LarperBidi, (int)(buf_display + state->Stb->cursor - p));
+    }
     ImVec2 draw_scroll;
 
     // Render text. We currently only render selection when the widget is active or while scrolling.
@@ -5719,6 +5884,29 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 const char* line_selected_begin = (text_selected_begin > p) ? text_selected_begin : p;
                 const char* line_selected_end = (text_selected_end < p_eol) ? text_selected_end : p_eol;
 
+                // [larperCord] Linha na ordem da tela: o selecionado pode ser vários pedaços.
+                if (larper_rtl_text && LarperBidiLayout(g, buf_display, buf_display_end, p, line_index->get_line_end(buf_display, line_n), larper_avail_r, &LarperBidi))
+                {
+                    const int s0 = (int)(line_selected_begin - p), s1 = (int)(line_selected_end - p);
+                    const float x0 = draw_pos.x - draw_scroll.x + LarperBidi.Start;
+                    const float y0 = draw_pos.y - draw_scroll.y + line_n * g.FontSize;
+                    float run_a = 0.0f, run_b = -1.0f;
+                    for (int k = 0; k <= LarperBidi.N; k++)
+                    {
+                        const bool sel = k < LarperBidi.N && LarperBidi.Off[k] >= s0 && LarperBidi.Off[k] < s1;
+                        if (sel && run_b >= run_a && LarperBidi.X[k] <= run_b + 0.5f) { run_b = LarperBidi.X[k] + LarperBidi.Adv[k]; continue; }
+                        if (run_b > run_a)
+                        {
+                            ImRect rect(ImVec2(x0 + run_a, y0 + bg_offy_up), ImVec2(x0 + run_b, y0 + bg_offy_dn + g.FontSize));
+                            rect.ClipWith(clip_rect);
+                            draw_window->DrawList->AddRectFilled(rect.Min, rect.Max, bg_color);
+                        }
+                        if (sel) { run_a = LarperBidi.X[k]; run_b = run_a + LarperBidi.Adv[k]; }
+                        else run_b = -1.0f;
+                    }
+                    continue;
+                }
+
                 float rect_width = 0.0f;
                 if (line_selected_begin < line_selected_end)
                     rect_width += CalcTextSize(line_selected_begin, line_selected_end).x;
@@ -5746,12 +5934,34 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     // Render text
     if ((is_multiline || (buf_display_end - buf_display) < buf_display_max_length) && (text_col & IM_COL32_A_MASK) && (line_visible_n0 < line_visible_n1))
-        g.Font->RenderText(draw_window->DrawList, g.FontSize,
-            draw_pos - draw_scroll + ImVec2(0.0f, line_visible_n0 * g.FontSize),
-            text_col, clip_rect.AsVec4(),
-            line_index->get_line_begin(buf_display, line_visible_n0),
-            line_index->get_line_end(buf_display, line_visible_n1 - 1),
-            wrap_width, ImDrawTextFlags_WrapKeepBlanks | ImDrawTextFlags_CpuFineClip);
+    {
+        if (larper_rtl_text)
+        {
+            // [larperCord] Linha a linha: as com árabe ou hebraico, letra a letra na ordem da tela.
+            const ImVec4 clip = clip_rect.AsVec4();
+            for (int line_n = line_visible_n0; line_n < line_visible_n1; line_n++)
+            {
+                const char* p = line_index->get_line_begin(buf_display, line_n);
+                const char* p_eol = line_index->get_line_end(buf_display, line_n);
+                const ImVec2 lp = draw_pos - draw_scroll + ImVec2(0.0f, line_n * g.FontSize);
+                if (LarperBidiLayout(g, buf_display, buf_display_end, p, p_eol, larper_avail_r, &LarperBidi))
+                {
+                    for (int k = 0; k < LarperBidi.N; k++)
+                        if (LarperBidi.Adv[k] > 0.0f)
+                            g.Font->RenderChar(draw_window->DrawList, g.FontSize, ImVec2(lp.x + LarperBidi.Start + LarperBidi.X[k], lp.y), text_col, (ImWchar)LarperBidi.Cp[k], &clip);
+                }
+                else if (p < p_eol)
+                    g.Font->RenderText(draw_window->DrawList, g.FontSize, lp, text_col, clip, p, p_eol, 0.0f, ImDrawTextFlags_WrapKeepBlanks | ImDrawTextFlags_CpuFineClip);
+            }
+        }
+        else
+            g.Font->RenderText(draw_window->DrawList, g.FontSize,
+                draw_pos - draw_scroll + ImVec2(0.0f, line_visible_n0 * g.FontSize),
+                text_col, clip_rect.AsVec4(),
+                line_index->get_line_begin(buf_display, line_visible_n0),
+                line_index->get_line_end(buf_display, line_visible_n1 - 1),
+                wrap_width, ImDrawTextFlags_WrapKeepBlanks | ImDrawTextFlags_CpuFineClip);
+    }
 
     // Render blinking cursor
     if (render_cursor)
@@ -5759,6 +5969,8 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         state->CursorAnim += io.DeltaTime;
         bool cursor_is_visible = (!g.IO.ConfigInputTextCursorBlink) || (state->CursorAnim <= 0.0f) || ImFmod(state->CursorAnim, 1.20f) <= 0.80f;
         ImVec2 cursor_screen_pos = ImTrunc(draw_pos + cursor_offset - draw_scroll);
+        larper_input_caret[0] = cursor_screen_pos.x; // [larperCord] O QA confere onde o cursor fica.
+        larper_input_caret[1] = cursor_screen_pos.y;
         ImRect cursor_screen_rect = ImRect(cursor_screen_pos.x, cursor_screen_pos.y - g.FontSize + 1.0f, cursor_screen_pos.x + 1.0f, cursor_screen_pos.y - 1.0f);
         if (cursor_is_visible && cursor_screen_rect.Overlaps(clip_rect))
             draw_window->DrawList->AddLineV(cursor_screen_rect.Min.x, cursor_screen_rect.Min.y, cursor_screen_rect.Max.y, GetColorU32(ImGuiCol_InputTextCursor), style.InputTextCursorSize, ImDrawFlags_StrokeInside);

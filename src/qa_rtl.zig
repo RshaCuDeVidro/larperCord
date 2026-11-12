@@ -294,6 +294,49 @@ fn shortShown(_: *App) bool {
     return t.y - row.y < 12 and linesRight(short_id, 0);
 }
 
+// --- A caixa de mensagem (issue #9) ----------------------------------------------
+
+/// Onde o cursor do campo ativo foi desenhado (imgui_widgets.cpp).
+extern var larper_input_caret: [2]f32;
+const autocomplete = @import("ui/autocomplete.zig");
+/// "Paz para vocês": duas palavras, sem nada da esquerda para a direita.
+const box_ar = "السلام عليكم";
+const box_ar_cut = "السلام عليك";
+const box_mixed = "oi " ++ box_ar ++ " tudo bem";
+
+fn boxText(app: *App) []const u8 {
+    return std.mem.sliceTo(&app.st.input, 0);
+}
+
+fn boxTyped(app: *App) bool {
+    const box = qa.find("composer") orelse return false;
+    const x = larper_input_caret[0];
+    // Alinhado à direita, o texto ocupa a metade direita; o fim lógico (onde o cursor está,
+    // depois de digitar) fica na ponta esquerda dele, longe da borda.
+    return std.mem.eql(u8, boxText(app), box_ar) and autocomplete.cursor == box_ar.len and
+        x > box.x + box.w * 0.5 and x < box.right() - 40;
+}
+
+fn boxCursorStart(app: *App) bool {
+    return std.mem.eql(u8, boxText(app), box_ar) and autocomplete.cursor == 0;
+}
+
+fn boxCursorEnd(app: *App) bool {
+    return std.mem.eql(u8, boxText(app), box_ar) and autocomplete.cursor == box_ar.len;
+}
+
+fn boxBackspaced(app: *App) bool {
+    const box = qa.find("composer") orelse return false;
+    return std.mem.eql(u8, boxText(app), box_ar_cut) and autocomplete.cursor == box_ar_cut.len and larper_input_caret[0] > box.x + box.w * 0.5;
+}
+
+/// Começa em português: alinhado à esquerda, e o cursor, no fim de "tudo bem", fica à direita
+/// de tudo (o árabe no meio não muda isso).
+fn boxMixed(app: *App) bool {
+    const box = qa.find("composer") orelse return false;
+    return std.mem.eql(u8, boxText(app), box_mixed) and autocomplete.cursor == box_mixed.len and larper_input_caret[0] < box.x + box.w * 0.6;
+}
+
 fn overlaps(a: Rect, b: Rect) bool {
     return a.x < b.right() and b.x < a.right() and a.y < b.bottom() and b.y < a.bottom();
 }
@@ -901,6 +944,28 @@ pub const ops_theme = [_]Op{
     .{ .wait = 1700 },
     .{ .shot = "rtl9-avisos" },
     run(unwatch),
+    // Issue #9: a caixa de mensagem em árabe, na ordem da tela e alinhada à direita.
+    .{ .click = .{ .mark = "composer" } },
+    .{ .key = .{ .key = c.ImGuiKey_A, .ctrl = true } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .text = box_ar },
+    .{ .wait = 250 },
+    expect("árabe digitado na caixa: termina na borda direita e o cursor fica à esquerda dele", boxTyped),
+    .{ .shot = "rtl-caixa" },
+    .{ .click = .{ .at = .{ .key = "composer", .fx = 0.985, .fy = 0.5 } } },
+    expect("clicar na ponta direita põe o cursor no começo do texto", boxCursorStart),
+    .{ .click = .{ .at = .{ .key = "composer", .fx = 0.02, .fy = 0.5 } } },
+    expect("clicar à esquerda do texto põe o cursor no fim dele", boxCursorEnd),
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    expect("backspace apaga a última letra digitada, a da ponta esquerda", boxBackspaced),
+    .{ .key = .{ .key = c.ImGuiKey_A, .ctrl = true } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .text = box_mixed },
+    .{ .wait = 250 },
+    expect("frase que começa em português fica à esquerda, com o árabe no meio na ordem dele", boxMixed),
+    .{ .shot = "rtl-caixa-mista" },
+    .{ .key = .{ .key = c.ImGuiKey_A, .ctrl = true } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
     run(toBottom),
     run(goHome),
     expect("volta para o canal de antes", atHome),
