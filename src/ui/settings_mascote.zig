@@ -324,7 +324,10 @@ pub fn section(p: anytype) void {
     const ctx = p.ctx;
     const s = &ctx.st.settings;
     // Abriu agora: a lista de arquivos é lida de novo (alguém pode ter mexido na pasta).
-    if (ctx.now_ms - seen_ms > 800) arquivos.reload();
+    if (ctx.now_ms - seen_ms > 800) {
+        arquivos.requestReload();
+        anim.at(ctx.now_ms + 16);
+    }
     seen_ms = ctx.now_ms;
 
     p.heading(i18n.tr("Personalizar", "Customize"));
@@ -561,8 +564,10 @@ fn saveFile(ctx: *d.Ctx, l: *const visual.Look) void {
         ctx.st.showToast(ctx.now_ms, true, "não deu para salvar o arquivo", "couldn't save the file", .{});
         return;
     };
-    // Passa a usar o arquivo: o que for mudado nele aparece na hora.
+    // Passa a usar o arquivo: o que for mudado nele aparece na hora (a lista e o visual
+    // releem no começo do próximo quadro).
     useFile(ctx, name);
+    anim.at(ctx.now_ms + 16);
     ctx.st.showToast(ctx.now_ms, false, "salvo em mascots/{s}.kdl", "saved to mascots/{s}.kdl", .{name});
 }
 

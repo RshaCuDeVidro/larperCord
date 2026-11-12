@@ -31,6 +31,9 @@ var count: usize = 0;
 pub var generation: u32 = 0;
 var scanned = false;
 var watching = false;
+/// Reler a pasta no começo do próximo quadro: reler no meio de um quadro soltaria os
+/// desenhos que o visual de agora ainda usa.
+var want_reload = false;
 var wake_fn: ?*const fn () void = null;
 
 pub fn dir(buf: []u8) ?[:0]const u8 {
@@ -72,7 +75,20 @@ pub fn ensure() void {
     if (!scanned) reload();
 }
 
-/// Relê a pasta inteira (o vigia avisou, ou a página do mascote abriu).
+/// Pede para reler a pasta antes do próximo quadro (a página abriu, um arquivo foi salvo).
+pub fn requestReload() void {
+    want_reload = true;
+}
+
+/// No começo do quadro, antes de qualquer desenho (ui/mascote.zig `sync`).
+pub fn frame() void {
+    if (!want_reload) return;
+    want_reload = false;
+    reload();
+}
+
+/// Relê a pasta inteira. Só fora do desenho de um quadro: o vigia avisou (os eventos vêm
+/// antes do quadro) ou `frame` (o começo dele); no meio, `requestReload`.
 pub fn reload() void {
     scanned = true;
     for (entries[0..count]) |*e| if (e.drawing) |dw| std.heap.c_allocator.destroy(dw);
@@ -203,7 +219,7 @@ pub fn save(l: *const v.Look, title: []const u8, out: []u8) ?[]const u8 {
     if (!fsutil.writePrivate(path, text.items)) return null;
     if (name.len > out.len) return null;
     @memcpy(out[0..name.len], name);
-    reload();
+    requestReload();
     return out[0..name.len];
 }
 
@@ -247,7 +263,7 @@ pub fn qaClear() void {
             }
         }
     }
-    reload();
+    requestReload();
 }
 
 pub fn qaWatching() bool {

@@ -29,6 +29,7 @@ var seen_accent: u32 = 0;
 /// uma vez por quadro; só refaz quando algo mudou. Um arquivo com erro deixa o visual
 /// que estava (como um tema com erro deixa o tema de antes).
 pub fn sync(look_text: []const u8, file: []const u8, accent: d.Rgba) void {
+    arquivos.frame();
     if (file.len > 0 or std.mem.indexOf(u8, look_text, "draw=") != null) arquivos.ensure();
     const acc = accent.col(1);
     if (seen_text_len == look_text.len and std.mem.eql(u8, seen_text[0..look_text.len], look_text) and

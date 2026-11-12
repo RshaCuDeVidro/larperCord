@@ -571,7 +571,7 @@ fn copyCommunity(_: *App) void {
         defer c.SDL_free(data);
         _ = arquivos.qaWrite(nm[0 .. nm.len - 4], @as([*]const u8, @ptrCast(data))[0..size]);
     }
-    arquivos.reload();
+    arquivos.requestReload();
 }
 /// Todo exemplo da comunidade abre sem erro.
 fn communityOk(_: *App) bool {
