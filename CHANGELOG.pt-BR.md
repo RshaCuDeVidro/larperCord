@@ -23,6 +23,10 @@
 
 **Chamadas**
 - Tela da call, a outra metade do pedido do helpik1 (#19): clicar num canal de voz abre a call no lugar da conversa, com um quadro por pessoa: a foto e o apelido do servidor, o anel verde enquanto fala, o microfone e o som quando estão desligados, o que está jogando e o selo AO VIVO de quem transmite. Clique num quadro para o menu da pessoa (volume, silenciar para mim). O seu microfone, som, mixer e sair ficam no lugar da caixa de mensagem. Esc, "Voltar à conversa", trocar de aba ou um canal de texto voltam, e clicar no status da call na faixa de voz abre de novo. Calls em DM e grupo ganham a mesma grade em cima da conversa. Nos temas de terminal, ela aparece em texto. Sem câmera nem compartilhamento de tela, como antes.
+- No mixer da call, cada pessoa ganhou "Tirar ruído" e "Igualar volume", os dois desligados de começo e só para aquela pessoa. Tirar ruído usa no som dela o mesmo supressor de ruído do seu microfone (gasta um pouco de CPU enquanto ela fala, por isso é por pessoa). Igualar volume sobe quem fala baixo e desce quem fala alto, para perto do volume dos outros, sem subir o chiado das pausas. As escolhas ficam guardadas e valem em toda call.
+
+**Atalhos de teclado**
+- Dá para trocar os atalhos, do pedido do ShuyaGit (#18). Em Configurações → Atalhos de teclado, clique num atalho e aperte as teclas novas. Combinação já usada, as fixas (copiar, colar, nova linha) e letra sozinha são recusadas com o motivo; "Padrão" volta. As dicas dos botões de mudo e ensurdecer mostram as teclas de agora.
 
 **Texto em qualquer idioma**
 - "Online", "Offline", "Proxy" e outras palavras que faltavam nos arquivos de tradução agora aparecem em japonês e em russo, assim como as descrições e as opções dos temas embutidos, o submenu de prazo do status, as dicas da caixa de mensagem e as ações das imagens, do relato do DivannKokos (#20). O cartão do tema mostra a descrição inteira, em até duas linhas, e o resto ao passar o mouse.
@@ -32,6 +36,7 @@
 
 **Mais leve**
 - No Linux, a memória não se acumula mais depois de horas de uso: os buffers de imagem liberados voltam ao sistema em vez de ficar presos nas arenas da glibc de cada thread. Na conta do desenvolvedor, depois de 4h30, eram uns 190 MB parados à toa.
+- Configurações → Desempenho deixa escolher o renderizador: Automático ou um dos que o SDL tem no seu computador (Vulkan, OpenGL, Direct3D…). Vale na próxima vez que o app abrir; se o escolhido não abrir, o app abre no automático e avisa. Serve para quando um deles se dá mal com o driver da sua placa de vídeo.
 
 **Instalação**
 - `install.sh --purge` e `install.ps1 -Purge` também apagam as configurações, o cache, o FFmpeg baixado, os seus sons e as contas salvas, do pedido do DivannKokos (#12). Desinstalar sem a opção continua guardando as configurações.

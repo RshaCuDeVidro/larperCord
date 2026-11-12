@@ -1,6 +1,6 @@
 # Atalhos e linha de comando
 
-As mesmas teclas no Linux e no Windows. Não existe versão para macOS, então é sempre `Ctrl`, nunca `Cmd`. Estas tabelas saem de `src/ui/atalhos.zig`, a lista que o próprio app mostra em **Configurações → Atalhos de teclado**, então esta página e o app não ficam diferentes.
+As mesmas teclas no Linux e no Windows. Não existe versão para macOS, então é sempre `Ctrl`, nunca `Cmd`. Estas tabelas saem de `src/ui/atalhos.zig`, a lista que o próprio app mostra em **Configurações → Atalhos de teclado**, então esta página e o app não ficam diferentes. Essas são as teclas de fábrica: as globais (paleta, busca, configurações, caixa de entrada, salvas, temas, tela cheia, abas, mudo e ensurdecer) dá para trocar lá. Clique numa e aperte as teclas novas; "Padrão" volta.
 
 ## Teclado
 
@@ -81,7 +81,7 @@ No `cmd`, é `set LARPER_RENDERER=software` antes de rodar o `.exe`. As variáve
 | Variável | O que faz |
 |---|---|
 | `LARPER_TOKEN` | o token da conta (veja [Conectar a sua conta](page:account)) |
-| `LARPER_RENDERER` | escolhe o backend de renderização do SDL: `opengl`, `vulkan`, `gpu` ou `software`, e no Windows também `direct3d11` ou `direct3d12` |
+| `LARPER_RENDERER` | escolhe o backend de renderização do SDL: `opengl`, `vulkan`, `gpu` ou `software`, e no Windows também `direct3d11` ou `direct3d12`. Vale mais que a escolha em Configurações → Desempenho → Renderizador |
 | `LARPER_HIDDEN` | abre com a janela oculta. O app não desenha nada enquanto ela está oculta, então a memória mede bem menos do que com uma janela de verdade |
 | `LARPER_BENCH` | redesenha sem parar, para medir o custo de um quadro |
 | `LARPER_VOICE_DEBUG` | imprime no terminal o que acontece numa call (opcodes, códigos de fechamento, DAVE). Nunca imprime tokens nem chaves. No Windows não há terminal: ligue Configurações → Avançado → Salvar registro de depuração, que grava o mesmo |

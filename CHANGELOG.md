@@ -23,6 +23,10 @@
 
 **Calls**
 - Call screen, the other half of helpik1's request (#19): clicking a voice channel now opens the call in the chat area, one tile per person with their server picture and nickname, a green ring while they talk, their mic and sound when they're off, what they're playing, and a LIVE badge when they're streaming. Click a tile for that person's menu (volume, mute for me). Your mic, sound, mixer and leave buttons sit where the message box was. Esc, "Back to chat", switching tabs or a text channel take you back, and clicking the call status on the voice bar opens it again. DM and group calls get the same grid above the conversation. Terminal themes show it as text. No camera or screen share, as before.
+- In the call mixer, each person now has "Remove noise" and "Even out volume", both off by default and only for that person. Remove noise runs the same noise suppression as your microphone on their sound (it uses a little CPU while they talk, so it's per person). Even out volume raises a quiet voice and lowers a loud one toward everyone else's level, without lifting the background hiss in their pauses. Your choices are saved and apply to every call.
+
+**Keybinds**
+- Keybinds can be changed, from ShuyaGit's request (#18). In Settings → Keybinds, click a shortcut and press the new keys. Combinations already in use, fixed ones (copy, paste, new line) and plain letters are refused with the reason; "Default" puts one back. The mute and deafen button tips show your current keys.
 
 **Text in any language**
 - "Online", "Offline", "Proxy" and other words that were missing from the translation files now show in Japanese and Russian, and so do the descriptions and options of the built-in themes, the status duration submenu, the message box tips and the image actions, from DivannKokos's report (#20). The theme card shows the whole description, in up to two lines, with the rest on hover.
@@ -32,6 +36,7 @@
 
 **Lighter**
 - On Linux, memory no longer piles up after hours of use: freed image buffers go back to the system instead of staying inside glibc's per-thread arenas. On the developer's account, after 4.5 hours, that was about 190 MB held for nothing.
+- Settings → Performance lets you pick the renderer: Automatic or one of the ones SDL has on your computer (Vulkan, OpenGL, Direct3D…). It applies the next time the app opens; if the chosen one doesn't open, the app starts with the automatic one and says so. Handy when one of them misbehaves with your graphics driver.
 
 **Install**
 - `install.sh --purge` and `install.ps1 -Purge` also delete the settings, the cache, the downloaded FFmpeg, your sounds and the saved accounts, from DivannKokos's request (#12). Uninstalling without it still keeps your settings.
