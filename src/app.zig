@@ -1742,11 +1742,20 @@ pub const App = struct {
             },
             .show_call => |ch| {
                 if (ch == 0 or st.voice != ch) {
+                    // Volta para o que estava antes (outro servidor, uma DM, os amigos).
+                    if (st.call_view) {
+                        st.guild = st.call_prev_guild;
+                        st.friends = st.call_prev_friends;
+                    }
                     st.call_view = false;
                     return;
                 }
                 const cs = app.store.channel(ch) orelse return;
                 if (cs.info.guild == 0) return app.openChannel(ch, false);
+                if (!st.call_view) {
+                    st.call_prev_guild = st.guild;
+                    st.call_prev_friends = st.friends;
+                }
                 st.guild = cs.info.guild;
                 st.friends = false;
                 st.call_view = true;
@@ -1765,6 +1774,9 @@ pub const App = struct {
             .focus_tab => |i| if (i < st.tabs.items.len) {
                 st.tab = i;
                 st.friends = false;
+                // Uma aba (clicada, Alt+número, Ctrl+Tab, fechando outra, "Abrir em nova
+                // aba", "Abrir ao lado") sai da tela da call.
+                st.call_view = false;
                 if (app.store.channel(st.tabs.items[i])) |cs| {
                     st.guild = cs.info.guild;
                     if (cs.info.thread != null) app.subscribeTo(cs);

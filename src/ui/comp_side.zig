@@ -17,7 +17,8 @@ const devices = @import("device_menu.zig");
 
 pub fn memberList(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     if (ctx.st.friends) return @import("comp_friends.zig").activeNow(ctx, n, r);
-    const ch_id = ctx.st.activeChannel() orelse return;
+    // Na tela da call, os membros do servidor dela (não os da aba escondida).
+    const ch_id = if (@import("call_grid.zig").guildCall(ctx)) |vcs| vcs.info.id else ctx.st.activeChannel() orelse return;
     const cs = ctx.store.channel(ch_id) orelse return;
     const tty = d.is(n, "variant", "tty", "discord");
     // DM com uma pessoa: o perfil dela, como no Discord.

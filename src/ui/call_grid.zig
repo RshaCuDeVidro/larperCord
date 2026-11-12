@@ -27,8 +27,18 @@ const Id = types.Id;
 pub fn guildCall(ctx: *const d.Ctx) ?*ChannelState {
     if (!ctx.st.call_view or ctx.st.friends) return null;
     const cs = ctx.store.channel(ctx.st.voice orelse return null) orelse return null;
-    return if (cs.info.guild != 0) cs else null;
+    // Outro servidor na tela (por qualquer caminho): a conversa dele, não a call.
+    return if (cs.info.guild != 0 and cs.info.guild == ctx.st.guild) cs else null;
 }
+
+/// Os botões no estilo texto ([mic] [fone]…): o da caixa de mensagem do tema
+/// (composer variant=prompt), guardado a cada quadro, vale também para a faixa da DM.
+pub var text_buttons = false;
+
+/// O tamanho em que as fotos dos quadros são pedidas, o mesmo para qualquer quadro: o
+/// quadro muda de tamanho (gente entrando, a janela) sem pedir e decodificar a foto de
+/// novo, e a cor dela é achada pela mesma chave.
+const photo_px: f32 = 128;
 
 /// A call da DM ou do grupo `ch_id`, com a gente nela: a faixa em cima da conversa.
 pub fn dmCall(ctx: *const d.Ctx, ch_id: Id) ?*ChannelState {
@@ -209,14 +219,22 @@ fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bo
 
 /// A tela da call no lugar da conversa.
 pub fn page(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) void {
-    // Esc volta para a conversa (sem nada aberto por cima nem texto sendo digitado).
-    if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and ctx.st.popup == .none and !ctx.io.*.WantTextInput) ctx.act(.{ .show_call = 0 });
+    // Esc volta para a conversa, se não for para fechar outra coisa (menu, paleta,
+    // Configurações, a imagem aberta, a busca) nem estiver digitando.
+    if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and escFree(ctx)) ctx.act(.{ .show_call = 0 });
     qa.mark(r, "grid-view", .{});
     people(ctx, n, r, cs, d.is(n, "variant", "irc", ""), "##call-grid");
 }
 
+/// O Esc é da tela da call? (Nada aberto por cima que ele deva fechar antes.)
+pub fn escFree(ctx: *const d.Ctx) bool {
+    const st = ctx.st;
+    return st.popup == .none and !st.palette.open and st.viewer == null and !st.settings.open and
+        !@import("search.zig").open and !ctx.io.*.WantTextInput;
+}
+
 /// A call da DM ou do grupo aberto: uma faixa em cima da conversa, com a grade e os
-/// botões. Devolve a altura que ocupou.
+/// botões. Devolve a altura que ocupou (0: a conversa é baixa demais para dividir).
 pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32 {
     const tty = d.is(n, "variant", "irc", "");
     const ctl_h: f32 = if (tty) 28 else 60;

@@ -185,6 +185,10 @@ pub const State = struct {
     /// A tela da call (a grade com cada um) no lugar da conversa; só vale com
     /// `voice` numa call de servidor (ui/call_grid.zig).
     call_view: bool = false,
+    /// O que estava na tela antes de abrir a tela da call (o servidor, ou os amigos):
+    /// voltar para a conversa devolve.
+    call_prev_guild: Id = 0,
+    call_prev_friends: bool = false,
     /// Volume de cada pessoa na call (0..2) e o "Silenciar para mim", separados.
     volumes: @import("../core/volumes.zig").Volumes = .{},
     voice_save_ms: i64 = 0,
