@@ -578,7 +578,9 @@ pub fn userPanel(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     }
     const hb = d.hit(ctx, 12, gr);
     qa.mark(gr, "user-btn:{d}", .{2});
-    d.tip(ctx, gr, i18n.tr("Configurações  (Ctrl+,)", "User Settings  (Ctrl+,)"), hb.hovered);
+    var kb: [48]u8 = undefined;
+    var tb: [160]u8 = undefined;
+    d.tip(ctx, gr, i18n.fmt(&tb, "Configurações  ({s})", "User Settings  ({s})", .{@import("teclas.zig").label(&ctx.st.teclas, .configuracoes, &kb)}), hb.hovered);
     if (hb.clicked) ctx.act(.open_settings);
     const k = anim.to(anim.id("ubtn", 2), if (hb.hovered) 1 else 0, 24);
     const ink = ctx.col(.muted).mix(ctx.col(.text), k);

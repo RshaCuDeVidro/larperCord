@@ -260,6 +260,16 @@ fn dspOffByDefault(app: *App) bool {
         qa.find("voice-denoise-on:1001") == null and qa.find("voice-level-on:1001") == null and
         !app.st.volumes.denoiseOn(1001) and !app.st.volumes.levelOn(1001);
 }
+/// A área do slider de volume não cobre os botões de baixo: clicar no "Igualar
+/// volume" não pode mudar o volume da pessoa.
+fn chipsClearOfSlider(_: *App) bool {
+    const sl = qa.find("voice-volume:1001") orelse return false;
+    for ([_][]const u8{ "voice-denoise:1001", "voice-level:1001" }) |k| {
+        const ch = qa.find(k) orelse return false;
+        if (ch.y < sl.y + sl.h and sl.y < ch.y + ch.h and ch.x < sl.x + sl.w and sl.x < ch.x + ch.w) return false;
+    }
+    return true;
+}
 fn denoiseOnly(app: *App) bool {
     return app.st.volumes.denoiseOn(1001) and !app.st.volumes.levelOn(1001) and qa.find("voice-denoise-on:1001") != null and dspSent(1001, 1);
 }
@@ -284,6 +294,7 @@ fn othersUntouched(app: *App) bool {
 /// Com o mixer aberto na call.
 pub const dsp = [_]Op{
     expect("no mixer, \"Tirar ruído\" e \"Igualar volume\" começam desligados", dspOffByDefault),
+    expect("e o slider de volume não fica por cima deles", chipsClearOfSlider),
     click("voice-denoise:1001"),
     expect("tirar ruído só desta pessoa: liga e vai para a voz", denoiseOnly),
     click("voice-level:1001"),

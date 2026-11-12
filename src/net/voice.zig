@@ -1303,6 +1303,9 @@ const Worker = struct {
             w.stats.concealed += 1;
             const pcm = fill[0..@as(usize, @intCast(m)) * channels];
             if (what == .last) {
+                // O último inventado também passa pelo tirar ruído e pelo igualar
+                // volume: senão saía cru, no volume de antes do nivelamento.
+                s.filter(pcm);
                 s.seam.fadeOut(pcm);
                 _ = c.SDL_PutAudioStreamData(st, pcm.ptr, @intCast(pcm.len * @sizeOf(i16)));
             } else s.put(st, pcm);
@@ -1402,7 +1405,9 @@ const Source = struct {
     /// "Tirar ruído" e "Igualar volume" desta pessoa, e o estado de cada um. O
     /// supressor só existe (e só gasta) enquanto o "Tirar ruído" está ligado.
     dsp: Dsp = .{},
-    sup: ruido.Supressor = .{},
+    /// `passing`: o som desta pessoa já sai cru, então ligar o "Tirar ruído" entra
+    /// aos poucos, sem estalo nem buraco enquanto o motor acorda.
+    sup: ruido.Supressor = .{ .passing = true },
     lev: nivel.Nivelador = .{},
 
     /// Entrega áudio ao stream, sem degrau onde ele não continua de onde parou.
@@ -1412,16 +1417,21 @@ const Source = struct {
         _ = c.SDL_PutAudioStreamData(st, pcm.ptr, @intCast(pcm.len * @sizeOf(i16)));
     }
 
-    /// Tirar ruído e igualar volume, de 20 em 20 ms (o que o Opus entrega). Desligados,
-    /// é só um teste. Desligar o "Tirar ruído" ainda passa uns quadros pelo supressor,
-    /// que volta para o som cru sem emenda e depois se solta (core/ruido.zig).
+    /// Tirar ruído e igualar volume, de 20 em 20 ms (o que o Opus entrega quase
+    /// sempre); pacote menor vai de 10 em 10 ms, e o que nem chega a 10 ms (Opus de
+    /// 2,5 ou 5 ms, raro) só nivela. Desligados, é só um teste. Desligar ainda passa um
+    /// quadro de volta para o som cru, sem emenda: o supressor sai aos poucos e se
+    /// solta (core/ruido.zig), e o ganho do nivelamento volta ao 1 de rampa.
     fn filter(s: *Source, pcm: []i16) void {
-        if (!s.dsp.denoise and !s.dsp.level and s.sup.state == null) return;
+        if (!s.dsp.denoise and !s.dsp.level and s.sup.state == null and !s.lev.touched()) return;
         var i: usize = 0;
-        while (i + voz.frame_len <= pcm.len) : (i += voz.frame_len) {
-            const chunk = pcm[i..][0..voz.frame_len];
-            if (s.dsp.denoise or s.sup.state != null) _ = s.sup.process(chunk, if (s.dsp.denoise) .rnnoise else .off);
-            if (s.dsp.level) s.lev.process(chunk);
+        while (i < pcm.len) {
+            const left = pcm.len - i;
+            const n = if (left >= voz.frame_len) voz.frame_len else if (left >= ruido.piece_len) ruido.piece_len else left;
+            const chunk = pcm[i..][0..n];
+            if ((s.dsp.denoise or s.sup.state != null) and n % ruido.piece_len == 0) _ = s.sup.process(chunk, if (s.dsp.denoise) .rnnoise else .off);
+            if (s.dsp.level) s.lev.process(chunk) else if (s.lev.touched()) s.lev.finish(chunk);
+            i += n;
         }
     }
 

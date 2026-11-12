@@ -12,6 +12,7 @@ const anim = @import("anim.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
+const teclas = @import("teclas.zig");
 const plugin_panel = @import("plugin_panel.zig");
 const chamada = @import("chamada.zig");
 const thread_settings = @import("thread_settings.zig");
@@ -99,7 +100,9 @@ pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
             qa.mark(gr, "header-settings", .{});
             if (gh.clicked) ctx.act(.open_settings);
             icons.gear(dl, gr.x + 14, gr.y + 14, (if (gh.hovered) ctx.col(.text) else ctx.col(.muted)).u());
-            d.tip(ctx, gr, i18n.tr("Configurações  (Ctrl+,)", "User Settings  (Ctrl+,)"), gh.hovered);
+            var kb: [48]u8 = undefined;
+            var tb: [160]u8 = undefined;
+            d.tip(ctx, gr, i18n.fmt(&tb, "Configurações  ({s})", "User Settings  ({s})", .{teclas.label(&ctx.st.teclas, .configuracoes, &kb)}), gh.hovered);
         }
         // Numa DM ou grupo: ligar, à esquerda dos outros botões.
         chamada.headerButtons(ctx, dl, ch, bx - 8, r.y + r.h / 2);
@@ -152,11 +155,14 @@ pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         qa.mark(sr, "header-find", .{});
         const search = @import("search.zig");
         if (sh.clicked) search.focusOrStart();
-        d.tip(ctx, sr, i18n.tr("Buscar mensagens (Ctrl+F)", "Search messages (Ctrl+F)"), sh.hovered);
+        var kb: [48]u8 = undefined;
+        var tb: [160]u8 = undefined;
+        d.tip(ctx, sr, i18n.fmt(&tb, "Buscar mensagens ({s})", "Search messages ({s})", .{teclas.label(&ctx.st.teclas, .buscar, &kb)}), sh.hovered);
         const sk = anim.to(anim.id("search", @intFromPtr(n)), if (sh.hovered or search.open) 1 else 0, 20);
         d.rect(dl, sr, ctx.col(.rail).mix(ctx.col(.sidebar), 0.3 + 0.3 * sk), ctx.th.radius);
         if (search.open) d.border(dl, sr, ctx.col(.accent).alpha(0.7), ctx.th.radius, 1);
-        const label: []const u8 = if (search.open and search.text().len > 0) search.text() else i18n.tr("Buscar  Ctrl+F", "Search  Ctrl+F");
+        var lb: [96]u8 = undefined;
+        const label: []const u8 = if (search.open and search.text().len > 0) search.text() else i18n.fmt(&lb, "Buscar  {s}", "Search  {s}", .{teclas.first(&ctx.st.teclas, .buscar, &kb)});
         _ = d.textClipped(dl, fam.get(.regular), 14, sr.x + 9, d.centerY(sr, 14), ctx.col(.faint).mix(ctx.col(.muted), sk), label, sr.w - 34);
         icons.search(dl, sr.right() - 15, sr.y + 13, ctx.col(.faint).mix(ctx.col(.muted), sk).u());
     } else findButton(ctx, dl, sx - 76, r.y + r.h / 2 - 14); // sem lugar para a caixa: a lupa
@@ -171,7 +177,9 @@ fn findButton(ctx: *d.Ctx, dl: *c.ImDrawList, x: f32, y: f32) void {
     qa.mark(fr, "header-find", .{});
     if (fh.clicked) @import("search.zig").focusOrStart();
     icons.search(dl, fr.x + 14, fr.y + 14, (if (fh.hovered) ctx.col(.text) else ctx.col(.muted)).u());
-    d.tip(ctx, fr, i18n.tr("Buscar mensagens (Ctrl+F)", "Search messages (Ctrl+F)"), fh.hovered);
+    var fkb: [48]u8 = undefined;
+    var ftb: [160]u8 = undefined;
+    d.tip(ctx, fr, i18n.fmt(&ftb, "Buscar mensagens ({s})", "Search messages ({s})", .{teclas.label(&ctx.st.teclas, .buscar, &fkb)}), fh.hovered);
 }
 
 /// Mostra e esconde a lista de membros.
@@ -240,7 +248,9 @@ fn inboxButtons(ctx: *d.Ctx, dl: *c.ImDrawList, right_x: f32, y: f32) void {
         d.rect(dl, br, ctx.col(.danger), 7.5);
         d.text(dl, font, 10.5, br.x + (bw - lw) / 2, br.y + 0.5, d.Rgba.white, lbl);
     }
-    d.tip(ctx, ir, i18n.tr("Caixa de entrada  Ctrl+I", "Inbox  Ctrl+I"), ih.hovered);
+    var ikb: [48]u8 = undefined;
+    var itb: [160]u8 = undefined;
+    d.tip(ctx, ir, i18n.fmt(&itb, "Caixa de entrada  {s}", "Inbox  {s}", .{teclas.label(&ctx.st.teclas, .caixa_entrada, &ikb)}), ih.hovered);
 
     const sr: d.Rect = .{ .x = right_x, .y = y, .w = 28, .h = 28 };
     const sh = d.hit(ctx, 4, sr);
@@ -248,7 +258,9 @@ fn inboxButtons(ctx: *d.Ctx, dl: *c.ImDrawList, right_x: f32, y: f32) void {
     if (sh.clicked) ctx.act(.toggle_saved);
     const sopen = ctx.st.popup == .saved;
     icons.bookmark(dl, sr.x + 14, sr.y + 14, (if (sopen or sh.hovered) ctx.col(.text) else ctx.col(.muted)).u(), sopen);
-    d.tip(ctx, sr, i18n.tr("Mensagens salvas  Ctrl+Shift+S", "Saved messages  Ctrl+Shift+S"), sh.hovered);
+    var skb: [48]u8 = undefined;
+    var stb: [160]u8 = undefined;
+    d.tip(ctx, sr, i18n.fmt(&stb, "Mensagens salvas  {s}", "Saved messages  {s}", .{teclas.label(&ctx.st.teclas, .salvas, &skb)}), sh.hovered);
 }
 
 // --- tabs -------------------------------------------------------------------

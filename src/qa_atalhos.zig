@@ -1,7 +1,8 @@
 //! QA dos atalhos personalizáveis (#18, Configurações → Atalhos de teclado): trocar o
 //! atalho da paleta faz a combinação nova abrir e a velha não; o que não pode
 //! (já usado, fixo do app, sem Ctrl/Alt) é recusado com o motivo; Esc cancela a troca
-//! sem fechar as Configurações; "Padrão" volta; e as dicas do mudo mostram a
+//! sem fechar as Configurações; "Padrão" volta, mas não por cima de outra ação;
+//! segurar a tecla nova não a repete logo depois; e as dicas do mudo mostram a
 //! combinação de agora. QA_SUITE=atalhos.
 const std = @import("std");
 const c = @import("c");
@@ -89,6 +90,52 @@ fn resetMute(app: *App) void {
     if (app.st.muted != muted_before) app.st.muted = muted_before;
 }
 
+// Segurar a tecla que termina a troca: o ImGui repete depois de ~0,3 s, e o próximo
+// tema (que repete) trocaria de tema sem parar atrás das Configurações.
+var theme_before: usize = 0;
+fn rememberTheme(app: *App) void {
+    theme_before = app.themes.current;
+}
+fn capturingNextTheme(_: *App) bool {
+    return teclas.capturing == .proximo_tema;
+}
+fn holdF6(app: *App) void {
+    c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiKey_F6, true);
+}
+fn releaseF6(app: *App) void {
+    c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiKey_F6, false);
+}
+fn heldNoRepeat(app: *App) bool {
+    var b: [32]u8 = undefined;
+    return teclas.capturing == null and std.mem.eql(u8, teclas.label(&app.st.teclas, .proximo_tema, &b), "F6") and
+        app.themes.current == theme_before and app.st.settings.open;
+}
+fn themeSame(app: *App) bool {
+    return app.themes.current == theme_before;
+}
+fn themeChanged(app: *App) bool {
+    return app.themes.current != theme_before;
+}
+fn resetNextTheme(app: *App) void {
+    app.st.teclas.set(.proximo_tema, null);
+}
+
+// "Padrão" de uma ação cuja tecla de fábrica outra pegou.
+fn takeCtrlT(app: *App) void {
+    app.st.teclas.set(.proximo_tema, Combinacao.parse("F5").?);
+    app.st.teclas.set(.paleta, Combinacao.parse("Ctrl+T").?);
+}
+fn resetRefused(app: *App) bool {
+    return app.st.teclas.trocado(.proximo_tema) and qa.find("keybind-problem") != null and app.st.teclas.donoDoPadrao(.proximo_tema) == .paleta;
+}
+fn undoCtrlT(app: *App) void {
+    app.st.teclas.set(.proximo_tema, null);
+    app.st.teclas.set(.paleta, null);
+}
+fn defaultsBack(app: *App) bool {
+    return !app.st.teclas.trocado(.proximo_tema) and !app.st.teclas.trocado(.paleta);
+}
+
 pub const ops = [_]Op{
     s("atalhos personalizáveis"),
     expect("pronto", ready),
@@ -118,6 +165,12 @@ pub const ops = [_]Op{
     .{ .shot = "atalhos-em-uso" },
     key(c.ImGuiKey_C, true, false, false),
     expect("Ctrl+C é fixo do app: recusa", stillCapturingNoChange),
+    key(c.ImGuiKey_C, true, true, false),
+    expect("Ctrl+Shift+C também (o copiar olha só o Ctrl): recusa", stillCapturingNoChange),
+    key(c.ImGuiKey_RightArrow, true, false, false),
+    expect("Ctrl+→ anda por palavra no texto: recusa", stillCapturingNoChange),
+    key(c.ImGuiKey_Q, true, false, true),
+    expect("Ctrl+Alt+Q é o AltGr+Q (\"/\" no ABNT2): recusa", stillCapturingNoChange),
     key(c.ImGuiKey_M, false, false, false),
     expect("uma letra sozinha: recusa (dispararia ao digitar)", stillCapturingNoChange),
     key(c.ImGuiKey_Escape, false, false, false),
@@ -141,4 +194,36 @@ pub const ops = [_]Op{
     key(c.ImGuiKey_K, true, false, false),
     expect("e o Ctrl+K abre a paleta de novo", paletteOpen),
     run(closePalette),
+    .{ .wait = 100 },
+
+    s("segurar a tecla nova"),
+    run(openKeys),
+    .{ .wait = 100 },
+    run(rememberTheme),
+    click("keybind:proximo_tema"),
+    expect("trocar o do próximo tema", capturingNextTheme),
+    run(holdF6),
+    .{ .wait = 800 },
+    expect("segurar o F6 grava, e não troca de tema enquanto ele está apertado", heldNoRepeat),
+    run(releaseF6),
+    .{ .wait = 100 },
+    expect("soltou: o tema continua o mesmo", themeSame),
+    run(closeSettings),
+    .{ .wait = 100 },
+    key(c.ImGuiKey_F6, false, false, false),
+    expect("e apertar o F6 troca o tema", themeChanged),
+    key(c.ImGuiKey_F2, false, true, false),
+    expect("Shift+F2 volta o tema de antes", themeSame),
+    run(resetNextTheme),
+
+    s("Padrão por cima de outra ação"),
+    run(takeCtrlT),
+    run(openKeys),
+    .{ .wait = 100 },
+    click("keybind-reset:proximo_tema"),
+    expect("o padrão do próximo tema (F2 / Ctrl+T) bate na paleta, agora no Ctrl+T: não volta e diz por quê", resetRefused),
+    .{ .shot = "atalhos-padrao-em-uso" },
+    run(undoCtrlT),
+    expect("de volta ao de fábrica", defaultsBack),
+    run(closeSettings),
 };

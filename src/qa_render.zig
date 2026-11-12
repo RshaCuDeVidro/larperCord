@@ -46,6 +46,12 @@ fn pickedSoftware(app: *App) bool {
 fn backToAuto(app: *App) bool {
     return app.st.settings.renderer.slice().len == 0;
 }
+fn setUnknown(app: *App) void {
+    app.st.settings.renderer.set("naoexiste");
+}
+fn unlistedShown(_: *App) bool {
+    return qa.find("renderer-unlisted") != null;
+}
 fn fellBack(_: *App) bool {
     return win.renderer_fallback and std.mem.sliceTo(&win.active_renderer, 0).len > 0;
 }
@@ -63,6 +69,11 @@ pub const ops = [_]Op{
     expect("escolher um grava o nome dele (vale no próximo início)", pickedSoftware),
     click("radio:Automático"),
     expect("voltar ao automático limpa a escolha", backToAuto),
+    // Um settings.kdl de outro computador: o nome não existe aqui.
+    run(setUnknown),
+    expect("um nome que o SDL daqui não tem não marca nenhum e avisa", unlistedShown),
+    click("radio:Automático"),
+    expect("e clicar em Automático limpa o nome salvo", backToAuto),
     run(closeSettings),
 };
 

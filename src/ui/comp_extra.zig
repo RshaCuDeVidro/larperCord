@@ -57,9 +57,9 @@ pub fn topbar(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     const fam = ctx.familyFor(n);
     const st = ctx.st;
     // Voltar / avançar entre as abas abertas.
-    const nav = [_]struct { glyph: []const u8, delta: i32, tip: []const u8, tip_en: []const u8 }{
-        .{ .glyph = "←", .delta = -1, .tip = "Aba anterior  (Ctrl+Shift+Tab)", .tip_en = "Previous tab  (Ctrl+Shift+Tab)" },
-        .{ .glyph = "→", .delta = 1, .tip = "Próxima aba  (Ctrl+Tab)", .tip_en = "Next tab  (Ctrl+Tab)" },
+    const nav = [_]struct { glyph: []const u8, delta: i32, acao: @import("teclas.zig").Acao }{
+        .{ .glyph = "←", .delta = -1, .acao = .aba_anterior },
+        .{ .glyph = "→", .delta = 1, .acao = .proxima_aba },
     };
     var x = r.x + 12;
     for (nav, 0..) |b, i| {
@@ -69,7 +69,10 @@ pub fn topbar(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         if (hb.hovered) d.rect(dl, br, ctx.col(.hover), 5);
         const gw = d.width(fam.get(.bold), 16, b.glyph);
         d.text(dl, fam.get(.bold), 16, br.x + 13 - gw / 2, d.centerY(br, 16), if (hb.hovered) ctx.col(.text) else ctx.col(.muted), b.glyph);
-        d.tip(ctx, br, i18n.tr(b.tip, b.tip_en), hb.hovered);
+        var kb: [48]u8 = undefined;
+        var tb: [160]u8 = undefined;
+        const keys = @import("teclas.zig").label(&st.teclas, b.acao, &kb);
+        d.tip(ctx, br, if (b.delta < 0) i18n.fmt(&tb, "Aba anterior  ({s})", "Previous tab  ({s})", .{keys}) else i18n.fmt(&tb, "Próxima aba  ({s})", "Next tab  ({s})", .{keys}), hb.hovered);
         x += 30;
     }
     // Busca no meio.

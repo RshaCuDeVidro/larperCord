@@ -100,11 +100,26 @@ pub fn reservado(cb: Combinacao) bool {
         var buf: [4]Combinacao = undefined;
         for (comb.parseList(a.teclas, &buf)) |x| if (x.eql(cb)) return true;
     };
-    const fixos = [_][]const u8{ "Ctrl+A", "Ctrl+X", "Ctrl+Z", "Ctrl+Y", "Ctrl+0", "Ctrl+=", "Ctrl+-", "Esc", "Alt+F4" };
+    const fixos = [_][]const u8{ "Esc", "Alt+F4" };
     for (fixos) |t| if (Combinacao.parse(t).?.eql(cb)) return true;
+    if (cb.ctrl) switch (cb.key) {
+        // Selecionar tudo, copiar, recortar, colar, desfazer, refazer (Ctrl+Y e
+        // Ctrl+Shift+Z) e o tamanho da interface: quem trata essas olha só o Ctrl, então
+        // com Shift ou Alt junto elas disparariam também.
+        .a, .c, .v, .x, .y, .z, .equal, .minus, .@"0" => return true,
+        // Andar e apagar por palavra na caixa de texto, com ou sem Shift (selecionando).
+        .left, .right, .up, .down, .home, .end, .backspace, .delete, .insert => if (!cb.alt) return true,
+        else => {},
+    };
     // Alt+1…9: ir para a aba N.
     if (cb.alt and !cb.ctrl and !cb.shift and @intFromEnum(cb.key) >= @intFromEnum(comb.Key.@"1") and @intFromEnum(cb.key) <= @intFromEnum(comb.Key.@"9")) return true;
     return false;
+}
+
+/// Ctrl+Alt com letra, número ou sinal: em muitos teclados (ABNT2, alemão…) é o
+/// AltGr, que no Windows chega como Ctrl+Alt. Digitar "/" ou "?" dispararia o atalho.
+pub fn altGr(cb: Combinacao) bool {
+    return cb.ctrl and cb.alt and cb.key.printable();
 }
 
 /// As trocas feitas em Configurações → Atalhos de teclado (null = o padrão da lista).
@@ -132,14 +147,30 @@ pub const Personalizados = struct {
         return null;
     }
 
-    pub const Porque = enum { ok, sem_modificador, reservado, em_uso };
+    pub const Porque = enum { ok, sem_modificador, reservado, altgr, em_uso };
+
+    /// O que vale para qualquer ação, sem olhar as outras.
+    fn sozinha(cb: Combinacao) Porque {
+        if (!cb.usable()) return .sem_modificador;
+        if (reservado(cb)) return .reservado;
+        if (altGr(cb)) return .altgr;
+        return .ok;
+    }
 
     /// Dá para pôr `cb` em `acao`? (Com `.em_uso`, `dono` diz de quem é.)
     pub fn pode(p: *const Personalizados, acao: Acao, cb: Combinacao) Porque {
-        if (!cb.usable()) return .sem_modificador;
-        if (reservado(cb)) return .reservado;
+        const r = sozinha(cb);
+        if (r != .ok) return r;
         if (p.dono(cb, acao) != null) return .em_uso;
         return .ok;
+    }
+
+    /// Voltar `acao` ao padrão bateria em quem? (Outra ação pode ter pegado uma tecla
+    /// do padrão dela enquanto ela estava trocada.) null: dá para voltar.
+    pub fn donoDoPadrao(p: *const Personalizados, acao: Acao) ?Acao {
+        var buf: [4]Combinacao = undefined;
+        for (comb.parseList(deAcao(acao).teclas, &buf)) |cb| if (p.dono(cb, acao)) |o| return o;
+        return null;
     }
 
     pub fn set(p: *Personalizados, acao: Acao, cb: ?Combinacao) void {
@@ -159,25 +190,52 @@ pub const Personalizados = struct {
         return p.custom[@intFromEnum(acao)] != null;
     }
 
-    /// Escreve as linhas do settings.kdl.
+    /// Escreve as linhas do settings.kdl. A combinação vai entre aspas com `\` e `"`
+    /// escapados: "Ctrl+\" sem escape abriria uma string que engole o resto do
+    /// arquivo, e o app abriria com tudo no padrão.
     pub fn write(p: *const Personalizados, out: *std.ArrayList(u8), gpa: std.mem.Allocator) !void {
         for (p.custom, 0..) |cb, i| if (cb) |x| {
             var buf: [32]u8 = undefined;
-            try out.print(gpa, "keybind \"{s}\" \"{s}\"\n", .{ @tagName(@as(Acao, @enumFromInt(i))), x.format(&buf) });
+            try out.print(gpa, "keybind \"{s}\" \"", .{@tagName(@as(Acao, @enumFromInt(i)))});
+            for (x.format(&buf)) |ch| {
+                if (ch == '"' or ch == '\\') try out.append(gpa, '\\');
+                try out.append(gpa, ch);
+            }
+            try out.appendSlice(gpa, "\"\n");
         };
     }
 
     /// Lê `keybind "paleta" "Ctrl+J"`. false: o nó não é nosso. Nome ou combinação
-    /// que não valem (outra versão, arquivo editado à mão) ficam de fora.
+    /// que não valem (outra versão, arquivo editado à mão) ficam de fora. A briga com
+    /// outra ação só se confere no fim, em `settle`: as outras linhas ainda não foram
+    /// lidas, e trocar duas de lugar (a paleta no Ctrl+F e a busca no Ctrl+K) pareceria
+    /// briga linha a linha.
     pub fn applyNode(p: *Personalizados, n: anytype) bool {
         if (!std.mem.eql(u8, n.name, "keybind")) return false;
         const name = (n.arg(0) orelse return true).asString() orelse return true;
         const text = (n.arg(1) orelse return true).asString() orelse return true;
         const acao = std.meta.stringToEnum(Acao, name) orelse return true;
         const cb = Combinacao.parse(text) orelse return true;
-        if (p.pode(acao, cb) != .ok) return true;
+        if (sozinha(cb) != .ok) return true;
         p.set(acao, cb);
         return true;
+    }
+
+    /// Depois de ler todas as linhas: duas ações na mesma combinação (arquivo editado à
+    /// mão, versão antiga) não valem. A troca que bate em outra ação volta ao padrão,
+    /// até não sobrar briga; os padrões nunca brigam entre si (teste abaixo), então
+    /// termina. Entre duas trocas na mesma tecla fica a de baixo na lista.
+    pub fn settle(p: *Personalizados) void {
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (&p.custom, 0..) |*slot, i| if (slot.*) |cb| {
+                if (p.dono(cb, @enumFromInt(i)) != null) {
+                    slot.* = null;
+                    changed = true;
+                }
+            };
+        }
     }
 };
 
@@ -241,4 +299,89 @@ test "atalhos personalizáveis: trocar, recusar o que não pode, e ir e voltar p
     try std.testing.expect(back.de(.paleta, &buf)[0].eql(j));
     // O que não vale ficou de fora: mutar continua no padrão.
     try std.testing.expect(!back.trocado(.mutar));
+}
+
+test "atalhos personalizáveis: Ctrl+\\ vai e volta sem estragar o resto do settings.kdl" {
+    const kdl = @import("../theme/kdl.zig");
+    const gpa = std.testing.allocator;
+    var p: Personalizados = .{};
+    const bs = Combinacao.parse("Ctrl+\\").?;
+    try std.testing.expectEqual(Personalizados.Porque.ok, p.pode(.paleta, bs));
+    p.set(.paleta, bs);
+    p.set(.mutar, Combinacao.parse("Alt+M").?);
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    try p.write(&out, gpa);
+    // O que vem depois no arquivo continua sendo lido.
+    try out.appendSlice(gpa, "voice-volume \"1234\" 0.5\n");
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const nodes = try kdl.parse(arena.allocator(), out.items, null);
+    try std.testing.expectEqual(@as(usize, 3), nodes.len);
+    var back: Personalizados = .{};
+    for (nodes[0..2]) |*n| try std.testing.expect(back.applyNode(n));
+    back.settle();
+    var buf: [4]Combinacao = undefined;
+    try std.testing.expect(back.de(.paleta, &buf)[0].eql(bs));
+    try std.testing.expect(back.de(.mutar, &buf)[0].eql(Combinacao.parse("Alt+M").?));
+    try std.testing.expectEqualStrings("voice-volume", nodes[2].name);
+}
+
+test "atalhos personalizáveis: duas ações trocadas de lugar sobrevivem a reabrir" {
+    const kdl = @import("../theme/kdl.zig");
+    const gpa = std.testing.allocator;
+    var p: Personalizados = .{};
+    const f = Combinacao.parse("Ctrl+F").?;
+    const k = Combinacao.parse("Ctrl+K").?;
+    // Na sessão: a busca sai do Ctrl+F, depois a paleta vai para ele, e a busca para o Ctrl+K.
+    p.set(.buscar, Combinacao.parse("Ctrl+J").?);
+    try std.testing.expectEqual(Personalizados.Porque.ok, p.pode(.paleta, f));
+    p.set(.paleta, f);
+    try std.testing.expectEqual(Personalizados.Porque.ok, p.pode(.buscar, k));
+    p.set(.buscar, k);
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    try p.write(&out, gpa);
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const nodes = try kdl.parse(arena.allocator(), out.items, null);
+    var back: Personalizados = .{};
+    for (nodes) |*n| _ = back.applyNode(n);
+    back.settle();
+    var buf: [4]Combinacao = undefined;
+    try std.testing.expect(back.de(.paleta, &buf)[0].eql(f));
+    try std.testing.expect(back.de(.buscar, &buf)[0].eql(k));
+}
+
+test "atalhos personalizáveis: briga no arquivo volta ao padrão, e Padrão não pisa em ninguém" {
+    var p: Personalizados = .{};
+    // Arquivo editado à mão: a paleta e o mudo no mesmo Alt+P, e o mudo no Ctrl+F da busca.
+    p.custom[@intFromEnum(Acao.paleta)] = Combinacao.parse("Alt+P").?;
+    p.custom[@intFromEnum(Acao.mutar)] = Combinacao.parse("Alt+P").?;
+    p.custom[@intFromEnum(Acao.ensurdecer)] = Combinacao.parse("Ctrl+F").?;
+    p.settle();
+    try std.testing.expect(!p.trocado(.paleta));
+    try std.testing.expect(p.trocado(.mutar));
+    try std.testing.expect(!p.trocado(.ensurdecer));
+    inline for (@typeInfo(Acao).@"enum".field_names) |name| {
+        const a = @field(Acao, name);
+        var buf: [4]Combinacao = undefined;
+        for (p.de(a, &buf)) |cb| try std.testing.expectEqual(@as(?Acao, null), p.dono(cb, a));
+    }
+    // O próximo tema sai do F2/Ctrl+T, a paleta pega o Ctrl+T: o tema não volta ao padrão.
+    var q: Personalizados = .{};
+    q.set(.proximo_tema, Combinacao.parse("F5").?);
+    q.set(.paleta, Combinacao.parse("Ctrl+T").?);
+    try std.testing.expectEqual(@as(?Acao, .paleta), q.donoDoPadrao(.proximo_tema));
+    try std.testing.expectEqual(@as(?Acao, null), q.donoDoPadrao(.paleta));
+}
+
+test "atalhos personalizáveis: as teclas da caixa de texto, do zoom e o AltGr ficam de fora" {
+    const p: Personalizados = .{};
+    for ([_][]const u8{ "Ctrl+Shift+C", "Ctrl+Shift+V", "Ctrl+Alt+0", "Ctrl+Shift+=", "Ctrl+Shift+Z", "Ctrl+→", "Ctrl+Shift+←", "Ctrl+Backspace", "Ctrl+Delete", "Ctrl+Insert", "Ctrl+Home" }) |t|
+        try std.testing.expectEqual(Personalizados.Porque.reservado, p.pode(.mutar, Combinacao.parse(t).?));
+    for ([_][]const u8{ "Ctrl+Alt+Q", "Ctrl+Alt+W", "Ctrl+Alt+7", "Ctrl+Alt+/", "Ctrl+Shift+Alt+E" }) |t|
+        try std.testing.expectEqual(Personalizados.Porque.altgr, p.pode(.mutar, Combinacao.parse(t).?));
+    for ([_][]const u8{ "Ctrl+Alt+F5", "Ctrl+Alt+←", "Alt+M", "Ctrl+Shift+J", "Ctrl+PageDown" }) |t|
+        try std.testing.expectEqual(Personalizados.Porque.ok, p.pode(.mutar, Combinacao.parse(t).?));
 }

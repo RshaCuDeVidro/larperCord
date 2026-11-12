@@ -17,15 +17,26 @@ pub var capturing: ?Acao = null;
 /// terminou é dela, e não dispara mais nada nesse quadro (nem abre a paleta, nem fecha
 /// as Configurações).
 pub var capture_end_frame: c_int = -1;
+/// E continua dela enquanto estiver apertada: segurar a combinação nova não a repete
+/// logo depois (fechando abas, trocando de tema), nem segurar o Esc fecha as
+/// Configurações.
+var held_key: ?c_int = null;
 
-/// Uma troca está esperando tecla, ou acabou de terminar neste quadro.
+/// Uma troca está esperando tecla, acabou de terminar neste quadro, ou a tecla que a
+/// terminou ainda não foi solta.
 pub fn busy() bool {
+    if (held_key) |k| {
+        if (c.ImGui_IsKeyDown(k)) return true;
+        held_key = null;
+    }
     return capturing != null or capture_end_frame == c.ImGui_GetFrameCount();
 }
 
-pub fn endCapture() void {
+/// `key`: a tecla do ImGui que terminou a troca (a da combinação, ou o Esc).
+pub fn endCapture(key: c_int) void {
     capturing = null;
     capture_end_frame = c.ImGui_GetFrameCount();
+    held_key = key;
 }
 
 pub fn imguiKey(key: comb.Key) c_int {
@@ -98,6 +109,13 @@ pub fn label(p: *const atalhos.Personalizados, acao: Acao, out: []u8) []const u8
         n += t.len;
     }
     return out[0..n];
+}
+
+/// Só a primeira combinação de `acao` ("F2" de "F2 / Ctrl+T"), para dica curta.
+pub fn first(p: *const atalhos.Personalizados, acao: Acao, out: []u8) []const u8 {
+    var buf: [4]Combinacao = undefined;
+    const l = p.de(acao, &buf);
+    return if (l.len > 0) l[0].format(out) else "";
 }
 
 /// A combinação apertada neste quadro (para a troca), ou null. Só teclas que um
