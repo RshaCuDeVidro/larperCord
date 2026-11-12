@@ -9,6 +9,7 @@ const std = @import("std");
 const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
 const d = @import("draw.zig");
+const mascote_pet = @import("mascote_pet.zig");
 const qa = @import("qa.zig");
 const anim = @import("anim.zig");
 const w = @import("widgets.zig");
@@ -263,6 +264,8 @@ fn icon(ctx: *d.Ctx, dl: *c.ImDrawList, ref: ?GuildRef, cx: f32, y: f32, size: f
     const ir: d.Rect = .{ .x = cx - size / 2, .y = y, .w = size, .h = size };
     const hb = d.hit(ctx, n, ir);
     qa.mark(ir, "guild:{d}", .{if (ref) |gr| gr.g.id else 0});
+    // O ícone das DMs: aonde o mascote do canto leva a cartinha.
+    if (ref == null) mascote_pet.anchorIn(.dm_icon, ir, bar, ctx.now_ms);
     const selected = if (ref) |gr| ctx.st.guild == gr.g.id else ctx.st.guild == 0;
     const active = selected or hb.hovered;
     if (hb.clicked) ctx.act(.{ .select_guild = if (ref) |gr| gr.g.id else 0 });
@@ -382,6 +385,7 @@ fn textTabs(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         const tr: d.Rect = .{ .x = x, .y = r.y + 2, .w = tw, .h = r.h - 4 };
         const hb = d.hit(ctx, 1999, tr);
         qa.mark(tr, "guild:0", .{});
+        mascote_pet.anchorIn(.dm_icon, tr, r, ctx.now_ms);
         if (hb.clicked) ctx.act(.{ .select_guild = 0 });
         if (sel) d.rect(dl, tr, ctx.col(.accent), 0) else if (hb.hovered) d.rect(dl, tr, ctx.col(.hover), 0);
         d.text(dl, if (sel) bold else font, fs, x, d.centerY(tr, fs), if (sel) ctx.col(.accent_text) else ctx.col(.text), lbl);
@@ -434,6 +438,7 @@ fn dock(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, shape: w.Shape) void {
         const ir: d.Rect = .{ .x = cx - size / 2, .y = by - size, .w = size, .h = size };
         const hb = d.hit(ctx, 3000 + i, ir);
         qa.mark(ir, "guild:{d}", .{if (i == 0) @as(types.Id, 0) else order[i - 1].id});
+        if (i == 0) mascote_pet.anchorIn(.dm_icon, ir, r, ctx.now_ms);
         const g: ?*types.Guild = if (i == 0) null else order[i - 1];
         const gid: types.Id = if (g) |x_| x_.id else 0;
         if (hb.clicked) ctx.act(.{ .select_guild = gid });
@@ -477,6 +482,8 @@ fn list(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, shape: w.Shape) void {
         const rr: d.Rect = .{ .x = r.x + 8, .y = y, .w = r.w - 16, .h = row_h - 2 };
         const hb = d.hit(ctx, 4000 + i, rr);
         qa.mark(rr, "guild:{d}", .{gid});
+        // Na lista, o ícone é o quadradinho do começo da linha.
+        if (gid == 0) mascote_pet.anchorIn(.dm_icon, .{ .x = rr.x, .y = rr.y, .w = rr.h, .h = rr.h }, r, ctx.now_ms);
         if (hb.clicked) ctx.act(.{ .select_guild = gid });
         if (hb.right) if (g) |gg| ctx.popup(.{ .menu = .{ .kind = .guild, .id = gg.id, .x = ctx.mouse.x, .y = ctx.mouse.y } });
         const sel = ctx.st.guild == gid;

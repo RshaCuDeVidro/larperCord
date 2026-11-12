@@ -7,6 +7,7 @@
 const std = @import("std");
 const c = @import("c");
 const App = @import("app.zig").App;
+const Id = @import("core/types.zig").Id;
 const R = @import("qa_runner.zig");
 const Op = R.Op;
 const qa = @import("ui/qa.zig");
@@ -29,7 +30,7 @@ fn run(f: *const fn (*App) void) Op {
 var sets_before: u32 = 0;
 
 fn openAppearance(app: *App) void {
-    app.st.settings.page = .aparencia;
+    app.st.settings.page = .mascote;
     app.handle(.open_settings);
 }
 fn closeSettings(app: *App) void {
@@ -259,6 +260,8 @@ fn typeOne(app: *App) void {
     if (n + 1 >= app.st.input.len) return;
     app.st.input[n] = 'a';
     app.st.input[n + 1] = 0;
+    // A caixa (o campo do ImGui) passa a mostrar o texto novo.
+    app.st.input_sync = true;
 }
 fn clearInput(app: *App) void {
     @memset(&app.st.input, 0);
@@ -378,6 +381,249 @@ fn petUnderPopup(app: *App) bool {
 fn closePopup(app: *App) void {
     app.st.popup = .none;
 }
+// --- Vida própria -----------------------------------------------------------------
+
+fn lifeToggles(_: *App) bool {
+    return qa.find("toggle:Passeia pela janela") != null and qa.find("toggle:Brinca com a interface") != null and
+        qa.find("toggle:Brinca com o mouse") != null and qa.find("toggle:Espera você voltar") != null and qa.find("toggle:Plantinha") != null;
+}
+/// As reações de antes, sem a vida própria no meio (ela tem os testes dela).
+fn quietLife(app: *App) void {
+    app.st.settings.mascot_life = 0;
+    app.st.settings.mascot_cursor = false;
+}
+fn lifeReset(app: *App) void {
+    pet.qaLifeReset(app.images.now_ms);
+    app.qa_blur = false;
+    const set = &app.st.settings;
+    set.mascot_life = 2;
+    set.mascot_roam = true;
+    set.mascot_ui = true;
+    set.mascot_cursor = true;
+    set.mascot_away = true;
+    set.mascot_plant = true;
+}
+fn roamOff(app: *App) void {
+    app.st.settings.mascot_roam = false;
+}
+fn idleShort(app: *App) void {
+    pet.qaIdleFor(10_000, app.images.now_ms);
+}
+fn lifeNow(_: *App) void {
+    pet.qaLifeNow();
+}
+fn doingSomething(_: *App) bool {
+    return pet.activity() != .none;
+}
+fn actFn(comptime a: pet.Act, comptime v: u8) *const fn (*App) void {
+    return struct {
+        fn f(app: *App) void {
+            pet.qaAct(a, v, app.images.now_ms);
+        }
+    }.f;
+}
+fn isAct(comptime a: pet.Act) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.activity() == a;
+        }
+    }.f;
+}
+fn goFn(comptime g: pet.Goal) *const fn (*App) void {
+    return struct {
+        fn f(_: *App) void {
+            pet.qaGo(g);
+        }
+    }.f;
+}
+fn perchedAt(comptime g: pet.Goal) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.mode() == .perch and pet.goalNow() == g;
+        }
+    }.f;
+}
+fn towerUp(_: *App) bool {
+    return pet.hasTower() and pet.activity() == .none;
+}
+fn doodleOn(_: *App) bool {
+    return pet.doodleKind() != 0;
+}
+fn doodleGone(_: *App) bool {
+    return pet.doodleKind() == 0;
+}
+fn someoneTyping(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    app.store.apply(.{ .typing_start = .{ .channel = ch, .user = 1001 } }, app.images.now_ms) catch {};
+}
+fn toTop(app: *App) void {
+    const sc = app.st.scrollOf(app.st.activeChannel() orelse return);
+    sc.stick_bottom = false;
+    sc.target = 0;
+}
+fn toBottom(app: *App) void {
+    if (app.st.activeChannel()) |id| app.st.scrollOf(id).stick_bottom = true;
+}
+fn dmArrives(app: *App) void {
+    // Como o app avisa: o susto da menção e, sendo DM, a cartinha.
+    pet.onPing(app.images.now_ms);
+    pet.onDm();
+}
+fn carryingLetter(_: *App) bool {
+    return pet.goalNow() == .dm and pet.mode() == .trip;
+}
+fn msgDeleted(_: *App) void {
+    pet.onMessageDeleted();
+}
+fn msgEdited(_: *App) void {
+    pet.onMessageEdited();
+}
+fn heldOrFell(_: *App) bool {
+    return pet.activity() == .hold or pet.mode() == .flying or pet.mode() == .dizzy or pet.mode() == .walking;
+}
+fn fell(_: *App) bool {
+    return pet.mode() == .flying or pet.mode() == .dizzy or pet.mode() == .walking;
+}
+fn plantTree(app: *App) void {
+    app.st.settings.mascot_plant_days = 30;
+}
+fn plantSprout(app: *App) void {
+    app.st.settings.mascot_plant_days = 3;
+}
+fn plantWilt(app: *App) void {
+    app.st.settings.mascot_plant_wilted = true;
+}
+fn plantWatered(app: *App) bool {
+    return !app.st.settings.mascot_plant_wilted and pet.activity() == .none;
+}
+fn blur(app: *App) void {
+    app.qa_blur = true;
+}
+fn unblur(app: *App) void {
+    app.qa_blur = false;
+}
+fn awayLong(app: *App) void {
+    pet.qaAwayFor(25 * 60 * 1000, app.images.now_ms);
+}
+fn awayHours(app: *App) void {
+    pet.qaAwayFor(3 * 60 * 60 * 1000, app.images.now_ms);
+}
+fn camped(_: *App) bool {
+    return pet.isCamped();
+}
+fn balloon(app: *App) bool {
+    return pet.balloonOn(app.images.now_ms);
+}
+fn ranToMouse(_: *App) bool {
+    return pet.goalNow() == .mouse;
+}
+fn lifeOff(app: *App) void {
+    app.st.settings.mascot_life = 0;
+}
+fn uiOff(app: *App) void {
+    app.st.settings.mascot_ui = false;
+}
+fn mouseAway(app: *App) void {
+    R.mouse_out = true;
+    c.ImGuiIO_AddMousePosEvent(app.io, -std.math.floatMax(f32), -std.math.floatMax(f32));
+}
+fn homeNoTrip(_: *App) bool {
+    return pet.mode() == .home and pet.goalNow() == .none and pet.activity() == .none;
+}
+fn resizeNow(_: *App) void {
+    pet.onResize();
+}
+var plant_days_before: u8 = 0;
+fn plantYesterday(app: *App) void {
+    var wall: c.SDL_Time = 0;
+    _ = c.SDL_GetCurrentTime(&wall);
+    const today = @import("ui/widgets.zig").localTime(@divTrunc(wall, 1_000_000_000)).day_index;
+    app.st.settings.mascot_plant_day = @intCast(today - 1);
+    app.st.settings.mascot_plant_days = 5;
+    plant_days_before = 5;
+}
+fn plantGrew(app: *App) bool {
+    return app.st.settings.mascot_plant_days == plant_days_before + 1;
+}
+fn nudgeChat(app: *App) void {
+    const sc = app.st.scrollOf(app.st.activeChannel() orelse return);
+    sc.stick_bottom = false;
+    sc.target = @max(0, sc.pos - 60);
+}
+fn leftPerch(_: *App) bool {
+    return pet.mode() != .perch;
+}
+fn stillHome(_: *App) bool {
+    return pet.activity() == .none and pet.mode() == .home;
+}
+fn otherChannel(_: *App, b: []u8) []const u8 {
+    return std.fmt.bufPrint(b, "channel:500006", .{}) catch "";
+}
+fn backToGeral(app: *App) void {
+    app.actions.append(app.gpa, .{ .select_channel = 500005 }) catch {};
+}
+/// Abre uma thread aberta, sempre a mesma (a de menor id, com o canal pai de texto): uma
+/// arquivada ou trancada não tem caixa de mensagem, e sem caixa ele não aparece. (As
+/// threads do demo moram no servidor delas.)
+fn openAThread(app: *App) void {
+    var best: ?Id = null;
+    var it = app.store.channels.iterator();
+    while (it.next()) |e| {
+        const info = &e.value_ptr.*.info;
+        const t = info.thread orelse continue;
+        if (t.archived or t.locked) continue;
+        const parent = app.store.channel(info.parent orelse continue) orelse continue;
+        if (parent.info.kind != .text) continue;
+        if (best == null or e.key_ptr.* < best.?) best = e.key_ptr.*;
+    }
+    if (best) |id| app.actions.append(app.gpa, .{ .select_channel = id }) catch {};
+}
+fn stopTyping(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    if (app.store.channel(ch)) |cs| cs.typing.clearRetainingCapacity();
+}
+// --- Em cada tema: aonde ele vai e se aparece lá ------------------------------------
+
+/// O tema não tem o lugar (ou não tem lugar para ele): nada a conferir. Tem: ele pousa
+/// lá e uma parte dele fica à vista.
+fn arrivedVisible(comptime g: pet.Goal) *const fn (*App) bool {
+    return struct {
+        fn f(app: *App) bool {
+            if (!pet.qaShown(app.images.now_ms)) return true;
+            if (g == .dm) {
+                // O ícone das DMs está na tela e não está atrás do véu: ele tem que chegar
+                // lá (debaixo ou em cima do ícone), sem desculpa de "o tema não tem".
+                // Visível de verdade (a lista pode ter rolado e deixado a marca fora da tela).
+                const icon = qa.visiblePart("guild:0") orelse return true;
+                if (pet.qaVeiled(.dm_icon, app.images.now_ms)) return true;
+                const p = pet.position();
+                return pet.mode() == .perch and pet.goalNow() == .dm and @abs(p[0] - (icon.x + icon.w / 2)) < @max(40, icon.w);
+            }
+            if (pet.qaGoFailed()) return true;
+            return pet.mode() == .perch and pet.goalNow() == g and pet.qaVisibleWidth() > 8;
+        }
+    }.f;
+}
+
+pub const ops_theme = [_]Op{
+    s("mascote: passeios no tema"),
+    run(lifeReset),
+    run(goFn(.dm)),
+    .{ .expect = .{ .name = "leva a cartinha até o ícone das DMs deste tema", .check = arrivedVisible(.dm), .timeout_ms = 9000 } },
+    .{ .shot = "mascote-dm" },
+    run(lifeReset),
+    run(goFn(.channels)),
+    .{ .expect = .{ .name = "espia da lista de canais e aparece", .check = arrivedVisible(.channels), .timeout_ms = 9000 } },
+    .{ .shot = "mascote-canais" },
+    run(lifeReset),
+    run(goFn(.members)),
+    .{ .expect = .{ .name = "sobe na lista de membros", .check = arrivedVisible(.members), .timeout_ms = 9000 } },
+    run(lifeReset),
+    run(goFn(.header)),
+    .{ .expect = .{ .name = "fica pendurado no cabeçalho", .check = arrivedVisible(.header), .timeout_ms = 9000 } },
+    run(lifeReset),
+};
+
 fn dropTarget(_: *App, b: []u8) []const u8 {
     return std.fmt.bufPrint(b, "composer", .{}) catch "";
 }
@@ -505,6 +751,7 @@ pub const ops = [_]Op{
     run(loginHide),
 
     s("mascote no canto"),
+    run(quietLife),
     expect("o mascote senta em cima da caixa de mensagem", petShown),
     .{ .shot = "pet-casa" },
     run(openStatusMenu),
@@ -662,10 +909,222 @@ pub const ops = [_]Op{
     .{ .drag = .{ .from = .{ .mark = "pet" }, .to = .{ .at = .{ .key = "composer", .fx = 0.3, .fy = -6 } } } },
     expect("pegar e soltar no ar: ele voa (e cai)", thrown),
     .{ .shot = "pet-voando" },
-    .{ .expect = .{ .name = "depois de quicar e ficar tonto, volta andando para casa", .check = backHome, .timeout_ms = 9000 } },
+    .{ .expect = .{ .name = "depois de quicar e ficar tonto, volta andando para casa", .check = backHome, .timeout_ms = 15000 } },
     run(idleLong),
     expect("ninguém mexe há uns minutos: ele dorme", sleeping),
     .{ .shot = "pet-dormindo" },
+    s("vida própria"),
+    run(lifeReset),
+    run(openAppearance),
+    expect("a aba Mascote tem a vida própria, o mouse, a volta e a plantinha", lifeToggles),
+    .{ .shot = "config-mascote" },
+    run(closeSettings),
+    run(lifeReset),
+    run(roamOff),
+    run(idleShort),
+    run(lifeNow),
+    expect("à toa, ele faz alguma coisa sozinho", doingSomething),
+    run(lifeReset),
+    run(actFn(.scratch, 0)),
+    .{ .wait = 700 },
+    .{ .shot = "vida-coca" },
+    run(actFn(.char_play, 0)),
+    .{ .wait = 700 },
+    .{ .shot = "vida-cursor" },
+    run(actFn(.coffee, 0)),
+    .{ .wait = 1000 },
+    .{ .shot = "vida-cafe" },
+    run(actFn(.book, 0)),
+    .{ .wait = 1200 },
+    .{ .shot = "vida-livro" },
+    run(actFn(.game, 0)),
+    .{ .wait = 900 },
+    .{ .shot = "vida-videogame" },
+    run(actFn(.gum, 0)),
+    .{ .wait = 1900 },
+    .{ .shot = "vida-chiclete" },
+    run(actFn(.whistle, 0)),
+    .{ .wait = 1000 },
+    .{ .shot = "vida-assobio" },
+    run(actFn(.clean, 0)),
+    .{ .wait = 700 },
+    .{ .shot = "vida-limpa" },
+    run(actFn(.nap_sit, 0)),
+    .{ .wait = 1500 },
+    .{ .shot = "vida-cochilo" },
+    run(actFn(.exercise, 0)),
+    .{ .wait = 900 },
+    .{ .shot = "vida-flexao" },
+    run(actFn(.exercise, 2)),
+    .{ .wait = 900 },
+    .{ .shot = "vida-polichinelo" },
+    run(actFn(.fly, 0)),
+    .{ .wait = 1400 },
+    .{ .shot = "vida-mosquinha" },
+    run(actFn(.fish, 0)),
+    .{ .wait = 4300 },
+    .{ .shot = "vida-pesca" },
+    run(actFn(.tower, 0)),
+    .{ .expect = .{ .name = "empilha os blocos e a torre fica", .check = towerUp, .timeout_ms = 6000 } },
+    .{ .shot = "vida-torre" },
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.2, .fy = 0.5 } } },
+    expect("mexeu o mouse: a torre cai em cima dele", isAct(.tower_fall)),
+    run(lifeReset),
+    run(actFn(.doodle, 0)),
+    .{ .wait = 2500 },
+    expect("rabiscou um coração na caixa", doodleOn),
+    .{ .shot = "vida-rabisco" },
+    run(typeOne),
+    expect("começou a digitar: o rabisco some", doodleGone),
+    run(clearInput),
+    run(plantTree),
+    run(actFn(.water, 0)),
+    .{ .wait = 1000 },
+    .{ .shot = "vida-regando-arvore" },
+    run(lifeReset),
+    run(plantSprout),
+    run(plantWilt),
+    .{ .wait = 100 },
+    .{ .shot = "vida-planta-murcha" },
+    run(roamOff),
+    run(idleShort),
+    run(lifeNow),
+    expect("murcha: a próxima coisa que ele faz é regar", isAct(.water)),
+    .{ .expect = .{ .name = "regada, a planta fica de pé", .check = plantWatered, .timeout_ms = 4000 } },
+    run(lifeReset),
+    run(msgDeleted),
+    expect("mensagem apagada: ele leva para o lixo", isAct(.trash)),
+    .{ .wait = 1200 },
+    .{ .shot = "vida-lixo" },
+    run(lifeReset),
+    run(msgEdited),
+    expect("mensagem editada: passa a borracha", isAct(.erase)),
+    .{ .wait = 500 },
+    .{ .shot = "vida-borracha" },
+    run(lifeReset),
+    run(goFn(.msg)),
+    .{ .expect = .{ .name = "passeio: senta em cima da última mensagem", .check = perchedAt(.msg), .timeout_ms = 5000 } },
+    .{ .shot = "vida-passeio-mensagem" },
+    run(lifeReset),
+    run(goFn(.members)),
+    .{ .expect = .{ .name = "passeio: sobe na lista de membros", .check = perchedAt(.members), .timeout_ms = 6000 } },
+    .{ .shot = "vida-passeio-membros" },
+    run(lifeReset),
+    run(goFn(.header)),
+    .{ .expect = .{ .name = "passeio: fica pendurado no cabeçalho", .check = perchedAt(.header), .timeout_ms = 6000 } },
+    .{ .wait = 300 },
+    .{ .shot = "vida-passeio-cabecalho" },
+    run(lifeReset),
+    run(goFn(.channels)),
+    .{ .expect = .{ .name = "passeio: espia por trás da lista de canais", .check = perchedAt(.channels), .timeout_ms = 6000 } },
+    .{ .shot = "vida-passeio-canais" },
+    run(lifeReset),
+    run(someoneTyping),
+    .{ .expect = .{ .name = "alguém digitando: senta em cima do \"digitando…\"", .check = perchedAt(.typing), .timeout_ms = 5000 } },
+    .{ .shot = "vida-digitando" },
+    run(stopTyping),
+    run(lifeReset),
+    run(toTop),
+    .{ .expect = .{ .name = "o botão de voltar ao fim apareceu: vai lá empurrar", .check = perchedAt(.jump), .timeout_ms = 6000 } },
+    .{ .shot = "vida-empurra-botao" },
+    run(toBottom),
+    run(lifeReset),
+    run(dmArrives),
+    expect("chegou DM: leva a cartinha", carryingLetter),
+    .{ .expect = .{ .name = "e entrega no ícone das DMs", .check = perchedAt(.dm), .timeout_ms = 8000 } },
+    .{ .shot = "vida-carteiro" },
+    run(lifeReset),
+    .{ .resize = .{ 1180, 760 } },
+    expect("a janela mudou de tamanho: se segura (ou cai)", heldOrFell),
+    .{ .resize = .{ 1280, 800 } },
+    .{ .wait = 300 },
+    run(lifeReset),
+    .{ .hover = .{ .mark = "pet" } },
+    .{ .expect = .{ .name = "a setinha parada em cima dele: senta nela", .check = perchedAt(.cursor), .timeout_ms = 5000 } },
+    .{ .shot = "vida-senta-na-setinha" },
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.2, .fy = 0.5 } } },
+    expect("mexeu o mouse: ele cai", fell),
+    run(home),
+    run(lifeReset),
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.95, .fy = -0.6 } } },
+    .{ .expect = .{ .name = "a setinha parada perto dele: tenta pegar", .check = isAct(.grab), .timeout_ms = 4000 } },
+    run(lifeReset),
+    .{ .click = .{ .dyn = otherChannel } },
+    expect("trocou de canal: ele passa pelo portal junto", isAct(.portal)),
+    .{ .wait = 900 },
+    run(openAThread),
+    expect("abriu uma thread: ele espia", isAct(.peek)),
+    .{ .wait = 900 },
+    run(backToGeral),
+    .{ .wait = 400 },
+    run(lifeReset),
+    run(blur),
+    .{ .wait = 100 },
+    .{ .shot = "vida-esperando" },
+    run(awayLong),
+    expect("sem você por muito tempo: acampa", camped),
+    .{ .wait = 100 },
+    .{ .shot = "vida-acampado" },
+    run(awayHours),
+    run(unblur),
+    expect("voltou: desmonta o acampamento", isAct(.pack)),
+    expect("depois de horas fora, diz que sentiu saudade", balloon),
+    .{ .expect = .{ .name = "e corre até o mouse", .check = ranToMouse, .timeout_ms = 3000 } },
+    .{ .shot = "vida-saudade" },
+    run(lifeReset),
+    run(lifeOff),
+    run(idleShort),
+    run(lifeNow),
+    .{ .wait = 500 },
+    expect("vida própria desligada: ele fica quieto", stillHome),
+    run(plantWilt),
+    run(idleShort),
+    expect("mas a plantinha murcha ele rega mesmo assim", isAct(.water)),
+    .{ .expect = .{ .name = "e ela fica de pé", .check = plantWatered, .timeout_ms = 4000 } },
+    run(lifeReset),
+    run(uiOff),
+    run(msgDeleted),
+    .{ .wait = 300 },
+    expect("sem \"Brinca com a interface\": mensagem apagada não mexe nele", stillHome),
+    run(lifeReset),
+    run(blur),
+    run(msgDeleted),
+    .{ .wait = 300 },
+    expect("com a janela sem foco, a interface não mexe nele", stillHome),
+    run(unblur),
+    .{ .wait = 100 },
+    run(petOff),
+    .{ .wait = 100 },
+    run(msgDeleted),
+    .{ .wait = 100 },
+    run(petOn),
+    .{ .wait = 300 },
+    expect("o que aconteceu com ele escondido não vale depois", stillHome),
+    run(resizeNow),
+    .{ .wait = 300 },
+    expect("logo que aparece, a janela se ajeitando não faz ele se segurar", stillHome),
+    run(lifeReset),
+    run(plantYesterday),
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.3, .fy = 0.5 } } },
+    .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.35, .fy = 0.5 } } },
+    expect("primeiro toque de um dia novo: a plantinha cresce um dia", plantGrew),
+    run(lifeReset),
+    run(blur),
+    run(awayLong),
+    expect("acampou de novo", camped),
+    run(mouseAway),
+    run(unblur),
+    expect("voltou pelo teclado: desmonta", isAct(.pack)),
+    .{ .wait = 1700 },
+    expect("e, sem o mouse na janela, fica em casa", homeNoTrip),
+    run(lifeReset),
+    run(uiOff),
+    run(goFn(.msg)),
+    .{ .expect = .{ .name = "sentado na última mensagem de novo", .check = perchedAt(.msg), .timeout_ms = 5000 } },
+    run(nudgeChat),
+    .{ .expect = .{ .name = "a conversa rolou e o lugar mudou: ele volta", .check = leftPerch, .timeout_ms = 2000 } },
+    run(toBottom),
+    run(lifeReset),
     run(petOff),
     expect("desligado nas Configurações, ele some", petGone),
     run(petOn),

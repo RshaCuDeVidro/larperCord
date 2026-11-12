@@ -139,6 +139,9 @@ pub const sent = struct {
     /// (zero com o "Silenciar para mim").
     pub var gain_user: A = .init(0);
     pub var gain_milli: A = .init(0);
+    /// O último "tirar ruído / igualar volume" mandado: a pessoa e os dois bits.
+    pub var dsp_user: A = .init(0);
+    pub var dsp_bits: A = .init(0);
     pub var stop_body: [64]u8 = undefined;
     pub var stop_body_len: A = .init(0);
     /// Pedidos de mensagem e grupos: quantos e o último ("PUT /channels/…").
@@ -899,6 +902,10 @@ pub const Gateway = struct {
                 .voice_volume => |v| {
                     sent.gain_milli.store(@intFromFloat(@round(std.math.clamp(v.volume, 0, 2) * 1000)), .release);
                     sent.gain_user.store(v.user, .release);
+                },
+                .voice_dsp => |v| {
+                    sent.dsp_bits.store(@as(u64, @intFromBool(v.denoise)) | (@as(u64, @intFromBool(v.level)) << 1), .release);
+                    sent.dsp_user.store(v.user, .release);
                 },
                 .call_ring => |ch| {
                     _ = sent.rings.fetchAdd(1, .monotonic);

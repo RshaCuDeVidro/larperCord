@@ -10,7 +10,7 @@ Numa DM ou grupo, o botão de telefone no cabeçalho começa uma call; os temas 
 
 Botão direito no microfone ou no fone, ou na setinha que aparece ao passar o mouse, troca o dispositivo e o volume, mesmo no meio da call; numa call, o botão direito na faixa de voz mostra os dois. `Ctrl+Shift+M` muta e `Ctrl+Shift+D` ensurdece.
 
-O **mixer** dá a cada pessoa o próprio volume.
+O **mixer** dá a cada pessoa o próprio volume, e mais dois botões desligados de começo que só mexem naquela pessoa: **Tirar ruído** (o mesmo supressor de ruído do seu microfone, no som dela) e **Igualar volume** (sobe quem fala baixo e desce quem fala alto, para perto do volume dos outros).
 
 ![O mixer da call](shot:f-voz)
 

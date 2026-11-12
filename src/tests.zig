@@ -35,6 +35,7 @@ test {
     _ = @import("core/janela.zig");
     _ = @import("core/bandeja.zig");
     _ = @import("core/ruido.zig");
+    _ = @import("core/nivel.zig");
     _ = @import("core/lsp.zig");
     _ = @import("ui/rascunhos.zig");
     _ = @import("core/inbox.zig");
@@ -73,6 +74,7 @@ test {
     _ = @import("ui/i18n.zig");
     _ = @import("ui/horario.zig");
     _ = @import("ui/atalhos.zig");
+    _ = @import("core/combinacao.zig");
     _ = @import("ui/syntax.zig");
     _ = @import("ui/bidi.zig");
     _ = @import("ui/tint.zig");

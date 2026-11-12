@@ -24,12 +24,18 @@ pub const Wake = enum(i32) {
     tray_gone = 10,
 };
 
+/// O renderizador que abriu (para Configurações → Desempenho) e se o escolhido nas
+/// configurações não abriu e ficou o automático.
+pub var active_renderer: [32]u8 = @splat(0);
+pub var renderer_fallback = false;
+
 pub const Window = struct {
     window: *c.SDL_Window,
     renderer: *c.SDL_Renderer,
     wake_type: u32,
 
-    pub fn init(title: [*:0]const u8, w: c_int, h: c_int) !Window {
+    /// `wanted`: o renderizador das configurações (null = automático).
+    pub fn init(title: [*:0]const u8, w: c_int, h: c_int, wanted: ?[*:0]const u8) !Window {
         preferWayland();
         preferNvidiaEgl();
         // Fechar a janela é o app quem decide (ficar na bandeja ou sair). Sem
@@ -54,8 +60,23 @@ pub const Window = struct {
             _ = c.SDL_SetWindowIcon(window, icon);
             c.SDL_DestroySurface(icon);
         }
-        // LARPER_RENDERER escolhe o backend do SDL (opengl, vulkan, gpu, software).
-        const renderer = c.SDL_CreateRenderer(window, c.SDL_getenv("LARPER_RENDERER")) orelse return error.SdlRenderer;
+        // LARPER_RENDERER escolhe o backend do SDL (opengl, vulkan, gpu, software) e vale
+        // mais que as configurações. O escolhido lá que não abrir (driver sumiu, outra
+        // placa) não impede o app de abrir: fica o automático, e as Configurações avisam.
+        const env = c.SDL_getenv("LARPER_RENDERER");
+        const name = env orelse wanted;
+        var made = c.SDL_CreateRenderer(window, name);
+        if (made == null and env == null and name != null) {
+            std.log.warn("renderizador {s} não abriu ({s}); usando o automático", .{ std.mem.span(name.?), c.SDL_GetError() });
+            renderer_fallback = true;
+            made = c.SDL_CreateRenderer(window, null);
+        }
+        const renderer = made orelse return error.SdlRenderer;
+        if (c.SDL_GetRendererName(renderer)) |rn| {
+            const span = std.mem.span(rn);
+            const len = @min(span.len, active_renderer.len - 1);
+            @memcpy(active_renderer[0..len], span[0..len]);
+        }
         if (@import("timeline.zig").enabled) std.log.info("SDL video: {s}, renderer: {s}", .{ c.SDL_GetCurrentVideoDriver(), c.SDL_GetRendererName(renderer) });
         _ = c.SDL_SetRenderVSync(renderer, 1);
         _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_NONE);

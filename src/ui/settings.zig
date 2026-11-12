@@ -16,6 +16,8 @@ const dropdown = @import("dropdown.zig");
 const tray = @import("../platform/tray.zig");
 const inbox = @import("inbox.zig");
 const mem_use_mod = @import("../core/mem_use.zig");
+const teclas = @import("teclas.zig");
+const atalhos_mod = @import("atalhos.zig");
 const sys = @import("../platform/sys.zig");
 const mascote = @import("mascote.zig");
 
@@ -27,6 +29,12 @@ const Section = struct {
     items: []const struct { page: S.Page, label: []const u8, label_en: []const u8 },
 };
 
+/// A troca de atalho que não deu (Page.keyRowEditable): em qual ação, o porquê e, se
+/// já é de outra, de qual.
+var key_problem_for: ?teclas.Acao = null;
+var key_problem: @import("atalhos.zig").Personalizados.Porque = .ok;
+var key_problem_owner: teclas.Acao = .paleta;
+
 pub const sections = [_]Section{
     .{ .title = "CONFIGURAÇÕES DE USUÁRIO", .title_en = "USER SETTINGS", .items = &.{
         .{ .page = .conta, .label = "Minha conta", .label_en = "My Account" },
@@ -35,6 +43,7 @@ pub const sections = [_]Section{
     } },
     .{ .title = "CONFIGURAÇÕES DO APLICATIVO", .title_en = "APP SETTINGS", .items = &.{
         .{ .page = .aparencia, .label = "Aparência", .label_en = "Appearance" },
+        .{ .page = .mascote, .label = "Mascote", .label_en = "Mascot" },
         .{ .page = .acessibilidade, .label = "Acessibilidade", .label_en = "Accessibility" },
         .{ .page = .chat, .label = "Chat", .label_en = "Chat" },
         .{ .page = .voz, .label = "Voz", .label_en = "Voice" },
@@ -294,7 +303,10 @@ const Page = struct {
             qa.mark(r, "seg:{s}", .{o});
             if (hb.clicked) value.* = @intCast(i);
             const sel = value.* == i;
-            const k = anim.to(anim.id("seg", i + @as(usize, @intFromPtr(value))), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
+            // A chave é o endereço da configuração e a opção, misturados: somar os dois
+            // fazia a opção 4 de uma configuração bater com a 2 da que fica 2 bytes depois
+            // (dois seletores na mesma página piscavam puxando a mesma animação).
+            const k = anim.to(anim.id("seg", (@as(u64, @intFromPtr(value)) << 8) | i), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
             d.rect(p.dl, r, ctx.col(.rail).alpha(0.6).mix(ctx.col(.accent).alpha(0.22), k), ctx.th.radius + 2);
             d.border(p.dl, r, if (sel) ctx.col(.accent) else ctx.col(.border), ctx.th.radius + 2, if (sel) 2 else 1);
             // Uma opção longa (russo, alemão) diminui a fonte em vez de passar da borda.
@@ -375,6 +387,117 @@ const Page = struct {
             while (it.next()) |k| p.keyCap(&x, k);
         }
         p.y += 44;
+    }
+
+    /// Uma linha de atalho que dá para trocar (#18): clicar nas teclas espera a
+    /// combinação nova (Esc cancela); a que não pode ser explica por quê embaixo, e a
+    /// trocada ganha o "Padrão" para voltar.
+    fn keyRowEditable(p: *Page, action: []const u8, acao: teclas.Acao) void {
+        const ctx = p.ctx;
+        const kb = &ctx.st.teclas;
+        const capturing = teclas.capturing == acao;
+        if (capturing) {
+            if (c.ImGui_IsKeyPressedEx(c.ImGuiKey_Escape, false)) {
+                teclas.endCapture();
+                key_problem_for = null;
+            } else if (teclas.captured(ctx.io)) |cb| {
+                key_problem_for = acao;
+                switch (kb.pode(acao, cb)) {
+                    .ok => {
+                        kb.set(acao, cb);
+                        teclas.endCapture();
+                        key_problem_for = null;
+                        ctx.act(.save_settings);
+                    },
+                    .sem_modificador => key_problem = .sem_modificador,
+                    .reservado => key_problem = .reservado,
+                    .em_uso => {
+                        key_problem = .em_uso;
+                        key_problem_owner = kb.dono(cb, acao) orelse acao;
+                    },
+                }
+            }
+        }
+        const row: d.Rect = .{ .x = p.x, .y = p.y, .w = p.w, .h = 36 };
+        p.markText(row);
+        d.text(p.dl, p.font(.medium), 15, p.x, p.y + 8, ctx.col(.text), action);
+        // As teclas (ou o pedido) num botão à direita.
+        var lb: [64]u8 = undefined;
+        const keys = teclas.label(kb, acao, &lb);
+        const wait = i18n.tr("Aperte a combinação… (Esc cancela)", "Press the keys… (Esc cancels)");
+        const shown_w = if (capturing) d.width(p.font(.medium), 13, wait) + 20 else keysWidth(p, keys) + 12;
+        const br: d.Rect = .{ .x = p.x + p.w - shown_w, .y = p.y + 2, .w = shown_w, .h = 32 };
+        const hb = d.hit(ctx, p.id(), br);
+        qa.mark(br, "keybind:{s}", .{@tagName(acao)});
+        if (hb.clicked) {
+            teclas.capturing = if (capturing) null else acao;
+            key_problem_for = null;
+        }
+        if (capturing) {
+            qa.mark(br, "keybind-capturing:{s}", .{@tagName(acao)});
+            d.rect(p.dl, br, ctx.col(.accent).alpha(0.18), ctx.th.radius);
+            d.border(p.dl, br, ctx.col(.accent), ctx.th.radius, 1.5);
+            d.text(p.dl, p.font(.medium), 13, br.x + 10, d.centerY(br, 13), ctx.col(.text), wait);
+        } else {
+            if (hb.hovered) d.rect(p.dl, br, ctx.col(.hover), ctx.th.radius);
+            var x = br.right() - 6;
+            var alts = std.mem.splitBackwardsSequence(u8, keys, " / ");
+            var first = true;
+            while (alts.next()) |alt| {
+                if (!first) {
+                    x -= d.width(p.font(.medium), 14, "/") + 8;
+                    d.text(p.dl, p.font(.medium), 14, x, p.y + 9, ctx.col(.muted), "/");
+                    x -= 8;
+                }
+                first = false;
+                var it = std.mem.splitBackwardsScalar(u8, alt, '+');
+                while (it.next()) |k| p.keyCap(&x, k);
+            }
+            d.tip(ctx, br, i18n.tr("Clique para trocar", "Click to change"), hb.hovered);
+        }
+        // Trocado: "Padrão" volta para o de fábrica.
+        if (kb.trocado(acao) and !capturing) {
+            const reset = i18n.tr("Padrão", "Default");
+            const rw = d.width(p.font(.medium), 12, reset) + 16;
+            const rr: d.Rect = .{ .x = br.x - rw - 8, .y = p.y + 6, .w = rw, .h = 24 };
+            const rh = d.hit(ctx, p.id(), rr);
+            qa.mark(rr, "keybind-reset:{s}", .{@tagName(acao)});
+            d.rect(p.dl, rr, if (rh.hovered) ctx.col(.hover) else ctx.col(.elevated), ctx.th.radius);
+            d.text(p.dl, p.font(.medium), 12, rr.x + 8, d.centerY(rr, 12), ctx.col(.muted), reset);
+            if (rh.clicked) {
+                kb.set(acao, null);
+                ctx.act(.save_settings);
+            }
+        }
+        p.y += 44;
+        if (key_problem_for == acao) {
+            var mb: [160]u8 = undefined;
+            const msg = switch (key_problem) {
+                .sem_modificador => i18n.tr("Use junto Ctrl ou Alt (ou uma tecla F): uma letra sozinha dispararia ao digitar.", "Add Ctrl or Alt (or use an F key): a letter alone would fire while typing."),
+                .reservado => i18n.tr("Essa combinação já é de outra coisa do app (copiar, colar, nova linha, tamanho da interface…).", "That combination already belongs to something else in the app (copy, paste, new line, interface size…)."),
+                .em_uso => blk: {
+                    const o = atalhos_mod.deAcao(key_problem_owner);
+                    break :blk i18n.fmt(&mb, "Essa já é o atalho de \"{s}\".", "That's already the shortcut for \"{s}\".", .{i18n.tr(o.pt, o.en)});
+                },
+                .ok => "",
+            };
+            qa.mark(.{ .x = p.x, .y = p.y - 6, .w = p.w, .h = 18 }, "keybind-problem", .{});
+            d.text(p.dl, p.font(.regular), 12.5, p.x, p.y - 6, ctx.col(.danger), msg);
+            p.y += 18;
+        }
+    }
+
+    fn keysWidth(p: *Page, keys: []const u8) f32 {
+        var wd: f32 = 0;
+        var alts = std.mem.splitSequence(u8, keys, " / ");
+        var first = true;
+        while (alts.next()) |alt| {
+            if (!first) wd += d.width(p.font(.medium), 14, "/") + 16;
+            first = false;
+            var it = std.mem.splitScalar(u8, alt, '+');
+            while (it.next()) |k| wd += d.width(p.font(.semibold), 13, k) + 24;
+        }
+        return wd;
     }
 
     fn keyCap(p: *Page, x: *f32, k: []const u8) void {
@@ -490,7 +613,8 @@ pub fn draw(ctx: *d.Ctx, previews: []const Preview) void {
     d.line(dl, cx + 6, cr.y + 12, cx - 6, cr.y + 24, xc, 2);
     const ew = d.width(fam.get(.bold), 12, "ESC");
     d.text(dl, fam.get(.bold), 12, cx - ew / 2, cr.bottom() + 8, ctx.col(.muted), "ESC");
-    if (hb.clicked or (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and !dropdown.ownsEsc())) ctx.act(.close_settings);
+    // Trocando um atalho, o Esc só cancela a troca (ver Page.keyRowEditable).
+    if (hb.clicked or (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and !dropdown.ownsEsc() and !teclas.busy())) ctx.act(.close_settings);
 }
 
 var color_slot: i32 = -1;
@@ -749,9 +873,9 @@ fn page(p: *Page, previews: []const Preview) void {
             }
             p.divider();
             @import("settings_timer.zig").section(p);
-            // O mascote por último: o que já existia na página não muda de lugar.
-            p.divider();
-            p.heading(i18n.tr("Mascote", "Mascot"));
+        },
+        .mascote => {
+            p.title(i18n.tr("Mascote", "Mascot"));
             mascotPicker(p, &s.mascot);
             if (mascote.Kind.of(s.mascot) == .terminal) {
                 p.heading(i18n.tr("Abertura", "Opening"));
@@ -760,8 +884,23 @@ fn page(p: *Page, previews: []const Preview) void {
                 if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
             }
             p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
-            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
             if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
+            p.divider();
+            p.heading(i18n.tr("Mascote no canto", "Corner mascot"));
+            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
+            const pet_on = s.mascot_pet;
+            p.heading(i18n.tr("Vida própria", "A life of its own"));
+            p.segmented(&.{ i18n.tr("Desligada", "Off"), i18n.tr("Calma", "Calm"), i18n.tr("Normal", "Normal"), i18n.tr("Agitada", "Lively") }, &s.mascot_life);
+            p.note(i18n.tr("Parado, ele faz coisas sozinho de vez em quando: toma café, lê, pesca um emoji da conversa, caça uma mosquinha, empilha blocos. Só com a janela em foco e por poucos segundos; depois de uns minutos sem você mexer, ele dorme e para de gastar.", "When you leave it alone, it does things on its own now and then: drinks coffee, reads, fishes an emoji out of the chat, chases a fly, stacks blocks. Only while the window is focused and only for a few seconds; after a few idle minutes it falls asleep and stops using anything."));
+            const life_on = pet_on and s.mascot_life > 0;
+            p.toggleIf(i18n.tr("Passeia pela janela", "Wanders around the window"), i18n.tr("Sobe na lista de membros, senta em cima da última mensagem, fica pendurado no cabeçalho, espia por trás da lista de canais. Trocando de canal, ele pula junto.", "Climbs onto the member list, sits on the last message, hangs from the header, peeks out from behind the channel list. When you switch channels, it jumps along."), &s.mascot_roam, life_on);
+            p.toggleIf(i18n.tr("Brinca com a interface", "Plays with the interface"), i18n.tr("Senta no \"digitando…\", leva mensagem apagada para o lixo, passa a borracha na editada, empurra o botão de voltar ao fim, se segura quando a janela muda de tamanho e leva a cartinha da DM até o ícone.", "Sits on the \"is typing…\" line, takes deleted messages to the trash, erases edited ones, pushes the jump-to-present button, holds on when the window is resized and carries a letter to the DM icon."), &s.mascot_ui, pet_on);
+            p.toggleIf(i18n.tr("Brinca com o mouse", "Plays with the mouse"), i18n.tr("Com a setinha parada perto dele, tenta pegar; parada em cima dele, senta nela (e cai quando você mexe).", "With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move)."), &s.mascot_cursor, pet_on);
+            p.toggleIf(i18n.tr("Espera você voltar", "Waits for you to come back"), i18n.tr("Com a janela sem foco, fica esperando; se você some por muito tempo, monta um acampamento. Na volta, corre até o mouse (e, depois de horas, diz que sentiu saudade).", "With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you)."), &s.mascot_away, pet_on);
+            p.heading(i18n.tr("Plantinha", "Little plant"));
+            p.toggleIf(i18n.tr("Plantinha", "Little plant"), i18n.tr("Um vasinho do lado dele que ele rega e que cresce um pouco a cada dia em que você usa o app. Some por muito tempo e ela murcha, até ele regar de novo.", "A little pot next to it that it waters and that grows a bit each day you use the app. Stay away too long and it wilts, until it waters it again."), &s.mascot_plant, pet_on);
+            var pb: [96]u8 = undefined;
+            p.note(i18n.fmt(&pb, "Ela já cresceu {d} de 30 dias.", "It has grown for {d} of 30 days.", .{@min(s.mascot_plant_days, 30)}));
         },
         .acessibilidade => {
             p.title(i18n.tr("Acessibilidade", "Accessibility"));
@@ -830,7 +969,9 @@ fn page(p: *Page, previews: []const Preview) void {
                     const g = atalhos.nome(a.grupo);
                     p.heading(i18n.tr(g.pt, g.en));
                 }
-                p.keyRow(i18n.tr(a.pt, a.en), if (a.teclas_pt) |k| i18n.tr(k, a.teclas) else a.teclas);
+                if (a.acao) |acao| {
+                    p.keyRowEditable(i18n.tr(a.pt, a.en), acao);
+                } else p.keyRow(i18n.tr(a.pt, a.en), if (a.teclas_pt) |k| i18n.tr(k, a.teclas) else a.teclas);
             }
         },
         .idioma => {
@@ -1161,6 +1302,7 @@ fn performance(p: *Page) void {
     };
     for (stats) |st| statRow(p, 56, st.label, st.value);
     memoryRows(p);
+    rendererSection(p);
     p.divider();
     p.heading(i18n.tr("Limites de memória", "Memory limits"));
     const s = &ctx.st.settings;
@@ -1168,6 +1310,58 @@ fn performance(p: *Page) void {
     p.slider(i18n.tr("Cada GIF", "Each GIF"), &s.gif_limit_mb, 4, 32, "{d:.0} MB", 1);
     p.slider(i18n.tr("Mensagens na memória", "Messages in memory"), &s.message_budget, 500, 5000, "{d:.0}", 1);
     p.note(i18n.tr("Menos memória custa um pouco de rede e CPU: o que saiu é buscado de novo ao voltar para a tela, e GIFs grandes pulam quadros.", "Less memory costs a little network and CPU: what left is fetched again when it comes back on screen, and big GIFs skip frames."));
+}
+
+/// O nome de um renderizador do SDL como as pessoas conhecem.
+fn rendererLabel(name: []const u8) []const u8 {
+    const known = [_]struct { id: []const u8, pt: []const u8, en: []const u8 }{
+        .{ .id = "opengl", .pt = "OpenGL", .en = "OpenGL" },
+        .{ .id = "opengles2", .pt = "OpenGL ES 2", .en = "OpenGL ES 2" },
+        .{ .id = "vulkan", .pt = "Vulkan", .en = "Vulkan" },
+        .{ .id = "direct3d", .pt = "Direct3D 9", .en = "Direct3D 9" },
+        .{ .id = "direct3d11", .pt = "Direct3D 11", .en = "Direct3D 11" },
+        .{ .id = "direct3d12", .pt = "Direct3D 12", .en = "Direct3D 12" },
+        .{ .id = "metal", .pt = "Metal", .en = "Metal" },
+        .{ .id = "gpu", .pt = "SDL GPU", .en = "SDL GPU" },
+        .{ .id = "software", .pt = "Software (lento, sem placa de vídeo)", .en = "Software (slow, no graphics card)" },
+    };
+    for (known) |k| if (std.mem.eql(u8, name, k.id)) return i18n.tr(k.pt, k.en);
+    return name;
+}
+
+/// Configurações → Desempenho: o renderizador (o automático ou um dos que o SDL tem
+/// neste computador). Vale no próximo início.
+fn rendererSection(p: *Page) void {
+    const s = &p.ctx.st.settings;
+    p.divider();
+    p.heading(i18n.tr("Renderizador", "Renderer"));
+    var names: [16][]const u8 = undefined;
+    var labels: [16][]const u8 = undefined;
+    names[0] = "";
+    labels[0] = i18n.tr("Automático", "Automatic");
+    var n: usize = 1;
+    const count: usize = @intCast(@max(c.SDL_GetNumRenderDrivers(), 0));
+    for (0..count) |i| {
+        if (n == names.len) break;
+        const raw = c.SDL_GetRenderDriver(@intCast(i)) orelse continue;
+        names[n] = std.mem.span(raw);
+        labels[n] = rendererLabel(names[n]);
+        n += 1;
+    }
+    var cur: u8 = 0;
+    for (names[1..n], 1..) |nm, i| if (std.mem.eql(u8, nm, s.renderer.slice())) {
+        cur = @intCast(i);
+    };
+    var sel = cur;
+    p.radio(labels[0..n], &.{}, &sel);
+    if (sel != cur) s.renderer.set(names[sel]);
+    const win = @import("../platform/window.zig");
+    const active = std.mem.sliceTo(&win.active_renderer, 0);
+    var buf: [200]u8 = undefined;
+    p.note(i18n.fmt(&buf, "Em uso agora: {s}. A troca vale na próxima vez que o larperCord abrir.", "In use now: {s}. A change applies the next time larperCord opens.", .{rendererLabel(active)}));
+    qa.mark(.{ .x = p.x, .y = p.y - 20, .w = 10, .h = 10 }, "renderer-active:{s}", .{active});
+    if (win.renderer_fallback) qa.mark(.{ .x = p.x, .y = p.y, .w = 10, .h = 10 }, "renderer-fallback", .{});
+    if (win.renderer_fallback) p.note(i18n.tr("O renderizador escolhido não abriu neste computador, então ficou o automático.", "The chosen renderer didn't open on this computer, so the automatic one is in use."));
 }
 
 fn textSection(p: *Page) void {

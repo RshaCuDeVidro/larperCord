@@ -232,7 +232,22 @@ pub const App = struct {
 
         // O fontconfig se prepara enquanto a janela abre (ver fc_warm.zig).
         const fc_warm = @import("platform/fc_warm.zig").start();
-        const win = platform.Window.init("larperCord", 1280, 800);
+        // O renderizador escolhido vem antes do resto das configurações (só ele importa
+        // para abrir a janela).
+        var rbuf: [32]u8 = undefined;
+        var rz: [33]u8 = @splat(0);
+        const wanted = blk: {
+            var pbuf: [512]u8 = undefined;
+            const path = settingsPath(&pbuf) orelse break :blk null;
+            var size: usize = 0;
+            const data = c.SDL_LoadFile(path.ptr, &size) orelse break :blk null;
+            defer c.SDL_free(data);
+            const name = settings_state.peekRenderer(gpa, @as([*]const u8, @ptrCast(data))[0..size], &rbuf);
+            if (name.len == 0) break :blk null;
+            @memcpy(rz[0..name.len], name);
+            break :blk @as([*:0]const u8, @ptrCast(&rz));
+        };
+        const win = platform.Window.init("larperCord", 1280, 800, wanted);
         @import("platform/fc_warm.zig").join(fc_warm);
         app.win = try win;
         wake_type_global = app.win.wake_type;
@@ -1101,6 +1116,8 @@ pub const App = struct {
                 // `theme-options "terminal" crt=#false ascii=#true`
                 const name = (n.arg(0) orelse continue).asString() orelse continue;
                 for (n.props) |p| if (p.value.asBool()) |v| app.themes.choose(name, p.key, v);
+            } else if (app.st.teclas.applyNode(n)) {
+                // `keybind "paleta" "Ctrl+J"` (ui/atalhos.zig).
             } else if (app.st.volumes.applyNode(app.gpa, n)) {
                 // `voice-volume "1234" 0.8` e `voice-mute "1234"` (core/volumes.zig).
             } else if (app.st.filtros.applyNode(app.gpa, n, now())) {
@@ -1145,6 +1162,11 @@ pub const App = struct {
         while (it.next()) |uid| app.cmd(.{ .voice_volume = .{ .user = uid.*, .volume = vs.gain(uid.*) } });
         var mit = vs.muted.keyIterator();
         while (mit.next()) |uid| if (!vs.level.contains(uid.*)) app.cmd(.{ .voice_volume = .{ .user = uid.*, .volume = 0 } });
+        // "Tirar ruído" e "Igualar volume" de quem tem (os dois conjuntos juntos, sem repetir).
+        var dit = vs.denoise.keyIterator();
+        while (dit.next()) |uid| app.cmd(.{ .voice_dsp = .{ .user = uid.*, .denoise = true, .level = vs.levelOn(uid.*) } });
+        var lit = vs.leveled.keyIterator();
+        while (lit.next()) |uid| if (!vs.denoiseOn(uid.*)) app.cmd(.{ .voice_dsp = .{ .user = uid.*, .denoise = false, .level = true } });
     }
 
     pub fn saveSettings(app: *App) void {
@@ -1155,6 +1177,7 @@ pub const App = struct {
         defer out.deinit(app.gpa);
         settings_state.write(&app.st.settings, app.themes.name(), &out, app.gpa) catch return;
         app.st.volumes.write(&out, app.gpa) catch return;
+        app.st.teclas.write(&out, app.gpa) catch return;
         app.st.filtros.save = false;
         app.st.filtros.write(&out, app.gpa) catch return;
         var it = app.themes.choices.iterator();
@@ -2032,6 +2055,12 @@ pub const App = struct {
                 app.cmd(.{ .voice_volume = .{ .user = vm.user, .volume = st.volumes.gain(vm.user) } });
                 app.saveSettings();
             },
+            .set_voice_dsp => |vd| {
+                st.volumes.setDenoise(app.gpa, vd.user, vd.denoise);
+                st.volumes.setLevel(app.gpa, vd.user, vd.level);
+                app.cmd(.{ .voice_dsp = .{ .user = vd.user, .denoise = vd.denoise, .level = vd.level } });
+                app.saveSettings();
+            },
             .create_thread => |ct| {
                 defer app.gpa.free(ct.name);
                 const f = app.store.findAny(ct.message) orelse return;
@@ -2354,6 +2383,13 @@ pub const App = struct {
     /// chega no canal aberto é lido pela conversa: ver `channel_seen`.)
     fn afterEvent(app: *App, e: ev.Event) void {
         const st = &app.st;
+        // Na conversa aberta, o mascote do canto leva a mensagem apagada para o lixo e
+        // passa a borracha na editada.
+        switch (e) {
+            .message_delete => |x| if (!x.local and x.channel == (st.activeChannel() orelse 0)) @import("ui/mascote_pet.zig").onMessageDeleted(),
+            .message_update => |x| if (!x.local and x.content != null and x.channel == (st.activeChannel() orelse 0)) @import("ui/mascote_pet.zig").onMessageEdited(),
+            else => {},
+        }
         switch (e) {
             .search_results => |r| @import("ui/search.zig").deliver(r),
             .invite_created => |r| @import("ui/invites.zig").created(r),
@@ -2433,6 +2469,7 @@ pub const App = struct {
         if (verdict != .hidden and @import("app_conta.zig").allowsNotify(app, m, cs, verdict == .important)) {
             f.notified +%= 1;
             @import("ui/mascote_pet.zig").onPing(now());
+            if (cs.info.guild == 0 and app.st.activeChannel() != m.channel) @import("ui/mascote_pet.zig").onDm();
             app.notify(m, cs);
         }
         if (verdict != .important and f.focusOn(now()) and !cs.info.unread and app.st.activeChannel() != m.channel) return m.channel;
@@ -2919,6 +2956,7 @@ pub const App = struct {
                     }
                     // Arquivo arrastado para a janela: vai para a bandeja (e o mascote do canto come).
                     if (e.type == c.SDL_EVENT_DROP_POSITION) @import("ui/mascote_pet.zig").onDragOver(now());
+                    if (e.type == c.SDL_EVENT_WINDOW_RESIZED) @import("ui/mascote_pet.zig").onResize();
                     if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
                         if (e.drop.data) |p| app.attachFile(std.mem.span(p));
                         @import("ui/mascote_pet.zig").onDrop(now());
@@ -2993,6 +3031,8 @@ pub const App = struct {
                     hidden_since_ms = now_ms;
                 } else if (now_ms - hidden_since_ms >= janela.hidden_release_ms) {
                     const before = app.images.bytes;
+                    // O índice da busca local, com ela fechada, também sai.
+                    if (@import("ui/search.zig").releaseIdle(true)) app.trim_wanted.store(true, .release);
                     if (app.images.releaseHidden()) {
                         app.trim_wanted.store(true, .release);
                         if (app.opts.stats) std.log.info("janela escondida: soltou {d} KB, ficaram {d} imagens, {d} KB", .{ (before - app.images.bytes) / 1024, app.images.readyCount(), app.images.bytes / 1024 });

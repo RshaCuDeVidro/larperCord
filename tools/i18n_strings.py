@@ -18,6 +18,8 @@ Uso (só a biblioteca padrão):
   python3 tools/i18n_strings.py --check          compara com i18n/ja.kdl: faltando e sobrando são
                                                  avisos; marcador errado, chave repetida ou arquivo
                                                  inválido saem com código 1
+  python3 tools/i18n_strings.py --check --strict  idem, e falta de tradução ou inglês vindo de uma
+                                                 variável que o script não lê também saem com 1
   python3 tools/i18n_strings.py --pending PASTA [--chunks N]
                                                  os textos ainda sem tradução, em N arquivos
                                                  (padrão 4), uma linha por texto com o lugar
@@ -363,10 +365,21 @@ def enclosing(toks, i):
     return field or ""
 
 
+def explained(arg):
+    """O inglês de uma chamada com texto de variável vem de um lugar que este script
+    lê: um campo de tabela (`x.en`, `x.label_en`, `x.teclas`) ou o parâmetro `en` /
+    `english` de quem repassa para o i18n."""
+    texts = [t.text for t in arg]
+    if len(texts) == 1 and texts[0] in ("en", "english"):
+        return True
+    last = texts[-1] if texts else ""
+    return len(texts) >= 2 and texts[-2] == "." and (last == "en" or last.endswith("_en") or last == "teclas")
+
+
 def collect(files):
     wrappers = [w for w in find_wrappers(files) if w.base is not None]
     uses = []
-    dynamic = 0
+    dynamic = []
     for f in files:
         toks = f.toks
         for i, t in enumerate(toks):
@@ -422,7 +435,7 @@ def collect(files):
                 pt = literal(args[pt_i])
                 if en is None or (w is not None and pt is None):
                     if is_base:
-                        dynamic += 1
+                        dynamic.append((f.rel, args[en_i][0].line, explained(args[en_i]), " ".join(t.text for t in args[en_i])))
                     continue
                 uses.append(Use(en, is_fmt, f.rel, args[en_i][0].line, enclosing(toks, i - 2) if is_base else name))
                 break
@@ -726,7 +739,7 @@ def problems(entries, fmt_keys):
     return out
 
 
-def cmd_check(uses, dynamic, lang):
+def cmd_check(uses, dynamic, lang, strict=False):
     path, text = load_lang(lang)
     rel = path.relative_to(ROOT).as_posix()
     try:
@@ -740,9 +753,14 @@ def cmd_check(uses, dynamic, lang):
     missing = keys - have
     stale = sorted(have - keys, key=sort_key)
     probs = problems(entries, fmt_keys)
-    print(f"textos no código: {len(keys)} ({len(fmt_keys)} de formato; {dynamic} chamadas com texto de variável)")
+    unexplained = [d for d in dynamic if not d[2]]
+    print(f"textos no código: {len(keys)} ({len(fmt_keys)} de formato; {len(dynamic)} chamadas com texto de variável)")
     print(f"{rel}: {len(have)} traduções, {len(keys & have)} em uso")
     print(f"aviso: {len(missing)} sem tradução (aparecem em inglês)")
+    # Inglês que vem de uma variável que este script não lê: a tradução só existe se
+    # o mesmo texto aparecer escrito em outro lugar. Use um campo .en ou um texto direto.
+    for file, line, _, expr in unexplained:
+        print(f"aviso: {file}:{line}: o inglês vem de `{expr}`, que este script não lê")
     if stale:
         print(f"aviso: {len(stale)} que o código não usa mais:")
         for k in stale:
@@ -754,6 +772,9 @@ def cmd_check(uses, dynamic, lang):
     for w in find_wrappers([f for f in every if re.search(r"\bpt\s*:", f.text)]):
         if w.base is None and (w.file.rel, w.name) not in NOT_I18N:
             print(f"aviso: {w.file.rel}: {w.name}() recebe pt/en mas não passa pelo i18n (o {lang} não chega lá)")
+    if strict and (missing or unexplained):
+        print(f"erro: --strict: {len(missing)} sem tradução, {len(unexplained)} chamadas com inglês que o script não lê", file=sys.stderr)
+        return 1
     return 1 if probs else 0
 
 
@@ -845,6 +866,7 @@ def main():
     ap = argparse.ArgumentParser(description="Textos da interface para as traduções em i18n/<idioma>.kdl")
     ap.add_argument("--lang", default="ja")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--strict", action="store_true", help="com --check: falta de tradução e inglês que o script não lê também são erro")
     ap.add_argument("--pending", metavar="PASTA")
     ap.add_argument("--chunks", type=int, default=4)
     ap.add_argument("--merge", metavar="ARQUIVO")
@@ -854,7 +876,7 @@ def main():
     uses, dynamic = collect(files)
     uses += theme_uses()
     if a.check:
-        return cmd_check(uses, dynamic, a.lang)
+        return cmd_check(uses, dynamic, a.lang, a.strict)
     if a.pending:
         return cmd_pending(uses, a.lang, a.pending, max(1, a.chunks))
     if a.merge:
