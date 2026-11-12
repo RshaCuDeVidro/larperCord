@@ -44,8 +44,18 @@ pub fn sync(look_text: []const u8, file: []const u8, accent: d.Rgba) void {
     seen_accent = acc;
     terminal.accent = accent;
     terminal.look = resolve(look_text, file, terminal.look);
+    // O visual em uso fica com a própria cópia dos desenhos: reler a pasta solta os das
+    // entradas, e um arquivo que passou a ter erro mantém o visual de antes (com os
+    // desenhos de antes), que não podem sumir junto.
+    if (terminal.look.drawing) |dw| if (dw != &own_drawing) {
+        own_drawing = dw.*;
+        terminal.look.drawing = &own_drawing;
+    };
     terminal.colors = terminal.look.colorsFor(accent, false);
 }
+
+/// Os desenhos do visual em uso (ver `sync`).
+var own_drawing: visual.Drawing = .{};
 
 /// O visual pedido: o do arquivo, se houver um escolhido (e sem erro), ou o do texto
 /// curto, com os desenhos do arquivo de onde vierem.
