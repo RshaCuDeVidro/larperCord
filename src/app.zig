@@ -1765,6 +1765,10 @@ pub const App = struct {
                 st.guild = cs.info.guild;
                 st.friends = false;
                 st.call_view = true;
+                // A lista de membros do servidor da call (que pode nunca ter sido aberto
+                // nesta sessão): o mesmo pedido de quando se abre um canal de lá.
+                const sub = st.last_channel.get(cs.info.guild) orelse app.firstTextChannel(cs.info.guild);
+                if (sub) |id| if (app.store.channel(id)) |tcs| app.subscribeTo(tcs);
             },
             .set_setting => |ss| if (settings_state.setByte(&st.settings, ss.index, ss.value)) app.saveSettings(),
             .accept_friend => |rel| app.cmd(.{ .relationship = .{ .user = rel.user, .accept = true, .from = rel.from } }),
