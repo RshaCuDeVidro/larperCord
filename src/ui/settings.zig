@@ -60,6 +60,33 @@ const menu_items = blk: {
     break :blk n;
 };
 
+/// Textos das configurações que não couberam na área deles: um botão mais largo que a
+/// página, um rótulo que passa por baixo do interruptor, uma opção maior que o botão
+/// mesmo com a fonte menor. Só os builds de debug contam; o QA confere todas as páginas
+/// em russo e japonês (qa_paineis.zig). `last_overflow`: o último, para a falha dizer qual.
+pub var overflows: std.atomic.Value(u32) = .init(0);
+pub var last_overflow: [160]u8 = undefined;
+pub var last_overflow_len: usize = 0;
+const count_overflows = @import("builtin").mode == .debug;
+
+pub fn noteOverflow(text: []const u8) void {
+    if (comptime !count_overflows) return;
+    _ = overflows.fetchAdd(1, .monotonic);
+    const n = d.utf8Prefix(text, last_overflow.len).len;
+    @memcpy(last_overflow[0..n], text[0..n]);
+    last_overflow_len = n;
+}
+
+/// O tamanho de fonte que faz `text` caber em `avail`, de `size` até `min` (abaixo disso o
+/// texto fica ilegível, e conta como estouro).
+pub fn fitSize(font: *c.ImFont, size: f32, min: f32, text: []const u8, avail: f32) f32 {
+    const tw = d.width(font, size, text);
+    if (tw <= avail) return size;
+    const k = @max(min, @floor(size * avail / tw * 2) / 2);
+    if (d.width(font, k, text) > avail) noteOverflow(text);
+    return k;
+}
+
 /// Estado de desenho de uma página (posição corrente, largura útil).
 const Page = struct {
     ctx: *d.Ctx,
@@ -96,6 +123,7 @@ const Page = struct {
 
     /// Uma linha de texto solta, que ocupa `advance` de altura.
     pub fn line(p: *Page, wt: d.Weight, size: f32, col: d.Rgba, t: []const u8, advance: f32) void {
+        if (d.width(p.font(wt), size, t) > p.w) noteOverflow(t);
         const tw = d.textClipped(p.dl, p.font(wt), size, p.x, p.y, col, t, p.w);
         p.markText(.{ .x = p.x, .y = p.y, .w = tw, .h = advance - 4 });
         p.y += advance;
@@ -144,6 +172,8 @@ const Page = struct {
         if (enabled) qa.mark(r, "toggle:{s}", .{label}) else qa.mark(r, "toggle-off:{s}", .{label});
         if (hb.clicked and enabled) value.* = !value.*;
         const fade: f32 = if (enabled) 1 else 0.45;
+        // O rótulo não pode passar por baixo do interruptor.
+        if (d.width(p.font(.medium), 16, label) > desc_w) noteOverflow(label);
         d.text(p.dl, p.font(.medium), 16, r.x, r.y + 4, ctx.col(.text).alpha(fade), label);
         if (desc.len > 0) _ = inbox.wrapText(p.dl, p.font(.regular), 13.5, r.x, r.y + 28, desc_w, desc, 6, ctx.col(.muted).alpha(fade));
         // Interruptor.
@@ -219,8 +249,12 @@ const Page = struct {
             const cy = r.y + 22;
             c.ImDrawList_AddCircleEx(p.dl, d.v(cx, cy), 9, (if (sel) ctx.col(.accent) else ctx.col(.muted)).u(), 0, 2, 0);
             if (sel) d.circle(p.dl, cx, cy, 5, ctx.col(.accent));
+            if (d.width(p.font(.medium), 15, o) > r.w - 56) noteOverflow(o);
             d.text(p.dl, p.font(.medium), 15, r.x + 44, r.y + 12, ctx.col(.text), o);
-            if (descs.len > i) d.text(p.dl, p.font(.regular), 13, r.x + 44, r.y + 34, ctx.col(.muted), descs[i]);
+            if (descs.len > i) {
+                if (d.width(p.font(.regular), 13, descs[i]) > r.w - 56) noteOverflow(descs[i]);
+                d.text(p.dl, p.font(.regular), 13, r.x + 44, r.y + 34, ctx.col(.muted), descs[i]);
+            }
             p.y += r.h + 8;
         }
         p.y += 8;
@@ -262,8 +296,10 @@ const Page = struct {
             const k = anim.to(anim.id("seg", i + @as(usize, @intFromPtr(value))), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
             d.rect(p.dl, r, ctx.col(.rail).alpha(0.6).mix(ctx.col(.accent).alpha(0.22), k), ctx.th.radius + 2);
             d.border(p.dl, r, if (sel) ctx.col(.accent) else ctx.col(.border), ctx.th.radius + 2, if (sel) 2 else 1);
-            const tw = d.width(p.font(.semibold), 15, o);
-            d.text(p.dl, p.font(.semibold), 15, r.x + (r.w - tw) / 2, d.centerY(r, 15), if (sel) ctx.col(.text) else ctx.col(.muted), o);
+            // Uma opção longa (russo, alemão) diminui a fonte em vez de passar da borda.
+            const fs = fitSize(p.font(.semibold), 15, 11, o, r.w - 12);
+            const tw = d.width(p.font(.semibold), fs, o);
+            d.text(p.dl, p.font(.semibold), fs, r.x + (r.w - tw) / 2, d.centerY(r, fs), if (sel) ctx.col(.text) else ctx.col(.muted), o);
         }
         p.y += 60;
     }
@@ -299,6 +335,7 @@ const Page = struct {
     /// Onde vai o próximo botão; o cursor da página já anda.
     fn buttonRect(p: *Page, label: []const u8) d.Rect {
         const r: d.Rect = .{ .x = p.line_x orelse p.x, .y = p.y, .w = d.width(p.font(.semibold), 14, label) + 32, .h = 36 };
+        if (r.right() > p.x + p.w + 0.5) noteOverflow(label);
         p.line_x = null;
         p.button_end = r.right();
         p.y += button_step;
@@ -624,8 +661,7 @@ fn page(p: *Page, previews: []const Preview) void {
                 for (ctx.th.options, 0..) |o, i| {
                     const cur = ctx.th.option(o.name) orelse o.default;
                     var v = cur;
-                    const en = i18n.en();
-                    p.toggle(if (en and o.label_en.len > 0) o.label_en else o.label, if (en and o.description_en.len > 0) o.description_en else o.description, &v);
+                    p.toggle(themeText(o.label, o.label_en), themeText(o.description, o.description_en), &v);
                     if (v != cur) ctx.act(.{ .set_theme_option = .{ .index = i, .value = v } });
                 }
             }
@@ -647,7 +683,7 @@ fn page(p: *Page, previews: []const Preview) void {
             p.segmented(&.{ i18n.tr("Do tema", "Theme"), i18n.tr("Retos", "Square"), i18n.tr("Suaves", "Soft"), i18n.tr("Redondos", "Round") }, &s.corners);
             p.divider();
             themeColors(p);
-            p.heading("Layout");
+            p.heading(i18n.tr("Layout", "Layout"));
             p.toggle(i18n.tr("Lista de membros", "Member list"), i18n.tr("Mostra quem está no servidor (quando o tema tem uma).", "Shows who's in the server (when the theme has one)."), &s.show_member_list);
             p.toggle(i18n.tr("Barra de status", "Status bar"), i18n.tr("Conexão, ping, RAM e relógio (quando o tema tem uma).", "Connection, ping, RAM and clock (when the theme has one)."), &s.show_status_bar);
             p.note(i18n.tr("Arraste a divisa entre os painéis para mudar a largura da lista de canais, da lista de membros e da tela dividida. Duplo clique na divisa volta ao padrão do tema.", "Drag the edge between panels to resize the channel list, the member list and split view. Double-click an edge to go back to the theme's default."));
@@ -786,12 +822,20 @@ fn page(p: *Page, previews: []const Preview) void {
     }
 }
 
+/// O texto de um tema no idioma da interface. O inglês do .kdl é a chave nas tabelas
+/// de tradução (tools/i18n_strings.py coleta os -en dos temas embutidos); tema da
+/// comunidade sem tradução fica em inglês, e sem inglês, no português.
+fn themeText(pt: []const u8, en: []const u8) []const u8 {
+    return if (en.len == 0) pt else i18n.tr(pt, en);
+}
+
 fn themeGrid(p: *Page, previews: []const Preview) void {
     const ctx = p.ctx;
     const cols: usize = if (p.w > 600) 3 else 2;
     const gap: f32 = 14;
     const cw = (p.w - gap * @as(f32, @floatFromInt(cols - 1))) / @as(f32, @floatFromInt(cols));
-    const ch: f32 = cw * 0.62 + 48;
+    // Embaixo da miniatura: o nome e a descrição em até duas linhas.
+    const ch: f32 = cw * 0.62 + 64;
     for (previews, 0..) |pv, i| {
         const col = i % cols;
         const row = i / cols;
@@ -803,11 +847,17 @@ fn themeGrid(p: *Page, previews: []const Preview) void {
         const k = anim.to(anim.id("tcard", i), if (sel) 1 else if (hb.hovered) 0.5 else 0, 18);
         d.rect(p.dl, r, ctx.col(.rail).mix(ctx.col(.elevated), 0.4), 12);
         // Miniatura com as cores do tema.
-        const m: d.Rect = .{ .x = r.x + 8, .y = r.y + 8, .w = r.w - 16, .h = r.h - 56 };
+        const m: d.Rect = .{ .x = r.x + 8, .y = r.y + 8, .w = r.w - 16, .h = r.h - 72 };
         miniature(p.dl, pv, m);
         d.border(p.dl, r, ctx.col(.accent).alpha(0.25 + 0.75 * k), 12, 1 + k * 1.5);
-        d.text(p.dl, p.font(.semibold), 15, r.x + 12, r.bottom() - 42, ctx.col(.text), pv.name);
-        _ = d.textClipped(p.dl, p.font(.regular), 12, r.x + 12, r.bottom() - 22, ctx.col(.muted), if (i18n.en() and pv.description_en.len > 0) pv.description_en else pv.description, r.w - 24);
+        d.text(p.dl, p.font(.semibold), 15, r.x + 12, r.bottom() - 58, ctx.col(.text), pv.name);
+        const desc = themeText(pv.description, pv.description_en);
+        _ = inbox.wrapText(p.dl, p.font(.regular), 12, r.x + 12, r.bottom() - 38, r.w - 24, desc, 2, ctx.col(.muted));
+        // Japonês não tem espaço para quebrar (fica numa linha, cortada), e uma descrição
+        // longa pode passar das duas linhas: o texto inteiro aparece ao passar o mouse.
+        const desc_w = d.width(p.font(.regular), 12, desc);
+        const no_break = std.mem.indexOfScalar(u8, desc, ' ') == null;
+        if (desc_w > r.w - 24 and (no_break or desc_w > (r.w - 24) * 1.8)) d.tip(ctx, r, desc, hb.hovered);
         if (sel) {
             d.circle(p.dl, r.right() - 18, r.y + 18, 10, ctx.col(.accent));
             d.line(p.dl, r.right() - 22, r.y + 18, r.right() - 19, r.y + 21, ctx.col(.accent_text), 2);
@@ -1144,7 +1194,8 @@ fn about(p: *Page) void {
     p.y += 40;
     p.note(i18n.tr("Cliente de Discord nativo: Zig + SDL3 + Dear ImGui + FreeType.", "Native Discord client: Zig + SDL3 + Dear ImGui + FreeType."));
     p.note(i18n.tr("Temas em KDL que reorganizam a interface inteira, recarregados ao salvar.", "KDL themes that rearrange the whole interface, reloaded on save."));
-    var about_buf: [96]u8 = undefined;
+    // Em russo a frase passa de 150 bytes, em japonês de 100.
+    var about_buf: [256]u8 = undefined;
     p.note(i18n.fmt(&about_buf, "Versão {s} · voz com E2EE (DAVE), mixer por pessoa e Opus 48 kHz.", "Version {s} · voice with E2EE (DAVE), per-person mixer and Opus 48 kHz.", .{@import("build_options").version}));
     p.note(i18n.tr("Cliente não oficial: usar contas de usuário fora do app oficial vai contra os termos do Discord.", "Unofficial client: using user accounts outside the official app is against Discord's terms."));
     p.divider();

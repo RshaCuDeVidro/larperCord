@@ -307,7 +307,8 @@ pub fn windowControls(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     const size = d.pnum(n, "size", 12);
     const gap = d.pnum(n, "gap", 8);
     const cols = [3]d.Rgba{ fx.nodeColor(ctx, n, "color", .danger), fx.nodeColor(ctx, n, "color2", .idle), fx.nodeColor(ctx, n, "color3", .online) };
-    const tips = [3][2][]const u8{ .{ "Fechar", "Close" }, .{ "Minimizar", "Minimize" }, .{ "Maximizar", "Zoom" } };
+    // Em campos `.pt`/`.en`: assim o tools/i18n_strings.py os acha.
+    const tips = [3]struct { pt: []const u8, en: []const u8 }{ .{ .pt = "Fechar", .en = "Close" }, .{ .pt = "Minimizar", .en = "Minimize" }, .{ .pt = "Maximizar", .en = "Zoom" } };
     const marks = [3][]const u8{ "close", "minimize", "zoom" };
     const win = c.SDL_GetRenderWindow(ctx.images.renderer);
     const focused = !ctx.io.*.AppFocusLost;
@@ -339,7 +340,7 @@ pub fn windowControls(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
                 },
             }
         }
-        d.tip(ctx, br, i18n.tr(tips[i][0], tips[i][1]), h.hovered);
+        d.tip(ctx, br, i18n.tr(tips[i].pt, tips[i].en), h.hovered);
         if (!h.clicked) continue;
         switch (i) {
             0 => {

@@ -426,12 +426,13 @@ pub fn viewer(ctx: *d.Ctx) void {
     d.text(dl, fam.get(.semibold), 14, win.x + 24, by + 4, d.Rgba.white.alpha(k), name);
     d.text(dl, fam.get(.regular), 12.5, win.x + 24, by + 24, d.Rgba.white.alpha(0.55 * k), dims);
     var bx = win.right() - 24;
-    // Rótulos em português também servem de marca para o QA.
-    const actions = [_][]const u8{ "Copiar imagem", "Copiar link", "Abrir no navegador" };
-    const actions_en = [_][]const u8{ "Copy Image", "Copy Link", "Open in Browser" };
+    // Rótulos em português também servem de marca para o QA. Em campos `.pt`/`.en`: assim o
+    // tools/i18n_strings.py os acha.
+    const actions = [_]struct { pt: []const u8, en: []const u8 }{ .{ .pt = "Copiar imagem", .en = "Copy Image" }, .{ .pt = "Copiar link", .en = "Copy Link" }, .{ .pt = "Abrir no navegador", .en = "Open in Browser" } };
     var clicked_action = false;
-    for (actions, 0..) |mark_label, i| {
-        const label = i18n.tr(mark_label, actions_en[i]);
+    for (actions, 0..) |action, i| {
+        const mark_label = action.pt;
+        const label = i18n.tr(action.pt, action.en);
         // Copiar a imagem vale também para as da demonstração e para arquivos.
         const can = i == 0 or std.mem.startsWith(u8, url, "https://");
         const tw = d.width(fam.get(.medium), 13, label);
