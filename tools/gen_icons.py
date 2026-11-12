@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Gera os ícones derivados a partir de assets/icon.svg e assets/logo-mark.svg:
+"""Gera os ícones derivados dos SVGs dos dois mascotes:
 
-  assets/icon-64.png  ícone da janela (embutido no executável)
-  assets/icon-32.png  ícone da bandeja (embutido): só o mascote, sem a placa
-                      escura, que em 22 px come metade do desenho
-  assets/icon.ico     ícone do .exe no Windows (ver assets/larpercord.rc)
+  Terminal (o principal): assets/icon-terminal.svg (com a placa escura),
+  assets/mascote-terminal.svg (só o mascote) e assets/mascote-terminal-pequeno.svg
+  (traços grossos para 16 a 32 px).
+  Clássico (o da cara de deboche): assets/icon-classico.svg e assets/logo-mark.svg.
+
+  assets/icon-64.png, icon-classico-64.png    ícone da janela (embutido no executável)
+  assets/icon-32.png, icon-classico-32.png    ícone da bandeja (embutido): só o mascote,
+                                              sem a placa escura, que em 22 px come metade do desenho
+  assets/icon-128.png, icon-classico-128.png  o ícone do menu de aplicativos no Linux, que o app
+                                              grava na pasta de ícones do usuário (embutido)
+  assets/icon.ico, icon-classico.ico          ícone do .exe e da bandeja no Windows (ver assets/larpercord.rc)
+  docs/assets/icon-32.png, icon-64.png, icon-180.png  o site, o instalador e o AUR (o principal)
 
 Precisa de rsvg-convert e de Pillow. Rodar de novo só se os SVGs mudarem:
     python3 tools/gen_icons.py
@@ -62,21 +70,36 @@ def ico(entries):
     return head + table + body
 
 
-icon = assets / "icon.svg"
-mark = assets / "logo-mark.svg"
-
-(assets / "icon-64.png").write_bytes(small(render(icon, 64)))
-(assets / "icon-32.png").write_bytes(small(render(mark, 32)))
-(assets / "icon.ico").write_bytes(
-    ico(
-        [
-            (16, rgba_png(render(mark, 16))),
-            (24, rgba_png(render(mark, 24))),
-            (32, rgba_png(render(icon, 32))),
-            (48, rgba_png(render(icon, 48))),
-            (256, rgba_png(render(icon, 256), 192)),
-        ]
-    )
-)
-for name in ("icon-64.png", "icon-32.png", "icon.ico"):
-    print(name, (assets / name).stat().st_size, "bytes")
+docs = root / "docs" / "assets"
+sets = {
+    "": (assets / "icon-terminal.svg", assets / "mascote-terminal-pequeno.svg"),
+    "-classico": (assets / "icon-classico.svg", assets / "logo-mark.svg"),
+}
+written = []
+for suffix, (icon, mark) in sets.items():
+    for name, data in (
+        (f"icon{suffix}-64.png", small(render(icon, 64))),
+        (f"icon{suffix}-32.png", small(render(mark, 32))),
+        (f"icon{suffix}-128.png", small(render(icon, 128), 192)),
+        (
+            f"icon{suffix}.ico",
+            ico(
+                [
+                    (16, rgba_png(render(mark, 16))),
+                    (24, rgba_png(render(mark, 24))),
+                    (32, rgba_png(render(icon, 32))),
+                    (48, rgba_png(render(icon, 48))),
+                    (256, rgba_png(render(icon, 256), 192)),
+                ]
+            ),
+        ),
+    ):
+        (assets / name).write_bytes(data)
+        written.append(assets / name)
+# O site, o instalador (install.sh) e o AUR usam o principal.
+main_icon = sets[""][0]
+for size in (32, 64, 180):
+    (docs / f"icon-{size}.png").write_bytes(rgba_png(render(main_icon, size), 192))
+    written.append(docs / f"icon-{size}.png")
+for path in written:
+    print(path.relative_to(root), path.stat().st_size, "bytes")

@@ -31,6 +31,11 @@ var closing = std.atomic.Value(bool).init(false);
 var ready = std.atomic.Value(bool).init(false);
 var dead = std.atomic.Value(bool).init(false);
 var wake_type: u32 = 0;
+/// O mascote do ícone (ui/mascote.zig): o Clássico ou o Terminal, o principal.
+var classic = false;
+/// Os rótulos de agora, para recriar o processo do ícone ao trocar o mascote.
+var last_open: [*:0]const u8 = "";
+var last_quit: [*:0]const u8 = "";
 /// O QA roda sem bandeja de verdade: aqui ele escolhe se ela "abriu".
 pub var fake: ?bool = null;
 var fake_on = false;
@@ -59,7 +64,7 @@ pub fn hostAvailable() bool {
 
 /// Cria o ícone com o menu. Um ícone sem menu não teria como voltar.
 fn build(open_label: [*:0]const u8, quit_label: [*:0]const u8, on_open: c.SDL_TrayCallback, on_quit: c.SDL_TrayCallback) ?*c.SDL_Tray {
-    const icon = platform.decodeIcon(platform.icon_32);
+    const icon = platform.decodeIcon(platform.iconPng(classic, .tray));
     defer if (icon) |i| c.SDL_DestroySurface(i);
     const t = c.SDL_CreateTray(icon, "larperCord") orelse {
         std.log.info("bandeja: SDL_CreateTray falhou: {s}", .{c.SDL_GetError()});
@@ -99,6 +104,8 @@ pub fn show(wake: u32, open_label: [*:0]const u8, quit_label: [*:0]const u8, wai
         return false;
     }
     wake_type = wake;
+    last_open = open_label;
+    last_quit = quit_label;
     if (!sys.windows) return startHelper(open_label, quit_label, wait);
     tray = build(open_label, quit_label, onOpen, onQuit);
     if (tray != null) hookClicks();
@@ -110,6 +117,22 @@ pub fn hide() void {
     if (tray) |t| c.SDL_DestroyTray(t);
     tray = null;
     stopHelper();
+}
+
+/// Troca o mascote do ícone. Com o ícone à vista: o do SDL troca o desenho no lugar;
+/// o processo do ícone (Linux) é recriado com o outro, já que o desenho vai junto no
+/// registro do StatusNotifierItem.
+pub fn setMascot(want_classic: bool) void {
+    if (classic == want_classic) return;
+    classic = want_classic;
+    if (tray) |t| {
+        const icon = platform.decodeIcon(platform.iconPng(classic, .tray)) orelse return;
+        defer c.SDL_DestroySurface(icon);
+        c.SDL_SetTrayIcon(t, icon);
+    } else if (!sys.windows and helper != null) {
+        stopHelper();
+        _ = startHelper(last_open, last_quit, false);
+    }
 }
 
 /// Depois de `.tray_gone`: recolhe o processo do ícone que saiu. Verdadeiro se era
@@ -131,7 +154,7 @@ fn startHelper(open_label: [*:0]const u8, quit_label: [*:0]const u8, wait: bool)
     const named = n > 0 and !std.mem.endsWith(u8, pb[0..@intCast(n)], " (deleted)");
     if (named) pb[@intCast(n)] = 0;
     const self: [*:0]const u8 = if (named) @ptrCast(&pb) else "/proc/self/exe";
-    var args = [_:null]?[*:0]const u8{ self, "--tray-helper", open_label, quit_label };
+    var args = [_:null]?[*:0]const u8{ self, "--tray-helper", open_label, quit_label, if (classic) "classico" else "terminal" };
     const props = c.SDL_CreateProperties();
     if (props == 0) return false;
     defer c.SDL_DestroyProperties(props);
@@ -264,7 +287,9 @@ fn helperQuit(_: ?*anyopaque, _: ?*c.SDL_TrayEntry) callconv(.c) void {
 }
 
 /// Mostra o ícone até a entrada fechar: o app mandou sair ou morreu, até com SIGKILL.
-pub fn helperMain(open_label: [*:0]const u8, quit_label: [*:0]const u8) noreturn {
+pub fn helperMain(open_label: [*:0]const u8, quit_label: [*:0]const u8, want_classic: bool) noreturn {
+    classic = want_classic;
+    sni.classic = want_classic;
     // O nosso StatusNotifierItem: só volta se não deu para começar pelo D-Bus.
     sni.run(open_label, quit_label);
     // De reserva, o libappindicator (com o GTK e uma volta a cada 50 ms para atendê-lo).

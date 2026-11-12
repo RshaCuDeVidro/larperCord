@@ -106,7 +106,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
             // Só o próprio app chama (platform/tray.zig): é o processo do ícone da bandeja.
             const open = it.next() orelse return fail("--tray-helper precisa de dois rótulos");
             const quit = it.next() orelse return fail("--tray-helper precisa de dois rótulos");
-            @import("platform/tray.zig").helperMain(open.ptr, quit.ptr);
+            // O mascote do ícone (de uma versão sem o argumento: o principal).
+            const mascot = it.next() orelse "terminal";
+            @import("platform/tray.zig").helperMain(open.ptr, quit.ptr, std.mem.eql(u8, mascot, "classico"));
         } else if (std.mem.eql(u8, arg, "--list-themes")) {
             for (builtin_themes.list) |t| std.debug.print("{s}\n", .{t.name});
             return;

@@ -9,6 +9,8 @@ const c = @import("c");
 const d = @import("draw.zig");
 const anim = @import("anim.zig");
 const logo = @import("logo.zig");
+const mascote = @import("mascote.zig");
+const mascote_terminal = @import("mascote_terminal.zig");
 const qa = @import("qa.zig");
 const i18n = @import("i18n.zig");
 const inbox = @import("inbox.zig");
@@ -39,6 +41,9 @@ pub const Login = struct {
     err_buf: [200]u8 = undefined,
     err_len: usize = 0,
     err_at: f32 = -10,
+    /// O último clique no mascote e quantos já foram (cada clique, uma reação).
+    react_at: f32 = -10,
+    react_n: u8 = 0,
     want_focus: bool = true,
     /// Texto do "Voltar" no topo do cartão (vazio = sem). Ex.: "Voltar para ana".
     back_buf: [96]u8 = undefined,
@@ -117,6 +122,9 @@ pub const Env = struct {
     proxy: ?ProxyHook = null,
     /// Tem um proxy salvo.
     proxy_on: bool = false,
+    /// Qual mascote abre o app e com qual abertura (Configurações → Aparência).
+    mascot: mascote.Kind = .terminal,
+    opening: mascote_terminal.Opening = .boot,
 };
 
 /// O formulário do proxy é o das Configurações (ui/settings_rede.zig): quem tem o
@@ -289,7 +297,9 @@ pub fn draw(l: *Login, env: Env) ?Result {
         c.ImGuiWindowFlags_NoNav | pass_through);
     defer c.ImGui_End();
 
-    const leave_k = if (l.phase == .leaving) seg(l.t, l.phase_at, l.phase_at + 0.75) else 0;
+    // Na saída do Terminal (a TV desligando), o resto some antes dele.
+    const leave_s: f32 = 0.75;
+    const leave_k = if (l.phase == .leaving) seg(l.t, l.phase_at, l.phase_at + leave_s) else 0;
     if (l.phase == .leaving and leave_k >= 1) {
         l.phase = .hidden;
         return null;
@@ -300,7 +310,7 @@ pub fn draw(l: *Login, env: Env) ?Result {
         .dl = c.ImGui_GetWindowDrawList(),
         .win = .{ .x = vp.*.Pos.x, .y = vp.*.Pos.y, .w = vp.*.Size.x, .h = vp.*.Size.y },
         .p = if (env.light) light else dark,
-        .a = 1 - leave_k * leave_k,
+        .a = if (env.mascot == .terminal) 1 - outCubic(seg(leave_k, 0, 0.7)) else 1 - leave_k * leave_k,
         .mouse = env.io.*.MousePos,
     };
     const t = l.t;
@@ -335,29 +345,8 @@ pub fn draw(l: *Login, env: Env) ?Result {
     }
 
     // --- Logo -------------------------------------------------------------
-    var pose: logo.Pose = .{
-        .body = outBack(seg(t, 0.12, 0.72), 2.4),
-        // Chega de olhos fechados e "acorda" com a cara de deboche.
-        .eyes = outBack(seg(t, 0.95, 1.2), 2),
-        .smile = outCubic(seg(t, 1.1, 1.4)),
-        .star = outBack(seg(t, 0.7, 1.05), 3) * (1 + 0.07 * @sin(t * 3.1)),
-        .spin = (1 - outCubic(seg(t, 0.7, 1.2))) * -2.6 + 0.1 * @sin(t * 0.9),
-        .alpha = f.a,
-    };
-    // Piscadas (às vezes duas seguidas).
-    if (t > 3) {
-        const period: f32 = 3.7;
-        const cyc = @floor((t - 3) / period);
-        const ph = (t - 3) - cyc * period;
-        const blink = struct {
-            fn at(x: f32) f32 {
-                return if (x >= 0 and x <= 0.16) @sin(std.math.pi * x / 0.16) else 0;
-            }
-        }.at;
-        var b = blink(ph);
-        if (@mod(cyc, 3) == 1) b = @max(b, blink(ph - 0.26));
-        pose.eyes *= 1 - b;
-    }
+    var pose = logo.introPose(t);
+    pose.alpha = f.a;
     // Para onde olha: o mouse; o campo do token enquanto digita; de um lado
     // pro outro enquanto conecta; para baixo quando dá erro.
     const lc = d.v(hero_cx, hero_cy);
@@ -372,15 +361,46 @@ pub fn draw(l: *Login, env: Env) ?Result {
     l.look[0] = anim.step(l.look[0], want[0], 9);
     l.look[1] = anim.step(l.look[1], want[1], 9);
     pose.look = l.look;
-    pose.glow = 0.3 + 0.05 * @sin(t * 2.0);
 
     var bob = if (t > 1.4) @sin((t - 1.4) * 1.6) * 5 else 0;
     var shake: f32 = 0;
     const since_err = t - l.err_at;
     if (since_err < 0.7) shake = @sin(since_err * 42) * 9 * @exp(-since_err * 5);
     if (l.phase == .connecting) bob += @sin(t * 4) * 2;
-    const zoom = 1 + 0.18 * outCubic(leave_k);
-    logo.draw(f.dl, hero_cx + shake * 0.6, hero_cy + bob, logo_size * zoom, pose);
+    // Clicar no mascote faz ele reagir (pulo, giro ou susto).
+    const hero_r: Rect = .{ .x = hero_cx - logo_size * 0.45, .y = hero_cy - logo_size * 0.4, .w = logo_size * 0.9, .h = logo_size * 0.75 };
+    qa.mark(hero_r, "login-mascot", .{});
+    if (l.phase != .leaving and c.ImGui_IsMouseClicked(0) and hero_r.contains(f.mouse.x, f.mouse.y)) {
+        l.react_at = t;
+        l.react_n +%= 1;
+    }
+    const react_t = t - l.react_at;
+    switch (env.mascot) {
+        .classico => {
+            if (react_t >= 0 and react_t < mascote.reaction_seconds) {
+                const x = react_t / 0.55;
+                bob -= if (x < 1) @sin(std.math.pi * x) * (1 - x) * logo_size * 0.14 else 0;
+                pose.spin = react_t * 12;
+                pose.eyes = 1.15;
+            }
+            const zoom = 1 + 0.18 * outCubic(leave_k);
+            logo.draw(f.dl, hero_cx + shake * 0.6, hero_cy + bob, logo_size * zoom, pose);
+        },
+        // O Terminal desliga como uma TV de tubo na saída: sem zoom e sem sumir
+        // junto com o resto (ele mesmo apaga no fim).
+        .terminal => mascote_terminal.draw(f.dl, hero_cx + shake * 0.6, hero_cy + bob, logo_size, .{
+            .t = t,
+            .look = l.look,
+            .connecting = l.phase == .connecting,
+            .err_age = t - l.err_at,
+            .leave = leave_k,
+            .light = env.light,
+            .reduce = env.reduce,
+            .opening = env.opening,
+            .react = if (react_t < mascote.reaction_seconds) react_t else -1,
+            .react_variant = l.react_n,
+        }),
+    }
 
     // --- Nome e frase ---------------------------------------------------------
     if (wide) {

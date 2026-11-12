@@ -83,6 +83,14 @@ pub const Settings = struct {
     accent: u8 = 0,
     /// Cantos: 0 = os do tema, 1 = retos, 2 = suaves, 3 = redondos.
     corners: u8 = 0,
+    /// O mascote do app (ui/mascote.zig): a abertura, o "Sobre" e o ícone da janela,
+    /// da bandeja e do menu de aplicativos. 0 = Terminal (o principal), 1 = Clássico.
+    mascot: u8 = 0,
+    /// A abertura do Terminal (ui/mascote_terminal.zig `Opening`): 0 = boot de terminal,
+    /// 1 = chuva de código, 2 = TV sintonizando, 3 = pixels, 4 = portal, 5 = sortear a cada vez.
+    mascot_opening: u8 = 0,
+    /// O mascote que mora no canto, em cima da caixa de mensagem (ui/mascote_pet.zig).
+    mascot_pet: bool = true,
     /// O tempo da call ao lado de cada canal de voz (ui/voice_timer.zig): ligado, o
     /// formato (um de core/voice_timer.zig `presets`, ou `custom_index` com o
     /// `voice_timer_pattern` da pessoa).

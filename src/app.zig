@@ -59,6 +59,8 @@ const lsp_net = @import("net/lsp.zig");
 const updater = @import("net/updater.zig");
 const lsp_ui = @import("ui/lsp_ui.zig");
 const mem_tune = @import("platform/mem_tune.zig");
+const mascote = @import("ui/mascote.zig");
+const icone_sistema = @import("platform/icone_sistema.zig");
 const tray = @import("platform/tray.zig");
 const wl_ativacao = @import("platform/wl_ativacao.zig");
 const instance = @import("platform/instance.zig");
@@ -162,6 +164,13 @@ pub const App = struct {
     tray_on_was: bool = false,
     /// Idioma dos rótulos do menu do ícone que está lá.
     tray_lang: i18n.Lang = .pt,
+    /// O mascote cujos ícones (janela, bandeja, avisos, menu do sistema) estão de pé.
+    mascot_applied: ?mascote.Kind = null,
+    /// A abertura fica pelo menos até aqui (segundos) antes de sair para o app: no
+    /// demo, a animação inteira; com a conta de verdade, nada (sai quando conectar).
+    login_min_t: f32 = 0,
+    /// O sorteio da abertura desta vez (com "sortear a cada vez" nas Configurações).
+    opening_seed: u64 = 0,
     /// Quando tentar pôr o ícone de novo (SDL_GetTicks) e quantas vezes já tentou.
     tray_retry_ms: u64 = 0,
     tray_tries: u8 = 0,
@@ -284,6 +293,12 @@ pub const App = struct {
         i18n.set(if (opts.qa and opts.lang == null) .pt else opts.lang orelse i18n.fromSetting(app.st.settings.language));
         app.fonts.preferLanguage(@tagName(i18n.current()));
         app.st.settings.open = opts.settings;
+        var wall: c.SDL_Time = 0;
+        _ = c.SDL_GetCurrentTime(&wall);
+        const mix = @as(u64, @bitCast(wall)) ^ c.SDL_GetTicksNS();
+        app.opening_seed = (mix ^ (mix >> 29)) *% 0x9E3779B97F4A7C15 >> 17;
+        // Antes da bandeja abrir: o ícone já sai com o mascote escolhido.
+        app.applyMascot();
         timeline.mark(.config);
         const name = opts.theme orelse saved_theme orelse "classico";
         const want = app.themes.indexOf(name) orelse 0;
@@ -307,6 +322,11 @@ pub const App = struct {
         } else if (opts.demo or opts.qa or (opts.shot != null and c.SDL_getenv("LARPER_SHOT_REAL") == null)) {
             // (LARPER_SHOT_REAL=1: print com a conta de verdade, para depurar.)
             try app.startDemo();
+            // O demo é a vitrine: mostra a abertura inteira (o QA e os prints, não).
+            if (opts.demo and !opts.qa and opts.shot == null and !app.st.settings.reduce_motion) {
+                app.login.begin(.connecting);
+                app.login_min_t = mascote.introSeconds(mascote.Kind.of(app.st.settings.mascot), mascote.pickOpening(app.st.settings.mascot_opening, app.opening_seed));
+            }
         } else if (app_accounts.envStartupToken()) |t| {
             try app.startReal(t);
             app.login.begin(.connecting);
@@ -388,6 +408,41 @@ pub const App = struct {
         // e o Mutter recusam.
         if (token != null and !hidden and wl_ativacao.activate(app.win.window, token.?)) return;
         _ = c.SDL_RaiseWindow(app.win.window);
+    }
+
+    /// Os ícones seguem o mascote das Configurações (ui/mascote.zig): o da janela
+    /// (barra de tarefas, alt+tab), o da bandeja, o dos avisos do Windows e, no
+    /// Linux, o do menu de aplicativos (platform/icone_sistema.zig). Roda a cada
+    /// quadro, mas só faz algo quando a escolha muda.
+    fn applyMascot(app: *App) void {
+        const kind = mascote.Kind.of(app.st.settings.mascot);
+        if (app.mascot_applied == kind) return;
+        const first = app.mascot_applied == null;
+        app.mascot_applied = kind;
+        const classic = kind == .classico;
+        // Na abertura com o principal, a janela já nasceu com ele.
+        if (!(first and !classic)) app.win.setIcon(classic);
+        tray.setMascot(classic);
+        sys.setToastMascot(classic);
+        // O QA e os prints nunca mexem na pasta do usuário.
+        if (!app.opts.qa and app.opts.shot == null) _ = icone_sistema.sync(platform.iconPng(classic, .menu), classic);
+    }
+
+    /// Conectado com a abertura à vista: o Clássico some na hora; o Terminal desliga
+    /// como uma TV de tubo por cima do app (a janela da abertura não pega o mouse na
+    /// saída). No demo, espera a animação inteira. Roda a cada quadro.
+    fn loginAfterReady(app: *App) void {
+        if (app.login.phase != .connecting or !app.store.ready) return;
+        const set = &app.st.settings;
+        if (set.reduce_motion) {
+            app.login.phase = .hidden;
+            return;
+        }
+        if (app.login.t < app.login_min_t) return;
+        if (mascote.Kind.of(set.mascot) == .terminal or app.login_min_t > 0) {
+            app.login.setPhase(.leaving);
+        } else app.login.phase = .hidden;
+        app.login_min_t = 0;
     }
 
     /// Põe o ícone, com o menu no idioma de agora (ver tray.show).
@@ -1211,6 +1266,7 @@ pub const App = struct {
         if (b.reason == .none) return true;
         var buf: [240]u8 = undefined;
         app.st.showToast(now(), !b.reason.cooling(), "{s}", "{s}", .{send_limits.reasonText(&buf, b, now())});
+        @import("ui/mascote_pet.zig").onSendBlocked(now());
         return false;
     }
 
@@ -1707,6 +1763,8 @@ pub const App = struct {
                 const ch = st.activeChannel() orelse return;
                 // Não dá para mandar agora: o texto continua na caixa.
                 if (!app.sendAllowed(ch)) return app.keepDraft(text);
+                // O mascote do canto reage ao que você escreveu (só aqui no computador).
+                @import("ui/mascote_pet.zig").onSend(text, now());
                 // O que foi escolhido na lista vira a menção exata (pelo ID).
                 const chosen = mentions.expand(app.gpa, &app.store, app.guildOfChannel(ch), text, autocomplete.tokens()) catch return;
                 defer app.gpa.free(chosen);
@@ -1813,6 +1871,8 @@ pub const App = struct {
                     mine = x.me;
                 };
                 app.store.react(f.m, r.emoji, true, !mine);
+                // O mascote do canto reage ao emoji que você pôs.
+                if (!mine) @import("ui/mascote_pet.zig").onEmoji(r.emoji.text(), now());
                 app.cmd(.{ .react = .{ .channel = f.cs.info.id, .id = r.id, .emoji = r.emoji, .add = !mine } });
             },
             .open_dm => |user| {
@@ -2175,8 +2235,9 @@ pub const App = struct {
             app_accounts.ready(app);
             app.onReady();
             app.plugins.fireReady();
-            // A conversa aparece já neste quadro: nada de esperar uma animação.
-            if (app.login.phase == .connecting) app.login.phase = .hidden;
+            // A conversa aparece já neste quadro: nada de esperar uma animação (a saída
+            // do Terminal toca por cima, com o app já clicável; ver loginAfterReady).
+            app.loginAfterReady();
             timeline.mark(.store);
             // O texto do READY e a arena dele já foram: devolve a memória ao sistema.
             app.trim_wanted.store(true, .release);
@@ -2323,6 +2384,7 @@ pub const App = struct {
         // Silêncio e nível de notificação vêm da conta (app_conta.zig).
         if (verdict != .hidden and @import("app_conta.zig").allowsNotify(app, m, cs, verdict == .important)) {
             f.notified +%= 1;
+            @import("ui/mascote_pet.zig").onPing(now());
             app.notify(m, cs);
         }
         if (verdict != .important and f.focusOn(now()) and !cs.info.unread and app.st.activeChannel() != m.channel) return m.channel;
@@ -2361,7 +2423,8 @@ pub const App = struct {
     pub fn desktopNotify(app: *App, title: [:0]const u8, body: [:0]const u8) void {
         if (app.notifiers.items.len >= 8) return;
         if (sys.windows) return sys.toast(c.SDL_GetPointerProperty(c.SDL_GetWindowProperties(app.win.window), c.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null), now(), title, body);
-        var args = [_:null]?[*:0]const u8{ "notify-send", "--app-name=larperCord", "--", title.ptr, body.ptr };
+        // O ícone pelo nome: o do mascote escolhido (ver applyMascot e icone_sistema).
+        var args = [_:null]?[*:0]const u8{ "notify-send", "--app-name=larperCord", "--icon=larpercord", "--", title.ptr, body.ptr };
         const proc = c.SDL_CreateProcess(@ptrCast(&args), false) orelse return;
         app.notifiers.append(app.gpa, proc) catch c.SDL_DestroyProcess(proc);
     }
@@ -2806,9 +2869,12 @@ pub const App = struct {
                         // Some da tela na hora; o resto do encerramento é por trás.
                         _ = c.SDL_HideWindow(app.win.window);
                     }
-                    // Arquivo arrastado para a janela: vai para a bandeja.
-                    if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null)
+                    // Arquivo arrastado para a janela: vai para a bandeja (e o mascote do canto come).
+                    if (e.type == c.SDL_EVENT_DROP_POSITION) @import("ui/mascote_pet.zig").onDragOver(now());
+                    if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
                         if (e.drop.data) |p| app.attachFile(std.mem.span(p));
+                        @import("ui/mascote_pet.zig").onDrop(now());
+                    }
                 }
                 got = c.SDL_PollEvent(&e);
             }
@@ -2821,6 +2887,8 @@ pub const App = struct {
             }
             if (app.notifiers.items.len > 0) app.reapNotifiers();
             app.flushSubscribe();
+            app.applyMascot();
+            app.loginAfterReady();
             if (running) app.syncTray();
 
             app.images.now_ms = now();
@@ -3046,6 +3114,8 @@ pub const App = struct {
                     .accounts = app_accounts.others(&login_accounts),
                     .proxy = .{ .ctx = app, .draw = loginProxyForm },
                     .proxy_on = set.proxy.len > 0,
+                    .mascot = mascote.Kind.of(set.mascot),
+                    .opening = mascote.pickOpening(set.mascot_opening, app.opening_seed),
                 });
                 _ = th;
                 if (result) |r| login_result = r;
@@ -3272,6 +3342,8 @@ pub const App = struct {
             if (app.store.expireTyping(now_ms)) wl.pending = 2;
         }
         app.flushSubscribe();
+        app.applyMascot();
+        app.loginAfterReady();
         app.images.now_ms = now_ms;
         if (app.images.pump()) wl.bg_dirty = true;
         const due = @min(@min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due()), anim.clock_wake_ms);
@@ -3383,6 +3455,8 @@ pub const App = struct {
                 .reduce = set.reduce_motion,
                 .dt = anim.dt,
                 .accounts = app_accounts.others(&login_accounts),
+                .mascot = mascote.Kind.of(set.mascot),
+                .opening = mascote.pickOpening(set.mascot_opening, app.opening_seed),
             })) |r| wl.login_result = r;
         }
         @import("ui/video.zig").endFrame(now());

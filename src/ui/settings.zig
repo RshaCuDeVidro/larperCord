@@ -17,6 +17,7 @@ const tray = @import("../platform/tray.zig");
 const inbox = @import("inbox.zig");
 const mem_use_mod = @import("../core/mem_use.zig");
 const sys = @import("../platform/sys.zig");
+const mascote = @import("mascote.zig");
 
 // O `label` (português) é também a marca do QA (settings:…); os outros idiomas
 // saem de `label_en` pelo i18n/<idioma>.kdl.
@@ -178,7 +179,7 @@ const Page = struct {
         if (desc.len > 0) _ = inbox.wrapText(p.dl, p.font(.regular), 13.5, r.x, r.y + 28, desc_w, desc, 6, ctx.col(.muted).alpha(fade));
         // Interruptor.
         const sw: d.Rect = .{ .x = r.right() - 44, .y = r.y + 4, .w = 40, .h = 24 };
-        const on = anim.to(anim.id("sw", k_id + @as(usize, @intFromEnum(ctx.st.settings.page)) * 1000), if (value.*) 1 else 0, 22);
+        const on = anim.to(anim.id("sw", k_id + @as(usize, @backingInt(ctx.st.settings.page)) * 1000), if (value.*) 1 else 0, 22);
         d.rect(p.dl, sw, ctx.col(.faint).mix(ctx.col(.accent), on).alpha(fade), 12);
         const kx = sw.x + 12 + on * 16;
         d.circle(p.dl, kx, sw.y + 12, 9, d.Rgba.white.alpha(fade));
@@ -503,7 +504,7 @@ var color_theme_len: u8 = 0;
 var color_mode: i8 = -1;
 
 fn slotColor(ctx: *d.Ctx, slot: usize) d.Rgba {
-    if (slot < custom.token_count) return ctx.th.c(@enumFromInt(slot));
+    if (slot < custom.token_count) return ctx.th.c(@fromBackingInt(@intCast(slot)));
     return ctx.th.role(@intCast(slot - custom.token_count));
 }
 
@@ -531,6 +532,59 @@ fn applyColor(ctx: *d.Ctx) void {
     } else {
         color_bad = true;
     }
+}
+
+/// Quando a prévia do mascote começou (a página aberta de novo começa outra) e o
+/// sorteio dela (com "Sortear", cada prévia toca uma abertura).
+var preview_from_ms: i64 = -1;
+var preview_seen_ms: i64 = -10_000;
+var preview_seed: u64 = 0;
+
+fn restartPreview(now: i64) void {
+    preview_from_ms = now;
+    preview_seed +%= 1 + @as(u64, @intCast(@mod(now, 7)));
+}
+
+/// Os dois mascotes lado a lado: o escolhido toca a abertura uma vez e para no
+/// fim (sem ficar acordando o app); o outro fica parado.
+fn mascotPicker(p: *Page, value: *u8) void {
+    const ctx = p.ctx;
+    const now = ctx.now_ms;
+    if (now - preview_seen_ms > 600) restartPreview(now);
+    preview_seen_ms = now;
+    const gap: f32 = 12;
+    const cw = (p.w - gap) / 2;
+    const ch: f32 = 176;
+    const light = ctx.col(.bg).luma() > 0.5;
+    const reduce = ctx.st.settings.reduce_motion;
+    const names = [2][]const u8{ "Terminal", i18n.tr("Clássico", "Classic") };
+    for (names, 0..) |name, i| {
+        const r: d.Rect = .{ .x = p.x + @as(f32, @floatFromInt(i)) * (cw + gap), .y = p.y, .w = cw, .h = ch };
+        const hb = d.hit(ctx, p.id(), r);
+        qa.mark(r, "mascot:{d}", .{i});
+        if (hb.clicked and value.* != i) {
+            value.* = @intCast(i);
+            restartPreview(now);
+        }
+        const sel = mascote.Kind.of(value.*) == @as(mascote.Kind, @fromBackingInt(@intCast(i)));
+        const k = anim.to(anim.id("mascot", i), if (sel) 1 else if (hb.hovered) 0.4 else 0, 20);
+        d.rect(p.dl, r, ctx.col(.rail).alpha(0.6).mix(ctx.col(.accent).alpha(0.18), k), ctx.th.radius + 4);
+        d.border(p.dl, r, if (sel) ctx.col(.accent) else ctx.col(.border), ctx.th.radius + 4, if (sel) 2 else 1);
+        const kind: mascote.Kind = @fromBackingInt(@intCast(i));
+        const opening = mascote.pickOpening(ctx.st.settings.mascot_opening, preview_seed);
+        const end = mascote.introSeconds(kind, opening);
+        var t: f32 = 100;
+        if (sel and !reduce) {
+            t = @as(f32, @floatFromInt(now - preview_from_ms)) / 1000.0;
+            if (t < end) anim.active = true else t = end;
+        }
+        c.ImDrawList_PushClipRect(p.dl, d.v(r.x + 1, r.y + 1), d.v(r.right() - 1, r.bottom() - 1), true);
+        mascote.preview(kind, p.dl, r.x + r.w / 2, r.y + 72, @min(118, cw * 0.62), t, light, reduce or !sel, opening);
+        c.ImDrawList_PopClipRect(p.dl);
+        const tw = d.width(p.font(.semibold), 15, name);
+        d.text(p.dl, p.font(.semibold), 15, r.x + (r.w - tw) / 2, r.bottom() - 32, if (sel) ctx.col(.text) else ctx.col(.muted), name);
+    }
+    p.y += ch + 14;
 }
 
 fn themeColors(p: *Page) void {
@@ -695,6 +749,19 @@ fn page(p: *Page, previews: []const Preview) void {
             }
             p.divider();
             @import("settings_timer.zig").section(p);
+            // O mascote por último: o que já existia na página não muda de lugar.
+            p.divider();
+            p.heading(i18n.tr("Mascote", "Mascot"));
+            mascotPicker(p, &s.mascot);
+            if (mascote.Kind.of(s.mascot) == .terminal) {
+                p.heading(i18n.tr("Abertura", "Opening"));
+                const before = s.mascot_opening;
+                p.segmented(&.{ i18n.tr("Boot", "Boot"), i18n.tr("Código", "Code"), i18n.tr("TV", "TV"), i18n.tr("Pixels", "Pixels"), i18n.tr("Portal", "Portal"), i18n.tr("Sortear", "Shuffle") }, &s.mascot_opening);
+                if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
+            }
+            p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
+            p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
+            if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
         },
         .acessibilidade => {
             p.title(i18n.tr("Acessibilidade", "Accessibility"));
@@ -1187,11 +1254,33 @@ fn challengeCounts(p: *Page) void {
     }
 }
 
+/// O último clique no mascote do "Sobre" e qual reação ele ganhou.
+var about_react_ms: i64 = -1;
+var about_variant: u8 = 0;
+
+/// Quantos cliques o mascote do "Sobre" já ganhou (o QA confere a reação).
+pub fn aboutClicks() u8 {
+    return about_variant;
+}
+
 fn about(p: *Page) void {
     const ctx = p.ctx;
     p.title(i18n.tr("Sobre", "About"));
-    d.text(p.dl, p.font(.bold), 28, p.x, p.y, ctx.col(.accent), "larperCord");
-    p.y += 40;
+    // O mascote ao lado do nome: clicar nele faz ele reagir (cada clique, uma reação).
+    const ms: f32 = 96;
+    const mr: d.Rect = .{ .x = p.x, .y = p.y - 8, .w = ms, .h = ms * 0.92 };
+    const hb = d.hit(ctx, p.id(), mr);
+    qa.mark(mr, "about-mascot", .{});
+    if (hb.clicked) {
+        about_react_ms = ctx.now_ms;
+        about_variant +%= 1;
+    }
+    const react_t: f32 = if (about_react_ms >= 0) @as(f32, @floatFromInt(ctx.now_ms - about_react_ms)) / 1000.0 else -1;
+    if (react_t >= 0 and react_t < mascote.reaction_seconds) anim.active = true;
+    const idle_t = mascote.pace(ctx.now_ms, mascote.age(.about, ctx.now_ms), 6, ctx.st.window_focused);
+    mascote.idle(.of(ctx.st.settings.mascot), p.dl, mr.x + ms / 2, mr.y + ms * 0.5, ms, idle_t, ctx.col(.bg).luma() > 0.5, react_t, about_variant);
+    d.text(p.dl, p.font(.bold), 28, p.x + ms + 14, p.y + 22, ctx.col(.accent), "larperCord");
+    p.y += ms;
     p.note(i18n.tr("Cliente de Discord nativo: Zig + SDL3 + Dear ImGui + FreeType.", "Native Discord client: Zig + SDL3 + Dear ImGui + FreeType."));
     p.note(i18n.tr("Temas em KDL que reorganizam a interface inteira, recarregados ao salvar.", "KDL themes that rearrange the whole interface, reloaded on save."));
     // Em russo a frase passa de 150 bytes, em japonês de 100.

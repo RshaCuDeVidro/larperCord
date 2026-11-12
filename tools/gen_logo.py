@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Gera assets/logo.svg (símbolo + nome) e assets/icon.svg a partir de
-assets/logo-mark.svg, com o texto "larperCord" convertido em curvas (Inter)."""
+"""Gera assets/logo.svg (símbolo + nome) e assets/icon-classico.svg (o ícone do
+mascote Clássico) a partir de assets/logo-mark.svg, com o texto "larperCord"
+convertido em curvas (Inter)."""
 import re, sys
 from pathlib import Path
 from fontTools.ttLib import TTFont
@@ -71,5 +72,5 @@ icon = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.or
   </g>
 </svg>
 '''
-(root / "assets/icon.svg").write_text(icon)
+(root / "assets/icon-classico.svg").write_text(icon)
 print("ok:", W, "x", H)

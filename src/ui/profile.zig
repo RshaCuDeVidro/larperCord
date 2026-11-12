@@ -14,7 +14,6 @@ const rich = @import("rich.zig");
 const att = @import("attachments.zig");
 const icons = @import("icons.zig");
 const dropdown = @import("dropdown.zig");
-const logo = @import("logo.zig");
 const popup = @import("popup.zig");
 const Id = types.Id;
 
@@ -340,7 +339,7 @@ fn since(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, friends: bool) void {
     const font = ctx.ui.get(.regular);
     const acc = dateShort(&db, accountMs(uid));
     if (col.dl) |dl| {
-        logo.still(dl, x + 8, col.y + 8, 16);
+        @import("mascote.zig").still(.of(ctx.st.settings.mascot), dl, x + 8, col.y + 8, 16);
         d.text(dl, font, 13.5, x + 22, col.y, ctx.col(.text), acc);
     }
     x += 22 + d.width(font, 13.5, acc) + 10;
