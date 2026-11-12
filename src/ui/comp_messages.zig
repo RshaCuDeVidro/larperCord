@@ -1922,6 +1922,8 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     var hint_buf: [96]u8 = undefined;
     const hint = if (prompt) "" else if (limit.reason.cooling())
         send_limits.cooldownHint(&hint_buf, limit, ctx.now_ms)
+    else if (limit.reason == .connecting)
+        i18n.fmtZ(&hint_buf, "Conectando… dá para enviar quando conectar", "Connecting… you can send once connected", .{})
     else if (cs.info.guild == 0)
         i18n.fmtZ(&hint_buf, "Conversar com @{s}", "Message @{s}", .{cs.info.name})
     else

@@ -41,12 +41,15 @@ pub const Reason = enum {
     /// O Discord recusou o envio (429) sem modo lento que valha para nós (o
     /// limite do canal para mensagens seguidas): espera do mesmo jeito.
     rate_limited,
+    /// O app abriu pelo retrato da conta em disco e ainda não conectou: dá para ir
+    /// escrevendo, e a mensagem sai depois do READY (Enter só não manda antes).
+    connecting,
 
     /// A caixa some e fica só o aviso. Na contagem dá para ir escrevendo a
     /// próxima (Enter só não manda).
     pub fn blocksInput(r: Reason) bool {
         return switch (r) {
-            .none, .slowmode, .rate_limited => false,
+            .none, .slowmode, .rate_limited, .connecting => false,
             else => true,
         };
     }
@@ -60,6 +63,9 @@ pub const Reason = enum {
 pub const Input = struct {
     /// 0 = DM (não tem castigo, quarentena de servidor nem modo lento por permissão).
     guild: Id = 0,
+    /// A sessão está pronta (o READY chegou). Antes dele, a tela aberta pelo retrato
+    /// em disco não manda nada.
+    connected: bool = true,
     /// Nossas permissões no canal (thread: as do pai) e no servidor.
     perms: u64 = all,
     guild_perms: u64 = all,
@@ -91,6 +97,11 @@ pub fn bypassesSlowmode(perms: u64) bool {
 
 pub fn pick(in: Input) Block {
     var b: Block = .{ .slowmode_s = in.slowmode_s, .exempt = bypassesSlowmode(in.perms) };
+    // Sem conexão nada sai, e nenhum outro motivo é certo ainda (vem do READY).
+    if (!in.connected) {
+        b.reason = .connecting;
+        return b;
+    }
     if (in.guild != 0 and in.guild_perms & types.perm.administrator == 0) {
         if (in.timeout_until_ms > in.now_ms) {
             b.reason = .timed_out;
@@ -270,6 +281,14 @@ test "sem nada no caminho: dá para enviar" {
     const b = pick(.{ .guild = 1, .perms = view | send, .guild_perms = view | send, .now_ms = 1000 });
     try t.expectEqual(Reason.none, b.reason);
     try t.expect(!b.reason.blocksInput());
+}
+
+test "aberto pelo retrato e sem conexão: dá para escrever, não para enviar" {
+    const b = pick(.{ .guild = 1, .connected = false, .perms = view, .guild_perms = view, .timeout_until_ms = 50_000, .now_ms = 1000 });
+    // Antes do castigo ou da permissão: nada disso é certo antes do READY.
+    try t.expectEqual(Reason.connecting, b.reason);
+    try t.expect(!b.reason.blocksInput() and !b.reason.cooling());
+    try t.expectEqual(Reason.none, pick(.{ .connected = true, .now_ms = 1000 }).reason);
 }
 
 test "castigo vence o resto e mostra até quando; dono e admin passam" {

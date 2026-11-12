@@ -31,6 +31,7 @@ pub fn blockFor(store: *const Store, ch: *const types.Channel, now_ms: i64) limi
     const cd = state.cooldown(ch.id);
     return limites.pick(.{
         .guild = ch.guild,
+        .connected = store.ready,
         .perms = store.channelPermissions(ch),
         // Dono e ADMINISTRATOR: `permissions` já devolve tudo.
         .guild_perms = if (ch.guild != 0) store.permissions(ch.guild) else std.math.maxInt(u64),
@@ -75,6 +76,7 @@ pub fn reasonText(buf: []u8, b: limites.Block, now_ms: i64) []const u8 {
         .no_permission => i18n.tr("Você não tem permissão para enviar mensagens neste canal.", "You don't have permission to send messages in this channel."),
         .slowmode => i18n.fmt(buf, "Modo lento: dá para enviar de novo em {s}.", "Slowmode: you can send again in {s}.", .{limites.fmtLeft(&tb, b.until_ms - now_ms)}),
         .rate_limited => i18n.fmt(buf, "Mensagens rápidas demais: o Discord pede {s} até a próxima.", "Sending too fast: Discord asks for {s} before the next one.", .{limites.fmtLeft(&tb, b.until_ms - now_ms)}),
+        .connecting => i18n.tr("Ainda conectando: a mensagem fica na caixa e dá para enviar assim que conectar.", "Still connecting: your message stays in the box and you can send it once connected."),
     };
 }
 

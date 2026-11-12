@@ -115,6 +115,18 @@ fn ensureDirs() bool {
     return dirs_ok;
 }
 
+/// Um arquivo da conta atual que não é conversa (o retrato da conta, net/state_cache.zig).
+/// null = cache desligado ou sem conta.
+pub fn accountFile(buf: []u8, name: []const u8) ?[:0]const u8 {
+    if (!usable()) return null;
+    return std.fmt.bufPrintSentinel(buf, "{s}/{s}/{s}", .{ root(), acct_buf[0..acct_len], name }, 0) catch null;
+}
+
+/// A pasta da conta atual existe (criada se preciso)?
+pub fn ensureAccountDir() bool {
+    return usable() and ensureDirs();
+}
+
 fn fileSize(path: [*:0]const u8) u64 {
     return sys.fileSize(path) orelse 0;
 }

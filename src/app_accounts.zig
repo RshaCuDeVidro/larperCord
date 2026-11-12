@@ -85,11 +85,14 @@ pub fn finishStartupLookup(app: *App) void {
         token_source = lookup.source;
         app.startReal(t) catch {
             discardToken(t);
+            if (app.store.from_cache) app.resetSession();
             return app.login.begin(.form);
         };
-        if (app.login.phase != .connecting) app.login.setPhase(.connecting);
-    } else if (lookup_wanted and app.login.phase == .connecting and app.net == .none) {
-        // Tinha conta na lista, mas o token dela sumiu.
+        // Aberta pelo retrato em disco, a tela já está aí: conecta por baixo dela.
+        if (app.login.phase != .connecting and !app.store.from_cache) app.login.setPhase(.connecting);
+    } else if (lookup_wanted and app.net == .none and (app.login.phase == .connecting or app.store.from_cache)) {
+        // Tinha conta na lista, mas o token dela sumiu: o que o retrato mostrava sai.
+        if (app.store.from_cache) app.resetSession();
         app.login.begin(.form);
     }
 }

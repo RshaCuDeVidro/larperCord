@@ -28,6 +28,9 @@ pub const Ready = struct {
     email: ?[]const u8 = null,
     /// `premium_type` da conta: 0 = sem Nitro.
     premium_type: u8 = 0,
+    /// Veio do retrato da conta em disco (net/state_cache.zig), não do Discord: a tela
+    /// aparece, mas a sessão ainda não está pronta (`store.ready` continua falso).
+    cached: bool = false,
 };
 
 /// A busca do Discord (`GET .../messages/search`). `params` já é a consulta em URL, alocada

@@ -545,8 +545,15 @@ pub const Gateway = struct {
 
     /// A abertura: o READY e o resto que o gateway de verdade manda antes de ficar pronto.
     fn begin(g: *Gateway) !void {
+        // LARPER_DEMO_READY_MS: o READY demora como o de verdade (rede, TLS, o READY de
+        // uma conta grande), para medir e testar a abertura pelo retrato em disco. O
+        // que a interface pedir nesse meio-tempo espera na fila, como no gateway real.
+        if (c.SDL_getenv("LARPER_DEMO_READY_MS")) |v| c.SDL_Delay(std.fmt.parseInt(u32, std.mem.span(v), 10) catch 0);
         timeline.mark(.gateway);
-        g.epoch_ms = nowMs();
+        // LARPER_DEMO_EPOCH_MS: o começo da sessão vem de fora. O QA da abertura pelo
+        // retrato abre a demonstração duas vezes, e as conversas têm de ser as mesmas
+        // nas duas (mesmos IDs), como no Discord.
+        g.epoch_ms = if (c.SDL_getenv("LARPER_DEMO_EPOCH_MS")) |v| std.fmt.parseInt(i64, std.mem.span(v), 10) catch nowMs() else nowMs();
         g.emit(.{ .ready = try buildReady() });
         g.emit(.{ .read_states = .{ .entries = try demoReadStates(g.epoch_ms) } });
         // Quem está em call na demonstração: um mudo, uma surda, um mudado pelo servidor.

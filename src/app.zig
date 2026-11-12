@@ -49,6 +49,8 @@ const leitura = @import("core/leitura.zig");
 const saved_ui = @import("ui/saved.zig");
 const app_conjuntos = @import("app_conjuntos.zig");
 const msg_cache = @import("net/msg_cache.zig");
+const state_cache = @import("net/state_cache.zig");
+const state_snapshot = @import("core/state_snapshot.zig");
 const jsonx = @import("net/jsonx.zig");
 const fsutil = @import("platform/fsutil.zig");
 const accounts_store = @import("net/accounts_store.zig");
@@ -175,6 +177,13 @@ pub const App = struct {
     /// A abertura fica pelo menos até aqui (segundos) antes de sair para o app: no
     /// demo, a animação inteira; com a conta de verdade, nada (sai quando conectar).
     login_min_t: f32 = 0,
+    /// A tela abriu pelo retrato da conta em disco (net/state_cache.zig) e o READY
+    /// ainda não chegou: quando chegar, fica onde a pessoa está (`resumeFromCache`).
+    cache_opened: bool = false,
+    /// O retrato desta sessão já foi gravado (uma vez, quando o READY assentou) e
+    /// quando o READY chegou.
+    state_saved: bool = false,
+    ready_ms: i64 = 0,
     /// O sorteio da abertura desta vez (com "sortear a cada vez" nas Configurações).
     opening_seed: u64 = 0,
     /// Quando tentar pôr o ícone de novo (SDL_GetTicks) e quantas vezes já tentou.
@@ -293,6 +302,12 @@ pub const App = struct {
         // Cache de mensagens e contas: o QA e os prints nunca usam os de verdade.
         msg_cache.init(opts.qa);
         msg_cache.off = opts.shot != null;
+        // O modo QA já desde aqui: a abertura pelo retrato lê arquivos (os conjuntos de
+        // abas) antes do laço, e no QA eles ficam em qa-out/, nunca nos de verdade.
+        if (opts.qa) qa_mod.enable();
+        // QA_TABSETS_READ: o QA lê os conjuntos de abas desde a abertura (o da abertura
+        // pelo retrato confere o conjunto em uso voltando antes do READY).
+        if (opts.qa and c.SDL_getenv("QA_TABSETS_READ") != null) @import("ui/conjuntos.zig").qa_read = true;
         accounts_store.memory_only = opts.qa or opts.shot != null;
         accounts_store.load();
 
@@ -349,9 +364,14 @@ pub const App = struct {
             app.login.begin(.form);
         } else if (opts.demo or opts.qa or (opts.shot != null and c.SDL_getenv("LARPER_SHOT_REAL") == null)) {
             // (LARPER_SHOT_REAL=1: print com a conta de verdade, para depurar.)
+            // LARPER_DEMO_READY_MS: o READY da demonstração demora como o de verdade, e
+            // ela abre pelo retrato em disco como uma conta (medir e testar a abertura).
+            // Sem isso, o demo é a vitrine de sempre.
+            app.store.demo = true;
+            const from_cache = c.SDL_getenv("LARPER_DEMO_READY_MS") != null and app.openFromCache(0);
             try app.startDemo();
             // O demo é a vitrine: mostra a abertura inteira (o QA e os prints, não).
-            if (opts.demo and !opts.qa and opts.shot == null and !app.st.settings.reduce_motion) {
+            if (!from_cache and opts.demo and !opts.qa and opts.shot == null and !app.st.settings.reduce_motion) {
                 app.login.begin(.connecting);
                 app.login_min_t = mascote.introSeconds(mascote.Kind.of(app.st.settings.mascot), mascote.pickOpening(app.st.settings.mascot_opening, app.opening_seed));
             }
@@ -360,8 +380,10 @@ pub const App = struct {
             app.login.begin(.connecting);
         } else {
             // O chaveiro (secret-tool) leva um tempo e pode até pedir senha: a
-            // janela abre antes e a resposta chega por `finishStartupLookup`.
-            app.login.begin(if (accounts_store.list.len > 0) .connecting else .form);
+            // janela abre antes e a resposta chega por `finishStartupLookup`. Com o
+            // retrato da última conta em disco, a tela dela já abre enquanto isso.
+            const active = accounts_store.list.active;
+            if (active == 0 or !app.openFromCache(active)) app.login.begin(if (accounts_store.list.len > 0) .connecting else .form);
             app_accounts.startStartupLookup(app.win.wake_type);
         }
 
@@ -561,7 +583,7 @@ pub const App = struct {
         instance.stopListening();
         app.saveSettings();
         // A aba ativa do conjunto em uso (o resto já foi gravado na hora).
-        if (app.store.ready) app_conjuntos.flush(app);
+        if (app.store.ready or app.store.from_cache) app_conjuntos.flush(app);
         // Primeiro: mesmo com um servidor travado, o filho morre antes do vigia de main.zig.
         lsp_net.shutdown();
         voz_audio.shutdown();
@@ -586,6 +608,7 @@ pub const App = struct {
         app_presenca.shutdown();
         app.stopNet();
         msg_cache.flushDirty(&app.store);
+        _ = state_cache.save(&app.store);
         msg_cache.deinit();
         app.login.clearToken();
         app.events.deinit();
@@ -797,6 +820,9 @@ pub const App = struct {
         // O que estava na tela vai para o cache antes de sumir, e os conjuntos de
         // abas da conta para o arquivo dela.
         msg_cache.flushDirty(&app.store);
+        _ = state_cache.save(&app.store);
+        app.cache_opened = false;
+        app.state_saved = false;
         app_conjuntos.reset(app);
         interact.reset();
         @import("ui/search.zig").close();
@@ -1334,7 +1360,7 @@ pub const App = struct {
         const b = send_limits.blockForId(&app.store, ch, now());
         if (b.reason == .none) return true;
         var buf: [240]u8 = undefined;
-        app.st.showToast(now(), !b.reason.cooling(), "{s}", "{s}", .{send_limits.reasonText(&buf, b, now())});
+        app.st.showToast(now(), !b.reason.cooling() and b.reason != .connecting, "{s}", "{s}", .{send_limits.reasonText(&buf, b, now())});
         @import("ui/mascote_pet.zig").onSendBlocked(now());
         return false;
     }
@@ -2329,6 +2355,9 @@ pub const App = struct {
                 .ready => |r| std.log.info("READY: {d} servidores, {d} canais, {d} usuários", .{ r.guilds.len, r.channels.len, r.users.len }),
                 else => {},
             };
+            // O READY de verdade em cima do retrato do disco: os silenciados vêm de novo
+            // logo atrás dele (read_states), e o que deixou de ser silenciado sai.
+            if (e == .ready and !e.ready.cached and app.store.from_cache) app.st.muted_channels.clearRetainingCapacity();
             app.store.apply(e, now()) catch {};
             if (fetch_dm != 0) app.cmd(.{ .fetch_channel = fetch_dm });
             if (edited != 0) plugin_host.onEdit(app, edited);
@@ -2341,6 +2370,7 @@ pub const App = struct {
             // O Discord aceitou: agora sim guarda a conta (e o token, se pediram).
             // Antes do resto: abrir um canal já lê o cache desta conta.
             app_accounts.ready(app);
+            app.ready_ms = now();
             app.onReady();
             app.plugins.fireReady();
             // A conversa aparece já neste quadro: nada de esperar uma animação (a saída
@@ -2349,7 +2379,9 @@ pub const App = struct {
             timeline.mark(.store);
             // O texto do READY e a arena dele já foram: devolve a memória ao sistema.
             app.trim_wanted.store(true, .release);
-        } else if (reconnected and was_ready) {
+        } else if (reconnected and was_ready and (new_session or now() - app.ready_ms >= 3000)) {
+            // (O "pronto" logo depois do primeiro READY, num lote seguinte, é a mesma
+            // conexão: o que o READY abriu já pediu o histórico, nada vai duas vezes.)
             // Voltou a conexão: as conversas que ficaram só no cache do disco
             // (abertas sem rede) buscam o histórico de novo.
             var it = app.store.channels.valueIterator();
@@ -2625,6 +2657,12 @@ pub const App = struct {
         if (app.st.settings.my_status != 0) if (app.store.users.getPtr(app.store.me)) |me| {
             me.status = @fromBackingInt(@intCast(@min(app.st.settings.my_status, 3)));
         };
+        if (app.cache_opened) return app.resumeFromCache();
+        app.firstView();
+    }
+
+    /// Onde a sessão começa: as DMs (ou o primeiro servidor); no demo, umas abas.
+    fn firstView(app: *App) void {
         if (!app.store.demo) {
             // O conjunto de abas em uso quando o app fechou volta (só a aba ativa carrega).
             if (app_conjuntos.ready(app)) return;
@@ -2633,6 +2671,7 @@ pub const App = struct {
             app.handle(.{ .select_guild = g0 });
             return;
         }
+        if (app.store.guilds.items.len == 0) return;
         const g0 = app.store.guilds.items[0].id;
         app.st.guild = g0;
         // Algumas abas abertas para mostrar o recurso.
@@ -2641,6 +2680,61 @@ pub const App = struct {
         _ = app_conjuntos.ready(app);
         const call = gw.channelId(0, 13);
         _ = call;
+    }
+
+    /// Abre a conta pelo retrato em disco (net/state_cache.zig), antes de o chaveiro
+    /// responder e do READY: servidores, canais e as conversas do cache de mensagens
+    /// aparecem na hora, e o READY de verdade passa por cima. `acct` 0 = a demonstração.
+    /// false = não tem retrato (a abertura espera o READY, como sempre).
+    fn openFromCache(app: *App, acct: types.Id) bool {
+        // O primeiro quadro ainda não aplicou as configurações: "Guardar mensagens no
+        // disco" desligado não lê nada.
+        msg_cache.enabled = app.st.settings.message_cache;
+        msg_cache.setAccount(acct);
+        var arena = std.heap.ArenaAllocator.init(app.gpa);
+        defer arena.deinit();
+        const snap = state_cache.load(arena.allocator()) orelse return false;
+        // De outra conta (um arquivo trocado por fora): não serve.
+        if (acct != 0 and snap.me != acct) return false;
+        var list: std.ArrayList(ev.Event) = .empty;
+        defer list.deinit(app.gpa);
+        state_snapshot.events(&snap, &list, app.gpa) catch return false;
+        // Pelo mesmo caminho dos eventos do gateway: o Store, e o que o app faz depois de
+        // cada um (os não lidos e os silenciados, no read_states).
+        for (list.items) |e| {
+            app.store.apply(e, now()) catch {};
+            app.afterEvent(e);
+        }
+        // A nossa linha com o status escolhido (o retrato não guarda presença).
+        if (app.store.users.getPtr(app.store.me)) |me| me.status = @fromBackingInt(@intCast(@min(app.st.settings.my_status, 3)));
+        app.cache_opened = true;
+        app.firstView();
+        return true;
+    }
+
+    /// O READY de verdade chegou com a tela aberta pelo retrato: fica onde a pessoa
+    /// está (se o servidor dela sumiu, volta ao começo), e o que foi pedido sem conexão
+    /// sai agora (o histórico das conversas abertas e a lista de membros).
+    fn resumeFromCache(app: *App) void {
+        app.cache_opened = false;
+        const st = &app.st;
+        // Abas de canais que sumiram no READY saem.
+        var i: usize = st.tabs.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (app.store.channel(st.tabs.items[i]) == null) _ = st.tabs.orderedRemove(i);
+        }
+        if (st.tab >= st.tabs.items.len) st.tab = st.tabs.items.len -| 1;
+        if (st.guild != 0 and app.store.guild(st.guild) == null) return app.firstView();
+        const active = st.activeChannel();
+        var it = app.store.channels.valueIterator();
+        while (it.next()) |p| {
+            const cs = p.*;
+            // A conversa que abriu pelo cache em disco fica `loaded` (e `cached`): o
+            // pedido dela, sem conexão, não saiu. A que esperava sem cache também.
+            if (cs.cached or cs.history == .loading) app.cmd(.{ .fetch_history = .{ .channel = cs.info.id, .members = if (active == cs.info.id) cs.info.guild else 0 } });
+        }
+        if (active) |id| if (app.store.channel(id)) |cs| app.subscribeTo(cs);
     }
 
     /// Monta uma cena para prints de documentação (LARPER_SCENE=…): abre
@@ -2907,6 +3001,11 @@ pub const App = struct {
                             if (now() - app.cache_flush_ms >= 60_000) {
                                 app.cache_flush_ms = now();
                                 if (msg_cache.flushSome(&app.store, 4)) app.cache_flush_ms -= 50_000;
+                            }
+                            // O retrato da conta, uma vez por sessão, com o READY assentado.
+                            if (!app.state_saved and app.store.ready and now() - app.ready_ms >= state_cache.settle_ms) {
+                                app.state_saved = true;
+                                _ = state_cache.save(&app.store);
                             }
                             sys.toastExpire(now(), false);
                             // Por garantia: um aviso dos plugins pode ter se perdido com a fila cheia.
@@ -3184,9 +3283,12 @@ pub const App = struct {
                 app.st.filtros.save = false;
                 app.saveSettings();
             }
-            if (app.store.ready) app.syncDraft();
+            // (Aberta pelo retrato em disco, a tela já está em uso: o rascunho de cada
+            // conversa e o conjunto de abas acompanham desde já.)
+            const usable = app.store.ready or app.store.from_cache;
+            if (usable) app.syncDraft();
             // O que mudou nas abas vai para o conjunto em uso (app_conjuntos.zig).
-            if (app.store.ready) app_conjuntos.sync(app);
+            if (usable) app_conjuntos.sync(app);
             const key = set.layoutKey();
             if (key != app.layout_key) {
                 app.layout_key = key;
@@ -3197,7 +3299,7 @@ pub const App = struct {
             c.ImGui_NewFrame();
             qa_mod.beginFrame();
             // (O login por cima da conta aberta, ao adicionar outra, cobre tudo.)
-            if (app.store.ready and app.login.phase != .form) {
+            if (usable and app.login.phase != .form) {
                 const th = app.customTheme();
                 // Trocou de servidor (ou de cor do servidor): seleção e cursor do texto acompanham.
                 if (guild_color.changed(app.st.guild)) app.applyImGuiColors(th);
@@ -3354,12 +3456,12 @@ pub const App = struct {
             }
             if (app.opts.stats) {
                 timeline.mark(.tela_1);
-                if (!first_frame_logged and app.store.ready) {
+                if (!first_frame_logged and (app.store.ready or app.store.from_cache)) {
                     first_frame_logged = true;
                     timeline.mark(.conversa_1);
                     std.log.info("primeiro quadro em {d} ms", .{(c.SDL_GetTicksNS() - app.started_ns) / 1_000_000});
                 }
-                if (!app.login.visible() and app.store.ready) timeline.mark(.login_fora);
+                if (!app.login.visible() and (app.store.ready or app.store.from_cache)) timeline.mark(.login_fora);
                 if (timeline.isMarked(.login_fora) and timeline.isMarked(.historico)) timeline.report();
             }
             if (record_dir) |dir| if (app.login.visible()) {
@@ -3386,7 +3488,8 @@ pub const App = struct {
                     running = false;
                 }
             };
-            if (app.opts.qa and (app.store.ready or app.login.visible()) and !runner.tick(app)) running = false;
+            // (A tela aberta pelo retrato em disco já está em uso antes do READY.)
+            if (app.opts.qa and (app.store.ready or app.store.from_cache or app.login.visible()) and !runner.tick(app)) running = false;
             if (show) _ = c.SDL_RenderPresent(r);
             if (pending > 0) pending -= 1;
             if (fonts_mod.scriptsWanted()) pending = @max(pending, 1);
@@ -3539,7 +3642,8 @@ pub const App = struct {
             app.st.filtros.save = false;
             app.saveSettings();
         }
-        if (app.store.ready) app.syncDraft();
+        const usable = app.store.ready or app.store.from_cache;
+        if (usable) app.syncDraft();
         const key = set.layoutKey();
         if (key != app.layout_key) {
             app.layout_key = key;
@@ -3548,7 +3652,7 @@ pub const App = struct {
 
         c.ImGui_NewFrame();
         qa_mod.beginFrame();
-        if (app.store.ready and app.login.phase != .form) {
+        if (usable and app.login.phase != .form) {
             const th = app.customTheme();
             if (guild_color.changed(app.st.guild)) app.applyImGuiColors(th);
             var ctx: d.Ctx = .{
