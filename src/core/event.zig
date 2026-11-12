@@ -286,7 +286,20 @@ pub const VoiceFlags = packed struct(u8) {
     pub fn deafened(f: VoiceFlags) bool {
         return f.self_deaf or f.deaf;
     }
+
+    /// Vale mandar as flags de alguém que já estava na call quando conectamos? Sim se
+    /// tem alguma: mudo, surdo ou transmitindo (o selo AO VIVO).
+    pub fn worthSending(f: VoiceFlags) bool {
+        return @as(u8, @bitCast(f)) != 0;
+    }
 };
+
+test "flags iniciais da call: transmitir sem estar mudo também vai" {
+    const std = @import("std");
+    try std.testing.expect((VoiceFlags{ .self_stream = true }).worthSending());
+    try std.testing.expect((VoiceFlags{ .self_mute = true }).worthSending());
+    try std.testing.expect(!(VoiceFlags{}).worthSending());
+}
 
 pub const EditPlace = struct {
     id: Id,

@@ -3665,7 +3665,7 @@ pub const Gateway = struct {
             const uid = j.id(j.get(vs, "user_id")) orelse continue;
             if (j.id(j.get(vs, "channel_id")) == null) continue;
             const flags = voiceFlagsOf(vs);
-            if (flags.muted()) g.emit(.{ .voice_member_flags = .{ .user = uid, .flags = flags } });
+            if (flags.worthSending()) g.emit(.{ .voice_member_flags = .{ .user = uid, .flags = flags } });
         }
     }
 

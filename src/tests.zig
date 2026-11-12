@@ -76,6 +76,7 @@ test {
     _ = @import("ui/bidi.zig");
     _ = @import("ui/tint.zig");
     _ = @import("ui/call_layout.zig");
+    _ = @import("core/event.zig");
     _ = @import("ui/rich_plan.zig");
     _ = @import("ui/font_blocks.zig");
     _ = @import("ui/settings_state.zig");
