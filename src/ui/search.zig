@@ -165,9 +165,39 @@ pub fn start() void {
     req_id +%= 1;
 }
 
-/// Fecha. O que veio do disco fica para a próxima vez; o resto sai.
+/// Quando a busca fechou (ms do SDL): o índice do disco fica um tempo para reabrir na
+/// hora, e depois sai (até 16 MB que não servem para nada com ela fechada).
+/// Com sinal: o QA faz de conta que fechou antes de o app abrir.
+var closed_ms: i64 = 0;
+const keep_closed_ms: i64 = 5 * 60 * 1000;
+
+/// Com a busca fechada há mais de 5 minutos, ou a janela escondida: solta o índice do
+/// disco (reabrir lê de novo, aos poucos, sem travar). true: soltou alguma coisa.
+pub fn releaseIdle(hidden: bool) bool {
+    if (open or disk_files.count() == 0) return false;
+    if (!hidden and ticks() - closed_ms < keep_closed_ms) return false;
+    forgetDisk();
+    built = false;
+    return true;
+}
+
+/// Para o QA: faz de conta que a busca fechou há `ms`.
+pub fn qaClosedAgo(ms: i64) void {
+    closed_ms = ticks() - ms;
+}
+
+fn ticks() i64 {
+    return @intCast(c.SDL_GetTicks());
+}
+
+pub fn diskBytes() usize {
+    return disk_used;
+}
+
+/// Fecha. O que veio do disco fica para a próxima vez (por uns minutos); o resto sai.
 pub fn close() void {
     open = false;
+    closed_ms = ticks();
     scanning = false;
     input_active = false;
     if (delivered) |r| freeHits(r.hits);

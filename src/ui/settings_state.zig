@@ -4,12 +4,14 @@
 const std = @import("std");
 const L = @import("../core/lsp.zig");
 const sons = @import("../core/sons.zig");
+const kdl_file = @import("../theme/kdl.zig");
 
 pub const Page = enum {
     conta,
     privacidade,
     filtros,
     aparencia,
+    mascote,
     acessibilidade,
     chat,
     voz,
@@ -91,6 +93,28 @@ pub const Settings = struct {
     mascot_opening: u8 = 0,
     /// O mascote que mora no canto, em cima da caixa de mensagem (ui/mascote_pet.zig).
     mascot_pet: bool = true,
+    /// A vida própria dele (ui/mascote_pet.zig): 0 = desligada, 1 = calma, 2 = normal,
+    /// 3 = agitada (de quanto em quanto tempo ele faz alguma coisa sozinho).
+    mascot_life: u8 = 2,
+    /// Passeia pela janela e pula junto quando você troca de canal.
+    mascot_roam: bool = true,
+    /// Brinca com a interface: "digitando…", mensagem apagada e editada, o botão de
+    /// voltar ao fim, a janela redimensionada e a DM que chega.
+    mascot_ui: bool = true,
+    /// Brinca com a setinha do mouse parada perto dele.
+    mascot_cursor: bool = true,
+    /// Espera você com a janela sem foco, acampa quando você some e comemora a volta.
+    mascot_away: bool = true,
+    /// A plantinha do lado dele, os dias em que ela cresceu e o último dia de uso
+    /// (dias desde 1970, no fuso daqui).
+    mascot_plant: bool = true,
+    mascot_plant_days: u8 = 0,
+    mascot_plant_day: i16 = 0,
+    mascot_plant_wilted: bool = false,
+    /// O renderizador do SDL (Configurações → Desempenho): "" = automático, ou o nome
+    /// de um que o SDL lista ("vulkan", "opengl", "direct3d11"…). Vale no próximo
+    /// início; o que não abrir volta para o automático (platform/window.zig).
+    renderer: Text = .{},
     /// O tempo da call ao lado de cada canal de voz (ui/voice_timer.zig): ligado, o
     /// formato (um de core/voice_timer.zig `presets`, ou `custom_index` com o
     /// `voice_timer_pattern` da pessoa).
@@ -795,4 +819,38 @@ test "campos pelo índice (paleta de comandos)" {
     try std.testing.expectEqual(@as(u8, 2), s.color_mode);
     try std.testing.expect(!setByte(&s, fieldIndex("font_scale"), 1));
     try std.testing.expect(!s.vim_keys and s.md_preview);
+}
+
+/// O renderizador escolhido, lido do settings.kdl antes de a janela abrir (o resto das
+/// configurações só é lido depois dela). "" = automático. Só letras, números e "_"
+/// passam: outra coisa não é nome de renderizador do SDL.
+pub fn peekRenderer(gpa: std.mem.Allocator, text: []const u8, out: []u8) []const u8 {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const nodes = kdl_file.parse(arena.allocator(), text, null) catch return "";
+    for (nodes) |*n| if (std.mem.eql(u8, n.name, "settings")) {
+        const v = n.str("renderer") orelse return "";
+        if (v.len == 0 or v.len > out.len) return "";
+        for (v) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') return "";
+        @memcpy(out[0..v.len], v);
+        return out[0..v.len];
+    };
+    return "";
+}
+
+test "o renderizador sai do settings.kdl antes de tudo, e nome estranho vira automático" {
+    const gpa = std.testing.allocator;
+    var buf: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("vulkan", peekRenderer(gpa, "// x\nsettings theme=\"zen\" renderer=\"vulkan\" font_scale=1.000\n", &buf));
+    try std.testing.expectEqualStrings("", peekRenderer(gpa, "settings theme=\"zen\"\n", &buf));
+    try std.testing.expectEqualStrings("", peekRenderer(gpa, "settings renderer=\"../../x\"\n", &buf));
+    try std.testing.expectEqualStrings("", peekRenderer(gpa, "settings renderer=\"\"\n", &buf));
+    try std.testing.expectEqualStrings("", peekRenderer(gpa, "isso não é kdl {{{", &buf));
+    // Escrito e lido de volta pelo caminho normal das configurações.
+    var s: Settings = .{};
+    s.renderer.set("opengl");
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    try write(&s, "zen", &out, gpa);
+    try std.testing.expectEqualStrings("opengl", peekRenderer(gpa, out.items, &buf));
 }

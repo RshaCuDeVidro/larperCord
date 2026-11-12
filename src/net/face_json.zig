@@ -90,12 +90,10 @@ pub const Tracker = struct {
 
     /// Saímos do servidor: esquece o que foi mandado dele.
     pub fn forgetGuild(t: *Tracker, guild: Id) void {
+        // Remover só deixa uma lápide: a mesma volta continua sem recomeçar (recomeçar a
+        // cada remoção, num servidor grande, segurava a thread de rede).
         var it = t.sent.iterator();
-        while (it.next()) |e| {
-            if (e.key_ptr[0] != guild) continue;
-            t.sent.removeByPtr(e.key_ptr);
-            it = t.sent.iterator();
-        }
+        while (it.next()) |e| if (e.key_ptr[0] == guild) t.sent.removeByPtr(e.key_ptr);
     }
 };
 

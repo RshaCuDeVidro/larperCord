@@ -117,6 +117,10 @@ fn blend(pcm: []i16, wet: []const f32, from: f32, to: f32) void {
 /// Estados vivos, nas duas threads que leem microfone (para o QA ver o custo zero).
 pub var live: std.atomic.Value(i32) = .init(0);
 
+/// O menor pedaço que `Supressor.process` aceita: 10 ms em estéreo. Todo motor
+/// trabalha em blocos que cabem nele (teste abaixo).
+pub const piece_len = voz.frame_len / 2;
+
 pub const Out = struct {
     /// Probabilidade de voz, com o motor valendo por inteiro e se ele der uma.
     vad: ?f32 = null,
@@ -143,8 +147,11 @@ pub const Supressor = struct {
     const zero_blocks = 8;
 
     /// O motor em uso; `release` depois. No modo desligado é só um teste de nulo.
+    /// `pcm`: 20 ms (o microfone e quase todo pacote da call), ou um pedaço de 10 ms
+    /// (quem manda pacotes menores na call; ver `piece_len`).
     pub fn process(s: *Supressor, pcm: []i16, mode: Mode) Out {
-        std.debug.assert(pcm.len == voz.frame_len);
+        std.debug.assert(pcm.len > 0 and pcm.len <= voz.frame_len and pcm.len % piece_len == 0);
+        const n = pcm.len / voz.channels;
         const want = mode.engine();
         if (s.state == null) {
             const e = want orelse {
@@ -168,10 +175,10 @@ pub const Supressor = struct {
 
         var mono: [voz.frame_samples]f32 = undefined;
         var wet: [voz.frame_samples]f32 = undefined;
-        toMono(pcm, &mono);
+        toMono(pcm, mono[0..n]);
         var vad: ?f32 = null;
         var i: usize = 0;
-        while (i + e.frame <= voz.frame_samples) : (i += e.frame) {
+        while (i + e.frame <= n) : (i += e.frame) {
             if (allZero(mono[i..][0..e.frame])) {
                 s.zero_run +|= 1;
                 if (s.zero_run > zero_blocks) {
@@ -187,7 +194,7 @@ pub const Supressor = struct {
         const from = s.mix;
         const to: f32 = if (keep and s.warm == 0) 1 else 0;
         if (s.warm > 0) s.warm -= 1;
-        if (from != 0 or to != 0) blend(pcm, &wet, from, to);
+        if (from != 0 or to != 0) blend(pcm, wet[0..n], from, to);
         s.mix = to;
         const out: Out = .{ .vad = if (from == 1 and to == 1) vad else null, .switched = from != to };
         if (!keep) {
@@ -253,6 +260,29 @@ test "todo motor cabe no caminho do microfone" {
     // Os números do RNNoise são os que a biblioteca diz.
     try t_eq(@as(usize, @intCast(rnnoise_get_frame_size())), rnnoise_engine.frame);
     try t_eq(@as(usize, 2), voz.frame_samples / rnnoise_engine.frame);
+    for (std.enums.values(Mode)) |m| {
+        const e = m.engine() orelse continue;
+        try t_eq(@as(usize, 0), (piece_len / voz.channels) % e.frame);
+    }
+}
+
+test "pedaço de 10 ms passa pelo motor como o de 20" {
+    var s: Supressor = .{ .passing = true };
+    defer s.release();
+    var noise: Noise = .{};
+    var pcm: [piece_len]i16 = undefined;
+    // Ruído de fundo puro por 2 s, em pedaços de 10 ms: o motor acorda, entra
+    // aos poucos (sem degrau) e abaixa o ruído.
+    var last_rms: f32 = 0;
+    for (0..200) |_| {
+        noise.fill(&pcm, 3000);
+        _ = s.process(&pcm, .rnnoise);
+        var sum: f64 = 0;
+        for (pcm) |v| sum += @as(f64, @floatFromInt(v)) * @as(f64, @floatFromInt(v));
+        last_rms = @floatCast(@sqrt(sum / pcm.len));
+    }
+    try t_expect(s.state != null and s.mix == 1);
+    try t_expect(last_rms < 3000.0 / @sqrt(3.0) / 2.0);
 }
 
 test "modo salvo: número conhecido, e o padrão para o resto" {

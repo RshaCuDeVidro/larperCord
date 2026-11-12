@@ -857,9 +857,37 @@ pub fn selectionText(ctx: *d.Ctx) ?[]u8 {
 
 // --- Mixer da call ----------------------------------------------------------
 
+/// Uma chave em forma de pílula, ao lado da anterior (`x` anda). true: clicou.
+fn dspChip(ctx: *d.Ctx, dl: *c.ImDrawList, x: *f32, y: f32, id: usize, label: []const u8, on: bool, tip: []const u8, comptime mark: []const u8, uid: Id) bool {
+    const font = ctx.ui.get(.medium);
+    const fs: f32 = 11;
+    const tw = d.width(font, fs, label);
+    const r: d.Rect = .{ .x = x.*, .y = y, .w = tw + 26, .h = 20 };
+    x.* += r.w + 6;
+    const hb = d.hit(ctx, id, r);
+    qa.mark(r, mark ++ ":{d}", .{uid});
+    if (on) qa.mark(r, mark ++ "-on:{d}", .{uid});
+    const fill = if (on) ctx.col(.accent) else if (hb.hovered) ctx.col(.hover) else ctx.col(.sidebar).mix(ctx.col(.text), 0.06);
+    d.rect(dl, r, fill, 10);
+    if (!on) d.border(dl, r, ctx.col(.border), 10, 1);
+    // O "ligado" leva um visto; o desligado, uma bolinha vazia.
+    const ink = if (on) ctx.col(.accent_text) else ctx.col(.muted);
+    const mx = r.x + 10;
+    const my = r.y + r.h / 2;
+    if (on) {
+        d.line(dl, mx - 3.5, my, mx - 1, my + 2.5, ink, 1.6);
+        d.line(dl, mx - 1, my + 2.5, mx + 3.5, my - 3, ink, 1.6);
+    } else c.ImDrawList_AddCircleEx(dl, d.v(mx, my), 3.5, ink.u(), 0, 1.3, 0);
+    d.text(dl, font, fs, r.x + 18, d.centerY(r, fs), ink, label);
+    d.tip(ctx, r, tip, hb.hovered);
+    return hb.clicked;
+}
+
 /// Volume individual de cada pessoa na call. Um "card" flutuante com sliders e o
 /// botão de silenciar só aquela pessoa (o volume guardado fica), sem mexer no
-/// volume do sistema.
+/// volume do sistema. Embaixo de cada um, "Tirar ruído" e "Igualar volume" só para
+/// aquela pessoa, desligados de começo (net/voice.zig faz o trabalho, e desligados
+/// não gastam nada).
 fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
     const vc = ctx.st.voice orelse return;
     const cs = ctx.store.channel(vc) orelse return;
@@ -869,7 +897,7 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
     };
     const wd: f32 = 318;
     const header: f32 = 52;
-    const row: f32 = 44;
+    const row: f32 = 68;
     const max_h = @max(ctx.win.h - 24, 120);
     const fit_rows: usize = @intFromFloat(@max((max_h - header - 12) / row, 1));
     const shown = @min(@min(count, 9), fit_rows);
@@ -928,7 +956,8 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         const local_mute = ctx.st.volumes.isMuted(uid);
         const off = vol <= 0.001 or local_mute;
         const tr: d.Rect = .{ .x = rowr.x + 140, .y = rowr.y + rowr.h / 2 - 2, .w = 92, .h = 6 };
-        const hr: d.Rect = .{ .x = tr.x - 6, .y = tr.y - 9, .w = tr.w + 12, .h = 24 };
+        // A área do slider acaba antes dos botões de baixo (tirar ruído, igualar volume).
+        const hr: d.Rect = .{ .x = tr.x - 6, .y = tr.y - 9, .w = tr.w + 12, .h = 20 };
         const hb = d.hit(ctx, 7200 +% @as(usize, @truncate(uid)), hr);
         qa.mark(hr, "voice-volume:{d}", .{uid});
         if (hb.held) ctx.act(.{ .set_voice_volume = .{ .user = uid, .volume = volumeAt(ctx.mouse.x, tr) } });
@@ -958,6 +987,16 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         }
         // O mesmo "Silenciar para mim" do menu da pessoa.
         if (mh.clicked) ctx.act(.{ .set_voice_mute = .{ .user = uid, .mute = !local_mute } });
+
+        // Tirar ruído e igualar volume, só para esta pessoa.
+        const dn = ctx.st.volumes.denoiseOn(uid);
+        const lv = ctx.st.volumes.levelOn(uid);
+        var cx = rowr.x + 46;
+        const cy = rowr.y + 44;
+        if (dspChip(ctx, dl, &cx, cy, 7400 +% @as(usize, @truncate(uid)), i18n.tr("Tirar ruído", "Remove noise"), dn, i18n.tr("Tira o chiado e o barulho de fundo do som desta pessoa, só aqui. Usa um pouco de CPU enquanto ela fala.", "Removes hiss and background noise from this person's sound, only here. Uses a little CPU while they talk."), "voice-denoise", uid))
+            ctx.act(.{ .set_voice_dsp = .{ .user = uid, .denoise = !dn, .level = lv } });
+        if (dspChip(ctx, dl, &cx, cy, 7500 +% @as(usize, @truncate(uid)), i18n.tr("Igualar volume", "Even out volume"), lv, i18n.tr("Sobe quem fala baixo e desce quem fala alto, para perto do mesmo volume dos outros.", "Raises a quiet voice and lowers a loud one, close to everyone else's level."), "voice-level", uid))
+            ctx.act(.{ .set_voice_dsp = .{ .user = uid, .denoise = dn, .level = !lv } });
         yy += row;
     }
     if (count > shown) {

@@ -377,6 +377,8 @@ pub const Command = union(enum) {
     voice_flags: struct { mute: bool, deaf: bool },
     /// Volume individual de quem está falando (0..2).
     voice_volume: struct { user: Id, volume: f32 },
+    /// "Tirar ruído" e "Igualar volume" de uma pessoa (mixer da call).
+    voice_dsp: struct { user: Id, denoise: bool, level: bool },
     /// Call de DM/grupo: toca para os outros (POST .../call/ring) ou para de
     /// tocar só para nós, que é recusar (POST .../call/stop-ringing).
     call_ring: Id,
@@ -504,6 +506,8 @@ pub const Action = union(enum) {
     set_voice_volume: struct { user: Id, volume: f32 },
     /// "Silenciar para mim": não mexe no volume guardado (core/volumes.zig).
     set_voice_mute: struct { user: Id, mute: bool },
+    /// "Tirar ruído" e "Igualar volume" de uma pessoa, no mixer da call.
+    set_voice_dsp: struct { user: Id, denoise: bool, level: bool },
     /// Abre/fecha o mixer de voz (a lista de quem está na call com volumes).
     toggle_voice_mixer,
     /// Call na DM ou grupo: começa (ou entra na que já existe), atende e

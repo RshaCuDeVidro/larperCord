@@ -10,7 +10,7 @@ In a DM or group DM, the phone button in the header starts a call; terminal them
 
 Right-click the microphone or headphone button, or the small arrow that shows on hover, to switch the device and its volume, mid-call too; during a call, right-clicking the voice panel shows both. `Ctrl+Shift+M` mutes and `Ctrl+Shift+D` deafens.
 
-The **mixer** gives each person their own volume.
+The **mixer** gives each person their own volume, plus two switches that are off by default and only touch that person: **Remove noise** (the same noise suppression as your microphone, on their sound) and **Even out volume** (raises a quiet voice and lowers a loud one toward everyone else's level).
 
 ![The call mixer](shot:f-voz)
 

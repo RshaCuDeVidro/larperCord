@@ -279,10 +279,16 @@ pub fn toggle(ctx: *d.Ctx, dl: *c.ImDrawList, font: *c.ImFont, fs: f32, kind: Ki
 
     if (forced) {
         d.tip(ctx, mr, if (kind == .mic) i18n.tr("Mudo pelo servidor: ninguém te ouve", "Server muted: nobody can hear you") else i18n.tr("Surdo pelo servidor", "Server deafened"), mh.hovered);
-    } else d.tip(ctx, mr, switch (kind) {
-        .mic => if (on) i18n.tr("Desmutar  (Ctrl+Shift+M)", "Unmute  (Ctrl+Shift+M)") else i18n.tr("Mutar microfone  (Ctrl+Shift+M)", "Mute  (Ctrl+Shift+M)"),
-        .deaf => if (on) i18n.tr("Voltar a ouvir  (Ctrl+Shift+D)", "Undeafen  (Ctrl+Shift+D)") else i18n.tr("Ensurdecer  (Ctrl+Shift+D)", "Deafen  (Ctrl+Shift+D)"),
-    }, mh.hovered);
+    } else {
+        // A combinação de agora (Configurações → Atalhos de teclado pode ter trocado).
+        var kb: [48]u8 = undefined;
+        var tb: [96]u8 = undefined;
+        const keys = @import("teclas.zig").label(&ctx.st.teclas, if (kind == .mic) .mutar else .ensurdecer, &kb);
+        d.tip(ctx, mr, switch (kind) {
+            .mic => if (on) i18n.fmt(&tb, "Desmutar  ({s})", "Unmute  ({s})", .{keys}) else i18n.fmt(&tb, "Mutar microfone  ({s})", "Mute  ({s})", .{keys}),
+            .deaf => if (on) i18n.fmt(&tb, "Voltar a ouvir  ({s})", "Undeafen  ({s})", .{keys}) else i18n.fmt(&tb, "Ensurdecer  ({s})", "Deafen  ({s})", .{keys}),
+        }, mh.hovered);
+    }
     d.tip(ctx, cr, if (kind == .mic) i18n.tr("Microfone e volume de entrada", "Input device and volume") else i18n.tr("Saída e volume", "Output device and volume"), ch.hovered);
 
     const k = anim.to(anim.id("vbtn", id), if (hovered or menu_open) 1 else 0, 24);

@@ -1,6 +1,6 @@
 # Shortcuts and CLI
 
-The same keys on Linux and Windows. There is no macOS build, so it's always `Ctrl`, never `Cmd`. These tables come from `src/ui/atalhos.zig`, the list the app itself shows in **Settings → Keybinds**, so this page and the app can't drift apart.
+The same keys on Linux and Windows. There is no macOS build, so it's always `Ctrl`, never `Cmd`. These tables come from `src/ui/atalhos.zig`, the list the app itself shows in **Settings → Keybinds**, so this page and the app can't drift apart. These are the default keys: the global ones (palette, search, settings, inbox, saved, themes, fullscreen, tabs, mute and deafen) can be changed there. Click one and press the new keys; "Default" puts it back.
 
 ## Keyboard
 
@@ -81,7 +81,7 @@ In `cmd`, it's `set LARPER_RENDERER=software` before running the `.exe`. Variabl
 | Variable | What it does |
 |---|---|
 | `LARPER_TOKEN` | the account token (see [Connect your account](page:account)) |
-| `LARPER_RENDERER` | picks the SDL render backend: `opengl`, `vulkan`, `gpu` or `software`, and on Windows also `direct3d11` or `direct3d12` |
+| `LARPER_RENDERER` | picks the SDL render backend: `opengl`, `vulkan`, `gpu` or `software`, and on Windows also `direct3d11` or `direct3d12`. It wins over the choice in Settings → Performance → Renderer |
 | `LARPER_HIDDEN` | opens with a hidden window. The app draws nothing while hidden, so memory reads much lower than with a real window |
 | `LARPER_BENCH` | redraws nonstop, to measure the cost of a frame |
 | `LARPER_VOICE_DEBUG` | prints what happens in a call (opcodes, close codes, DAVE) to the terminal. It never prints tokens or keys. On Windows there's no terminal: turn on Settings → Advanced → Save debug log, which records the same |
