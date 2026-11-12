@@ -1,17 +1,23 @@
-//! QA do op 8 (os membros dos autores de uma página de histórico, net/member_ask.zig).
-//! Na demonstração, o servidor grande (Arch Linux BR) não traz quem está offline na
-//! lista de membros, como um servidor grande do Discord, e as mensagens antigas de lá
-//! também são de gente offline: a nanda (Moderação, apelido "Nanda do Arch") só ganha o
-//! apelido e a cor do cargo pela resposta do op 8. Confere: DM e grupo nunca pedem, cada
-//! página pede no máximo um, ninguém é pedido duas vezes, e a mensagem antiga mostra o
-//! apelido e a cor depois da resposta. Sozinho: QA_SUITE=membros.
+//! QA do op 8 (os membros dos autores de uma página de histórico, net/member_ask.zig),
+//! com a mesma fila do gateway de verdade (net/gw_budget.zig): no máximo um op 8 por
+//! servidor a cada 30 s, o limite do Discord, com as páginas se juntando. Na
+//! demonstração, o servidor grande (Arch Linux BR) não traz quem está offline na lista
+//! de membros, como um servidor grande do Discord, e as mensagens antigas de lá também
+//! são de gente offline: a nanda (Moderação, apelido "Nanda do Arch") só ganha o apelido
+//! e a cor do cargo pela resposta do op 8. Confere: DM e grupo nunca pedem; abrir e rolar
+//! depressa junta tudo num pedido; rolar muitas páginas em menos de 30 s não manda um
+//! segundo (o demo conta o que o Discord recusaria); ninguém é pedido duas vezes; a
+//! mensagem antiga mostra o apelido e a cor; e uma sessão nova só pede membros para a
+//! conversa na tela, não para cada aba. Sozinho: QA_SUITE=membros.
 const std = @import("std");
 const App = @import("app.zig").App;
 const R = @import("qa_runner.zig");
 const Op = R.Op;
 const qa = @import("ui/qa.zig");
 const gw = @import("net/fake_gateway.zig");
-const Id = @import("core/types.zig").Id;
+const types = @import("core/types.zig");
+const platform = @import("platform/window.zig");
+const Id = types.Id;
 
 fn s(name: []const u8) Op {
     return .{ .section = name };
@@ -42,24 +48,29 @@ var req0: u64 = 0;
 var pages0: u64 = 0;
 var wrong0: u64 = 0;
 var repeats0: u64 = 0;
-var req_step: u64 = 0;
+var refused0: u64 = 0;
+/// Op 8 do servidor grande (os do primeiro servidor, das abas que o demo abre, saem no
+/// ritmo deles e não contam aqui).
+var big_step: u64 = 0;
 var pages_step: u64 = 0;
 
 fn mark() void {
-    req_step = load(&gw.sent.member_requests);
+    big_step = load(&gw.sent.member_large);
     pages_step = load(&gw.sent.member_pages);
-}
-
-/// Desde `mark`: chegou ao menos uma página nova e no máximo um op 8 por página.
-fn onePerPage() bool {
-    const pages = load(&gw.sent.member_pages) - pages_step;
-    const reqs = load(&gw.sent.member_requests) - req_step;
-    return pages > 0 and reqs <= pages;
 }
 
 fn loaded(app: *App, id: Id) bool {
     const cs = app.store.channel(id) orelse return false;
     return app.st.activeChannel() == id and cs.history == .loaded;
+}
+
+/// O canal que está sendo rolado.
+var scrolling: Id = big_zig;
+
+/// A página antiga chegou (ou o canal já está no começo: não há mais o que carregar).
+fn olderDone(app: *App) bool {
+    const cs = app.store.channel(scrolling) orelse return false;
+    return cs.older == .done or (cs.older != .loading and load(&gw.sent.member_pages) > pages_step);
 }
 
 // --- DM e grupo --------------------------------------------------------------------
@@ -69,6 +80,7 @@ fn start(app: *App) void {
     pages0 = load(&gw.sent.member_pages);
     wrong0 = load(&gw.sent.member_wrong);
     repeats0 = load(&gw.sent.member_repeats);
+    refused0 = load(&gw.sent.member_refused);
     app.handle(.{ .select_channel = dm0 });
 }
 fn dmLoaded(app: *App) bool {
@@ -81,16 +93,15 @@ fn groupNoAsk(app: *App) bool {
     return loaded(app, group) and load(&gw.sent.member_requests) == req0 and load(&gw.sent.member_pages) == pages0 and load(&gw.sent.member_wrong) == wrong0;
 }
 
-// --- Servidor grande ---------------------------------------------------------------
+// --- Servidor grande: abrir e rolar depressa -----------------------------------------
 
 fn openBig(app: *App) void {
     mark();
     app.handle(.{ .select_guild = big });
     app.handle(.{ .select_channel = big_zig });
 }
-fn firstPage(app: *App) bool {
-    if (!loaded(app, big_zig) or !onePerPage()) return false;
-    return load(&gw.sent.member_requests) == req_step or load(&gw.sent.member_guild) == big;
+fn bigLoaded(app: *App) bool {
+    return loaded(app, big_zig) and load(&gw.sent.member_pages) > pages_step;
 }
 
 /// A nanda ainda não é conhecida: sem apelido e sem cor antes da página antiga.
@@ -99,16 +110,13 @@ fn nandaUnknown(app: *App) bool {
 }
 
 fn older(app: *App) void {
-    mark();
-    app.handle(.{ .load_older = big_zig });
+    pages_step = load(&gw.sent.member_pages);
+    app.handle(.{ .load_older = scrolling });
 }
-fn olderDone(app: *App) bool {
-    const cs = app.store.channel(big_zig) orelse return false;
-    return cs.older != .loading and onePerPage();
-}
-/// A página antiga trouxe a nanda: saiu um op 8, do servidor grande.
-fn olderAsked(app: *App) bool {
-    return olderDone(app) and load(&gw.sent.member_requests) > req_step and load(&gw.sent.member_guild) == big;
+
+/// Abriu e rolou dentro do lote: as páginas viraram um pedido só, de lá.
+fn oneBatch(_: *App) bool {
+    return load(&gw.sent.member_large) == big_step + 1 and load(&gw.sent.member_refused) == refused0;
 }
 
 /// A primeira mensagem de um grupo da nanda (a que mostra o nome).
@@ -135,22 +143,69 @@ fn nandaColor(app: *App) bool {
     return app.store.nameColor(big, nanda) == mod_color;
 }
 
-/// Outra página antiga, com a nanda de novo: ninguém pedido duas vezes.
-fn noRepeat(app: *App) bool {
-    return olderDone(app) and load(&gw.sent.member_repeats) == repeats0;
+// --- Rolar muitas páginas em menos de 30 s -------------------------------------------
+
+/// Quando o op 8 do lote saiu (relógio monotônico do demo).
+var batch_at: u64 = 0;
+var window_pages: u64 = 0;
+fn markWindow(_: *App) void {
+    batch_at = load(&gw.sent.member_at);
+    big_step = load(&gw.sent.member_large);
+    window_pages = load(&gw.sent.member_pages);
+}
+
+/// Mais páginas (até o começo do canal), ainda dentro dos 30 s do primeiro
+/// pedido: nenhum op 8 novo de lá (o que elas trazem espera na fila), nenhum que o
+/// Discord recusaria.
+fn windowHeld(_: *App) bool {
+    const in_window = gw.monoMs() - @as(i64, @intCast(batch_at)) < 30_000;
+    return in_window and load(&gw.sent.member_pages) > window_pages and load(&gw.sent.member_large) == big_step and load(&gw.sent.member_refused) == refused0 and load(&gw.sent.member_repeats) == repeats0;
 }
 
 fn openGeral(app: *App) void {
-    mark();
+    pages_step = load(&gw.sent.member_pages);
+    scrolling = big_geral;
     app.handle(.{ .select_channel = big_geral });
 }
-fn geralClean(app: *App) bool {
-    return loaded(app, big_geral) and onePerPage() and load(&gw.sent.member_repeats) == repeats0;
+fn geralLoaded(app: *App) bool {
+    return loaded(app, big_geral) and load(&gw.sent.member_pages) > pages_step;
+}
+/// Outro canal do mesmo servidor, aberto e rolado na mesma janela: a página antiga dele
+/// traz alguém que ninguém pediu (o gustavo), e mesmo com o lote já fechado (mais de 1 s
+/// depois) o pedido dele espera a janela; nenhum op 8 novo de lá.
+fn geralHeld(app: *App) bool {
+    const in_window = gw.monoMs() - @as(i64, @intCast(batch_at)) < 30_000;
+    const waiting = app.store.channel(big_geral) != null and app.store.memberInfo(big, 1008) == null;
+    return in_window and waiting and load(&gw.sent.member_pages) >= window_pages + 3 and load(&gw.sent.member_large) == big_step and load(&gw.sent.member_refused) == refused0;
+}
+
+// --- Sessão nova ---------------------------------------------------------------------
+
+fn push(app: *App, e: @import("core/event.zig").Event) void {
+    app.events.push(e);
+    platform.Window.wake(app.win.wake_type, .gateway);
+}
+
+var fetches0: u64 = 0;
+var tabs_open: usize = 0;
+/// Um READY de uma sessão nova (o notebook dormiu e acordou): as abas carregadas pedem
+/// a última página de novo, mas membros só a que está na tela.
+fn newSession(app: *App) void {
+    fetches0 = load(&gw.sent.member_fetches);
+    tabs_open = app.st.tabs.items.len;
+    const ca = std.heap.c_allocator;
+    const users = ca.alloc(types.User, 0) catch return;
+    const guilds = ca.alloc(types.Guild, 0) catch return;
+    const channels = ca.alloc(types.Channel, 0) catch return;
+    push(app, .{ .ready = .{ .me = app.store.me, .users = users, .guilds = guilds, .channels = channels, .voice = &.{} } });
+    push(app, .{ .status = .ready });
+}
+fn activeOnly(_: *App) bool {
+    return tabs_open >= 2 and load(&gw.sent.member_fetches) == fetches0 + 1;
 }
 
 fn allClean(_: *App) bool {
-    return load(&gw.sent.member_wrong) == wrong0 and load(&gw.sent.member_repeats) == repeats0 and
-        load(&gw.sent.member_requests) - req0 <= load(&gw.sent.member_pages) - pages0;
+    return load(&gw.sent.member_wrong) == wrong0 and load(&gw.sent.member_repeats) == repeats0 and load(&gw.sent.member_refused) == refused0;
 }
 
 pub const ops = [_]Op{
@@ -159,19 +214,39 @@ pub const ops = [_]Op{
     expect("a DM abre", dmLoaded),
     run(openGroup),
     expect("o grupo abre; nenhuma página de DM ou grupo pediu membros", groupNoAsk),
-    s("op 8: servidor grande"),
+    s("op 8: abrir e rolar depressa"),
     run(openBig),
-    expect("a primeira página do servidor grande pede no máximo um op 8, de lá", firstPage),
+    expect("o canal do servidor grande abre", bigLoaded),
     expect("a nanda (offline, fora da lista) ainda sem apelido e sem cor", nandaUnknown),
     run(older),
-    expect("a página antiga pede um op 8 só, com quem ninguém conhecia", olderAsked),
+    expect("uma página antiga", olderDone),
+    run(older),
+    expect("e outra", olderDone),
+    .{ .expect = .{ .name = "as três páginas viram um op 8 só, do servidor grande", .check = oneBatch, .timeout_ms = 4000 } },
     run(jumpNanda),
-    expect("depois da resposta, a mensagem antiga da nanda mostra o apelido de lá", nandaNick),
+    // (Se uma página escapou do lote, ela sai só na janela seguinte, 30 s depois.)
+    .{ .expect = .{ .name = "depois da resposta, a mensagem antiga da nanda mostra o apelido de lá", .check = nandaNick, .timeout_ms = 40_000 } },
     expect("e a cor do cargo dela (Moderação)", nandaColor),
     .{ .shot = "membros-antiga" },
+    s("op 8: rolar muitas páginas em menos de 30 s"),
+    run(markWindow),
     run(older),
-    expect("mais uma página antiga com a nanda: ninguém pedido de novo", noRepeat),
+    expect("página 4", olderDone),
+    run(older),
+    expect("página 5", olderDone),
+    run(older),
+    expect("página 6", olderDone),
+    run(older),
+    expect("página 7", olderDone),
+    expect("dentro dos 30 s: nenhum op 8 novo de lá, nenhum que o Discord recusaria, ninguém repetido", windowHeld),
     run(openGeral),
-    expect("outro canal do mesmo servidor: no máximo um op 8, sem repetir ninguém", geralClean),
-    expect("no total: um op 8 por página no máximo, nenhum repetido, nenhum com o servidor errado", allClean),
+    expect("outro canal do mesmo servidor", geralLoaded),
+    run(older),
+    expect("uma página antiga dele", olderDone),
+    .{ .wait = 1500 },
+    expect("também dentro da janela: quem é novo espera, e nenhum op 8 novo de lá", geralHeld),
+    s("op 8: sessão nova"),
+    run(newSession),
+    expect("READY de uma sessão nova com várias abas: membros só para a conversa na tela", activeOnly),
+    expect("no total: nenhum repetido, nenhum com o servidor errado, nenhum que seria recusado", allClean),
 };

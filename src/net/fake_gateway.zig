@@ -27,6 +27,7 @@ const alloc = std.heap.c_allocator;
 const voice_mod = @import("voice.zig");
 const call_json = @import("call_json.zig");
 const member_ask = @import("member_ask.zig");
+const gw_budget = @import("gw_budget.zig");
 const fake_interactions = @import("fake_interactions.zig");
 
 pub const Sink = struct {
@@ -103,16 +104,23 @@ pub const sent = struct {
     /// Pedidos do começo das calls (op 43) e o servidor do último.
     pub var channel_infos: A = .init(0);
     pub var channel_info_guild: A = .init(0);
-    /// Op 8 (membros dos autores de uma página, net/member_ask.zig): quantos saíram, o
-    /// servidor e o tamanho do último, as páginas que podiam pedir, os IDs pedidos de novo
-    /// (deve ficar 0) e os pedidos de página com servidor errado (DM ou grupo pedindo, ou
-    /// outro servidor; deve ficar 0).
+    /// Op 8 (membros dos autores de uma página, net/member_ask.zig), pela mesma fila do
+    /// gateway de verdade (net/gw_budget.zig): quantos saíram, o servidor, o tamanho e a
+    /// hora (relógio monotônico) do último, as páginas que pediram membros, os pedidos de
+    /// página com membros (`member_fetches`), os IDs pedidos de novo, os pedidos com
+    /// servidor errado (DM ou grupo pedindo, ou outro servidor) e os que o Discord
+    /// recusaria (um segundo do mesmo servidor em menos de 30 s). Os três últimos: 0.
     pub var member_requests: A = .init(0);
+    /// Só os do servidor grande (o QA conta um servidor só; os outros seguem no ritmo deles).
+    pub var member_large: A = .init(0);
     pub var member_guild: A = .init(0);
     pub var member_n: A = .init(0);
+    pub var member_at: A = .init(0);
     pub var member_pages: A = .init(0);
+    pub var member_fetches: A = .init(0);
     pub var member_repeats: A = .init(0);
     pub var member_wrong: A = .init(0);
+    pub var member_refused: A = .init(0);
     pub var create_dms: A = .init(0);
     /// GET /channels/{id}: a DM que apareceu só por uma mensagem, e qual foi a última.
     pub var fetch_channels: A = .init(0);
@@ -228,12 +236,16 @@ pub const Gateway = struct {
     ringing_me: Id = 0,
     nonce_replies: std.ArrayList(struct { at_ms: i64, msg: types.Message }) = .empty,
     history_replies: std.ArrayList(struct { at_ms: i64, channel: Id, members: Id = 0 }) = .empty,
-    /// Op 8, como o gateway de verdade: quem já é membro conhecido ou foi pedido; a
-    /// resposta (GUILD_MEMBERS_CHUNK) chega um pouco depois. `asked` conta à parte o
-    /// que saiu, para o QA ver se algum ID foi pedido duas vezes.
+    /// Op 8, como o gateway de verdade: quem já é membro conhecido ou foi pedido, e a
+    /// mesma fila (um por servidor a cada 30 s, as páginas se juntando). A resposta
+    /// (GUILD_MEMBERS_CHUNK) chega um pouco depois do envio. `asked` e `members_last`
+    /// conferem à parte o que saiu: algum ID duas vezes, ou o mesmo servidor em menos
+    /// de 30 s (o Discord recusaria).
     members_ask: member_ask.Asker = .{},
+    member_out: gw_budget.Outbox = .{},
     member_replies: std.ArrayList(struct { at_ms: i64, req: member_ask.Request }) = .empty,
     asked: std.AutoHashMapUnmanaged([2]Id, void) = .empty,
+    members_last: std.AutoHashMapUnmanaged(Id, i64) = .empty,
     /// Servidores cujos cargos já foram mandados.
     roles_sent: u64 = 0,
     /// LARPER_FLOOD=N: N trocas de presença por segundo (teste de carga,
@@ -680,7 +692,11 @@ pub const Gateway = struct {
                     if (out.reply) |m| try g.nonce_replies.append(alloc, .{ .at_ms = nowMs() + 350, .msg = m });
                 },
                 .delete_thread => |id| g.emit(.{ .channel_delete = id }),
-                .leave_guild => |id| g.emit(.{ .guild_delete = id }),
+                .leave_guild => |id| {
+                    g.members_ask.forgetGuild(id);
+                    g.member_out.forgetMembers(id);
+                    g.emit(.{ .guild_delete = id });
+                },
                 .edit_place => |e| try g.editPlace(e),
                 .social => |sc| try g.socialCmd(sc),
                 .react => |r| g.emit(.{ .reaction = .{ .channel = r.channel, .id = r.id, .emoji = r.emoji, .user = me_id, .add = r.add } }),
@@ -1369,22 +1385,40 @@ pub const Gateway = struct {
         return if (uid == 1001 or (uid == me_id and gi == 0)) 0 else if ((uid + gi) % 3 == 0) 1 else 2;
     }
 
-    /// A página carregou: o op 8 com os autores que ninguém conhece, como o gateway de
-    /// verdade faz (net/discord.zig, `history`), e a resposta um pouco depois.
+    /// A página carregou: os autores que ninguém conhece vão para a fila do op 8, como o
+    /// gateway de verdade faz (net/discord.zig, `history` e `queueMembers`).
     fn askMembers(g: *Gateway, guild: Id, msgs: []const types.Message) !void {
         if (guild == 0) return;
         _ = sent.member_pages.fetchAdd(1, .monotonic);
         var authors: [member_ask.max_ids]Id = undefined;
         const n = @min(msgs.len, authors.len);
         for (msgs[0..n], authors[0..n]) |m, *a| a.* = m.author;
-        const r = g.members_ask.page(alloc, guild, authors[0..n]) orelse return;
-        _ = sent.member_requests.fetchAdd(1, .monotonic);
-        sent.member_guild.store(guild, .release);
-        sent.member_n.store(r.n, .release);
-        for (r.slice()) |uid| if ((try g.asked.getOrPut(alloc, .{ guild, uid })).found_existing) {
-            _ = sent.member_repeats.fetchAdd(1, .monotonic);
-        };
-        try g.member_replies.append(alloc, .{ .at_ms = nowMs() + 120, .req = r });
+        var r = g.members_ask.page(alloc, guild, authors[0..n]) orelse return;
+        if (!g.member_out.pushMembers(&r, monoMs())) g.members_ask.unmark(&r);
+        try g.flushMembers();
+    }
+
+    /// Solta o op 8 que a fila deixa sair agora e confere o limite do Discord à parte.
+    fn flushMembers(g: *Gateway) !void {
+        const now = monoMs();
+        while (g.member_out.pop(now)) |it| {
+            const r = switch (it) {
+                .members => |x| x,
+                else => continue,
+            };
+            _ = sent.member_requests.fetchAdd(1, .monotonic);
+            if (r.guild == guildId(large_guild)) _ = sent.member_large.fetchAdd(1, .monotonic);
+            sent.member_guild.store(r.guild, .release);
+            sent.member_n.store(r.n, .release);
+            sent.member_at.store(@intCast(now), .release);
+            const last = try g.members_last.getOrPut(alloc, r.guild);
+            if (last.found_existing and now - last.value_ptr.* < 30_000) _ = sent.member_refused.fetchAdd(1, .monotonic);
+            last.value_ptr.* = now;
+            for (r.slice()) |uid| if ((try g.asked.getOrPut(alloc, .{ r.guild, uid })).found_existing) {
+                _ = sent.member_repeats.fetchAdd(1, .monotonic);
+            };
+            try g.member_replies.append(alloc, .{ .at_ms = nowMs() + 120, .req = r });
+        }
     }
 
     /// O GUILD_MEMBERS_CHUNK: quem é membro vem com cargos e perfil do servidor (os mesmos
@@ -1545,6 +1579,10 @@ pub const Gateway = struct {
         for (g.nonce_replies.items) |r| d = @min(d, r.at_ms);
         for (g.history_replies.items) |r| d = @min(d, r.at_ms);
         for (g.member_replies.items) |r| d = @min(d, r.at_ms);
+        // A fila do op 8 anda no relógio monotônico: aqui só importa quanto falta.
+        const mono = monoMs();
+        const out_at = g.member_out.due(mono);
+        if (out_at != std.math.maxInt(i64)) d = @min(d, nowMs() + (out_at - mono));
         return @min(d, g.acks.nextDue());
     }
 
@@ -1755,6 +1793,7 @@ pub const Gateway = struct {
                 _ = g.history_replies.orderedRemove(i);
             } else i += 1;
         }
+        try g.flushMembers();
         i = 0;
         while (i < g.member_replies.items.len) {
             const r = g.member_replies.items[i];
@@ -2082,6 +2121,7 @@ fn guildOfChannel(ch: Id) Id {
 /// (em DM e grupo, nunca). Threads (IDs de mensagem) não dá para conferir aqui.
 fn noteMembersAsk(channel: Id, members: Id) void {
     if (members == 0) return;
+    _ = sent.member_fetches.fetchAdd(1, .monotonic);
     const dm = channel >= 900_000 and channel < 1_000_000;
     const in_guilds = channel >= guildId(0) and channel < guildId(guilds.len);
     if (dm or (in_guilds and guildOfChannel(channel) != members)) _ = sent.member_wrong.fetchAdd(1, .monotonic);
@@ -2613,8 +2653,11 @@ fn buildOlder(channel: Id, before: Id) ![]types.Message {
     while (i > 0) {
         i -= 1;
         const large = guildOfChannel(channel) == guildId(large_guild) and dmRecipient(channel) == null;
-        // No servidor grande, as antigas também são de quem está offline (a nanda e o pedro).
-        const author = if (dmRecipient(channel)) |u| (if (r.boolean()) u else me_id) else if (large and (i == n / 2 or r.uintLessThan(u8, 5) == 0)) (if (i == n / 2 or r.boolean()) large_old_author else 1010) else users[r.uintLessThan(usize, 8)].id;
+        // No servidor grande, as antigas também são de quem está offline: no #zig a nanda
+        // e o pedro, nos outros canais o gustavo (outro canal rolado logo depois traz
+        // alguém novo para o op 8).
+        const offline: Id = if (channel == channelId(large_guild, 9)) large_old_author else 1008;
+        const author = if (dmRecipient(channel)) |u| (if (r.boolean()) u else me_id) else if (large and (i == n / 2 or r.uintLessThan(u8, 5) == 0)) (if (i == n / 2 or r.boolean()) offline else 1010) else users[r.uintLessThan(usize, 8)].id;
         msgs[i] = .{
             .id = types.makeSnowflake(t * 1000, demoSeq(channel, i)),
             .channel = channel,
