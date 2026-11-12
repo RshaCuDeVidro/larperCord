@@ -40,6 +40,7 @@ test {
     _ = @import("ui/rascunhos.zig");
     _ = @import("core/inbox.zig");
     _ = @import("core/saved.zig");
+    _ = @import("core/conjuntos.zig");
     _ = @import("core/mentions.zig");
     _ = @import("core/mencao.zig");
     _ = @import("ui/destaque.zig");

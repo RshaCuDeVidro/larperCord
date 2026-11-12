@@ -44,6 +44,10 @@ pub const sent = struct {
     /// GET /users/{id}/profile pedidos (o QA confere que o cartão e Minha conta abertos
     /// juntos não viram uma tempestade).
     pub var profile_fetches: A = .init(0);
+    /// Pedidos de histórico (GET /channels/{id}/messages) e tudo o que saiu do app
+    /// para a rede: o QA confere que trocar de conjunto de abas não vira rajada.
+    pub var history_fetches: A = .init(0);
+    pub var commands: A = .init(0);
     pub var acks: A = .init(0);
     pub var ack_channel: A = .init(0);
     pub var ack_message: A = .init(0);
@@ -556,6 +560,7 @@ pub const Gateway = struct {
             const now = nowMs();
             const wait: i32 = if (sys.web) 0 else @intCast(std.math.clamp(g.nextDeadline() - now, 1, 2000));
             g.commands.waitDrain(&cmds, wait);
+            _ = sent.commands.fetchAdd(@intCast(cmds.items.len), .monotonic);
             for (cmds.items) |cmd| switch (cmd) {
                 .shutdown => return,
                 .send_message => |m| {
@@ -675,6 +680,7 @@ pub const Gateway = struct {
                     try g.searchPage(s);
                 },
                 .fetch_history => |ch| {
+                    _ = sent.history_fetches.fetchAdd(1, .monotonic);
                     g.hot_channel = ch;
                     try g.history_replies.append(alloc, .{ .at_ms = nowMs() + 140, .channel = ch });
                 },

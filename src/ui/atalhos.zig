@@ -22,7 +22,7 @@ const Combinacao = comb.Combinacao;
 pub const Grupo = enum { geral, janela, abas, voz, caixa, vim };
 
 /// Os atalhos que dá para trocar.
-pub const Acao = enum { paleta, paleta_acoes, buscar, configuracoes, caixa_entrada, salvas, proximo_tema, tema_anterior, tela_cheia, proxima_aba, aba_anterior, fechar_aba, mutar, ensurdecer };
+pub const Acao = enum { paleta, paleta_acoes, buscar, configuracoes, caixa_entrada, salvas, proximo_tema, tema_anterior, tela_cheia, proxima_aba, aba_anterior, fechar_aba, proximo_conjunto, mutar, ensurdecer };
 const n_acoes = @typeInfo(Acao).@"enum".field_names.len;
 
 pub const Atalho = struct {
@@ -66,6 +66,7 @@ pub const lista = [_]Atalho{
     .{ .grupo = .abas, .pt = "Fechar aba", .en = "Close tab", .teclas = "Ctrl+W", .acao = .fechar_aba },
     .{ .grupo = .abas, .pt = "Abrir canal em nova aba", .en = "Open channel in a new tab", .teclas = "Ctrl+Click", .teclas_pt = "Ctrl+Clique" },
     .{ .grupo = .abas, .pt = "Fechar aba com o mouse", .en = "Close tab with the mouse", .teclas = "Middle click", .teclas_pt = "Botão do meio" },
+    .{ .grupo = .abas, .pt = "Próximo conjunto de abas", .en = "Next tab set", .teclas = "Ctrl+Shift+PageDown", .acao = .proximo_conjunto },
     .{ .grupo = .voz, .pt = "Mutar ou desmutar o microfone", .en = "Mute or unmute", .teclas = "Ctrl+Shift+M", .acao = .mutar },
     .{ .grupo = .voz, .pt = "Ensurdecer ou voltar a ouvir", .en = "Deafen or undeafen", .teclas = "Ctrl+Shift+D", .acao = .ensurdecer },
     .{ .grupo = .caixa, .pt = "Nova linha", .en = "New line", .teclas = "Shift+Enter / Ctrl+Enter" },

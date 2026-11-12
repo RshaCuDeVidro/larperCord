@@ -654,6 +654,8 @@ pub const Action = union(enum) {
     fetch_threads: struct { channel: Id, archived: bool, private: bool = false },
     /// O que mexe na conta no Discord (app_conta.zig).
     conta: @import("conta.zig").Action,
+    /// Conjuntos de abas: salvar, trocar, renomear, excluir, sair (app_conjuntos.zig).
+    conjunto: @import("conjuntos.zig").Action,
     /// Editar uma thread (nome alocado com o gpa da interface).
     edit_thread: ThreadEdit,
     /// Mídia à vista com o link vencido: manda o lote de core/media_refresh.zig.

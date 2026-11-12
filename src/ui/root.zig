@@ -309,6 +309,8 @@ fn shortcuts(ctx: *d.Ctx) void {
     if (K.on(kb, io, .proxima_aba, false)) ctx.act(.{ .next_tab = 1 });
     if (K.on(kb, io, .aba_anterior, false)) ctx.act(.{ .next_tab = -1 });
     if (K.on(kb, io, .fechar_aba, true)) ctx.act(.{ .close_tab = ctx.st.tab });
+    // Conjuntos de abas (app_conjuntos.zig): um por toque, como as abas.
+    if (K.on(kb, io, .proximo_conjunto, false)) ctx.act(.{ .conjunto = .next });
     // Caixa de entrada e mensagens salvas (ui/inbox.zig, ui/saved.zig).
     if (K.on(kb, io, .caixa_entrada, true) and !ctx.st.settings.open) ctx.act(.toggle_inbox);
     if (K.on(kb, io, .salvas, true) and !ctx.st.settings.open) ctx.act(.toggle_saved);
