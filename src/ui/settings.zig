@@ -897,15 +897,30 @@ fn page(p: *Page, previews: []const Preview) void {
             if (mascote.Kind.of(s.mascot) == .terminal) {
                 p.heading(i18n.tr("Abertura", "Opening"));
                 const before = s.mascot_opening;
-                p.segmented(&.{ i18n.tr("Boot", "Boot"), i18n.tr("Código", "Code"), i18n.tr("TV", "TV"), i18n.tr("Pixels", "Pixels"), i18n.tr("Portal", "Portal"), i18n.tr("Sortear", "Shuffle") }, &s.mascot_opening);
+                const openings = [_][]const u8{ i18n.tr("Boot", "Boot"), i18n.tr("Código", "Code"), i18n.tr("TV", "TV"), i18n.tr("Pixels", "Pixels"), i18n.tr("Portal", "Portal"), i18n.tr("Sortear", "Shuffle") };
+                if (p.w >= 560) {
+                    p.segmented(&openings, &s.mascot_opening);
+                } else {
+                    // Estreita: três em cima e três embaixo (em russo, seis não cabem).
+                    var top: u8 = if (s.mascot_opening < 3) s.mascot_opening else 255;
+                    var bottom: u8 = if (s.mascot_opening >= 3) s.mascot_opening - 3 else 255;
+                    p.segmented(openings[0..3], &top);
+                    p.y -= 8;
+                    p.segmented(openings[3..6], &bottom);
+                    if (top != 255 and top != before) s.mascot_opening = top;
+                    if (bottom != 255 and bottom + 3 != before) s.mascot_opening = bottom + 3;
+                }
                 if (s.mascot_opening != before) restartPreview(p.ctx.now_ms);
             }
             p.note(i18n.tr("Troca a abertura e o ícone do app: janela, barra de tarefas, bandeja e menu de aplicativos. O ícone do arquivo do app no Windows continua o Terminal.", "Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one."));
             if (p.buttonSoft(i18n.tr("Ver a abertura de novo", "Replay the opening"))) restartPreview(p.ctx.now_ms);
             p.divider();
+            @import("settings_mascote.zig").section(p);
+            p.divider();
             p.heading(i18n.tr("Mascote no canto", "Corner mascot"));
             p.toggle(i18n.tr("Mascote no canto", "Corner mascot"), i18n.tr("Senta em cima da caixa de mensagem e reage ao que você faz. Dá para pegar e jogar, fazer carinho, cutucar e clicar com o botão direito para mais.", "Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more."), &s.mascot_pet);
             const pet_on = s.mascot_pet;
+            p.toggleIf(i18n.tr("Chapéu nas datas", "Holiday hats"), i18n.tr("Gorro no Natal, chapéu de bruxa no Halloween e de festa no Ano-Novo, quando ele não tem um chapéu escolhido.", "A Santa hat at Christmas, a witch hat at Halloween and a party hat at New Year, when it has no hat picked."), &s.mascot_date_hats, pet_on);
             p.heading(i18n.tr("Vida própria", "A life of its own"));
             p.segmented(&.{ i18n.tr("Desligada", "Off"), i18n.tr("Calma", "Calm"), i18n.tr("Normal", "Normal"), i18n.tr("Agitada", "Lively") }, &s.mascot_life);
             p.note(i18n.tr("Parado, ele faz coisas sozinho de vez em quando: toma café, lê, pesca um emoji da conversa, caça uma mosquinha, empilha blocos. Só com a janela em foco e por poucos segundos; depois de uns minutos sem você mexer, ele dorme e para de gastar.", "When you leave it alone, it does things on its own now and then: drinks coffee, reads, fishes an emoji out of the chat, chases a fly, stacks blocks. Only while the window is focused and only for a few seconds; after a few idle minutes it falls asleep and stops using anything."));

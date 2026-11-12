@@ -22,6 +22,8 @@ pub const Wake = enum(i32) {
     toggle = 9,
     /// O processo do ícone saiu sem ninguém pedir.
     tray_gone = 10,
+    /// Um arquivo de mascote mudou (ui/mascote_arquivos.zig).
+    mascot = 11,
 };
 
 /// O renderizador que abriu (para Configurações → Desempenho) e se o escolhido nas
