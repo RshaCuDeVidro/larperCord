@@ -124,6 +124,10 @@ pub const sent = struct {
     pub var member_repeats: A = .init(0);
     pub var member_wrong: A = .init(0);
     pub var member_refused: A = .init(0);
+    /// Op 8 esperando na fila agora, e pedidos da última página de um canal que já tinha
+    /// pedido nesta sessão (o QA confere que nada recarrega à toa).
+    pub var member_queued: A = .init(0);
+    pub var history_refetches: A = .init(0);
     pub var create_dms: A = .init(0);
     /// GET /channels/{id}: a DM que apareceu só por uma mensagem, e qual foi a última.
     pub var fetch_channels: A = .init(0);
@@ -252,6 +256,8 @@ pub const Gateway = struct {
     member_replies: std.ArrayList(struct { at_ms: i64, req: member_ask.Request }) = .empty,
     asked: std.AutoHashMapUnmanaged([2]Id, void) = .empty,
     members_last: std.AutoHashMapUnmanaged(Id, i64) = .empty,
+    /// Canais que já pediram a última página nesta sessão.
+    history_asked: std.AutoHashMapUnmanaged(Id, void) = .empty,
     /// Servidores cujos cargos já foram mandados.
     roles_sent: u64 = 0,
     /// LARPER_FLOOD=N: N trocas de presença por segundo (teste de carga,
@@ -711,6 +717,7 @@ pub const Gateway = struct {
                     try g.searchPage(s);
                 },
                 .fetch_history => |fh| {
+                    if ((try g.history_asked.getOrPut(alloc, fh.channel)).found_existing) _ = sent.history_refetches.fetchAdd(1, .monotonic);
                     g.hot_channel = fh.channel;
                     noteMembersAsk(fh.channel, fh.members);
                     try g.history_replies.append(alloc, .{ .at_ms = nowMs() + 140, .channel = fh.channel, .members = fh.members });
@@ -1405,12 +1412,14 @@ pub const Gateway = struct {
         for (msgs[0..n], authors[0..n]) |m, *a| a.* = m.author;
         var r = g.members_ask.page(alloc, guild, authors[0..n]) orelse return;
         if (!g.member_out.pushMembers(&r, monoMs())) g.members_ask.unmark(&r);
+        sent.member_queued.store(g.member_out.members_n, .release);
         try g.flushMembers();
     }
 
     /// Solta o op 8 que a fila deixa sair agora e confere o limite do Discord à parte.
     fn flushMembers(g: *Gateway) !void {
         const now = monoMs();
+        defer sent.member_queued.store(g.member_out.members_n, .release);
         while (g.member_out.pop(now)) |it| {
             const r = switch (it) {
                 .members => |x| x,
@@ -1437,6 +1446,7 @@ pub const Gateway = struct {
     /// O GUILD_MEMBERS_CHUNK: quem é membro vem com cargos e perfil do servidor (os mesmos
     /// eventos que o `member` de verdade gera); quem não é, no `not_found` (nada).
     fn membersChunk(g: *Gateway, r: member_ask.Request) !void {
+        g.member_out.membersAnswered(r.guild);
         if (r.guild < guildId(0)) return;
         const gi: usize = @intCast((r.guild - guildId(0)) / 1000);
         if (gi >= guilds.len) return;
