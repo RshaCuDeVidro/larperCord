@@ -281,6 +281,9 @@ pub const Store = struct {
     gpa: std.mem.Allocator,
     me: Id = 0,
     ready: bool = false,
+    /// A tela mostra o retrato da conta em disco (net/state_cache.zig) até o READY de
+    /// verdade, que passa por cima e tira o que sumiu nesse meio-tempo (`dropStale`).
+    from_cache: bool = false,
     /// Limite por canal das que chegam ao vivo; o que veio rolando para cima
     /// não é cortado (a pessoa está lendo).
     max_messages: usize = 1500,
@@ -945,6 +948,40 @@ pub const Store = struct {
         }
     }
 
+    /// O READY de verdade chegou com a tela mostrando o retrato do disco: sai o servidor
+    /// de que saímos, o canal apagado (de um servidor que veio com canais: um que veio
+    /// indisponível chega depois, no GUILD_CREATE) e a DM fechada. As amizades vêm de
+    /// novo, uma a uma, logo depois do READY: a lista recomeça.
+    fn dropStale(s: *Store, r: @import("event.zig").Ready) void {
+        var guilds: std.AutoHashMapUnmanaged(Id, void) = .empty;
+        defer guilds.deinit(s.gpa);
+        var filled: std.AutoHashMapUnmanaged(Id, void) = .empty;
+        defer filled.deinit(s.gpa);
+        var chans: std.AutoHashMapUnmanaged(Id, void) = .empty;
+        defer chans.deinit(s.gpa);
+        for (r.guilds) |g| guilds.put(s.gpa, g.id, {}) catch return;
+        filled.put(s.gpa, 0, {}) catch return;
+        for (r.channels) |ch| {
+            chans.put(s.gpa, ch.id, {}) catch return;
+            filled.put(s.gpa, ch.guild, {}) catch return;
+        }
+        var gone: std.ArrayList(Id) = .empty;
+        defer gone.deinit(s.gpa);
+        for (s.guilds.items) |g| if (!guilds.contains(g.id)) gone.append(s.gpa, g.id) catch return;
+        for (gone.items) |id| {
+            s.removeGuild(id);
+            _ = s.info_asked.remove(id);
+            s.forgetFaces(id);
+        }
+        gone.clearRetainingCapacity();
+        var it = s.channels.valueIterator();
+        while (it.next()) |cs| if (filled.contains(cs.*.info.guild) and !chans.contains(cs.*.info.id)) gone.append(s.gpa, cs.*.info.id) catch return;
+        // (Um canal leva as threads dele: a que já foi junto não está mais lá.)
+        for (gone.items) |id| s.removeChannel(id);
+        s.relationships.clearRetainingCapacity();
+        s.friend_since.clearRetainingCapacity();
+    }
+
     fn removeGuild(s: *Store, id: Id) void {
         if (s.guild_channels.fetchRemove(id)) |kv| {
             var list = kv.value;
@@ -1176,6 +1213,9 @@ pub const Store = struct {
             // Quem cuida é ui/interact.zig; aqui só chega o que sobrou da conexão que acabou.
             .interaction => |x| @import("interaction.zig").freeEvent(x),
             .ready => |r| {
+                // O READY de verdade em cima do retrato do disco: some o que deixou de
+                // existir enquanto o app estava fechado.
+                if (!r.cached and s.from_cache) s.dropStale(r);
                 s.me = r.me;
                 s.me_rev +%= 1;
                 if (r.username) |x| {
@@ -1214,7 +1254,8 @@ pub const Store = struct {
                 ev_alloc.free(r.guilds);
                 ev_alloc.free(r.channels);
                 ev_alloc.free(r.voice);
-                s.ready = true;
+                s.from_cache = r.cached;
+                s.ready = !r.cached;
             },
             .message_create => |m| {
                 if (m.nonce != 0 and m.author == s.me) s.outbox.remove(s.gpa, m.nonce);

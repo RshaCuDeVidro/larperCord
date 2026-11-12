@@ -44,6 +44,8 @@ test {
     _ = @import("ui/destaque.zig");
     _ = @import("ui/emoji_data.zig");
     _ = @import("core/cache_format.zig");
+    _ = @import("core/state_format.zig");
+    _ = @import("core/state_snapshot.zig");
     _ = @import("core/media_flags.zig");
     _ = @import("core/media_refresh.zig");
     _ = @import("core/ogg_opus.zig");
