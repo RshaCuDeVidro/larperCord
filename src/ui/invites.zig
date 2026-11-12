@@ -113,7 +113,8 @@ pub fn drawJoin(ctx: *d.Ctx) void {
     // O que aconteceu, ou o aviso de antes de entrar.
     const msg = joinMessage();
     const gap_left = join_last_ms + join_gap_ms - ctx.now_ms;
-    var tb: [120]u8 = undefined;
+    // Em russo o aviso de espera e o título com o nome do servidor passam de 190 bytes.
+    var tb: [320]u8 = undefined;
     var note: []const u8 = msg;
     var note_col = ctx.col(.danger);
     if (msg.len == 0) {
@@ -316,7 +317,8 @@ pub fn drawCreate(ctx: *d.Ctx, channel: Id) void {
     inbox.panelFrame(ctx, dl, r);
     const fam = ctx.ui;
     const bold = fam.get(.semibold);
-    var tb: [120]u8 = undefined;
+    // Em russo o aviso de espera e o título com o nome do servidor passam de 190 bytes.
+    var tb: [320]u8 = undefined;
     const gname = if (ctx.store.guild(cs.info.guild)) |g| g.name else "";
     _ = d.textClipped(dl, fam.get(.bold), 17, r.x + 18, r.y + 16, ctx.col(.text), i18n.fmt(&tb, "Convidar pessoas para {s}", "Invite people to {s}", .{gname}), r.w - 36);
     var cb: [120]u8 = undefined;

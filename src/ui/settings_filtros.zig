@@ -231,7 +231,8 @@ fn focus(p: *P) void {
         }
     }
     p.y += 58;
-    var buf: [96]u8 = undefined;
+    // "Ligado: faltam N min…" em russo passa de 150 bytes.
+    var buf: [256]u8 = undefined;
     if (!on) {
         p.note(i18n.tr("Desligado. Também dá para ligar clicando no seu nome, embaixo à esquerda.", "Off. You can also turn it on by clicking your name, bottom left."));
     } else if (f.focusLeftMin(ctx.now_ms)) |mins| {

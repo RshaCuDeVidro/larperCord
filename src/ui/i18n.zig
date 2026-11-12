@@ -67,14 +67,36 @@ pub fn trZ(pt: [:0]const u8, english: [:0]const u8) [:0]const u8 {
     };
 }
 
+/// Textos de formato que não couberam no buffer e saíram cortados. Só os builds
+/// de debug contam (o QA usa um): cada texto avisa uma vez no registro, e o QA
+/// confere que as telas em russo e japonês não cortam nada (qa_paineis.zig). O
+/// cirílico ocupa 2 bytes por letra e o japonês 3: um buffer que cabe em pt e en
+/// pode não caber na tradução.
+pub var cuts: std.atomic.Value(u32) = .init(0);
+const count_cuts = @import("builtin").mode == .debug;
+
+inline fn noteCut(comptime english: []const u8, size: usize) void {
+    if (comptime count_cuts) cut(english, size);
+}
+
+fn cut(comptime english: []const u8, size: usize) void {
+    const Once = struct {
+        var warned = false;
+    };
+    _ = cuts.fetchAdd(1, .monotonic);
+    if (Once.warned) return;
+    Once.warned = true;
+    std.log.warn("texto cortado num buffer de {d} bytes ({t}): \"{s}\"", .{ size, lang.load(.monotonic), english });
+}
+
 /// Sem espaço, corta o texto (nunca no meio de um caractere) em vez de sumir.
 pub fn fmt(buf: []u8, comptime pt: []const u8, comptime english: []const u8, args: anytype) []const u8 {
     var wr = std.Io.Writer.fixed(buf);
     const l = lang.load(.acquire);
     switch (l) {
-        .pt => wr.print(pt, args) catch {},
-        .en => wr.print(english, args) catch {},
-        .ja, .ru => translated(&wr, tableOf(l).?.get(english), english, args) catch {},
+        .pt => wr.print(pt, args) catch noteCut(english, buf.len),
+        .en => wr.print(english, args) catch noteCut(english, buf.len),
+        .ja, .ru => translated(&wr, tableOf(l).?.get(english), english, args) catch noteCut(english, buf.len),
     }
     const out = wr.buffered();
     if (out.len < buf.len) return out;
@@ -92,16 +114,21 @@ pub fn fmt(buf: []u8, comptime pt: []const u8, comptime english: []const u8, arg
 pub fn fmtZ(buf: []u8, comptime pt: []const u8, comptime english: []const u8, args: anytype) [:0]const u8 {
     const l = lang.load(.acquire);
     switch (l) {
-        .pt => return std.fmt.bufPrintSentinel(buf, pt, args, 0) catch "",
-        .en => return std.fmt.bufPrintSentinel(buf, english, args, 0) catch "",
+        .pt => return std.fmt.bufPrintSentinel(buf, pt, args, 0) catch cutZ(english, buf.len),
+        .en => return std.fmt.bufPrintSentinel(buf, english, args, 0) catch cutZ(english, buf.len),
         .ja, .ru => {
-            if (buf.len == 0) return "";
+            if (buf.len == 0) return cutZ(english, 0);
             var wr = std.Io.Writer.fixed(buf[0 .. buf.len - 1]);
-            translated(&wr, tableOf(l).?.get(english), english, args) catch return "";
+            translated(&wr, tableOf(l).?.get(english), english, args) catch return cutZ(english, buf.len);
             buf[wr.end] = 0;
             return buf[0..wr.end :0];
         },
     }
+}
+
+inline fn cutZ(comptime english: []const u8, size: usize) [:0]const u8 {
+    noteCut(english, size);
+    return "";
 }
 
 pub fn allocPrint(gpa: std.mem.Allocator, comptime pt: []const u8, comptime english: []const u8, args: anytype) ![]u8 {
@@ -566,6 +593,20 @@ test "datas dos arquivos embutidos na ordem de cada idioma" {
     try testing.expectEqualStrings("до 09.11 03:39", fmt(&buf, "até {d:0>2}/{d:0>2} {s}", "until {1d:0>2}/{0d:0>2} {2s}", .{ day, month, "03:39" }));
     try testing.expectEqualStrings("09.11.2026 03:39", fmt(&buf, "{d:0>2}/{d:0>2}/{d} {s}", "{1d:0>2}/{0d:0>2}/{2d} {3s}", .{ day, month, year, "03:39" }));
     try testing.expectEqualStrings("9 ноября 2026 г.", fmt(&buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ day, "ноября", year }));
+}
+
+test "texto que não cabe no buffer conta como cortado (debug)" {
+    const old = current();
+    defer set(old);
+    set(.ru);
+    const before = cuts.load(.monotonic);
+    var big: [256]u8 = undefined;
+    _ = fmt(&big, "Hoje às {s}", "Today at {s}", .{"03:39"});
+    try testing.expectEqual(before, cuts.load(.monotonic));
+    var small: [8]u8 = undefined;
+    _ = fmt(&small, "Hoje às {s}", "Today at {s}", .{"03:39"});
+    _ = fmtZ(&small, "Hoje às {s}", "Today at {s}", .{"03:39"});
+    if (count_cuts) try testing.expectEqual(before + 2, cuts.load(.monotonic));
 }
 
 test "arquivo de tradução: erros" {

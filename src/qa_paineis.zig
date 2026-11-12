@@ -1357,4 +1357,62 @@ pub const ops_no_scripts = [_]Op{
     expect("sem texto de outra escrita, nenhuma fonte reserva", scriptsNotLoaded),
 };
 
-pub const all = ops ++ ops_pages ++ ops_ui_size ++ ops_ime ++ ops_changelog ++ ops_bots ++ ops_viewer ++ ops_icons;
+// --- Texto traduzido cortado (#22) --------------------------------------------
+
+const i18n = @import("ui/i18n.zig");
+
+fn openPage(comptime pg: S.Page) *const fn (*App) void {
+    return struct {
+        fn f(app: *App) void {
+            app.st.settings.open = true;
+            app.st.settings.page = pg;
+        }
+    }.f;
+}
+/// Com o modo foco ligado, para a nota "Ligado: faltam N min…" aparecer.
+fn startCuts(app: *App, l: i18n.Lang) void {
+    i18n.set(l);
+    i18n.cuts.store(0, .monotonic);
+    app.st.filtros.startFocus(gw.nowMs(), 30);
+}
+fn cutsRu(app: *App) void {
+    startCuts(app, .ru);
+}
+fn cutsJa(app: *App) void {
+    startCuts(app, .ja);
+}
+fn cutsDone(app: *App) void {
+    app.st.filtros.endFocus(&app.store);
+    app.st.settings.open = false;
+    i18n.set(.pt);
+}
+fn noCuts(_: *App) bool {
+    return i18n.cuts.load(.monotonic) == 0;
+}
+
+const n_pages = std.meta.tags(S.Page).len;
+
+/// Todas as páginas das configurações num idioma; a página Sobre e a de alertas
+/// (com o modo foco) ficam fotografadas. i18n.cuts só conta nos builds de debug.
+fn cutPass(comptime start: *const fn (*App) void, comptime code: []const u8) [2 + 2 * n_pages + 7]Op {
+    var out: [2 + 2 * n_pages + 7]Op = undefined;
+    out[0] = .{ .run = start };
+    out[1] = .{ .wait = 150 };
+    for (std.meta.tags(S.Page), 0..) |pg, i| {
+        out[2 + 2 * i] = .{ .run = openPage(pg) };
+        out[3 + 2 * i] = .{ .wait = 80 };
+    }
+    const k = 2 + 2 * n_pages;
+    out[k] = expect(code ++ ": nenhuma página das configurações corta texto traduzido", noCuts);
+    out[k + 1] = .{ .run = openPage(.sobre) };
+    out[k + 2] = .{ .wait = 150 };
+    out[k + 3] = .{ .shot = "cortes-" ++ code ++ "-sobre" };
+    out[k + 4] = .{ .run = openPage(.filtros) };
+    out[k + 5] = .{ .wait = 150 };
+    out[k + 6] = .{ .shot = "cortes-" ++ code ++ "-filtros" };
+    return out;
+}
+
+pub const ops_cuts = [_]Op{s("texto traduzido não corta nas configurações (ru e ja)")} ++ cutPass(cutsRu, "ru") ++ cutPass(cutsJa, "ja") ++ [_]Op{.{ .run = cutsDone }};
+
+pub const all = ops ++ ops_pages ++ ops_ui_size ++ ops_ime ++ ops_changelog ++ ops_bots ++ ops_viewer ++ ops_icons ++ ops_cuts;

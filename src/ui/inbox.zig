@@ -213,7 +213,8 @@ fn unreadList(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y0: f32) f32 {
     const wd = body.w - 20;
     var y = y0;
     for (model.slice()) |*g| {
-        var cb: [48]u8 = undefined;
+        // "{d} menções em {s}" com o nome inteiro do servidor (até 100 letras).
+        var cb: [320]u8 = undefined;
         if (g.channel == 0) {
             // Menções que o Discord contou num servidor, sem nada carregado.
             const gd = ctx.store.guild(g.guild) orelse continue;
