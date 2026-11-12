@@ -369,6 +369,15 @@ fn wheelSoft(app: *App) void {
 fn tickled(_: *App) bool {
     return pet.reaction() == .tickle;
 }
+fn openStatusMenu(app: *App) void {
+    app.st.popup = .{ .menu = .{ .kind = .status, .id = 0, .x = 300, .y = 420 } };
+}
+fn petUnderPopup(app: *App) bool {
+    return app.st.popup != .none and qa.find("pet") != null and qa.find("menu:◐  Ausente") != null;
+}
+fn closePopup(app: *App) void {
+    app.st.popup = .none;
+}
 fn dropTarget(_: *App, b: []u8) []const u8 {
     return std.fmt.bufPrint(b, "composer", .{}) catch "";
 }
@@ -498,6 +507,10 @@ pub const ops = [_]Op{
     s("mascote no canto"),
     expect("o mascote senta em cima da caixa de mensagem", petShown),
     .{ .shot = "pet-casa" },
+    run(openStatusMenu),
+    expect("com um popup aberto, ele continua lá (por baixo do popup)", petUnderPopup),
+    .{ .shot = "pet-com-popup" },
+    run(closePopup),
     run(sendLaugh),
     expect("\"KKKKKKK\": ele ri", laughing),
     .{ .wait = 250 },
