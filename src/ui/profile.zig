@@ -131,7 +131,7 @@ fn names(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, big: bool) void {
         const hb = col.hit(1, nr);
         if (col.dl != null) qa.mark(nr, "profile-name", .{});
         if (hb.hovered) if (col.dl) |dl| d.line(dl, nr.x, nr.bottom() - 1, nr.right(), nr.bottom() - 1, ctx.col(.text).alpha(0.6), 1);
-        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid } });
+        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid, .guild = gid } });
     }
     col.y += ns + 8;
     if (!std.mem.eql(u8, name, u.name)) {
@@ -179,7 +179,7 @@ fn names(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, big: bool) void {
 }
 
 /// "N amigos em comum • M servidores em comum" (abre a aba no perfil grande).
-fn mutuals(col: *Col, uid: Id, pf: ?types.Profile) void {
+fn mutuals(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
     const p = pf orelse return;
     if (uid == col.ctx.store.me) return;
     const nf = @max(p.mutual_friends_count, @as(u32, @intCast(p.mutual_friends.len)));
@@ -218,7 +218,7 @@ fn mutuals(col: *Col, uid: Id, pf: ?types.Profile) void {
             qa.mark(r, "profile-mutual:{d}", .{part.tab});
             d.text(dl, font, 13, x, col.y + 2, if (hb.hovered) ctx.col(.text) else ctx.col(.muted), part.s);
         }
-        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid, .tab = part.tab } });
+        if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid, .tab = part.tab, .guild = gid } });
         x += tw + 6;
     }
     col.y += 28;
@@ -771,7 +771,7 @@ pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32, gid: Id) void {
 /// O miolo do cartão pequeno.
 fn body(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
     names(col, uid, pf, gid, false);
-    mutuals(col, uid, pf);
+    mutuals(col, uid, pf, gid);
     bio(col, uid, pf, false);
     activities(col, uid, false);
     voice(col, uid);
