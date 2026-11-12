@@ -741,15 +741,27 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
         return;
     }
     d.line(ctx.dl, r.x + 8, r.bottom() - 0.5, r.right() - 8, r.bottom() - 0.5, ctx.col(.border), 1);
+    // "Voz conectada" e o canal: o botão de ver a call (a grade com cada um no lugar
+    // da conversa, ui/call_grid.zig), sem tirar espaço do texto.
+    {
+        const vr: d.Rect = .{ .x = r.x + 6, .y = r.y + 4, .w = r.w - 94, .h = 40 };
+        const vh = d.hitRaw(ctx, vr);
+        qa.mark(vr, "voice-view", .{});
+        const vk = anim.to(anim.id("voice-view", 0), if (vh.hovered) 1 else 0, 24);
+        d.rect(ctx.dl, vr, ctx.col(.hover).alpha(@max(vk * 1.5, if (ctx.st.call_view) @as(f32, 0.6) else 0)), ctx.th.radius);
+        d.tip(ctx, vr, i18n.tr("Ver a call", "View call"), vh.hovered);
+        if (vh.clicked) ctx.act(.{ .show_call = vc });
+    }
     signalBars(ctx, r.x + 14, r.y + 22, q, if (connected) qcol else ctx.col(.idle));
     const status_txt = if (connected) i18n.tr("Voz conectada", "Voice Connected") else i18n.tr("Conectando à call…", "Connecting to the call…");
-    _ = d.textClipped(ctx.dl, fam.get(.semibold), 14, r.x + 33, r.y + 7, if (connected) qcol else ctx.col(.idle), status_txt, r.w - 33 - 106);
+    _ = d.textClipped(ctx.dl, fam.get(.semibold), 14, r.x + 33, r.y + 7, if (connected) qcol else ctx.col(.idle), status_txt, r.w - 33 - 88);
+    if (d.width(fam.get(.semibold), 14, status_txt) > r.w - 33 - 88) qa.mark(.{ .x = r.x + 33, .y = r.y + 7, .w = r.w - 121, .h = 18 }, "voice-status-cut", .{});
     var sb: [160]u8 = undefined;
     const sub = if (g) |x|
         std.fmt.bufPrint(&sb, "{s} / {s}", .{ cs.info.name, x.name }) catch cs.info.name
     else
         cs.info.name;
-    _ = d.textClipped(ctx.dl, fam.get(.regular), 12, r.x + 14, r.y + 28, ctx.col(.muted), sub, r.w - 116);
+    _ = d.textClipped(ctx.dl, fam.get(.regular), 12, r.x + 14, r.y + 28, ctx.col(.muted), sub, r.w - 98);
 
     // A última linha: transmitindo, aperte para falar ou o problema.
     if (lh.hovered) d.rect(ctx.dl, lr, ctx.col(.hover), ctx.th.radius);
@@ -772,30 +784,13 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
     }
     _ = d.textClipped(ctx.dl, fam.get(if (vl.tone == .quiet) .regular else .semibold), 12, r.x + 28, d.centerY(lr, 12), vl_col, vl.text, r.w - 40 - ping_w);
 
-    // Ver a call: a grade com cada um no lugar da conversa (ui/call_grid.zig).
-    {
-        const vr: d.Rect = .{ .x = r.right() - 104, .y = r.y + 9, .w = 28, .h = 32 };
-        const vh = d.hitRaw(ctx, vr);
-        qa.mark(vr, "voice-view", .{});
-        const vk = anim.to(anim.id("voice-view", 0), if (vh.hovered) 1 else 0, 24);
-        d.rect(ctx.dl, vr, ctx.col(.hover).alpha(vk * 1.5), ctx.th.radius);
-        const vink = if (ctx.st.call_view) ctx.col(.accent) else ctx.col(.muted).mix(ctx.col(.text), vk);
-        // Quatro quadradinhos: a grade.
-        for (0..4) |i| {
-            const qx = vr.x + 7 + @as(f32, @floatFromInt(i % 2)) * 8;
-            const qy = vr.y + 9 + @as(f32, @floatFromInt(i / 2)) * 8;
-            d.border(ctx.dl, .{ .x = qx, .y = qy, .w = 6, .h = 6 }, vink, 1.5, 1.4);
-        }
-        d.tip(ctx, vr, i18n.tr("Ver a call", "View call"), vh.hovered);
-        if (vh.clicked) ctx.act(.{ .show_call = vc });
-    }
     // Mixer: três faders.
-    const mr: d.Rect = .{ .x = r.right() - 74, .y = r.y + 9, .w = 28, .h = 32 };
+    const mr: d.Rect = .{ .x = r.right() - 80, .y = r.y + 9, .w = 32, .h = 32 };
     const mh = d.hitRaw(ctx, mr);
     qa.mark(mr, "voice-mixer", .{});
     const mk = anim.to(anim.id("voice-mixer", 0), if (mh.hovered) 1 else 0, 24);
     d.rect(ctx.dl, mr, ctx.col(.hover).alpha(mk * 1.5), ctx.th.radius);
-    const mx = mr.x + 14;
+    const mx = mr.x + 16;
     const my = mr.y + 16;
     const mink = ctx.col(.muted).mix(ctx.col(.text), mk);
     for (0..3) |i| {
@@ -807,12 +802,12 @@ fn voicePanel(ctx: *d.Ctx, fam: *d.Family, r: d.Rect, vc: Id, tty: bool) void {
     d.tip(ctx, mr, i18n.tr("Mixer da call", "Call mixer"), mh.hovered);
     if (mh.clicked) ctx.popup(.{ .mixer = .{ .x = r.x + 4, .y = r.y - 300 } });
 
-    const br: d.Rect = .{ .x = r.right() - 44, .y = r.y + 9, .w = 30, .h = 32 };
+    const br: d.Rect = .{ .x = r.right() - 44, .y = r.y + 9, .w = 32, .h = 32 };
     const hb = d.hitRaw(ctx, br);
     qa.mark(br, "hangup", .{});
     const k = anim.to(anim.id("hangup", 0), if (hb.hovered) 1 else 0, 24);
     d.rect(ctx.dl, br, ctx.col(.hover).alpha(k * 1.5), ctx.th.radius);
-    const cx = br.x + 15;
+    const cx = br.x + 16;
     const cy = br.y + 16;
     const ink = ctx.col(.muted).mix(ctx.col(.danger), k);
     d.line(ctx.dl, cx - 5, cy - 5, cx + 5, cy + 5, ink, 2.2);

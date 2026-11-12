@@ -367,15 +367,16 @@ pub fn messages(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     // A bandeja de arquivos fica entre a conversa e a caixa de texto.
     var r = r_in;
     r.h = @max(40, r.h - att.trayHeight(ctx) - md_preview.height(ctx.st) - composer_extra);
-    // Tela dividida: cada painel chama `history` com o canal dele.
-    if (mosaic.on()) return mosaic.draw(ctx, n, r);
     const ch_id = ctx.st.activeChannel() orelse return;
-    // Call na DM ou no grupo aberto, com a gente nela: a grade numa faixa em cima.
+    // Call na DM ou no grupo aberto, com a gente nela: a grade numa faixa em cima (com
+    // a tela dividida também, por cima dos painéis).
     if (call_grid.dmCall(ctx, ch_id)) |vcs| {
         const band = call_grid.dmBand(ctx, n, r, vcs);
         r.y += band;
         r.h = @max(40, r.h - band);
     }
+    // Tela dividida: cada painel chama `history` com o canal dele.
+    if (mosaic.on()) return mosaic.draw(ctx, n, r);
     history(ctx, n, r, ch_id, "##messages");
 }
 
@@ -1701,6 +1702,8 @@ pub var composer_extra: f32 = 0;
 const composer_max_lines = 10;
 
 pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
+    // O estilo dos botões da tela da call segue o da caixa do tema (também na faixa da DM).
+    call_grid.text_buttons = d.is(n, "variant", "prompt", "");
     if (ctx.st.friends) return;
     // Na tela da call, os botões da faixa de voz no lugar da caixa.
     if (call_grid.guildCall(ctx) != null) {

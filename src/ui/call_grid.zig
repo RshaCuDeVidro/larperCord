@@ -241,15 +241,19 @@ pub fn escFree(ctx: *const d.Ctx) bool {
 pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32 {
     const tty = d.is(n, "variant", "irc", "");
     const ctl_h: f32 = if (tty) 28 else 60;
+    // Sobra pelo menos isto para a conversa embaixo.
+    const room = r.h - 80;
+    const min_h: f32 = if (tty) 70 else 160;
+    if (room < min_h) return 0;
     const rows: f32 = @floatFromInt(@max(cs.voice_members.items.len, 1));
     const want = if (tty) rows * (ctx.th.font_size + 10) + 16 + ctl_h else r.h * 0.42;
-    const h = @min(@max(want, if (tty) @as(f32, 70) else 210), @max(r.h * 0.6, 100));
+    const h = std.math.clamp(want, min_h, room);
     const band: d.Rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = h };
     d.rect(ctx.dl, band, ctx.col(.rail).alpha(0.55), 0);
     d.line(ctx.dl, band.x, band.bottom() - 0.5, band.right(), band.bottom() - 0.5, ctx.col(.border), 1);
     qa.mark(band, "grid-band", .{});
     people(ctx, n, .{ .x = band.x, .y = band.y, .w = band.w, .h = band.h - ctl_h }, cs, tty, "##call-band");
-    buttons(ctx, ctx.dl, ctx.familyFor(n), .{ .x = band.x, .y = band.bottom() - ctl_h, .w = band.w, .h = ctl_h }, tty);
+    buttons(ctx, ctx.dl, ctx.familyFor(n), .{ .x = band.x, .y = band.bottom() - ctl_h, .w = band.w, .h = ctl_h }, text_buttons);
     return h;
 }
 
@@ -258,7 +262,7 @@ pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32
 /// Os botões da faixa de voz (microfone, fone, mixer, sair), no lugar da caixa de
 /// mensagem.
 pub fn controls(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
-    buttons(ctx, ctx.dl, ctx.familyFor(n), r, d.is(n, "variant", "prompt", ""));
+    buttons(ctx, ctx.dl, ctx.familyFor(n), r, text_buttons);
 }
 
 fn openMixer(ctx: *d.Ctx, r: d.Rect) void {
