@@ -17,6 +17,7 @@
 
 **Messages**
 - Arabic and Hebrew in the message box now show in the right order and line up to the right, like in sent messages, from majd-tqe's report (#9). The cursor, clicking, selecting and Backspace follow the text on screen, and ← and → move across the screen instead of through the text.
+- Old messages now show the server nickname, server avatar and role color, like new ones. Discord's message history doesn't say who the author is in the server, so larperCord asks the gateway for the authors it doesn't know yet: at most one request per server every 30 seconds (Discord's limit), with the pages you load in the meantime joined into it, up to 100 people per request, each person once per session, never in DMs or groups, paced with everything else sent to the gateway. If Discord asks to slow down, the same request waits and goes again.
 
 **Servers**
 - Server profiles, from helpik1's request (#19): in a server, people show the nickname and picture they set for that server instead of the global ones, wherever they appear: messages, replies and mentions, the member list, the voice channel list and the call mixer, the @ list in the message box (it finds people by either name), and the profile card, which shows the server nickname with the global name smaller underneath, plus the server bio, pronouns and banner when they set them. DMs and groups keep the global name and picture.

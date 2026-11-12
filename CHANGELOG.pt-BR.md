@@ -17,6 +17,7 @@
 
 **Mensagens**
 - Árabe e hebraico na caixa de mensagem aparecem na ordem certa e alinhados à direita, como nas mensagens enviadas, do relato do majd-tqe (#9). Cursor, clique, seleção e Backspace seguem o texto na tela, e ← e → andam pela tela em vez da ordem do texto.
+- Mensagens antigas agora mostram o apelido, a foto do servidor e a cor do cargo, como as novas. O histórico do Discord não diz quem o autor é no servidor, então o larperCord pede ao gateway quem ele ainda não conhece: no máximo um pedido por servidor a cada 30 segundos (o limite do Discord), juntando as páginas carregadas nesse meio-tempo, até 100 pessoas por pedido, cada pessoa uma vez por sessão, nunca em DMs ou grupos, no mesmo ritmo do resto que vai para o gateway. Se o Discord pede calma, o mesmo pedido espera e vai de novo.
 
 **Servidores**
 - Perfil do servidor, pedido do helpik1 (#19): num servidor, cada pessoa aparece com o apelido e a foto que escolheu para ele, no lugar dos globais, em todo lugar: mensagens, respostas e menções, lista de membros, lista da call no canal de voz e mixer da call, a lista do @ na caixa de mensagem (que acha pelos dois nomes) e o cartão de perfil, que mostra o apelido com o nome global menor embaixo, e a bio, os pronomes e o banner do servidor quando a pessoa tem. Em DM e grupo continuam o nome e a foto globais.
