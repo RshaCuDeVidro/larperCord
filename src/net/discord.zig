@@ -2061,12 +2061,12 @@ pub const Gateway = struct {
             const uid = j.id(j.get(vs, "user_id")) orelse continue;
             try voice.append(alloc, .{ ch, uid });
         }
-        g.ingestMembers(gid, d);
-        g.minePending(gid, j.array(j.get(d, "members")));
+        // Os cargos antes dos membros: a cor de cada um sai deles. (O nosso membro, num
+        // servidor em que acabamos de entrar, vem na lista: os nossos cargos, limites e
+        // o "pendente" saem por ali, no memberColor.)
         g.ingestRoles(gid, j.array(j.get(d, "roles")));
+        g.ingestMembers(gid, d);
         g.ingestEmojis(gid, j.array(j.get(d, "emojis")));
-        // Servidor em que acabamos de entrar: o nosso membro vem na lista.
-        for (j.array(j.get(d, "members"))) |m| if (j.get(m, "user")) |u| if (j.id(j.get(u, "id")) == g.me) g.myLimits(gid, m);
         g.ingestStickers(gid, j.array(j.get(d, "stickers")));
         g.emit(.{ .guild_create = .{
             .guild = .{
@@ -4601,14 +4601,6 @@ pub const Gateway = struct {
         const p = j.get(m, "pending") orelse return;
         if (p != .bool) return;
         g.emit(.{ .entrada = .{ .pending = .{ .guild = gid, .pending = p.bool } } });
-    }
-
-    /// No GUILD_CREATE de um servidor em que acabamos de entrar, o nosso membro vem na lista.
-    fn minePending(g: *Gateway, gid: Id, members: []const Value) void {
-        for (members) |m| {
-            const u = j.get(m, "user") orelse continue;
-            if (j.id(j.get(u, "id")) == g.me) return g.emitPending(gid, m);
-        }
     }
 
     fn hasFeature(v: Value, name: []const u8) bool {
