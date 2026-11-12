@@ -293,6 +293,15 @@ pub const ops = [_]Op{
     run(postMessages),
     expect("mensagem: o autor com o apelido e a foto do servidor", authorShown),
     expect("resposta e menção: o apelido também", replyAndMention),
+    run(renameAna),
+    expect("o apelido muda com a conversa já na tela: a menção e a resposta mudam, e a mensagem é medida de novo", renamed),
+    run(renameBack),
+    expect("e volta", nameBack),
+    run(partialUpdate),
+    expect("um GUILD_MEMBER_UPDATE sem \"nick\" (ganhou um cargo) não apaga o apelido", nickKept),
+    run(replyToFirst),
+    expect("\"Respondendo a\": o apelido", replyingShown),
+    run(cancelReply),
     run(typingDuda),
     expect("digitando: o apelido", typingShown),
     shot("perfil-servidor-mensagens"),
@@ -334,6 +343,17 @@ pub const ops = [_]Op{
     shot("perfil-servidor-outro"),
     key(c.ImGuiKey_Escape),
     expect("Esc fecha o cartão", closed),
+    run(openSetups),
+    run(openCard),
+    expect("de volta ao primeiro servidor, o cartão traz o perfil de lá de novo", cardServerAgain),
+    key(c.ImGuiKey_Escape),
+    run(openAccount),
+    expect("Configurações → Minha conta mostra os pronomes e a bio globais, não os do servidor", accountGlobal),
+    run(closeSettings),
+    run(openDm),
+    expect("abre a DM com a ana", dmOpen),
+    run(dmMessage),
+    expect("na DM, o nome, a menção e a foto globais", dmGlobal),
 };
 
 // --- Cada tema -----------------------------------------------------------------------
@@ -349,8 +369,10 @@ fn wheelDown(app: *App) void {
     c.ImGuiIO_AddMouseWheelEvent(app.io, 0, -40);
 }
 fn themeOk(_: *App) bool {
-    // Tema sem lista de canais à vista (zen esconde a navegação): nada a conferir.
-    const ra = find("voice-member:{d}:{d}", .{ call0, ana }) orelse return qa.find("channel:500014") == null;
+    // Tema sem lista de canais à vista (zen esconde a navegação): nada a conferir. Com
+    // ela, a call precisa ter rolado para a tela.
+    if (qa.find("channel:500005") == null and qa.find("channel:500014") == null) return true;
+    const ra = find("voice-member:{d}:{d}", .{ call0, ana }) orelse return false;
     const rd = find("voice-member:{d}:{d}", .{ call0, kaique }) orelse return false;
     return namedIn("voice", ana, "Aninha", ra) and namedIn("voice", kaique, "Kaká do Zig", rd);
 }

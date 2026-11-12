@@ -1742,6 +1742,7 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
             break :blk i18n.tr("Respondendo a mensagem", "Replying to a message");
         };
         d.text(dl, fam.get(.medium), 13, bar.x + 14, bar.y + 8, ctx.col(.muted), t);
+        if (st.editing == 0) if (ctx.store.findAny(st.reply_to)) |f| w.markName(.{ .x = bar.x + 14, .y = bar.y + 6, .w = d.width(fam.get(.medium), 13, t), .h = 18 }, "replying", f.m.msg.author, ctx.store.nameIn(cs.info.guild, f.m.msg.author) orelse "?");
         const xr: d.Rect = .{ .x = bar.right() - 30, .y = bar.y + 5, .w = 22, .h = 22 };
         // Respondendo: mencionar ou não quem escreveu (ui/compose_opts.zig).
         if (st.editing == 0) _ = compose_opts.replyToggle(ctx, dl, fam, bar, xr.x - 6);
