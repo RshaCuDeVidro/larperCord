@@ -172,7 +172,10 @@ pub fn avatarAt(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f3
         const ds = size * 1.2;
         const dr: d.Rect = .{ .x = cx - ds / 2, .y = cy - ds / 2, .w = ds, .h = ds };
         const scale = ctx.io.*.DisplayFramebufferScale.x;
-        if (!no_pics) switch (ctx.images.getEx(deco_url, ds * scale, ds * scale, big and opt.animate and ctx.st.window_focused)) {
+        // Com a foto num tamanho fixo (a tela da call), a moldura também: sem pedido novo
+        // a cada tamanho.
+        const dreq = if (opt.request > 0) opt.request * 1.2 else ds;
+        if (!no_pics) switch (ctx.images.getEx(deco_url, dreq * scale, dreq * scale, big and opt.animate and ctx.st.window_focused)) {
             .ready => |t| c.ImDrawList_AddImageEx(dl, t.ref, d.v(dr.x, dr.y), d.v(dr.right(), dr.bottom()), d.v(0, 0), d.v(1, 1), d.Rgba.white.col(alpha)),
             else => {},
         };
