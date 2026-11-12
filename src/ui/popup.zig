@@ -111,6 +111,7 @@ fn popupKey(p: state.Popup) u64 {
         .server_rules => |t| 23 +% t.guild *% 31,
         .onboarding => |t| 24 +% t.guild *% 31,
         .devices => |dv| 25 +% @as(u64, @intFromEnum(dv.which)),
+        .tab_set_name => |t| 26 +% (if (t.rename) |i| @as(u64, i) + 1 else 0) *% 31,
     };
 }
 
@@ -192,6 +193,7 @@ pub fn draw(ctx: *d.Ctx) void {
         .server_rules => |t| @import("entrada.zig").drawRules(ctx, t.guild),
         .onboarding => |t| @import("entrada.zig").drawOnboarding(ctx, t.guild),
         .devices => |dv| @import("device_menu.zig").draw(ctx, dv.which, dv.x, dv.y),
+        .tab_set_name => |t| @import("conjuntos.zig").drawName(ctx, t.rename),
         .none => {},
     }
     animateOpen(ctx);
@@ -200,8 +202,9 @@ pub fn draw(ctx: *d.Ctx) void {
 // --- Menu de contexto -------------------------------------------------------
 
 /// `label` (português) também é a marca do QA; `en` é o texto em inglês.
-/// `on`: marcado (a opção que vale agora).
-pub const Item = struct { label: []const u8, en: []const u8, id: u8, danger: bool = false, sep: bool = false, on: bool = false };
+/// `on`: marcado (a opção que vale agora). `raw`: um nome escrito pela pessoa,
+/// mostrado como está (não passa pela tradução).
+pub const Item = struct { label: []const u8, en: []const u8, id: u8, danger: bool = false, sep: bool = false, on: bool = false, raw: bool = false };
 const conta_menu = @import("conta_menu.zig");
 
 /// Texto do botão de confirmar a exclusão (leva o nome da thread).
@@ -453,6 +456,7 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
             add(&items, &n, .{ .label = "Ver perfil", .en = "View Profile", .id = 84, .sep = true });
         },
         .pet => for (@import("mascote_pet.zig").menu_items, 1..) |it, i| add(&items, &n, .{ .label = it.pt, .en = it.en, .id = @intCast(i) }),
+        .tabs => n += @import("conjuntos.zig").menuItems(ctx, items[n..]),
         .notif => n += conta_menu.notifItems(ctx, id, items[n..]),
         .block_confirm => n += conta_menu.blockItems(ctx, id, items[n..]),
         .voice_move => {
@@ -563,7 +567,7 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
         const base = if (it.danger) ctx.col(.danger) else ctx.col(.accent);
         if (hb.hovered) d.rect(idl, ir, base, @max(ctx.th.radius - 2, 2));
         const tc = if (hb.hovered) (if (it.danger) d.Rgba.white else ctx.col(.accent_text)) else if (it.danger) ctx.col(.danger) else ctx.col(.text).mix(ctx.col(.muted), 0.15);
-        _ = d.textClipped(idl, fam.get(.medium), 14, ir.x + 10, d.centerY(ir, 14), tc, i18n.tr(it.label, it.en), ir.w - (if (it.on) @as(f32, 40) else 18));
+        _ = d.textClipped(idl, fam.get(.medium), 14, ir.x + 10, d.centerY(ir, 14), tc, if (it.raw) it.label else i18n.tr(it.label, it.en), ir.w - (if (it.on) @as(f32, 40) else 18));
         // Status: o visto no de agora e o submenu do prazo (ui/status_menu.zig).
         if (kind == .status) status_menu.row(ctx, idl, ir, it, hb.hovered, tc);
         if (it.on) {
@@ -677,6 +681,7 @@ fn choose(ctx: *d.Ctx, kind: state.MenuKind, id: Id, item: u8, r: d.Rect) void {
     const st = ctx.st;
     close(ctx);
     if (kind == .pet) return @import("mascote_pet.zig").menuChoose(ctx, item);
+    if (kind == .tabs) return @import("conjuntos.zig").menuChoose(ctx, item);
     if (kind == .plugin_choices) {
         const host = @import("../plugins/host.zig");
         const hit = host.menuEntry(host.appOf(), choice_kind, choice_index) orelse return;

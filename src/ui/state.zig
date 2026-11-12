@@ -7,7 +7,8 @@ pub const Settings = @import("settings_state.zig").Settings;
 
 /// `voice_move`: os canais de voz para onde dá para mover alguém (id = a pessoa).
 /// `plugin_choices`: a segunda lista de uma entrada de plugin (id = a mensagem ou a pessoa).
-pub const MenuKind = enum { message, user, channel, guild, status, voice_move, thread_delete, guild_leave, plugin_choices, notif, block_confirm, group_leave, pet };
+/// `tabs`: o botão direito na barra de abas, com os conjuntos de abas (ui/conjuntos.zig).
+pub const MenuKind = enum { message, user, channel, guild, status, voice_move, thread_delete, guild_leave, plugin_choices, notif, block_confirm, group_leave, pet, tabs };
 
 /// O que o menu rápido de dispositivos mostra (ui/device_menu.zig).
 pub const DeviceMenu = enum { mic, out, both };
@@ -63,6 +64,8 @@ pub const Popup = union(enum) {
     onboarding: struct { guild: Id },
     /// Menu rápido do microfone e da saída; `x, y` = canto de cima de quem abriu.
     devices: struct { which: DeviceMenu, x: f32, y: f32 },
+    /// O nome de um conjunto de abas novo, ou do conjunto `rename` (ui/conjuntos.zig).
+    tab_set_name: struct { rename: ?usize = null },
 };
 
 /// Seleção de texto entre mensagens: âncora e cabeça (mensagem + byte).
@@ -144,8 +147,9 @@ pub const PaletteItem = struct {
     label: []const u8,
     hint: []const u8 = "",
     /// `setting`: índice em settings_state.fields(); `page`: página das configurações.
-    /// `plugin`: índice em `Engine.list` (abre o painel).
-    kind: enum { channel, guild, theme, action, setting, page, plugin },
+    /// `plugin`: índice em `Engine.list` (abre o painel). `tab_set`: índice em
+    /// `State.conjuntos.sets` (troca para ele).
+    kind: enum { channel, guild, theme, action, setting, page, plugin, tab_set },
     id: Id = 0,
     index: usize = 0,
     score: i32 = 0,
@@ -169,6 +173,8 @@ pub const State = struct {
     /// Canais abertos em abas; `tab` é a ativa.
     tabs: std.ArrayList(Id) = .empty,
     tab: usize = 0,
+    /// Conjuntos de abas da conta e o em uso (app_conjuntos.zig).
+    conjuntos: @import("../core/conjuntos.zig").List = .{},
     /// Último canal aberto em cada servidor.
     last_channel: std.AutoHashMapUnmanaged(Id, Id) = .empty,
     /// Tela de amigos aberta (no lugar da conversa, nas mensagens diretas).

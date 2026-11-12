@@ -13,13 +13,20 @@ const i18n = @import("i18n.zig");
 const settings = @import("settings.zig");
 const S = @import("settings_state.zig");
 const types = @import("../core/types.zig");
+const conjuntos = @import("conjuntos.zig");
 
 /// Ctrl+Shift+P: as ações vêm antes dos canais com a busca vazia.
 pub var commands_first = false;
 
 /// Ação da paleta: rótulo nos dois idiomas e o que fazer (sempre pelas
 /// ações do app, `ctx.act`, ou pelo mesmo estado que o botão da tela muda).
-const Command = struct { pt: []const u8, en: []const u8, run: *const fn (*d.Ctx) void };
+/// `when`: só aparece quando dá para fazer.
+const Command = struct { pt: []const u8, en: []const u8, run: *const fn (*d.Ctx) void, when: ?*const fn (*d.Ctx) bool = null };
+
+/// Com um conjunto de abas em uso (ui/conjuntos.zig).
+fn inTabSet(ctx: *d.Ctx) bool {
+    return ctx.st.conjuntos.active != null;
+}
 
 fn status(comptime s: types.Status) *const fn (*d.Ctx) void {
     return struct {
@@ -81,6 +88,23 @@ const commands = [_]Command{
     .{ .pt = "Fechar aba", .en = "Close tab", .run = struct {
         fn f(ctx: *d.Ctx) void {
             ctx.act(.{ .close_tab = ctx.st.tab });
+        }
+    }.f },
+    // Conjuntos de abas: salvar as abertas e, com um em uso, renomear, sair e excluir.
+    .{ .pt = "Salvar abas como conjunto…", .en = "Save tabs as a set…", .run = struct {
+        fn f(ctx: *d.Ctx) void {
+            conjuntos.openName(ctx, null);
+        }
+    }.f },
+    .{ .pt = "Renomear o conjunto de abas…", .en = "Rename the tab set…", .when = inTabSet, .run = struct {
+        fn f(ctx: *d.Ctx) void {
+            if (ctx.st.conjuntos.active) |i| conjuntos.openName(ctx, i);
+        }
+    }.f },
+    .{ .pt = "Sair do conjunto de abas", .en = "Leave the tab set", .when = inTabSet, .run = simple(.{ .conjunto = .leave }) },
+    .{ .pt = "Excluir o conjunto de abas", .en = "Delete the tab set", .when = inTabSet, .run = struct {
+        fn f(ctx: *d.Ctx) void {
+            if (ctx.st.conjuntos.active) |i| ctx.act(.{ .conjunto = .{ .delete = i } });
         }
     }.f },
     .{ .pt = "Ir para o fim da conversa", .en = "Jump to present", .run = struct {
@@ -200,7 +224,23 @@ fn rebuild(ctx: *d.Ctx) void {
         const label = i18n.allocPrint(a, "tema: {s}", "theme: {s}", .{name}) catch continue;
         add(p, gpa, q, .{ .label = label, .hint = if (i == ctx.theme_index) i18n.tr("atual", "current") else i18n.tr("aparência", "appearance"), .kind = .theme, .index = i });
     }
-    for (commands, 0..) |cmd, i| add(p, gpa, q, .{ .label = i18n.tr(cmd.pt, cmd.en), .hint = i18n.tr("ação", "action"), .kind = .action, .index = i });
+    // Conjuntos de abas: trocar para um deles.
+    const sets = &ctx.st.conjuntos;
+    for (sets.sets.items, 0..) |set, i| {
+        const label = i18n.allocPrint(a, "Conjunto: {s}", "Tab set: {s}", .{set.name}) catch continue;
+        const n_tabs = set.abas.ids.items.len;
+        const hint = if (sets.active == i)
+            i18n.tr("em uso", "in use")
+        else if (n_tabs == 1)
+            i18n.tr("1 aba", "1 tab")
+        else
+            i18n.allocPrint(a, "{d} abas", "{d} tabs", .{n_tabs}) catch continue;
+        add(p, gpa, q, .{ .label = label, .hint = hint, .kind = .tab_set, .index = i });
+    }
+    for (commands, 0..) |cmd, i| {
+        if (cmd.when) |f| if (!f(ctx)) continue;
+        add(p, gpa, q, .{ .label = i18n.tr(cmd.pt, cmd.en), .hint = i18n.tr("ação", "action"), .kind = .action, .index = i });
+    }
     // Páginas das configurações.
     for (settings.sections) |sec| for (sec.items) |it| {
         const label = i18n.allocPrint(a, "Configurações: {s}", "Settings: {s}", .{i18n.tr(it.label, it.label_en)}) catch continue;
@@ -259,6 +299,7 @@ fn choose(ctx: *d.Ctx, item: state.PaletteItem) void {
         },
         .guild => ctx.act(.{ .select_guild = item.id }),
         .theme => ctx.act(.{ .set_theme = item.index }),
+        .tab_set => ctx.act(.{ .conjunto = .{ .open = item.index } }),
         .action => if (item.index < commands.len) commands[item.index].run(ctx),
         .page => {
             // Abrir as configurações já fecha a paleta.

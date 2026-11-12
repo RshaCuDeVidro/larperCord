@@ -196,6 +196,17 @@ pub fn inbox(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32) void {
     line(dl, cx - 2, cy + 3.5, cx + 2, cy + 3.5, col, th);
 }
 
+/// Conjunto de abas: duas abas empilhadas, a de trás aparecendo por cima e à direita.
+pub fn tabSet(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32) void {
+    const th: f32 = 1.6;
+    // A de trás: só as bordas que a da frente não cobre.
+    line(dl, cx - 3.5, cy - 4, cx - 3.5, cy - 6.5, col, th);
+    line(dl, cx - 3.5, cy - 6.5, cx + 7.5, cy - 6.5, col, th);
+    line(dl, cx + 7.5, cy - 6.5, cx + 7.5, cy + 3, col, th);
+    line(dl, cx + 7.5, cy + 3, cx + 5, cy + 3, col, th);
+    c.ImDrawList_AddRectEx(dl, v(cx - 7.5, cy - 3), v(cx + 4, cy + 6.5), col, 2, th, 0);
+}
+
 /// Marcador de página (mensagens salvas). `filled` = já salva.
 pub fn bookmark(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32, filled: bool) void {
     const pts = [_]c.ImVec2{ v(cx - 5.5, cy - 8), v(cx + 5.5, cy - 8), v(cx + 5.5, cy + 8), v(cx, cy + 3.5), v(cx - 5.5, cy + 8) };
