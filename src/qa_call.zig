@@ -17,6 +17,7 @@ const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
 const platform = @import("platform/window.zig");
 const Rect = @import("theme/layout.zig").Rect;
+const call_grid = @import("ui/call_grid.zig");
 const Id = types.Id;
 
 fn s(name: []const u8) Op {
@@ -287,6 +288,69 @@ fn dmLeft(app: *App) bool {
     return app.st.voice == null and qa.find("grid-band") == null;
 }
 
+// --- A barra, o medidor, sozinho e as cores do tema ---------------------------------
+
+/// Microfone, fone, mixer, sair e o tempo da call, todos dentro da barra, sem sobrepor.
+fn barShown(_: *App) bool {
+    const bar = qa.find("grid-bar") orelse return false;
+    for ([_][]const u8{ "grid-mic", "grid-deaf", "grid-mixer", "grid-leave", "grid-timer" }) |k| {
+        const r = qa.find(k) orelse return false;
+        if (r.x < bar.x - 0.5 or r.right() > bar.right() + 0.5 or r.y < bar.y - 0.5 or r.bottom() > bar.bottom() + 0.5) return false;
+    }
+    // (O `overlapping` junta as marcas de todos os prefixos, e a setinha do microfone,
+    // "grid-mic-menu", fica dentro do botão dele.)
+    const t = qa.find("grid-timer").?;
+    return t.right() <= qa.find("grid-mic").?.x;
+}
+/// O fundo do quadro é o do tema, com no máximo o toque da cor da foto.
+fn themeFill(_: *App) bool {
+    const t = call_grid.qa_tile;
+    if (!t.set or t.tint > 0.5) return false;
+    const diff = @max(@max(@abs(t.fill.r - t.base.r), @abs(t.fill.g - t.base.g)), @abs(t.fill.b - t.base.b));
+    return diff <= t.tint + 0.01;
+}
+fn meterShown(_: *App) bool {
+    const m = qa.find("grid-meter") orelse return false;
+    const t = find("grid-tile:{d}", .{me}) orelse return false;
+    return m.x >= t.x and m.right() <= t.right() and m.bottom() <= t.bottom() and qa.overlapping(&.{ "grid-meter", "nome:tile:" }) == null;
+}
+fn meterGone(_: *App) bool {
+    return qa.find("grid-meter") == null and qa.find("grid-tile:1000") != null;
+}
+fn othersLeave(app: *App) void {
+    for ([_]Id{ ana, kaique, duda }) |uid| push(app, .{ .voice_state = .{ .channel = null, .user = uid } });
+}
+fn othersBack(app: *App) void {
+    for ([_]Id{ ana, kaique, duda }) |uid| push(app, .{ .voice_state = .{ .channel = call0, .user = uid } });
+}
+fn aloneShown(_: *App) bool {
+    const t = find("grid-tile:{d}", .{me}) orelse return false;
+    const a = qa.find("grid-alone") orelse return false;
+    const i = qa.find("grid-invite") orelse return false;
+    return t.w <= 381 and a.y >= t.bottom() and i.y >= t.bottom() and find("grid-tile:{d}", .{ana}) == null and
+        qa.overlapping(&.{ "grid-alone", "grid-invite" }) == null;
+}
+fn inviteOpen(app: *App) bool {
+    return switch (app.st.popup) {
+        .create_invite => |ci| ci.channel == call0,
+        else => false,
+    };
+}
+fn inviteClosedStillView(app: *App) bool {
+    return app.st.popup == .none and app.st.call_view;
+}
+fn aloneGone(_: *App) bool {
+    return qa.find("grid-alone") == null and qa.find("grid-invite") == null and find("grid-tile:{d}", .{ana}) != null;
+}
+/// Em cada tema: sozinho, a linha do convite embaixo do quadro (ou da linha, no
+/// terminal), sem sobrepor nada.
+fn aloneThemeOk(_: *App) bool {
+    const a = qa.find("grid-alone") orelse return false;
+    const t = find("grid-tile:{d}", .{me}) orelse return false;
+    return a.y >= t.bottom() - 0.5 and qa.overlapping(&.{ "grid-alone", "grid-tile:" }) == null and
+        qa.overlapping(&.{ "grid-invite", "grid-tile:" }) == null and qa.overlapping(&.{ "grid-alone", "grid-invite" }) == null;
+}
+
 pub const ops = [_]Op{
     s("tela da call"),
     run(openGuild0),
@@ -298,6 +362,13 @@ pub const ops = [_]Op{
     run(speakDuda),
     expect("quem fala ganha o anel verde", speaking),
     expect("os botões da faixa de voz no lugar da caixa, e o de voltar no cabeçalho", controlsShown),
+    expect("numa barra, com o tempo da call, sem sobrepor", barShown),
+    expect("o fundo do quadro é o do tema, com só um toque da cor da foto", themeFill),
+    expect("sem o mouse em cima, o seu quadro não mostra o medidor (nem pede quadros)", meterGone),
+    .{ .hover = .{ .mark = "grid-tile:1000" } },
+    expect("com o mouse no seu quadro, o nível do microfone aparece embaixo, sem cobrir o nome", meterShown),
+    .{ .hover = .{ .mark = "grid-back" } },
+    expect("e some quando o mouse sai", meterGone),
     shot("call-grade"),
     click("grid-tile:1001"),
     expect("clicar num quadro abre o menu da pessoa", menuForAna),
@@ -347,6 +418,17 @@ pub const ops = [_]Op{
     expect("a foto da ana aberta grande por cima da tela", viewerOpen),
     key(c.ImGuiKey_Escape),
     expect("Esc com a foto aberta fecha só ela", viewerClosedStillView),
+
+    s("tela da call: sozinho"),
+    run(othersLeave),
+    expect("sozinho, o quadro encolhe e embaixo vêm o mascote, \"Só você por aqui\" e o convite", aloneShown),
+    shot("call-sozinho"),
+    click("grid-invite"),
+    expect("o botão abre o convite do servidor", inviteOpen),
+    key(c.ImGuiKey_Escape),
+    expect("Esc fecha o convite e a tela da call continua", inviteClosedStillView),
+    run(othersBack),
+    expect("com gente de volta, sem a linha do convite", aloneGone),
 
     s("tela da call: tamanhos"),
     .{ .resize = .{ 1920, 1080 } },
@@ -482,6 +564,11 @@ pub const ops_theme = [_]Op{
     .{ .wait = 100 },
     expect("\"Voz conectada\" também", statusFits),
     shot("call-grade"),
+    run(othersLeave),
+    .{ .wait = 100 },
+    expect("sozinho: o quadro, o mascote e o convite sem sobrepor", aloneThemeOk),
+    shot("call-sozinho"),
+    run(othersBack),
     run(leave),
     expect("sai da call", left),
 };

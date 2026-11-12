@@ -44,8 +44,8 @@ layout {
             column flex=1 max-width=800 {
                 header height=84 variant=minimal inset-x=16
                 rule height=9 inset-x=16 color=border ornament=dot ornament-color=muted ornament-size=4 fade=#true
-                messages flex=1 avatar=none spacing=26 unless=avatares
-                messages flex=1 avatar=circle spacing=26 when=avatares
+                messages flex=1 avatar=none spacing=26 unless=avatares call-tint=0.1
+                messages flex=1 avatar=circle spacing=26 when=avatares call-tint=0.1
                 column height=104 padding-x=16 {
                     spacer flex=1
                     composer height=52

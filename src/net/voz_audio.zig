@@ -92,6 +92,10 @@ pub const Shared = struct {
     test_on: Atomic(bool) = .init(false),
     level_db: Atomic(f32) = .init(voz.db_silence),
     shown_threshold_db: Atomic(f32) = .init(-48.8),
+    /// O mesmo, medido pela call (net/voice.zig) para o medidor do seu quadro na tela
+    /// da call (ui/call_grid.zig): silêncio fora dela, no mudo e com a tecla solta.
+    call_level_db: Atomic(f32) = .init(voz.db_silence),
+    call_threshold_db: Atomic(f32) = .init(-48.8),
     mic_failed: Atomic(bool) = .init(false),
     /// O microfone escolhido sumiu: o medidor está no padrão do sistema.
     mic_fallback: Atomic(bool) = .init(false),

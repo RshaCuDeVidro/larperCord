@@ -164,7 +164,7 @@ Georgia.
 | `user-panel` | `variant=discord\|tty` |
 | `header` | `variant=discord\|minimal\|tty` `divider=#false` |
 | `tabs` | `variant=pills\|underline\|tty` |
-| `messages` | `variant=cozy\|irc\|bubbles` `avatar=circle\|squircle\|square\|none` `avatar-size=40` `spacing=16` `font-size=` |
+| `messages` | `variant=cozy\|irc\|bubbles` `avatar=circle\|squircle\|square\|none` `avatar-size=40` `spacing=16` `font-size=` `call-style=` `call-tint=0.22` ([tela da call](#a-tela-da-call)) |
 | `composer` | `variant=box\|pill\|prompt` `typing=#false` |
 | `member-list` | `variant=discord\|tty` |
 | `status-bar` | `variant=pills\|tty\|plain` `items="conn ping ram frame voice spacer theme keys clock"` (também `me mic deaf`: seu status e os botões de mudo e ensurdecer com o menu de dispositivos, para layouts sem `user-panel`) |
@@ -179,6 +179,22 @@ Georgia.
 | `spacer` | espaço vazio |
 
 Um nome que não existe aparece com uma borda vermelha e a linha do arquivo, pra facilitar.
+
+### A tela da call
+
+Clicar num canal de voz troca a conversa por uma grade com um quadro por pessoa, desenhada pelo componente `messages`, então ela segue o tema:
+
+| Propriedade | Efeito |
+|---|---|
+| `call-style="card"` | um estilo nomeado para cada quadro: fundo, gradiente, borda, sombra, brilho, reflexo, grão. Sem ele, o quadro usa `elevated` com uma borda fina de `border` |
+| `call-tint=0.22` | quanto da cor da foto de cada pessoa entra no fundo do quadro, de `0` (só o tema) a `1` |
+| `avatar=` | o formato das fotos nos quadros, o mesmo das mensagens (`none` vira círculo ali) |
+
+O nome e a atividade usam `text`, e trocam por branco ou quase preto quando a cor da foto deixa o `text` difícil de ler. O anel de quem fala usa `online`, e a barra de botões da call usa `bg`, `elevated`, `border` e os cantos do tema. Com `variant=irc`, a call vira uma lista em texto. Exemplo do `vidro.kdl`:
+
+```kdl
+messages flex=1 avatar=squircle call-style=card call-tint=0.16
+```
 
 ## Além do retângulo chapado
 

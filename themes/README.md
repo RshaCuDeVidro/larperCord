@@ -162,7 +162,7 @@ searched. For a theme that looks right on both systems, use font names that say 
 | `user-panel` | `variant=discord\|tty` |
 | `header` | `variant=discord\|minimal\|tty` `divider=#false` |
 | `tabs` | `variant=pills\|underline\|tty` |
-| `messages` | `variant=cozy\|irc\|bubbles` `avatar=circle\|squircle\|square\|none` `avatar-size=40` `spacing=16` `font-size=` |
+| `messages` | `variant=cozy\|irc\|bubbles` `avatar=circle\|squircle\|square\|none` `avatar-size=40` `spacing=16` `font-size=` `call-style=` `call-tint=0.22` ([call screen](#the-call-screen)) |
 | `composer` | `variant=box\|pill\|prompt` `typing=#false` |
 | `member-list` | `variant=discord\|tty` |
 | `status-bar` | `variant=pills\|tty\|plain` `items="conn ping ram frame voice spacer theme keys clock"` (also `me mic deaf`: your status and the mute/deafen buttons with the device menu, for layouts without a `user-panel`) |
@@ -177,6 +177,22 @@ searched. For a theme that looks right on both systems, use font names that say 
 | `spacer` | empty space |
 
 A name that doesn't exist shows up with a red border and the file line, to make it easy to spot.
+
+### The call screen
+
+Clicking a voice channel replaces the chat with a grid of one tile per person, drawn by the `messages` component, so it follows the theme:
+
+| Property | Effect |
+|---|---|
+| `call-style="card"` | a named style for each tile: background, gradient, border, shadow, glow, sheen, grain. Without it, the tile uses `elevated` with a thin `border` |
+| `call-tint=0.22` | how much of each person's photo color goes into the tile background, from `0` (only the theme) to `1` |
+| `avatar=` | the shape of the photos in the tiles, the same as in the messages (`none` becomes a circle there) |
+
+The name and activity use `text`, switching to white or near black when the photo color makes `text` hard to read. The speaking ring uses `online`, and the bar of call buttons uses `bg`, `elevated`, `border` and the theme's corners. With `variant=irc` the call is a text list. Example from `vidro.kdl`:
+
+```kdl
+messages flex=1 avatar=squircle call-style=card call-tint=0.16
+```
 
 ## Beyond the flat rectangle
 
