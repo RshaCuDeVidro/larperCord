@@ -1,5 +1,34 @@
 # O que mudou em cada versão
 
+## 0.6.5
+
+**Mascote**
+- Um mascote novo, o Terminal, com a piscadinha ">_", agora é o principal, com uma abertura toda nova: um cursor de terminal pisca, uma linha de TV de tubo acende e abre o corpo, as orelhas saltam, o rosto é digitado, ele mostra "..." enquanto conecta e desliga como uma TV antiga quando o app abre. O demo também mostra a abertura inteira.
+- Mais quatro aberturas para escolher em Configurações → Aparência → Abertura: Código, TV, Pixels e Portal, ou Sortear, para cada vez ser uma. "Ver a abertura de novo" toca de novo.
+- O mascote de antes, o Clássico, está a um clique em Configurações → Aparência → Mascote, com a prévia dos dois ao vivo. A escolha troca o ícone do app onde dá: a janela e a barra de tarefas, a bandeja, os avisos do Windows e, no Linux, o ícone do menu de aplicativos. No Windows, o ícone do próprio arquivo do app continua o Terminal.
+- O mascote aparece pelo app: dormindo na caixa de entrada, nos fixados, nas mensagens salvas e na lista de amigos vazios, e carregando junto com a conversa. Clique nele na tela de entrada ou em Configurações → Sobre e ele reage.
+- Mascote no canto: ele senta em cima da caixa de mensagem (Configurações → Aparência → Mascote no canto, ligado de começo). Os olhos seguem o mouse, ele digita junto, pula quando você manda, se assusta com menção e ri, comemora, fica triste ou acena com o que você escreve (tudo calculado no seu computador). Dorme depois de uns minutos parado. Pegue e jogue e ele quica nas bordas da janela, fica tonto e volta andando. Passe o mouse devagar por cima para fazer carinho, dê dois cliques para um truque, e cutucado demais ele emburra uns segundos, cada vez de um jeito.
+- Ele também bota fone em call, com fita na boca enquanto você está mudo. Pega fogo quando você digita rápido, fica tonto quando a conversa rola rápido demais, come o arquivo que você arrasta para a janela e fica preocupado quando a mensagem não sai. De madrugada tem olheiras e boceja, de manhã se espreguiça, em algumas datas usa chapéu, e pega a cor de destaque do tema. Reage ao emoji que você põe nas mensagens e mostra o seu status: uma lua no ausente, uma plaquinha no não perturbe (aí menção não assusta), meio transparente no invisível. Ctrl+C faz um clone, Ctrl+Z faz ele andar para trás, Ctrl+F dá uma lupa para ele, e a roda do mouse em cima dele faz cócegas. Clique com o botão direito para Fazer um truque, Dormir, Esconder por 1 hora e Trocar de mascote.
+- Continua leve: só desenha quadros a mais por um instante quando algo acontece, e só com a janela em foco. Parado, não acorda o app.
+
+**Mensagens**
+- Árabe e hebraico na caixa de mensagem aparecem na ordem certa e alinhados à direita, como nas mensagens enviadas, do relato do majd-tqe (#9). Cursor, clique, seleção e Backspace seguem o texto na tela, e ← e → andam pela tela em vez da ordem do texto.
+
+**Texto em qualquer idioma**
+- "Online", "Offline", "Proxy" e outras palavras que faltavam nos arquivos de tradução agora aparecem em japonês e em russo, assim como as descrições e as opções dos temas embutidos, o submenu de prazo do status, as dicas da caixa de mensagem e as ações das imagens, do relato do DivannKokos (#20). O cartão do tema mostra a descrição inteira, em até duas linhas, e o resto ao passar o mouse.
+- O texto traduzido não sai mais cortado em russo e japonês: Sobre, o aviso de espera para entrar em servidores, a nota do modo foco e "N menções em <servidor>" com nome comprido. Botões e notas das Configurações também não passam mais da borda. Do relato do DivannKokos (#22).
+- O russo usa ё onde deve, do DivannKokos (#21).
+- Com árabe ou hebraico no fim da conversa, o botão de voltar ao fim vai para o canto esquerdo em vez de cobrir o começo dessas linhas.
+
+**Mais leve**
+- No Linux, a memória não se acumula mais depois de horas de uso: os buffers de imagem liberados voltam ao sistema em vez de ficar presos nas arenas da glibc de cada thread. Na conta do desenvolvedor, depois de 4h30, eram uns 190 MB parados à toa.
+
+**Instalação**
+- `install.sh --purge` e `install.ps1 -Purge` também apagam as configurações, o cache, o FFmpeg baixado, os seus sons e as contas salvas, do pedido do DivannKokos (#12). Desinstalar sem a opção continua guardando as configurações.
+
+**Site e documentação**
+- Criador de temas: um divisor entre as prévias clara e escura dá mais largura a uma delas; clique duplo volta ao meio.
+
 ## 0.6.4
 
 **Conversas**

@@ -1,5 +1,34 @@
 # What changed in each version
 
+## 0.6.5
+
+**Mascot**
+- A new mascot, Terminal, with a ">_" wink, is now the main one, with an all-new opening: a terminal cursor blinks, a tube-TV line lights up and opens the body, the ears spring up, the face gets typed in, it shows "..." while connecting, and it switches off like an old TV as the app opens. The demo plays the whole opening too.
+- Four more openings to pick from in Settings → Appearance → Opening: Code, TV, Pixels and Portal, or Shuffle for a different one each time. "Replay the opening" plays it again.
+- The previous mascot, Classic, is one click away in Settings → Appearance → Mascot, with a live preview of both. The choice changes the app icon everywhere it can: the window and taskbar, the tray, Windows notifications and, on Linux, the app menu icon. On Windows, the icon of the app file itself stays Terminal.
+- The mascot shows up around the app: asleep in an empty inbox, pins, saved messages and friends list, and loading with the conversation. Click it on the login screen or in Settings → About and it reacts.
+- Corner mascot: it sits on the message box (Settings → Appearance → Corner mascot, on by default). Its eyes follow the mouse, it types along with you, hops when you send, gets startled by a mention, and laughs, celebrates, gets sad or waves at what you write (all worked out on your computer). It falls asleep after a few idle minutes. Grab and throw it and it bounces off the window edges, gets dizzy and walks back. Hover over it slowly to pet it, double-click it for a trick, and poke it too many times and it sulks for a few seconds, a different way each time.
+- It also puts on a headset in a call, with tape over its mouth while you're muted. It catches fire when you type fast, gets dizzy when the conversation scrolls too fast, eats a file you drag into the window and worries when a message can't be sent. Late at night it has eye bags and yawns, in the morning it stretches, on some dates it wears a hat, and it takes the theme's accent color. It reacts to the emoji you add to messages and shows your status: a moon when idle, a sign on Do Not Disturb (mentions don't startle it then), see-through when invisible. Ctrl+C makes a clone, Ctrl+Z walks it backwards, Ctrl+F gives it a magnifier, and the mouse wheel over it tickles. Right-click it for Do a Trick, Sleep, Hide for 1 Hour and Switch Mascot.
+- It stays light: it only draws extra frames for a moment when something happens, and only while the window is focused. Sitting still, it doesn't wake the app.
+
+**Messages**
+- Arabic and Hebrew in the message box now show in the right order and line up to the right, like in sent messages, from majd-tqe's report (#9). The cursor, clicking, selecting and Backspace follow the text on screen, and ← and → move across the screen instead of through the text.
+
+**Text in any language**
+- "Online", "Offline", "Proxy" and other words that were missing from the translation files now show in Japanese and Russian, and so do the descriptions and options of the built-in themes, the status duration submenu, the message box tips and the image actions, from DivannKokos's report (#20). The theme card shows the whole description, in up to two lines, with the rest on hover.
+- Translated text no longer gets cut off in Russian and Japanese: About, the wait notice when joining servers, the focus mode note and "N mentions in <server>" with a long server name. Buttons and notes in Settings no longer run past their edge either. From DivannKokos's report (#22).
+- Russian uses ё where it belongs, from DivannKokos (#21).
+- With Arabic or Hebrew at the bottom of the conversation, the jump-to-present button moves to the left corner instead of covering the start of those lines.
+
+**Lighter**
+- On Linux, memory no longer piles up after hours of use: freed image buffers go back to the system instead of staying inside glibc's per-thread arenas. On the developer's account, after 4.5 hours, that was about 190 MB held for nothing.
+
+**Install**
+- `install.sh --purge` and `install.ps1 -Purge` also delete the settings, the cache, the downloaded FFmpeg, your sounds and the saved accounts, from DivannKokos's request (#12). Uninstalling without it still keeps your settings.
+
+**Site and docs**
+- Theme builder: a divider between the dark and light previews gives one of them more width; double click puts it back in the middle.
+
 ## 0.6.4
 
 **Conversations**
