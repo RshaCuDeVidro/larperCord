@@ -952,7 +952,8 @@ pub const ops_theme = [_]Op{
     .{ .wait = 250 },
     expect("árabe digitado na caixa: termina na borda direita e o cursor fica à esquerda dele", boxTyped),
     .{ .shot = "rtl-caixa" },
-    .{ .click = .{ .at = .{ .key = "composer", .fx = 0.985, .fy = 0.5 } } },
+    // Meio pixel antes da borda: a primeira letra, o alef, tem uns 4 px.
+    .{ .click = .{ .at = .{ .key = "composer-text-end", .fx = 0.95, .fy = 0.5 } } },
     expect("clicar na ponta direita põe o cursor no começo do texto", boxCursorStart),
     .{ .click = .{ .at = .{ .key = "composer", .fx = 0.02, .fy = 0.5 } } },
     expect("clicar à esquerda do texto põe o cursor no fim dele", boxCursorEnd),

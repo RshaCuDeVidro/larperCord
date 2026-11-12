@@ -713,6 +713,9 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
 }
 
 const new_line_h: f32 = 24;
+
+/// Onde termina a área de texto do campo ativo (imgui_widgets.cpp): o QA clica ali.
+extern var larper_input_text_right: f32;
 const unread_bar_h: f32 = 30;
 
 /// A linha vermelha "NOVAS MENSAGENS" entre a última lida e a primeira não lida.
@@ -1869,6 +1872,8 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     const synced = st.input_sync;
     var wanted: @TypeOf(st.input) = undefined;
     if (synced) wanted = st.input;
+    // QA: a ponta direita da área de texto (onde termina um parágrafo em árabe ou hebraico).
+    if (qa.compiled) qa.mark(.{ .x = larper_input_text_right - 10, .y = r.y, .w = 10, .h = r.h }, "composer-text-end", .{});
     if (c.ImGui_InputTextMultilineEx("##composer", &st.input, st.input.len, d.v(input_w, frame_h), flags, inputCallback, st))
         // Alt+Enter é tela cheia (ui/root.zig): não manda a mensagem.
         if (!ctx.io.*.KeyAlt) submit(ctx);

@@ -4787,8 +4787,9 @@ static ImVec2 InputTextLineIndexGetPosOffset(ImGuiContext& g, ImGuiInputTextStat
 // texto guardado continua na ordem lógica: só o desenho, o cursor, a seleção e o clique mudam.
 extern "C" { int (*larper_input_bidi)(const char* line, int line_len, const char* para, int para_len, unsigned int* cp, int* off, unsigned char* rtl, int cap, bool* base_rtl) = nullptr; }
 
-// [larperCord] Onde o cursor do campo ativo foi desenhado (o QA confere em árabe e hebraico).
-extern "C" { float larper_input_caret[2] = { 0.0f, 0.0f }; }
+// [larperCord] Onde o cursor do campo ativo foi desenhado e onde termina a área de texto dele (o
+// QA confere em árabe e hebraico: um parágrafo da direita para a esquerda acaba ali).
+extern "C" { float larper_input_caret[2] = { 0.0f, 0.0f }; float larper_input_text_right = 0.0f; }
 
 namespace {
 struct LarperBidiLine
@@ -5971,6 +5972,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         ImVec2 cursor_screen_pos = ImTrunc(draw_pos + cursor_offset - draw_scroll);
         larper_input_caret[0] = cursor_screen_pos.x; // [larperCord] O QA confere onde o cursor fica.
         larper_input_caret[1] = cursor_screen_pos.y;
+        larper_input_text_right = draw_pos.x - draw_scroll.x + larper_avail_r;
         ImRect cursor_screen_rect = ImRect(cursor_screen_pos.x, cursor_screen_pos.y - g.FontSize + 1.0f, cursor_screen_pos.x + 1.0f, cursor_screen_pos.y - 1.0f);
         if (cursor_is_visible && cursor_screen_rect.Overlaps(clip_rect))
             draw_window->DrawList->AddLineV(cursor_screen_rect.Min.x, cursor_screen_rect.Min.y, cursor_screen_rect.Max.y, GetColorU32(ImGuiCol_InputTextCursor), style.InputTextCursorSize, ImDrawFlags_StrokeInside);
