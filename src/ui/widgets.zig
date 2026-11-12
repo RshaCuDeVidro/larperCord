@@ -47,6 +47,8 @@ pub fn cdnFull(buf: []u8, kind: Cdn, id: types.Id, hash: []const u8) []const u8 
 fn cdnSized(buf: []u8, kind: Cdn, id: types.Id, hash: []const u8, size: u16) []const u8 {
     // A demonstração e a foto de um webhook (que mora no ID dele) já são a URL.
     if (std.mem.startsWith(u8, hash, "demo:") or std.mem.startsWith(u8, hash, "https://")) return hash;
+    // A foto do perfil de um servidor já vem com o caminho inteiro (types.Face).
+    if (std.mem.startsWith(u8, hash, "guilds/")) return std.fmt.bufPrint(buf, "https://cdn.discordapp.com/{s}.png?size={d}", .{ hash, size }) catch "";
     const dir = switch (kind) {
         .avatar => "avatars",
         .guild => "icons",
@@ -59,6 +61,8 @@ fn cdnSized(buf: []u8, kind: Cdn, id: types.Id, hash: []const u8, size: u16) []c
 /// Banner (de servidor ou de pessoa: ficam no mesmo lugar) em tamanho cheio.
 pub fn bannerFull(buf: []u8, id: types.Id, hash: []const u8) []const u8 {
     if (std.mem.startsWith(u8, hash, "demo:")) return hash;
+    // O banner do perfil de um servidor (guilds/{servidor}/users/{pessoa}/banners/{hash}).
+    if (std.mem.startsWith(u8, hash, "guilds/")) return std.fmt.bufPrint(buf, "https://cdn.discordapp.com/{s}.png?size=4096", .{hash}) catch "";
     return std.fmt.bufPrint(buf, "https://cdn.discordapp.com/banners/{d}/{s}.png?size=4096", .{ id, hash }) catch "";
 }
 
@@ -101,20 +105,34 @@ pub fn nameColor(ctx: *const d.Ctx, guild: types.Id, user_id: types.Id) d.Rgba {
     return ctx.col(.text);
 }
 
+/// Para o QA: o nome que apareceu num lugar ("nome:member:1001:Aninha").
+pub fn markName(r: d.Rect, comptime place: []const u8, user_id: types.Id, name: []const u8) void {
+    qa.mark(r, "nome:" ++ place ++ ":{d}:{s}", .{ user_id, d.utf8Prefix(name, 20) });
+}
+
 /// Avatar: a foto da pessoa; sem foto (ou enquanto baixa), a inicial
 /// sobre a cor do cargo.
 pub fn avatar(ctx: *d.Ctx, dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, user_id: types.Id, shape: Shape, ring: ?d.Rgba, alpha: f32) void {
+    avatarIn(ctx, dl, 0, cx, cy, size, user_id, shape, ring, alpha);
+}
+
+/// O avatar de alguém num servidor: a foto do perfil de lá, quando tem
+/// (`guild` 0 = DM ou grupo: a global).
+pub fn avatarIn(ctx: *d.Ctx, dl: *c.ImDrawList, guild: types.Id, cx: f32, cy: f32, size: f32, user_id: types.Id, shape: Shape, ring: ?d.Rgba, alpha: f32) void {
     const u = ctx.store.user(user_id);
     const role: u8 = if (u) |x| x.role else 0;
     const base = ctx.th.role(role);
     const r = size / 2;
     const rr: d.Rect = .{ .x = cx - r, .y = cy - r, .w = size, .h = size };
     var ub: [160]u8 = undefined;
-    const url = if (u) |x| if (x.avatar) |h| cdnUrl(&ub, .avatar, x.id, h) else "" else "";
+    const server = if (ctx.store.face(guild, user_id)) |f| f.avatar else null;
+    if (server != null) qa.mark(rr, "avatar-srv:{d}", .{user_id});
+    const hash = server orelse if (u) |x| x.avatar else null;
+    const url = if (hash) |h| cdnUrl(&ub, .avatar, user_id, h) else "";
     if (!picture(ctx, dl, url, rr, shapeRadius(shape, size), alpha)) {
         d.rect(dl, rr, base.mix(ctx.col(.surface), 0.28).alpha(alpha), shapeRadius(shape, size));
         var up: [8]u8 = undefined;
-        const name = if (u) |x| x.name else "?";
+        const name = ctx.store.nameIn(guild, user_id) orelse "?";
         const initial = d.upper(&up, d.firstGlyph(name));
         const fs = size * 0.45;
         const font = ctx.ui.get(.semibold);

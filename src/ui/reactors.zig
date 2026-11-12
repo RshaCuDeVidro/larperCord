@@ -193,10 +193,11 @@ fn list(ctx: *d.Ctx, dl_outer: *c.ImDrawList, body: d.Rect, guild: Id) void {
             const hb = d.hit(ctx, @truncate(uid), rr);
             qa.mark(rr, "people-row:{d}", .{uid});
             if (hb.hovered) d.rect(bdl, rr, ctx.col(.hover), @max(ctx.th.radius - 2, 3));
-            w.avatar(ctx, bdl, rr.x + 18, rr.y + rr.h / 2, 26, uid, .circle, null, 1);
+            w.avatarIn(ctx, bdl, guild, rr.x + 18, rr.y + rr.h / 2, 26, uid, .circle, null, 1);
             const u = ctx.store.user(uid);
-            const name = if (u) |x| x.name else "?";
+            const name = ctx.store.nameIn(guild, uid) orelse "?";
             const nw = d.textClipped(bdl, fam.get(.semibold), 14, rr.x + 40, d.centerY(rr, 14), w.nameColor(ctx, guild, uid), name, rr.w - 60);
+            w.markName(rr, "people", uid, name);
             _ = w.botTag(ctx, bdl, rr.x + 40 + nw, rr.y + rr.h / 2, u, false, 1);
             // Clicar abre o cartão da pessoa (no lugar desta lista).
             if (hb.clicked) ctx.popup(.{ .profile = .{ .user = uid, .x = rr.right() + 8, .y = rr.y } });

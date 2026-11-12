@@ -350,7 +350,7 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
         },
         .user => {
             add(&items, &n, .{ .label = "Perfil", .en = "Profile", .id = 20 });
-            if (ctx.store.user(id)) |pu| if (pu.avatar != null) add(&items, &n, .{ .label = "Ver foto de perfil", .en = "View Picture", .id = 27 });
+            if (ctx.store.user(id)) |pu| if (pu.avatar != null or (if (ctx.store.face(ctx.st.guild, id)) |f| f.avatar != null else false)) add(&items, &n, .{ .label = "Ver foto de perfil", .en = "View Picture", .id = 27 });
             add(&items, &n, .{ .label = "Mencionar", .en = "Mention", .id = 21 });
             const hook = if (ctx.store.user(id)) |u| u.webhook else false;
             if (id != ctx.store.me and !hook) add(&items, &n, .{ .label = "Mensagem", .en = "Message", .id = 22 });
@@ -739,7 +739,7 @@ fn choose(ctx: *d.Ctx, kind: state.MenuKind, id: Id, item: u8, r: d.Rect) void {
         // 77 e 78 são do ui/conta_menu.zig (notificações).
         93 => st.popup = .{ .onboarding = .{ .guild = id } },
         94 => st.popup = .{ .server_rules = .{ .guild = id } },
-        27 => @import("profile.zig").viewAvatar(ctx, id),
+        27 => @import("profile.zig").viewAvatarIn(ctx, ctx.st.guild, id),
         160...166 => @import("moderacao.zig").escolheu(ctx, id, item),
         54 => if (ctx.store.channel(id)) |cs| if (cs.info.icon) |h| {
             var ub: [192]u8 = undefined;
@@ -775,13 +775,13 @@ fn choose(ctx: *d.Ctx, kind: state.MenuKind, id: Id, item: u8, r: d.Rect) void {
         },
         9 => ctx.act(.{ .delete_message = id }),
         20 => st.popup = .{ .profile = .{ .user = id, .x = r.x, .y = r.y } },
-        21 => if (ctx.store.user(id)) |u| {
-            insertText(st, u.name, true);
+        21 => if (ctx.store.nameIn(st.guild, id)) |name| {
+            insertText(st, name, true);
             // Com o ID guardado, dois "Ana" no servidor não se confundem.
             var sb: [136]u8 = undefined;
             var rb: [32]u8 = undefined;
             const auto = @import("autocomplete.zig");
-            auto.addToken(std.fmt.bufPrint(&sb, "@{s}", .{u.name}) catch "", std.fmt.bufPrint(&rb, "<@{d}>", .{id}) catch "");
+            auto.addToken(std.fmt.bufPrint(&sb, "@{s}", .{name}) catch "", std.fmt.bufPrint(&rb, "<@{d}>", .{id}) catch "");
         },
         22 => ctx.act(.{ .open_dm = id }),
         // Como o botão do mixer: o volume guardado fica, tirar o silêncio volta a ele.
@@ -909,6 +909,7 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         if (drawn >= shown) break;
         drawn += 1;
         const u = ctx.store.user(uid) orelse continue;
+        const name = ctx.store.nameIn(cs.info.guild, uid) orelse u.name;
         const speaking = ctx.store.isSpeaking(uid, ctx.now_ms);
         const rowr: d.Rect = .{ .x = r.x + 8, .y = yy, .w = r.w - 16, .h = row - 2 };
         const hover = rowr.contains(ctx.mouse.x, ctx.mouse.y);
@@ -916,8 +917,9 @@ fn mixer(ctx: *d.Ctx, x: f32, y: f32) void {
         const ax = rowr.x + 22;
         const ay = rowr.y + rowr.h / 2;
         if (speaking) c.ImDrawList_AddCircleEx(dl, d.v(ax, ay), 15.5, ctx.col(.online).u(), 0, 2, 0);
-        w.avatar(ctx, dl, ax, ay, 28, uid, .circle, null, 1);
-        _ = d.textClipped(dl, ctx.ui.get(.semibold), 13, rowr.x + 46, rowr.y + 6, ctx.col(.text), u.name, 86);
+        w.avatarIn(ctx, dl, cs.info.guild, ax, ay, 28, uid, .circle, null, 1);
+        _ = d.textClipped(dl, ctx.ui.get(.semibold), 13, rowr.x + 46, rowr.y + 6, ctx.col(.text), name, 86);
+        w.markName(rowr, "mixer", uid, name);
         const vf = ctx.store.voiceFlags(uid);
         const vf_text = if (vf.deaf) i18n.tr("surdo pelo servidor", "server deafened") else if (vf.serverMuted()) i18n.tr("mudo pelo servidor", "server muted") else if (vf.self_deaf) i18n.tr("surdo", "deafened") else if (vf.self_mute) i18n.tr("mudo", "muted") else "";
         d.text(dl, ctx.ui.get(.regular), 10, rowr.x + 46, rowr.y + 23, if (speaking) ctx.col(.online) else if (vf.deaf or vf.serverMuted()) ctx.col(.danger) else ctx.col(.faint), if (speaking) i18n.tr("falando", "speaking") else vf_text);

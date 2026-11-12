@@ -37,6 +37,29 @@ pub fn webhookAvatar(buf: []u8, author: Value) ?[]const u8 {
     return std.fmt.bufPrint(buf, "https://cdn.discordapp.com/avatars/{d}/{s}.png?size=128", .{ hook, hash }) catch null;
 }
 
+/// O perfil do servidor num objeto `member`: o apelido e o caminho da foto no CDN
+/// (que fica em `buf`). Vazio vira null (não tem). null no lugar do resultado: o
+/// objeto nem tem os campos, e não diz nada.
+pub const MemberFace = struct { nick: ?[]const u8, avatar: ?[]const u8 };
+
+pub fn memberFace(buf: []u8, guild: Id, user: Id, m: Value) ?MemberFace {
+    if (j.get(m, "nick") == null and j.get(m, "avatar") == null) return null;
+    const nick = j.str(j.get(m, "nick")) orelse "";
+    return .{
+        .nick = if (nick.len > 0) nick else null,
+        .avatar = if (j.str(j.get(m, "avatar"))) |h| guildPath(buf, guild, user, "avatars", h) else null,
+    };
+}
+
+/// "guilds/{servidor}/users/{pessoa}/{avatars|banners}/{hash}": onde o CDN guarda a
+/// foto e o banner do perfil de um servidor. Hash estranho (vazio, comprido, com
+/// algo além de letras, números e _) fica de fora.
+pub fn guildPath(buf: []u8, guild: Id, user: Id, comptime kind: []const u8, hash: []const u8) ?[]const u8 {
+    if (hash.len == 0 or hash.len > 64) return null;
+    for (hash) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') return null;
+    return std.fmt.bufPrint(buf, "guilds/{d}/users/{d}/" ++ kind ++ "/{s}", .{ guild, user, hash }) catch null;
+}
+
 fn parseValue(arena: *std.heap.ArenaAllocator, text: []const u8) !Value {
     return std.json.parseFromSliceLeaky(Value, arena.allocator(), text, .{});
 }
@@ -77,6 +100,27 @@ test "autor: pessoa, resposta de comando e webhook" {
     try std.testing.expectEqualStrings("https://cdn.discordapp.com/avatars/7/abc.png?size=128", webhookAvatar(&ub, j.get(a, "author").?).?);
     const no_pic = try parseValue(&arena, "{\"id\":\"7\",\"username\":\"x\",\"avatar\":null}");
     try std.testing.expect(webhookAvatar(&ub, no_pic) == null);
+}
+
+test "perfil do servidor no objeto member" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var pb: [128]u8 = undefined;
+    const full = try parseValue(&arena, "{\"nick\":\"Aninha\",\"avatar\":\"a_0f3c\",\"roles\":[]}");
+    const f = memberFace(&pb, 5, 7, full).?;
+    try std.testing.expectEqualStrings("Aninha", f.nick.?);
+    try std.testing.expectEqualStrings("guilds/5/users/7/avatars/a_0f3c", f.avatar.?);
+    // Sem apelido nem foto (tirou os dois): os dois null, para limpar o que havia.
+    const none = memberFace(&pb, 5, 7, try parseValue(&arena, "{\"nick\":null,\"avatar\":null,\"roles\":[]}")).?;
+    try std.testing.expect(none.nick == null and none.avatar == null);
+    const empty = memberFace(&pb, 5, 7, try parseValue(&arena, "{\"nick\":\"\"}")).?;
+    try std.testing.expect(empty.nick == null and empty.avatar == null);
+    // Objeto que nem tem os campos: não diz nada.
+    try std.testing.expect(memberFace(&pb, 5, 7, try parseValue(&arena, "{\"roles\":[]}")) == null);
+    // Hash que não é hash não vira caminho.
+    const odd = memberFace(&pb, 5, 7, try parseValue(&arena, "{\"avatar\":\"../x\"}")).?;
+    try std.testing.expect(odd.avatar == null);
+    try std.testing.expectEqualStrings("guilds/5/users/7/banners/b1", guildPath(&pb, 5, 7, "banners", "b1").?);
 }
 
 test "mensagem sem autor" {

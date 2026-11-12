@@ -59,6 +59,9 @@ const Geo = struct {
     wrap: f32,
     prefix_w: f32 = 0,
     bubble_max: f32 = 0,
+    /// Servidor da conversa (0 = DM ou grupo): nomes, fotos e menções com o
+    /// perfil de lá.
+    guild: Id = 0,
 };
 
 const flag_group: u8 = 1;
@@ -129,6 +132,7 @@ fn textOpts(ctx: *const d.Ctx, g: Geo, self_bubble: bool) rich.Opts {
         .on_accent = self_bubble,
         .reveal_spoilers = ctx.st.settings.show_spoilers,
         .underline_links = ctx.st.settings.underline_links,
+        .guild = g.guild,
     };
 }
 
@@ -189,7 +193,8 @@ fn measure(ctx: *d.Ctx, g: Geo, m: *StoredMessage, flags: u8) f32 {
     // O idioma entra na chave: "(editado)" e "(edited)" têm larguras diferentes.
     // A decoração dos plugins também, quando uma regra ou um plugin mudam.
     const deco_gen: u32 = if (decoIndex(false)) |dx| dx.layout_gen else 0;
-    const key: u32 = @as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19);
+    // Um apelido que mudou muda a largura da menção a essa pessoa.
+    const key: u32 = (@as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19)) ^ (ctx.store.nicks_gen *% 0x9E3779B1);
     // Uma entrada nova nesta mensagem (uma tradução que chegou) invalida a medida.
     if (decoIndex(true)) |dx| _ = dx.view(m, ctx.store.me);
     if (m.layout_w == g.wrap and m.layout_variant == key) return m.height;
@@ -376,7 +381,8 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
     const cs = ctx.store.channel(ch_id) orelse return;
     // Fórum não tem conversa: a lista de posts entra no lugar.
     if (cs.info.kind == .forum) return forum.page(ctx, n, r, cs, region);
-    const g = geometry(ctx, n, r);
+    var g = geometry(ctx, n, r);
+    g.guild = cs.info.guild;
     ctx.hot = false;
     vim.page_h = r.h;
 
@@ -651,7 +657,7 @@ pub fn history(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: [*
         const ty = base + typing_y + 10;
         const uid = cs.typing.items[0].user;
         const left: f32 = r.x + 20;
-        if (g.avatar > 0) @import("widgets.zig").avatar(ctx, dl, left + g.avatar / 2, ty + 18, g.avatar, uid, g.shape, null, 1);
+        if (g.avatar > 0) w.avatarIn(ctx, dl, g.guild, left + g.avatar / 2, ty + 18, g.avatar, uid, g.shape, null, 1);
         const bx = left + (if (g.avatar > 0) g.avatar + 10 else 0);
         const br: d.Rect = .{ .x = bx, .y = ty, .w = 64, .h = 36 };
         d.rect(dl, br, ctx.col(.bubble_other), 18);
@@ -1072,15 +1078,17 @@ fn replyLine(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *const StoredMessage, x:
     const muted = if (on_accent) ctx.col(.bubble_self_text).alpha(0.75) else ctx.col(.muted);
     if (found) |f| {
         const u = ctx.store.user(f.m.msg.author);
+        const gid = guildOf(ctx, f.m.msg.channel);
         var xx = x;
         if (g.avatar > 0) {
-            w.avatar(ctx, dl, xx + 8, y + 9, 16, f.m.msg.author, .circle, null, 1);
+            w.avatarIn(ctx, dl, gid, xx + 8, y + 9, 16, f.m.msg.author, .circle, null, 1);
             xx += 20;
         }
-        const name = if (u) |uu| uu.name else "?";
-        const nc = if (on_accent) ctx.col(.bubble_self_text) else w.nameColor(ctx, guildOf(ctx, f.m.msg.channel), f.m.msg.author);
+        const name = ctx.store.nameIn(gid, f.m.msg.author) orelse "?";
+        const nc = if (on_accent) ctx.col(.bubble_self_text) else w.nameColor(ctx, gid, f.m.msg.author);
         const nm = std.fmt.bufPrint(buf[0..40], "@{s}", .{name}) catch name;
         d.text(dl, fam.get(.semibold), 13, xx, y + 1, nc, nm);
+        w.markName(.{ .x = xx, .y = y, .w = d.width(fam.get(.semibold), 13, nm), .h = 18 }, "reply", f.m.msg.author, name);
         xx += d.width(fam.get(.semibold), 13, nm);
         if (!on_accent) xx += w.botTag(ctx, dl, xx, y + 9, u, false, 1);
         xx += 6;
@@ -1324,9 +1332,10 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
     const group = flags & flag_group != 0;
     const day = flags & flag_day != 0;
     const reply = flags & flag_reply != 0;
+    const gid = g.guild;
     const u = ctx.store.user(m.msg.author);
-    const name = if (u) |x| x.name else "?";
-    const role_col = w.nameColor(ctx, guildOf(ctx, m.msg.channel), m.msg.author);
+    const name = ctx.store.nameIn(gid, m.msg.author) orelse "?";
+    const role_col = w.nameColor(ctx, gid, m.msg.author);
     const alpha: f32 = if (m.pending) 0.5 else 1;
     const fam = g.fam;
     const self = m.msg.author == ctx.store.me;
@@ -1355,7 +1364,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
     // como no Discord. O resultado já vem guardado na mensagem. Palavra de
     // alerta (Configurações → Alertas e filtros) destaca igual.
     const lit = m.msg.system == .none and m.msg.id != 0 and
-        (ctx.st.filtros.flags(m) & filtros.bit_alert != 0 or ctx.store.mentionsMeCached(guildOf(ctx, m.msg.channel), m));
+        (ctx.st.filtros.flags(m) & filtros.bit_alert != 0 or ctx.store.mentionsMeCached(gid, m));
 
     switch (g.variant) {
         .cozy => {
@@ -1376,13 +1385,14 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 }
                 if (g.avatar > 0) {
                     const ar: d.Rect = .{ .x = r.x + 16, .y = y, .w = g.avatar, .h = g.avatar };
-                    w.avatar(ctx, dl, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
+                    w.avatarIn(ctx, dl, gid, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
                     nameHit(ctx, m.msg.author, m.msg.id, ar, 1);
                 }
                 const nw = d.width(fam.get(.semibold), g.size, name);
                 const nr: d.Rect = .{ .x = tx, .y = y, .w = nw, .h = g.line_h };
                 nameHit(ctx, m.msg.author, m.msg.id, nr, 2);
                 d.text(dl, fam.get(.semibold), g.size, tx, y + (g.line_h - g.size * 1.2) / 2, role_col.alpha(alpha), name);
+                w.markName(nr, "msg", m.msg.author, name);
                 if (ctx.hovering(nr)) d.line(dl, tx, nr.bottom() - 2, tx + nw, nr.bottom() - 2, role_col, 1);
                 const tag_w = w.botTag(ctx, dl, tx + nw, y + g.line_h / 2, u, false, alpha);
                 const stp = w.stamp(&buf, m.msg.timestamp, @divTrunc(ctx.now_ms, 1000));
@@ -1440,14 +1450,14 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             if (flash > 0) d.rect(dl, row, ctx.col(.accent).alpha(0.25 * flash), 0);
             if (reply) {
                 const found = ctx.store.findNear(m.msg.channel, m.msg.reply_to);
-                const ru = if (found) |f| ctx.store.user(f.m.msg.author) else null;
+                const ru = if (found) |f| ctx.store.nameIn(gid, f.m.msg.author) else null;
                 var rb: [160]u8 = undefined;
                 var sb: [96]u8 = undefined;
                 // Original sem texto: a etiqueta entre colchetes ("[arquivo] nome.html").
                 const quoted = if (found) |f| quotedText(ctx, f.m) else "";
                 const tag: ?reply_preview.Label = if (found) |f| (if (quoted.len == 0) reply_preview.of(&f.m.msg) else null) else null;
                 const body = if (tag) |lb| ttyReplyLabel(&sb, lb) else if (found != null) snippet(&sb, quoted) else "…";
-                const head = std.fmt.bufPrint(&rb, "↳ {s}: ", .{if (ru) |x| x.name else "?"}) catch "";
+                const head = std.fmt.bufPrint(&rb, "↳ {s}: ", .{ru orelse "?"}) catch "";
                 const line = std.fmt.bufPrint(rb[head.len..], "{s}", .{body}) catch "";
                 const full = rb[0 .. head.len + line.len];
                 const lr: d.Rect = .{ .x = r.x + g.content_x, .y = y, .w = g.wrap, .h = g.line_h };
@@ -1461,6 +1471,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                     const hw = d.width(rf, g.size - 1, head);
                     qa.mark(.{ .x = lr.x + hw, .y = y, .w = @max(fw - hw, 4), .h = g.line_h }, "reply-kind:{d}:{s}", .{ m.msg.id, @tagName(lb.kind) });
                 }
+                if (found) |f| w.markName(lr, "reply", f.m.msg.author, ru orelse "?");
                 y += g.line_h;
             }
             const ty = y + (g.line_h - g.size * 1.2) / 2;
@@ -1477,6 +1488,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             const nick_col = if (group) role_col else role_col.alpha(0.35);
             nameHit(ctx, m.msg.author, m.msg.id, .{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, 3);
             _ = d.textClipped(dl, fam.get(.bold), g.size, x + col_w - nw, ty, nick_col.alpha(alpha), name, name_col_w);
+            w.markName(.{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, "msg", m.msg.author, name);
             w.botMark(ctx, dl, fam.get(.bold), g.size, x + col_w - nw - mark_w, y, g.line_h, u, (if (group) @as(f32, 1) else 0.35) * alpha);
             x += col_w;
             d.text(dl, fam.get(.regular), g.size, x, ty, ctx.col(.border).mix(ctx.col(.faint), 0.6), " │ ");
@@ -1513,6 +1525,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                     const nw = d.width(fam.get(.semibold), 13, name);
                     nameHit(ctx, m.msg.author, m.msg.id, .{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, 4);
                     d.text(dl, fam.get(.semibold), 13, r.x + left_pad + 6, y, role_col, name);
+                    w.markName(.{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, "msg", m.msg.author, name);
                     _ = w.botTag(ctx, dl, r.x + left_pad + 6 + nw, y + 8, u, false, 1);
                     y += 18;
                 }
@@ -1528,7 +1541,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             if (flash > 0) d.border(dl, br.inset(-3, -3), ctx.col(.accent).alpha(flash), 20, 2);
             if (!self and g.avatar > 0 and group) {
                 const ar: d.Rect = .{ .x = r.x + 20, .y = br.y, .w = g.avatar, .h = g.avatar };
-                w.avatar(ctx, dl, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
+                w.avatarIn(ctx, dl, gid, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
                 nameHit(ctx, m.msg.author, m.msg.id, ar, 5);
             }
             var ty = br.y + 7;
@@ -1721,8 +1734,8 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
             i18n.tr("Editando mensagem  ·  Esc cancela  ·  Enter salva", "Editing message  ·  Esc to cancel  ·  Enter to save")
         else blk: {
             const f = ctx.store.findAny(st.reply_to);
-            const u = if (f) |x| ctx.store.user(x.m.msg.author) else null;
-            if (u) |x| break :blk i18n.fmt(&buf, "Respondendo a {s}", "Replying to {s}", .{x.name});
+            const who = if (f) |x| ctx.store.nameIn(cs.info.guild, x.m.msg.author) else null;
+            if (who) |x| break :blk i18n.fmt(&buf, "Respondendo a {s}", "Replying to {s}", .{x});
             break :blk i18n.tr("Respondendo a mensagem", "Replying to a message");
         };
         d.text(dl, fam.get(.medium), 13, bar.x + 14, bar.y + 8, ctx.col(.muted), t);
@@ -1749,14 +1762,14 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     }
 
     if (d.pflag(n, "typing", true) and cs.typing.items.len > 0) {
-        const u = ctx.store.user(cs.typing.items[0].user);
         var buf: [96]u8 = undefined;
-        const who = if (u) |x| x.name else i18n.tr("alguém", "someone");
+        const who = ctx.store.nameIn(cs.info.guild, cs.typing.items[0].user) orelse i18n.tr("alguém", "someone");
         const t = i18n.fmt(&buf, "{s} está digitando", "{s} is typing", .{who});
         const ty = top - 19;
         const tx = r.x + (if (prompt) @as(f32, 10) else 6);
         w.typingDots(dl, tx + 4, ty + 8, ctx.col(.muted), ctx.now_ms);
         d.text(dl, fam.get(.semibold), 13, tx + 24, ty, ctx.col(.muted), t);
+        w.markName(.{ .x = tx + 24, .y = ty, .w = d.width(fam.get(.semibold), 13, t), .h = 16 }, "typing", cs.typing.items[0].user, who);
     }
     // Modo lento: na mesma linha, à direita.
     send_limits.slowmodeLabel(ctx, fam, limit, r.right() - (if (pill) @as(f32, 24) else 6), top - 19);

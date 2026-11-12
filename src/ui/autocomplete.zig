@@ -232,13 +232,17 @@ fn nameScore(name: []const u8, q: []const u8) i32 {
     return emoji_data.matchName(name, q);
 }
 
-fn addUser(ctx: *d.Ctx, uid: Id, q: []const u8, bonus: i32) void {
+fn addUser(ctx: *d.Ctx, guild: Id, uid: Id, q: []const u8, bonus: i32) void {
     const u = ctx.store.user(uid) orelse return;
     if (uid == ctx.store.me and q.len == 0) return;
-    const sc = nameScore(u.name, q);
+    // Num servidor vai o apelido de lá, com o nome de sempre do lado; a busca
+    // acha pelos dois.
+    const name = ctx.store.nameIn(guild, uid) orelse u.name;
+    const sc = @max(nameScore(name, q), nameScore(u.name, q));
     if (sc == 0) return;
     var it: Item = .{ .kind = .user, .id = uid, .score = sc + bonus };
-    it.setName(u.name);
+    it.setName(name);
+    if (name.ptr != u.name.ptr) it.setHint(u.name);
     add(it);
 }
 
@@ -249,21 +253,21 @@ fn searchUsers(ctx: *d.Ctx, ch: *const types.Channel, cs_msgs: anytype, q: []con
     while (i > 0 and seen_msgs < 50) {
         i -= 1;
         seen_msgs += 1;
-        addUser(ctx, cs_msgs[i].msg.author, q, 40);
+        addUser(ctx, ch.guild, cs_msgs[i].msg.author, q, 40);
     }
     const st_store = ctx.store;
     if (ch.guild == 0) {
-        if (ch.recipient != 0) addUser(ctx, ch.recipient, q, 60);
-        for (ch.recipients) |uid| addUser(ctx, uid, q, 60);
+        if (ch.recipient != 0) addUser(ctx, 0, ch.recipient, q, 60);
+        for (ch.recipients) |uid| addUser(ctx, 0, uid, q, 60);
         return;
     }
     // A lista de membros à vista e todo mundo que já vimos neste servidor.
     if (st_store.memberList(ch.guild)) |ml| for (ml.items.items) |entry| {
-        if (entry == .member) addUser(ctx, entry.member.user, q, 20);
+        if (entry == .member) addUser(ctx, ch.guild, entry.member.user, q, 20);
     };
     if (q.len > 0) {
         var it = st_store.members.keyIterator();
-        while (it.next()) |k| if (k.*[0] == ch.guild) addUser(ctx, k.*[1], q, 10);
+        while (it.next()) |k| if (k.*[0] == ch.guild) addUser(ctx, ch.guild, k.*[1], q, 10);
     }
     const perms = st_store.channelPermissions(ch);
     const can_all = perms & types.perm.mention_everyone != 0;
@@ -680,7 +684,7 @@ fn drawRow(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const Item, row: d.Rect) void {
     const fam = ctx.ui;
     const alpha: f32 = if (it.locked) 0.45 else 1;
     switch (it.kind) {
-        .user => w.avatar(ctx, dl, ix, cy, 24, it.id, .circle, null, 1),
+        .user => w.avatarIn(ctx, dl, ctx.st.guild, ix, cy, 24, it.id, .circle, null, 1),
         .role, .everyone, .here => {
             const col = if (it.color != 0) d.Rgba.hex(it.color) else ctx.col(.muted);
             const tw = d.width(fam.get(.bold), 17, "@");
@@ -723,6 +727,7 @@ fn drawRow(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const Item, row: d.Rect) void {
     const hw = if (hint.len > 0) d.width(fam.get(.regular), 12, hint) else 0;
     const tc = (if (it.kind == .user) w.nameColor(ctx, ctx.st.guild, it.id) else ctx.col(.text)).alpha(alpha);
     _ = d.textClipped(dl, fam.get(.semibold), 14, tx, d.centerY(row, 14), tc, label, row.w - 56 - hw);
+    if (it.kind == .user) w.markName(row, "auto", it.id, label);
     if (hint.len > 0) d.text(dl, fam.get(.regular), 12, row.right() - hw - 10, d.centerY(row, 12), ctx.col(.faint), hint);
     if (it.locked) icons.lock(dl, row.right() - hw - 26, cy - 2, ctx.col(.faint).u());
 }

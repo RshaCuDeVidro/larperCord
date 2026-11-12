@@ -103,6 +103,18 @@ pub fn visiblePart(key: []const u8) ?layout.Rect {
     return null;
 }
 
+/// Alguma marcação com o nome que tem o centro dentro de `r` (o mesmo nome pode
+/// estar em vários lugares: a foto de alguém na lista e na mensagem).
+pub fn anyIn(key: []const u8, r: layout.Rect) bool {
+    for (prev[0..prev_count]) |m| {
+        if (!std.mem.eql(u8, m.key[0..m.len], key)) continue;
+        const cx = m.rect.x + m.rect.w / 2;
+        const cy = m.rect.y + m.rect.h / 2;
+        if (cx >= r.x and cx <= r.right() and cy >= r.y and cy <= r.bottom()) return true;
+    }
+    return false;
+}
+
 /// A primeira marcação com o nome (quando dois elementos têm o mesmo
 /// nome e se quer o de cima da página).
 pub fn findFirst(key: []const u8) ?layout.Rect {

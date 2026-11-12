@@ -124,6 +124,7 @@ const Rows = struct {
         }
         const online = !offline_group and u.status != .offline;
         const name_col = w.nameColor(ctx, rw.guild, uid);
+        const name = ctx.store.nameIn(rw.guild, uid) orelse u.name;
         if (rw.tty) {
             const rr: d.Rect = .{ .x = r.x + 4, .y = rw.y, .w = r.w - 8, .h = 20 };
             const hb = d.hit(ctx, @truncate(uid), rr);
@@ -133,7 +134,8 @@ const Rows = struct {
             const fs = ctx.th.font_size;
             d.text(dl, fam.get(.regular), fs - 1, rr.x + 6, d.centerY(rr, fs - 1), w.statusColor(ctx, if (online) u.status else .offline), w.statusGlyph(if (online) u.status else .offline));
             const castigo_t = moderacao.castigoAte(ctx, rw.guild, uid);
-            const nw_t = d.textClipped(dl, fam.get(if (online) .bold else .regular), fs - 1, rr.x + 24, d.centerY(rr, fs - 1), if (online) name_col else ctx.col(.faint), u.name, rr.w - 30 - w.botTagSpace(ctx, u, true) - (if (castigo_t != 0) moderacao.relogio_w else 0));
+            const nw_t = d.textClipped(dl, fam.get(if (online) .bold else .regular), fs - 1, rr.x + 24, d.centerY(rr, fs - 1), if (online) name_col else ctx.col(.faint), name, rr.w - 30 - w.botTagSpace(ctx, u, true) - (if (castigo_t != 0) moderacao.relogio_w else 0));
+            w.markName(rr, "member", uid, name);
             _ = w.botTag(ctx, dl, rr.x + 24 + nw_t, rr.y + rr.h / 2, u, true, if (online) 1 else 0.5);
             if (castigo_t != 0) moderacao.relogio(ctx, dl, rr.right() - 12, rr.y + rr.h / 2, castigo_t, if (online) 1 else 0.6);
             rw.y += 20;
@@ -146,7 +148,8 @@ const Rows = struct {
         const k = anim.to(anim.id("member", uid), if (hb.hovered) 1 else 0, 24);
         d.rect(dl, rr, ctx.col(.hover).alpha(k * 1.4), ctx.th.radius);
         const alpha: f32 = if (online) 1 else 0.38 + 0.4 * k;
-        w.avatar(ctx, dl, rr.x + 24, rr.y + 21, 32, uid, .circle, if (online) ctx.col(.sidebar) else null, alpha);
+        w.avatarIn(ctx, dl, rw.guild, rr.x + 24, rr.y + 21, 32, uid, .circle, if (online) ctx.col(.sidebar) else null, alpha);
+        w.markName(rr, "member", uid, name);
         // De castigo: um reloginho no fim da linha (o nome encolhe para caber).
         const castigo = moderacao.castigoAte(ctx, rw.guild, uid);
         const name_room = rr.w - 56 - w.botTagSpace(ctx, u, false) - (if (castigo != 0) moderacao.relogio_w else 0);
@@ -154,11 +157,11 @@ const Rows = struct {
         // o tema já garante legível (4.5:1); a cor do cargo em 38% sumia no fundo.
         const off_col = ctx.col(.faint).mix(ctx.col(.muted), k);
         if (u.activity != null and online) {
-            const nw = d.textClipped(dl, fam.get(.medium), 15, rr.x + 48, rr.y + 3, name_col, u.name, name_room);
+            const nw = d.textClipped(dl, fam.get(.medium), 15, rr.x + 48, rr.y + 3, name_col, name, name_room);
             _ = w.botTag(ctx, dl, rr.x + 48 + nw, rr.y + 12, u, false, alpha);
             _ = d.textClipped(dl, fam.get(.regular), 12, rr.x + 48, rr.y + 22, ctx.col(.muted), u.activity.?, rr.w - 56);
         } else {
-            const nw = d.textClipped(dl, fam.get(.medium), 15, rr.x + 48, d.centerY(rr, 15), if (online) name_col else off_col, u.name, name_room);
+            const nw = d.textClipped(dl, fam.get(.medium), 15, rr.x + 48, d.centerY(rr, 15), if (online) name_col else off_col, name, name_room);
             _ = w.botTag(ctx, dl, rr.x + 48 + nw, rr.y + rr.h / 2, u, false, alpha);
         }
         if (castigo != 0) moderacao.relogio(ctx, dl, rr.right() - 16, rr.y + rr.h / 2, castigo, @max(alpha, 0.6));

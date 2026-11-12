@@ -55,6 +55,8 @@ fn isWebhook(ctx: *const d.Ctx, uid: Id) bool {
 
 fn bannerUrl(buf: []u8, uid: Id, hash: []const u8) []const u8 {
     if (std.mem.startsWith(u8, hash, "demo:")) return hash;
+    // O banner do perfil de um servidor já vem com o caminho (guilds/…/banners/…).
+    if (std.mem.startsWith(u8, hash, "guilds/")) return std.fmt.bufPrint(buf, "https://cdn.discordapp.com/{s}.png?size=600", .{hash}) catch "";
     return std.fmt.bufPrint(buf, "https://cdn.discordapp.com/banners/{d}/{s}.png?size=600", .{ uid, hash }) catch "";
 }
 
@@ -97,16 +99,27 @@ fn accountMs(uid: Id) i64 {
 
 // --- Seções -------------------------------------------------------------------
 
-/// Nome, @usuário • pronomes e as insígnias.
-fn names(col: *Col, uid: Id, pf: ?types.Profile, big: bool) void {
+/// O perfil guardado, se vale aqui: um com a bio, os pronomes ou o banner de
+/// outro servidor espera o deste chegar (o pedido sai ao abrir).
+fn profileFor(ctx: *const d.Ctx, uid: Id, gid: Id) ?types.Profile {
+    const p = ctx.store.profiles.get(uid) orelse return null;
+    if (p.server and p.guild != gid) return null;
+    return p;
+}
+
+/// Nome (num servidor, o apelido de lá, com o nome de sempre menor embaixo),
+/// @usuário • pronomes e as insígnias.
+fn names(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, big: bool) void {
     const ctx = col.ctx;
     const u = ctx.store.user(uid) orelse return;
+    const name = ctx.store.nameIn(gid, uid) orelse u.name;
     const ns: f32 = if (big) 24 else 20;
     const name_room = col.w - w.botTagSpace(ctx, u, false);
-    const nr: d.Rect = .{ .x = col.x, .y = col.y, .w = @min(d.width(ctx.ui.get(.bold), ns, u.name), name_room), .h = ns + 4 };
+    const nr: d.Rect = .{ .x = col.x, .y = col.y, .w = @min(d.width(ctx.ui.get(.bold), ns, name), name_room), .h = ns + 4 };
     if (col.dl) |dl| {
-        const nw = d.textClipped(dl, ctx.ui.get(.bold), ns, col.x, col.y, ctx.col(.text), u.name, name_room);
+        const nw = d.textClipped(dl, ctx.ui.get(.bold), ns, col.x, col.y, ctx.col(.text), name, name_room);
         _ = w.botTag(ctx, dl, col.x + nw, col.y + ns * 0.62, u, false, 1);
+        if (big) w.markName(nr, "full", uid, name) else w.markName(nr, "card", uid, name);
     }
     if (!big) {
         // No cartão, o nome abre o perfil grande.
@@ -116,6 +129,15 @@ fn names(col: *Col, uid: Id, pf: ?types.Profile, big: bool) void {
         if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid } });
     }
     col.y += ns + 8;
+    if (name.ptr != u.name.ptr) {
+        // Com apelido: o nome global logo embaixo, menor, como no Discord.
+        const gs: f32 = if (big) 15.5 else 14.5;
+        if (col.dl) |dl| {
+            const gw = d.textClipped(dl, ctx.ui.get(.semibold), gs, col.x, col.y, ctx.col(.text).mix(ctx.col(.muted), 0.2), u.name, col.w - 8);
+            w.markName(.{ .x = col.x, .y = col.y, .w = gw, .h = gs + 4 }, "global", uid, u.name);
+        }
+        col.y += gs + 7;
+    }
     var lb: [160]u8 = undefined;
     const p = pf orelse types.Profile{};
     const uname = if (p.username.len > 0 and !std.mem.eql(u8, p.username, u.name)) p.username else "";
@@ -285,7 +307,7 @@ fn voice(col: *Col, uid: Id) void {
         for (ms[0..@min(ms.len, 4)], 0..) |m, i| {
             const ax = cr.x + 24 + @as(f32, @floatFromInt(i % 2)) * 26;
             const ay = cr.y + 46 + @as(f32, @floatFromInt(i / 2)) * 26;
-            w.avatar(ctx, dl, ax, ay, 22, m, .circle, null, 1);
+            w.avatarIn(ctx, dl, cs.info.guild, ax, ay, 22, m, .circle, null, 1);
         }
         if (ms.len > 4) {
             var pb: [8]u8 = undefined;
@@ -574,8 +596,9 @@ fn note(col: *Col, uid: Id) void {
 
 /// Banner (imagem, cor de destaque ou do cargo), avatar com status e o botão
 /// de zoom. Retorna o y logo abaixo do avatar.
-fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, pf: ?types.Profile, banner_h: f32, av: f32, radius: f32, ids: usize) f32 {
+fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, gid: Id, pf: ?types.Profile, banner_h: f32, av: f32, radius: f32, ids: usize) f32 {
     const u = ctx.store.user(uid).?;
+    const name = ctx.store.nameIn(gid, uid) orelse u.name;
     const br: d.Rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = banner_h };
     var drew = false;
     if (pf) |p| if (p.banner.len > 0) {
@@ -596,7 +619,7 @@ fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, pf: ?types.Profile
                 qa.mark(br, "profile-banner", .{});
                 if (hb.clicked) {
                     var fb: [192]u8 = undefined;
-                    att.openOriginal(ctx, w.bannerFull(&fb, uid, p.banner), u.name, @intCast(t.w), @intCast(t.h));
+                    att.openOriginal(ctx, w.bannerFull(&fb, uid, p.banner), name, @intCast(t.w), @intCast(t.h));
                 }
             },
             else => {},
@@ -612,7 +635,7 @@ fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, pf: ?types.Profile
     const acy = br.bottom();
     const bg = ctx.col(.overlay);
     d.circle(dl, acx, acy, av / 2 + 6, bg);
-    w.avatar(ctx, dl, acx, acy, av, uid, .circle, null, 1);
+    w.avatarIn(ctx, dl, gid, acx, acy, av, uid, .circle, null, 1);
     const sr = av * 0.13;
     const sx = acx + av * 0.36;
     const sy = acy + av * 0.36;
@@ -622,22 +645,34 @@ fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, pf: ?types.Profile
     const hb = d.hit(ctx, ids + 2, ar);
     qa.mark(ar, "profile-avatar", .{});
     var sb: [160]u8 = undefined;
-    const small = if (u.avatar) |h| w.cdnUrl(&sb, .avatar, uid, h) else "";
+    const hash = avatarHash(ctx, gid, uid);
+    const small = if (hash) |h| w.cdnUrl(&sb, .avatar, uid, h) else "";
     // Modo economia: o primeiro clique só baixa a foto.
     const held_back = small.len > 0 and ctx.images.blocked(small);
-    d.tip(ctx, ar, if (held_back) i18n.tr("Carregar foto", "Load picture") else i18n.tr("Ver foto", "View picture"), hb.hovered and u.avatar != null);
+    d.tip(ctx, ar, if (held_back) i18n.tr("Carregar foto", "Load picture") else i18n.tr("Ver foto", "View picture"), hb.hovered and hash != null);
     if (hb.clicked and held_back) {
         ctx.images.allow(small);
-    } else if (hb.clicked) viewAvatar(ctx, uid);
+    } else if (hb.clicked) viewAvatarIn(ctx, gid, uid);
     return acy + av / 2 + 14;
+}
+
+/// A foto de alguém num servidor: a do perfil de lá ou a global (null = sem foto).
+fn avatarHash(ctx: *const d.Ctx, gid: Id, uid: Id) ?[]const u8 {
+    if (ctx.store.face(gid, uid)) |f| if (f.avatar) |h| return h;
+    return if (ctx.store.user(uid)) |u| u.avatar else null;
 }
 
 /// A foto de alguém no visualizador, em tamanho cheio.
 pub fn viewAvatar(ctx: *d.Ctx, uid: Id) void {
+    viewAvatarIn(ctx, 0, uid);
+}
+
+/// Como `viewAvatar`, num servidor: a foto do perfil de lá, quando tem.
+pub fn viewAvatarIn(ctx: *d.Ctx, gid: Id, uid: Id) void {
     const u = ctx.store.user(uid) orelse return;
-    const h = u.avatar orelse return;
+    const h = avatarHash(ctx, gid, uid) orelse return;
     var zb: [192]u8 = undefined;
-    att.openOriginal(ctx, w.cdnFull(&zb, .avatar, uid, h), u.name, 1024, 1024);
+    att.openOriginal(ctx, w.cdnFull(&zb, .avatar, uid, h), ctx.store.nameIn(gid, uid) orelse u.name, 1024, 1024);
 }
 
 /// Botão redondo pequeno no canto do banner.
@@ -655,10 +690,10 @@ pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32) void {
     if (ctx.store.user(uid) == null) return popup.close(ctx);
     const hook = isWebhook(ctx, uid);
     if (!hook) ctx.act(.{ .want_profile = uid });
-    const pf = ctx.store.profiles.get(uid);
+    const gid = ctx.st.guild;
+    const pf = profileFor(ctx, uid, gid);
     const width: f32 = 340;
     const banner_h: f32 = if (pf != null and pf.?.banner.len > 0) 120 else 92;
-    const gid = ctx.st.guild;
     const av: f32 = 80;
 
     // Mede as seções antes de abrir a janela.
@@ -674,7 +709,7 @@ pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32) void {
     const radius = @max(ctx.th.radius + 4, 6);
     d.shadow(dl, r, radius, 20, ctx.col(.shadow));
     d.rect(dl, r, ctx.col(.overlay), radius);
-    const top = header(ctx, dl, .{ .x = r.x + 1, .y = r.y + 1, .w = r.w - 2, .h = 0 }, uid, pf, banner_h, av, radius, 900);
+    const top = header(ctx, dl, .{ .x = r.x + 1, .y = r.y + 1, .w = r.w - 2, .h = 0 }, uid, gid, pf, banner_h, av, radius, 900);
     d.border(dl, r, ctx.col(.border), radius, 1);
     // Abre o perfil grande.
     const fr: d.Rect = .{ .x = r.right() - 40, .y = r.y + 10, .w = 28, .h = 28 };
@@ -726,7 +761,7 @@ pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32) void {
 
 /// O miolo do cartão pequeno.
 fn body(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
-    names(col, uid, pf, false);
+    names(col, uid, pf, gid, false);
     mutuals(col, uid, pf);
     bio(col, uid, pf, false);
     activities(col, uid, false);
@@ -743,8 +778,8 @@ var tab_t0: i64 = 0;
 pub fn full(ctx: *d.Ctx, uid: Id) void {
     if (ctx.store.user(uid) == null) return popup.close(ctx);
     if (!isWebhook(ctx, uid)) ctx.act(.{ .want_profile = uid });
-    const pf = ctx.store.profiles.get(uid);
     const gid = ctx.st.guild;
+    const pf = profileFor(ctx, uid, gid);
     const mw = @min(ctx.win.w - 48, 960);
     const mh = @min(ctx.win.h - 48, 720);
     const r: d.Rect = .{ .x = ctx.win.x + (ctx.win.w - mw) / 2, .y = ctx.win.y + (ctx.win.h - mh) / 2, .w = mw, .h = mh };
@@ -766,9 +801,9 @@ pub fn full(ctx: *d.Ctx, uid: Id) void {
         popup.track(ldl);
         const o = c.ImGui_GetCursorScreenPos();
         const banner_h: f32 = 140;
-        const top = header(ctx, ldl, .{ .x = o.x, .y = o.y, .w = left.w, .h = 0 }, uid, pf, banner_h, 120, radius, 2000);
+        const top = header(ctx, ldl, .{ .x = o.x, .y = o.y, .w = left.w, .h = 0 }, uid, gid, pf, banner_h, 120, radius, 2000);
         var col: Col = .{ .ctx = ctx, .dl = ldl, .x = o.x + 24, .w = left.w - 48, .y = top + 8, .ids = 3000 };
-        names(&col, uid, pf, true);
+        names(&col, uid, pf, gid, true);
         buttons(&col, uid);
         bio(&col, uid, pf, false);
         since(&col, uid, pf, gid, true);

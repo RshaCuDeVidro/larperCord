@@ -353,6 +353,8 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
     if (ch.kind == .voice) {
         for (cs.voice_members.items) |uid| {
             const u = ctx.store.user(uid) orelse continue;
+            // O apelido e a foto do perfil do servidor, como no Discord (#19).
+            const name = ctx.store.nameIn(ch.guild, uid) orelse u.name;
             const speaking = ctx.store.isSpeaking(uid, ctx.now_ms);
             const vf = ctx.store.voiceFlags(uid);
             // Clicar em quem está na call abre o perfil (botão direito: menu).
@@ -368,17 +370,19 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
             switch (variant) {
                 .tree => {
                     var buf: [80]u8 = undefined;
-                    const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", u.name, w.botSuffix(u), voiceFlagsTty(vf) }) catch u.name;
+                    const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", name, w.botSuffix(u), voiceFlagsTty(vf) }) catch name;
                     d.text(dl, fam.get(.regular), fs - 2, rr.x + 4, y2 + 2, if (speaking) ctx.col(.online) else ctx.col(.muted), t);
+                    w.markName(vr, "voice", uid, name);
                     y2 += 20;
                 },
                 else => {
                     const ax = rr.x + 40;
                     const acy = y2 + 13;
                     if (speaking) c.ImDrawList_AddCircleEx(dl, d.v(ax, acy), 12.5, ctx.col(.online).u(), 0, 2, 0);
-                    w.avatar(ctx, dl, ax, acy, 21, uid, .circle, null, 1);
+                    w.avatarIn(ctx, dl, ch.guild, ax, acy, 21, uid, .circle, null, 1);
                     const icons_w = voiceFlagIcons(ctx, dl, vf, vr.right() - 6, acy);
-                    const vn = d.textClipped(dl, fam.get(.medium), 14, ax + 18, acy - 9, if (speaking) ctx.col(.text) else ctx.col(.muted), u.name, vr.right() - (ax + 18) - icons_w - 6 - w.botTagSpace(ctx, u, false));
+                    const vn = d.textClipped(dl, fam.get(.medium), 14, ax + 18, acy - 9, if (speaking) ctx.col(.text) else ctx.col(.muted), name, vr.right() - (ax + 18) - icons_w - 6 - w.botTagSpace(ctx, u, false));
+                    w.markName(vr, "voice", uid, name);
                     _ = w.botTag(ctx, dl, ax + 18 + vn, acy, u, false, 1);
                     y2 += 28;
                 },

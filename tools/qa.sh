@@ -42,6 +42,8 @@ QA_SUITE=entrada run "entrada" $bin --qa --theme classico
 QA_SUITE=interacoes run "interações" $bin --qa --theme classico
 # Tempo da call nos canais de voz: op 43, formato, e quando o app acorda por ele.
 QA_SUITE=cronometro run "tempo da call" $bin --qa --theme classico
+# Perfil de servidor (#19): apelido e foto de lá em cada lugar, o global fora dele.
+QA_SUITE=perfil run "perfil do servidor" $bin --qa --theme classico
 QA_SUITE=mascote run "mascote" $bin --qa --theme classico
 # Fontes reserva (CJK) só quando um texto pede, e o mixer da call: fora da geral.
 QA_SUITE=escritas run "escritas" $bin --qa --theme classico

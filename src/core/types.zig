@@ -47,6 +47,9 @@ pub const Profile = struct {
     username: []const u8 = "",
     /// Servidor do pedido e quando a pessoa entrou nele (ms; 0 = não sabe).
     guild: Id = 0,
+    /// A bio, os pronomes ou o banner são os do perfil desse servidor: o
+    /// cartão aberto em outro lugar espera o perfil de lá.
+    server: bool = false,
     joined_ms: i64 = 0,
     /// Impulsionando o servidor desde (ms; 0 = não).
     boost_ms: i64 = 0,
@@ -197,6 +200,15 @@ pub const MemberInfo = struct {
     pub fn roleSlice(m: *const MemberInfo) []const Id {
         return m.roles[0..m.n_roles];
     }
+};
+
+/// O perfil de alguém num servidor: o apelido e a foto de lá, que entram no
+/// lugar dos globais (null = usa o global). `avatar` já é o caminho no CDN
+/// ("guilds/{servidor}/users/{pessoa}/avatars/{hash}"); na demonstração,
+/// "demo:av:N". Textos alocados com o ev_alloc.
+pub const Face = struct {
+    nick: ?[]const u8 = null,
+    avatar: ?[]const u8 = null,
 };
 
 /// Uma linha da lista de membros, na ordem em que o Discord manda

@@ -2403,7 +2403,7 @@ pub const App = struct {
         if (set.taskbar_flash and !focused and !hidden) _ = c.SDL_FlashWindow(app.win.window, c.SDL_FLASH_UNTIL_FOCUSED);
         if (!set.desktop_notifs or focused or app.notifiers.items.len >= 8) return;
 
-        const who = if (app.store.user(m.author)) |u| u.name else "?";
+        const who = app.store.nameIn(cs.info.guild, m.author) orelse "?";
         var tb: [160]u8 = undefined;
         const title = if (cs.info.guild == 0 and !cs.info.group)
             std.fmt.bufPrintSentinel(&tb, "{s}", .{who}, 0) catch return
