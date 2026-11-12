@@ -66,6 +66,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
         } else if (std.mem.eql(u8, arg, "--mode")) {
             const m = it.next() orelse return fail("--mode precisa de claro ou escuro");
             opts.mode = if (std.mem.eql(u8, m, "claro") or std.mem.eql(u8, m, "light")) .light else .dark;
+        } else if (std.mem.eql(u8, arg, "--qa-list")) {
+            // As baterias que QA_SUITE aceita, uma por linha (para scripts).
+            if (comptime @import("ui/qa.zig").compiled) {
+                var names: [128][]const u8 = undefined;
+                for (@import("qa_runner.zig").suiteNames(&names)) |n| std.debug.print("{s}\n", .{n});
+                return;
+            } else return fail("este build não tem o QA: compile com -Doptimize=debug ou -Dqa=true");
         } else if (std.mem.eql(u8, arg, "--qa")) {
             if (!@import("ui/qa.zig").compiled) return fail("este build não tem o QA: compile com -Doptimize=debug ou -Dqa=true");
             opts.qa = true;

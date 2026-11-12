@@ -48,8 +48,20 @@ pub fn setScope(comptime fmt: []const u8, args: anytype) void {
     scope_len = if (std.fmt.bufPrint(&scope_buf, fmt, args)) |t| t.len else |_| 0;
 }
 
+/// Mais marcas num quadro do que cabem: avisa uma vez (senão um "elemento não
+/// encontrado" depois disso não teria explicação).
+var overflow_told = false;
+fn full() bool {
+    if (count < marks.len) return false;
+    if (!overflow_told) {
+        overflow_told = true;
+        std.log.warn("qa: mais de {d} marcas num quadro; as de depois não foram registradas", .{marks.len});
+    }
+    return true;
+}
+
 pub fn mark(r: layout.Rect, comptime fmt: []const u8, args: anytype) void {
-    if (!on() or count >= marks.len) return;
+    if (!on() or full()) return;
     const C = @import("c");
     const dl = C.ImGui_GetWindowDrawList();
     const lo = C.ImDrawList_GetClipRectMin(dl);
@@ -66,7 +78,7 @@ pub fn mark(r: layout.Rect, comptime fmt: []const u8, args: anytype) void {
 /// tudo): não pede a janela atual, que fora de uma janela é a "Debug" escondida do
 /// ImGui; pedir a lista de desenho dela a mostra na tela, e ela engole os cliques.
 pub fn markTop(r: layout.Rect, comptime fmt: []const u8, args: anytype) void {
-    if (!on() or count >= marks.len) return;
+    if (!on() or full()) return;
     var m: Mark = .{ .key = undefined, .len = 0, .rect = r, .clip = .{ .x = -100_000, .y = -100_000, .w = 200_000, .h = 200_000 } };
     @memcpy(m.key[0..scope_len], scope_buf[0..scope_len]);
     const s = std.fmt.bufPrint(m.key[scope_len..], fmt, args) catch return;

@@ -188,6 +188,8 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     @import("attachments.zig").viewer(ctx);
     palette.draw(ctx);
     search.draw(ctx);
+    // Fechada há minutos, a busca solta o índice do disco (um teste barato por quadro).
+    _ = search.releaseIdle(false);
     toast(ctx);
     connectionBanner(ctx);
     @import("mascote_pet.zig").draw(ctx);

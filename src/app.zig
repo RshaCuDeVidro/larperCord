@@ -3019,6 +3019,8 @@ pub const App = struct {
                     hidden_since_ms = now_ms;
                 } else if (now_ms - hidden_since_ms >= janela.hidden_release_ms) {
                     const before = app.images.bytes;
+                    // O índice da busca local, com ela fechada, também sai.
+                    if (@import("ui/search.zig").releaseIdle(true)) app.trim_wanted.store(true, .release);
                     if (app.images.releaseHidden()) {
                         app.trim_wanted.store(true, .release);
                         if (app.opts.stats) std.log.info("janela escondida: soltou {d} KB, ficaram {d} imagens, {d} KB", .{ (before - app.images.bytes) / 1024, app.images.readyCount(), app.images.bytes / 1024 });
