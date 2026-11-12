@@ -1138,6 +1138,11 @@ pub const App = struct {
         while (it.next()) |uid| app.cmd(.{ .voice_volume = .{ .user = uid.*, .volume = vs.gain(uid.*) } });
         var mit = vs.muted.keyIterator();
         while (mit.next()) |uid| if (!vs.level.contains(uid.*)) app.cmd(.{ .voice_volume = .{ .user = uid.*, .volume = 0 } });
+        // "Tirar ruído" e "Igualar volume" de quem tem (os dois conjuntos juntos, sem repetir).
+        var dit = vs.denoise.keyIterator();
+        while (dit.next()) |uid| app.cmd(.{ .voice_dsp = .{ .user = uid.*, .denoise = true, .level = vs.levelOn(uid.*) } });
+        var lit = vs.leveled.keyIterator();
+        while (lit.next()) |uid| if (!vs.denoiseOn(uid.*)) app.cmd(.{ .voice_dsp = .{ .user = uid.*, .denoise = false, .level = true } });
     }
 
     pub fn saveSettings(app: *App) void {
@@ -2020,6 +2025,12 @@ pub const App = struct {
                 // Tirar o silêncio volta para o volume de antes (core/volumes.zig).
                 st.volumes.setMuted(app.gpa, vm.user, vm.mute);
                 app.cmd(.{ .voice_volume = .{ .user = vm.user, .volume = st.volumes.gain(vm.user) } });
+                app.saveSettings();
+            },
+            .set_voice_dsp => |vd| {
+                st.volumes.setDenoise(app.gpa, vd.user, vd.denoise);
+                st.volumes.setLevel(app.gpa, vd.user, vd.level);
+                app.cmd(.{ .voice_dsp = .{ .user = vd.user, .denoise = vd.denoise, .level = vd.level } });
                 app.saveSettings();
             },
             .create_thread => |ct| {

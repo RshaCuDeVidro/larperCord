@@ -2884,6 +2884,7 @@ const ops_voice = [_]Op{ s("voz"), expect("pronto", ready) } ++ qa_volume.fora +
     .{ .shot = "voz-mixer-mudo" },
     click("voice-mute:1001"),
     expect("voltar a ouvir", userAudible),
+} ++ qa_volume.dsp ++ [_]Op{
     click("voice-mixer-close"),
     expect("fechar o mixer", notMixerOpen),
 } ++ qa_volume.na_call ++ [_]Op{
