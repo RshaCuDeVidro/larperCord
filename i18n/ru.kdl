@@ -1617,7 +1617,7 @@
 "Unpin Message" "Открепить сообщение"
 "Unreads" "Непрочитанные"
 "unsupported voice encryption mode ({s})" "неподдерживаемый режим шифрования голоса ({s})"
-"Until I turn it off" "Пока я его не выключу"
+"Until I turn it off" "Пока не выключу"
 "Until then you can read, but not write, react or join calls." "До тех пор вы можете читать, но не можете писать, ставить реакции и присоединяться к звонкам."
 "until {1d:0>2}/{0d:0>2} {2s}" "до {1}.{0} {2}"
 "until {s}" "до {s}"

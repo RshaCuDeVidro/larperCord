@@ -7,6 +7,8 @@ const d = @import("draw.zig");
 const qa = @import("qa.zig");
 const w = @import("widgets.zig");
 const i18n = @import("i18n.zig");
+const inbox = @import("inbox.zig");
+const settings = @import("settings.zig");
 const filtros = @import("../core/filtros.zig");
 const Id = @import("../core/types.zig").Id;
 
@@ -29,9 +31,10 @@ const P = struct {
         p.y += 26;
     }
 
+    /// Quebra a linha em vez de cortar (em russo as notas passam de uma linha).
     fn note(p: *P, t: []const u8) void {
-        _ = d.textClipped(p.dl, p.ctx.ui.get(.regular), 13.5, p.x, p.y, p.ctx.col(.faint), t, p.w);
-        p.y += 26;
+        const h = inbox.wrapText(p.dl, p.ctx.ui.get(.regular), 13.5, p.x, p.y, p.w, t, 6, p.ctx.col(.faint));
+        p.y += @round(h + 7.4);
     }
 
     fn divider(p: *P) void {
@@ -93,8 +96,10 @@ fn words(p: *P, which: filtros.Which, buf: []u8) void {
     const tag = if (which == .alert) "alerta" else "filtro";
     const base: usize = if (which == .alert) 0x5F000 else 0x5F400;
 
-    // Caixa de texto + "Adicionar".
-    const bw: f32 = 120;
+    // Caixa de texto + "Adicionar": o botão cresce até caber o texto (em russo passa de
+    // 120), e a caixa fica com o resto.
+    const add_label = if (which == .alert) i18n.tr("Adicionar alerta", "Add alert") else i18n.tr("Adicionar filtro", "Add filter");
+    const bw: f32 = @max(120, d.width(ctx.ui.get(.semibold), 14, add_label) + 28);
     const ir: d.Rect = .{ .x = p.x, .y = p.y, .w = p.w - bw - 10, .h = 38 };
     d.rect(p.dl, ir, ctx.col(.rail).mix(ctx.col(.elevated), 0.3), ctx.th.radius);
     d.border(p.dl, ir, ctx.col(.border), ctx.th.radius, 1);
@@ -224,8 +229,10 @@ fn focus(p: *P) void {
         d.rect(p.dl, r, ctx.col(.rail).alpha(0.6).mix(ctx.col(.accent).alpha(0.22), if (sel) 1 else if (hb.hovered) 0.4 else 0), ctx.th.radius + 2);
         d.border(p.dl, r, if (sel) ctx.col(.accent) else ctx.col(.border), ctx.th.radius + 2, if (sel) 2 else 1);
         const label = i18n.tr(o.pt, o.en);
-        const tw = d.width(ctx.ui.get(.semibold), 15, label);
-        _ = d.textClipped(p.dl, ctx.ui.get(.semibold), 15, r.x + @max(6, (r.w - tw) / 2), d.centerY(r, 15), if (sel) ctx.col(.text) else ctx.col(.muted), label, r.w - 12);
+        // Longo demais (russo): a fonte diminui em vez de cortar o texto.
+        const fs = settings.fitSize(ctx.ui.get(.semibold), 15, 11, label, r.w - 12);
+        const tw = d.width(ctx.ui.get(.semibold), fs, label);
+        _ = d.textClipped(p.dl, ctx.ui.get(.semibold), fs, r.x + @max(6, (r.w - tw) / 2), d.centerY(r, fs), if (sel) ctx.col(.text) else ctx.col(.muted), label, r.w - 12);
         if (hb.clicked) {
             if (o.min) |m| f.startFocus(ctx.now_ms, m) else if (on) f.endFocus(ctx.store);
         }

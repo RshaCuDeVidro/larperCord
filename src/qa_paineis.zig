@@ -1360,6 +1360,7 @@ pub const ops_no_scripts = [_]Op{
 // --- Texto traduzido cortado (#22) --------------------------------------------
 
 const i18n = @import("ui/i18n.zig");
+const settings_ui = @import("ui/settings.zig");
 
 fn openPage(comptime pg: S.Page) *const fn (*App) void {
     return struct {
@@ -1373,6 +1374,7 @@ fn openPage(comptime pg: S.Page) *const fn (*App) void {
 fn startCuts(app: *App, l: i18n.Lang) void {
     i18n.set(l);
     i18n.cuts.store(0, .monotonic);
+    settings_ui.overflows.store(0, .monotonic);
     app.st.filtros.startFocus(gw.nowMs(), 30);
 }
 fn cutsRu(app: *App) void {
@@ -1389,13 +1391,20 @@ fn cutsDone(app: *App) void {
 fn noCuts(_: *App) bool {
     return i18n.cuts.load(.monotonic) == 0;
 }
+/// Nada maior que a área dele: botão mais largo que a página, rótulo sob o interruptor,
+/// opção que não cabe no botão nem com a fonte menor.
+fn noOverflow(_: *App) bool {
+    if (settings_ui.overflows.load(.monotonic) == 0) return true;
+    std.log.warn("texto maior que a área: \"{s}\"", .{settings_ui.last_overflow[0..settings_ui.last_overflow_len]});
+    return false;
+}
 
 const n_pages = std.meta.tags(S.Page).len;
 
 /// Todas as páginas das configurações num idioma; a página Sobre e a de alertas
 /// (com o modo foco) ficam fotografadas. i18n.cuts só conta nos builds de debug.
-fn cutPass(comptime start: *const fn (*App) void, comptime code: []const u8) [2 + 2 * n_pages + 7]Op {
-    var out: [2 + 2 * n_pages + 7]Op = undefined;
+fn cutPass(comptime start: *const fn (*App) void, comptime code: []const u8) [2 + 2 * n_pages + 8]Op {
+    var out: [2 + 2 * n_pages + 8]Op = undefined;
     out[0] = .{ .run = start };
     out[1] = .{ .wait = 150 };
     for (std.meta.tags(S.Page), 0..) |pg, i| {
@@ -1404,12 +1413,13 @@ fn cutPass(comptime start: *const fn (*App) void, comptime code: []const u8) [2 
     }
     const k = 2 + 2 * n_pages;
     out[k] = expect(code ++ ": nenhuma página das configurações corta texto traduzido", noCuts);
-    out[k + 1] = .{ .run = openPage(.sobre) };
-    out[k + 2] = .{ .wait = 150 };
-    out[k + 3] = .{ .shot = "cortes-" ++ code ++ "-sobre" };
-    out[k + 4] = .{ .run = openPage(.filtros) };
-    out[k + 5] = .{ .wait = 150 };
-    out[k + 6] = .{ .shot = "cortes-" ++ code ++ "-filtros" };
+    out[k + 1] = expect(code ++ ": nenhum texto das configurações passa da área dele", noOverflow);
+    out[k + 2] = .{ .run = openPage(.sobre) };
+    out[k + 3] = .{ .wait = 150 };
+    out[k + 4] = .{ .shot = "cortes-" ++ code ++ "-sobre" };
+    out[k + 5] = .{ .run = openPage(.filtros) };
+    out[k + 6] = .{ .wait = 150 };
+    out[k + 7] = .{ .shot = "cortes-" ++ code ++ "-filtros" };
     return out;
 }
 
