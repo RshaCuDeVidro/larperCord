@@ -3678,6 +3678,7 @@ pub const Gateway = struct {
             .mute = on(vs, "mute"),
             .deaf = on(vs, "deaf"),
             .suppress = on(vs, "suppress"),
+            .self_stream = on(vs, "self_stream"),
         };
     }
 

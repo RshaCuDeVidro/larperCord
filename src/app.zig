@@ -1007,6 +1007,7 @@ pub const App = struct {
 
     /// O que só vale durante uma call (entrou, saiu, trocou de conta).
     pub fn resetCallState(app: *App) void {
+        app.st.call_view = false;
         app.st.voice_ping_ms = 0;
         app.st.voice_mic_failed = false;
         app.st.voice_out_failed = false;
@@ -1216,6 +1217,8 @@ pub const App = struct {
         if (cs.info.kind != .text and cs.info.kind != .forum) return;
         app.st.guild = cs.info.guild;
         app.st.friends = false;
+        // Um canal de texto aberto sai da tela da call.
+        app.st.call_view = false;
         app.subscribeTo(cs);
         app.st.last_channel.put(app.gpa, cs.info.guild, id) catch {};
         for (app.st.tabs.items, 0..) |t, i| if (t == id) {
@@ -1726,6 +1729,18 @@ pub const App = struct {
             .open_friends => {
                 st.guild = 0;
                 st.friends = true;
+                st.call_view = false;
+            },
+            .show_call => |ch| {
+                if (ch == 0 or st.voice != ch) {
+                    st.call_view = false;
+                    return;
+                }
+                const cs = app.store.channel(ch) orelse return;
+                if (cs.info.guild == 0) return app.openChannel(ch, false);
+                st.guild = cs.info.guild;
+                st.friends = false;
+                st.call_view = true;
             },
             .set_setting => |ss| if (settings_state.setByte(&st.settings, ss.index, ss.value)) app.saveSettings(),
             .accept_friend => |rel| app.cmd(.{ .relationship = .{ .user = rel.user, .accept = true, .from = rel.from } }),

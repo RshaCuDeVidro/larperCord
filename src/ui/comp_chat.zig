@@ -23,6 +23,7 @@ const Id = types.Id;
 
 pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     if (ctx.st.friends) return @import("comp_friends.zig").header(ctx, n, r);
+    if (@import("call_grid.zig").guildCall(ctx)) |vcs| return @import("call_grid.zig").header(ctx, n, r, vcs);
     const fam = ctx.familyFor(n);
     const ch_id = ctx.st.activeChannel() orelse return;
     const cs = ctx.store.channel(ch_id) orelse return;

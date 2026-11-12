@@ -44,6 +44,8 @@ QA_SUITE=interacoes run "interações" $bin --qa --theme classico
 QA_SUITE=cronometro run "tempo da call" $bin --qa --theme classico
 # Perfil de servidor (#19): apelido e foto de lá em cada lugar, o global fora dele.
 QA_SUITE=perfil run "perfil do servidor" $bin --qa --theme classico
+# Tela da call: a grade com cada um, os botões, ir e voltar, muita gente e a DM.
+QA_SUITE=call run "tela da call" $bin --qa --theme classico
 QA_SUITE=mascote run "mascote" $bin --qa --theme classico
 # Fontes reserva (CJK) só quando um texto pede, e o mixer da call: fora da geral.
 QA_SUITE=escritas run "escritas" $bin --qa --theme classico

@@ -181,6 +181,9 @@ pub const State = struct {
     voice_status: @import("../core/event.zig").VoiceStatus = .disconnected,
     /// Mixer aberto na barra de voz.
     voice_mixer: bool = false,
+    /// A tela da call (a grade com cada um) no lugar da conversa; só vale com
+    /// `voice` numa call de servidor (ui/call_grid.zig).
+    call_view: bool = false,
     /// Volume de cada pessoa na call (0..2) e o "Silenciar para mim", separados.
     volumes: @import("../core/volumes.zig").Volumes = .{},
     voice_save_ms: i64 = 0,

@@ -24,6 +24,7 @@
 // Português: o texto em inglês do código como chave, a tradução ao lado; o que
 // falta aparece em inglês. As regras dos marcadores {…} estão acima.
 
+"  [LIVE]" "  [ライブ]"
 " (muted)" " (ミュート中)"
 " [deaf:srv]" " [サーバースピーカーミュート]"
 " [deaf]" " [スピーカーミュート]"
@@ -87,6 +88,7 @@
 "[attachments]" "[添付ファイル]"
 "[audio]" "[出力]"
 "[call]" "[通話]"
+"[chat]" "[チャット]"
 "[file] {s}" "[ファイル] {s}"
 "[hang up]" "[切断]"
 "[image]" "[画像]"
@@ -99,6 +101,7 @@
 "[sticker: {s}]" "[スタンプ: {s}]"
 "[sticker] {s}" "[スタンプ] {s}"
 "[video]" "[動画]"
+"[view]" "[表示]"
 "[voice message]" "[ボイスメッセージ]"
 "A channel with new messages opens at them, like Discord. When off, it opens at the bottom." "新着メッセージのあるチャンネルは、Discordと同様に新着位置から開きます。オフの場合は最下部から開きます。"
 "A colored strip with the server name above the channels." "チャンネルの上にサーバー名入りの色付きの帯。"
@@ -200,6 +203,8 @@
 "AutoMod quarantined you in this server." "このサーバーでAutoModにより隔離されています。"
 "Avatars" "アバター"
 "Back" "戻る"
+"Back to chat" "チャットに戻る"
+"Back to chat (Esc)" "チャットに戻る (Esc)"
 "Back to the text box" "入力欄に戻る"
 "Back to voting" "投票に戻る"
 "Back to {s}" "{s}に戻る"
@@ -832,6 +837,7 @@
 "Listening to" "再生中"
 "Listening to " "再生中: "
 "Little dots and a soft glow behind the cards." "カードの後ろに小さな点とやわらかな光。"
+"LIVE" "ライブ"
 "Live numbers from this process." "このプロセスのリアルタイム値。"
 "Load more" "さらに読み込む"
 "Load picture" "画像を読み込む"
@@ -1680,6 +1686,7 @@
 "Videos" "動画"
 "View Banner" "バナーを表示"
 "View banner" "バナーを表示"
+"View call" "通話を表示"
 "View Full Profile" "プロフィール全体を表示"
 "View Icon" "アイコンを表示"
 "View Picture" "画像を表示"

@@ -3086,7 +3086,7 @@ const ops_theme = [_]Op{
     .{ .shot = "tema-pequena" },
     .{ .resize = .{ 1280, 800 } },
     .{ .wait = 200 },
-} ++ @import("qa_plugins.zig").ops_theme ++ @import("qa_rtl.zig").ops_theme ++ @import("qa_fontes.zig").ops_theme ++ @import("qa_mencao.zig").ops_theme ++ @import("qa_cronometro.zig").ops_theme ++ @import("qa_perfil.zig").ops_theme;
+} ++ @import("qa_plugins.zig").ops_theme ++ @import("qa_rtl.zig").ops_theme ++ @import("qa_fontes.zig").ops_theme ++ @import("qa_mencao.zig").ops_theme ++ @import("qa_cronometro.zig").ops_theme ++ @import("qa_perfil.zig").ops_theme ++ @import("qa_call.zig").ops_theme;
 
 // --- Tela de login -------------------------------------------------------------
 
@@ -3263,6 +3263,8 @@ const ops_interacoes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @i
 const ops_cronometro = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_cronometro.zig").ops;
 const ops_perfil = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_perfil.zig").ops;
 const ops_perfil_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_perfil.zig").ops_theme;
+const ops_call = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops;
+const ops_call_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops_theme;
 const ops_mascote = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote.zig").ops;
 const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_real;
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
@@ -3311,6 +3313,8 @@ fn script() []const Op {
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "cronometro")) return &ops_cronometro;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "perfil")) return &ops_perfil;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "perfil-tema")) return &ops_perfil_tema;
+    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "call")) return &ops_call;
+    if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "call-tema")) return &ops_call_tema;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "mascote")) return &ops_mascote;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "plugins-real")) return &ops_plugins_real;
     if (c.SDL_getenv("QA_SUITE")) |suite| if (std.mem.eql(u8, std.mem.span(suite), "vitrine")) return &ops_vitrine;

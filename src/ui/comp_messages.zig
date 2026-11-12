@@ -42,6 +42,7 @@ const compose_opts = @import("compose_opts.zig");
 const reactors = @import("reactors.zig");
 const destaque = @import("destaque.zig");
 const filtros = @import("../core/filtros.zig");
+const call_grid = @import("call_grid.zig");
 const Id = types.Id;
 const StoredMessage = store_mod.StoredMessage;
 
@@ -360,12 +361,20 @@ fn selectionRange(ctx: *d.Ctx, cs: *store_mod.ChannelState) ?SelRange {
 
 pub fn messages(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     if (ctx.st.friends) return @import("comp_friends.zig").page(ctx, n, r_in);
+    // Na tela da call, a grade com cada um no lugar da conversa.
+    if (call_grid.guildCall(ctx)) |vcs| return call_grid.page(ctx, n, r_in, vcs);
     // A bandeja de arquivos fica entre a conversa e a caixa de texto.
     var r = r_in;
     r.h = @max(40, r.h - att.trayHeight(ctx) - md_preview.height(ctx.st) - composer_extra);
     // Tela dividida: cada painel chama `history` com o canal dele.
     if (mosaic.on()) return mosaic.draw(ctx, n, r);
     const ch_id = ctx.st.activeChannel() orelse return;
+    // Call na DM ou no grupo aberto, com a gente nela: a grade numa faixa em cima.
+    if (call_grid.dmCall(ctx, ch_id)) |vcs| {
+        const band = call_grid.dmBand(ctx, n, r, vcs);
+        r.y += band;
+        r.h = @max(40, r.h - band);
+    }
     history(ctx, n, r, ch_id, "##messages");
 }
 
@@ -1690,6 +1699,12 @@ const composer_max_lines = 10;
 
 pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     if (ctx.st.friends) return;
+    // Na tela da call, os botões da faixa de voz no lugar da caixa.
+    if (call_grid.guildCall(ctx) != null) {
+        composer_extra = 0;
+        vim.composer_active = false;
+        return call_grid.controls(ctx, n, r_in);
+    }
     const ch_id = ctx.st.activeChannel() orelse return;
     const cs = ctx.store.channel(ch_id) orelse return;
     // Entrou, mas o servidor pede as regras antes: o motivo e o botão delas (ui/entrada.zig).

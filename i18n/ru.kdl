@@ -24,6 +24,7 @@
 // Português: o texto em inglês do código como chave, a tradução ao lado; o que
 // falta aparece em inglês. As regras dos marcadores {…} estão acima.
 
+"  [LIVE]" "  [В ЭФИРЕ]"
 " (muted)" " (микрофон отключён)"
 " [deaf:srv]" " [звук отключён:сервер]"
 " [deaf]" " [звук отключён]"
@@ -87,6 +88,7 @@
 "[attachments]" "[вложения]"
 "[audio]" "[звук]"
 "[call]" "[позвонить]"
+"[chat]" "[чат]"
 "[file] {s}" "[файл] {s}"
 "[hang up]" "[отключиться]"
 "[image]" "[изображение]"
@@ -99,6 +101,7 @@
 "[sticker: {s}]" "[стикер: {s}]"
 "[sticker] {s}" "[стикер] {s}"
 "[video]" "[видео]"
+"[view]" "[показать]"
 "[voice message]" "[голосовое сообщение]"
 "A channel with new messages opens at them, like Discord. When off, it opens at the bottom." "Канал с новыми сообщениями открывается на первом из них, как в Discord. Если выключено, открывается в конце."
 "A colored strip with the server name above the channels." "Цветная полоса с названием сервера над каналами."
@@ -200,6 +203,8 @@
 "AutoMod quarantined you in this server." "AutoMod поместил вас в карантин на этом сервере."
 "Avatars" "Аватары"
 "Back" "Назад"
+"Back to chat" "Вернуться в чат"
+"Back to chat (Esc)" "Вернуться в чат (Esc)"
 "Back to the text box" "Вернуться к текстовому полю"
 "Back to voting" "Вернуться к голосованию"
 "Back to {s}" "Назад к {s}"
@@ -832,6 +837,7 @@
 "Listening to" "Слушает"
 "Listening to " "Слушает "
 "Little dots and a soft glow behind the cards." "Мелкие точки и мягкое свечение за карточками."
+"LIVE" "В ЭФИРЕ"
 "Live numbers from this process." "Текущие показатели этого процесса."
 "Load more" "Загрузить ещё"
 "Load picture" "Загрузить фото"
@@ -1680,6 +1686,7 @@
 "Videos" "Видео"
 "View Banner" "Посмотреть баннер"
 "View banner" "Посмотреть баннер"
+"View call" "Показать звонок"
 "View Full Profile" "Посмотреть полный профиль"
 "View Icon" "Посмотреть значок"
 "View Picture" "Посмотреть аватар"

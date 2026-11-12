@@ -1863,7 +1863,7 @@ pub const demo_face_avatar: Id = 90_000;
 const demo_vflags = [_]struct { user: Id, flags: ev.VoiceFlags }{
     .{ .user = 1001, .flags = .{ .self_mute = true } },
     .{ .user = 1005, .flags = .{ .self_mute = true, .self_deaf = true } },
-    .{ .user = 1003, .flags = .{ .mute = true } },
+    .{ .user = 1003, .flags = .{ .mute = true, .self_stream = true } },
 };
 
 /// Servidor onde somos da Moderação (abaixo da Fundação, acima dos Membros), com
