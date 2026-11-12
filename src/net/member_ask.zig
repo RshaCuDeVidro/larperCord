@@ -8,7 +8,9 @@
 //! resposta (GUILD_MEMBERS_CHUNK) passa pelo mesmo caminho dos outros `member`.
 const std = @import("std");
 const types = @import("../core/types.zig");
+const j = @import("jsonx.zig");
 const Id = types.Id;
+const Value = std.json.Value;
 
 /// O máximo de `user_ids` num op 8 (docs.discord.food, Request Guild Members).
 pub const max_ids = 100;
@@ -24,8 +26,8 @@ pub const Request = struct {
     }
 };
 
-/// Teto do que o Asker lembra: passando, esquece tudo (no pior caso alguém é pedido de
-/// novo, sempre no ritmo da fila).
+/// Teto do que o Asker lembra: passando, quem chama esquece tudo menos quem está num
+/// op 8 ainda sem resposta (no pior caso alguém é pedido de novo, no ritmo da fila).
 pub const max_known = 200_000;
 
 pub const Asker = struct {
@@ -47,7 +49,6 @@ pub const Asker = struct {
     /// repetir, até 100, que ficam marcados como pedidos. Sem servidor (DM, grupo), nada.
     pub fn page(a: *Asker, gpa: std.mem.Allocator, guild: Id, authors: []const Id) ?Request {
         if (guild == 0) return null;
-        if (a.known.count() >= max_known) a.known.clearRetainingCapacity();
         var r: Request = .{ .guild = guild };
         for (authors) |uid| {
             if (r.n == max_ids) break;
@@ -59,6 +60,16 @@ pub const Asker = struct {
             r.n += 1;
         }
         return if (r.n > 0) r else null;
+    }
+
+    /// Passou do teto (`max_known`)?
+    pub fn full(a: *const Asker) bool {
+        return a.known.count() >= max_known;
+    }
+
+    /// Quem está num pedido que ainda vai sair ou espera resposta continua marcado.
+    pub fn mark(a: *Asker, gpa: std.mem.Allocator, r: *const Request) void {
+        for (r.slice()) |uid| a.known.put(gpa, .{ r.guild, uid }, {}) catch {};
     }
 
     /// Um pedido que não vai sair (a fila cheia, a sessão nova): quem estava nele pode
@@ -107,6 +118,39 @@ pub fn payload(buf: []u8, r: *const Request, seq: u32) ?[]const u8 {
 pub fn nonceSeq(nonce: []const u8) ?u32 {
     if (nonce.len < 2 or nonce[0] != 'm') return null;
     return std.fmt.parseInt(u32, nonce[1..], 10) catch null;
+}
+
+/// Um op 8 que saiu, guardado para um RATE_LIMITED achar (`req.guild` 0 = vaga).
+pub const Sent = struct { seq: u32 = 0, req: Request = .{ .guild = 0 } };
+
+/// O que um RATE_LIMITED diz (docs.discord.food: `retry_after` e `meta`, com o
+/// `guild_id` e o `nonce` do pedido, que é opcional). 0 = não veio.
+pub const Limited = struct { guild: Id = 0, seq: ?u32 = null, wait_ms: i64 = 0 };
+
+pub fn limited(d: Value) Limited {
+    const secs: f64 = switch (j.get(d, "retry_after") orelse Value.null) {
+        .float => |f| f,
+        .integer => |n| @floatFromInt(n),
+        else => 0,
+    };
+    const meta = j.get(d, "meta") orelse Value.null;
+    return .{
+        .guild = j.id(j.get(meta, "guild_id")) orelse 0,
+        .seq = if (j.str(j.get(meta, "nonce"))) |n| nonceSeq(n) else null,
+        .wait_ms = @intFromFloat(std.math.clamp(secs, 0, 600) * 1000),
+    };
+}
+
+/// O pedido recusado entre os que saíram: pelo nonce; sem ele (ou de um pedido que já
+/// saiu do anel), o mais novo daquele servidor. null = não dá para saber.
+pub fn pickSent(ring: []Sent, lim: Limited) ?*Sent {
+    if (lim.seq) |seq| for (ring) |*x| if (x.req.guild != 0 and x.seq == seq) return x;
+    if (lim.guild == 0) return null;
+    var pick: ?*Sent = null;
+    for (ring) |*x| if (x.req.guild == lim.guild) {
+        if (pick == null or x.seq -% pick.?.seq < 1 << 31) pick = x;
+    };
+    return pick;
 }
 
 test "op 8: só quem ninguém conhece, sem repetir, nada em DM, até 100" {
@@ -178,4 +222,54 @@ test "op 8: juntar dois pedidos que esperam, passando dos 100, e o JSON" {
     full.n = max_ids;
     var wide: [2600]u8 = undefined;
     try std.testing.expect(payload(&wide, &full, std.math.maxInt(u32)) != null);
+}
+
+test "RATE_LIMITED: com nonce, sem nonce, sem retry_after, sem servidor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var ring: [4]Sent = @splat(.{});
+    ring[0] = .{ .seq = 7, .req = req(5, 10, 1) };
+    ring[1] = .{ .seq = 8, .req = req(6, 20, 1) };
+    ring[2] = .{ .seq = 9, .req = req(5, 30, 1) };
+    const parse = struct {
+        fn f(al: std.mem.Allocator, txt: []const u8) !Value {
+            return std.json.parseFromSliceLeaky(Value, al, txt, .{});
+        }
+    }.f;
+    // Com o nonce: aquele pedido, e o retry_after em ms.
+    const l1 = limited(try parse(a, "{\"opcode\":8,\"retry_after\":12.5,\"meta\":{\"guild_id\":\"5\",\"nonce\":\"m7\"}}"));
+    try std.testing.expectEqual(@as(Id, 5), l1.guild);
+    try std.testing.expectEqual(@as(?u32, 7), l1.seq);
+    try std.testing.expectEqual(@as(i64, 12_500), l1.wait_ms);
+    try std.testing.expectEqual(@as(Id, 10), pickSent(&ring, l1).?.req.ids[0]);
+    // Sem nonce: o mais novo daquele servidor (o 9, não o 7).
+    const l2 = limited(try parse(a, "{\"opcode\":8,\"retry_after\":3,\"meta\":{\"guild_id\":\"5\"}}"));
+    try std.testing.expect(l2.seq == null);
+    try std.testing.expectEqual(@as(i64, 3000), l2.wait_ms);
+    try std.testing.expectEqual(@as(Id, 30), pickSent(&ring, l2).?.req.ids[0]);
+    // Nonce que já saiu do anel: também cai no mais novo do servidor.
+    const l3 = limited(try parse(a, "{\"opcode\":8,\"meta\":{\"guild_id\":\"6\",\"nonce\":\"m1\"}}"));
+    try std.testing.expectEqual(@as(i64, 0), l3.wait_ms);
+    try std.testing.expectEqual(@as(Id, 20), pickSent(&ring, l3).?.req.ids[0]);
+    // Sem servidor e sem nonce: ninguém (a fila segura todos).
+    const l4 = limited(try parse(a, "{\"opcode\":8}"));
+    try std.testing.expectEqual(@as(Id, 0), l4.guild);
+    try std.testing.expect(pickSent(&ring, l4) == null);
+    // Vaga (guild 0) nunca é escolhida, mesmo com o mesmo número.
+    ring[3] = .{ .seq = 9 };
+    try std.testing.expectEqual(@as(Id, 30), pickSent(&ring, l2).?.req.ids[0]);
+}
+
+test "teto do Asker: esquece tudo menos quem espera resposta" {
+    const gpa = std.testing.allocator;
+    var a: Asker = .{};
+    defer a.deinit(gpa);
+    const pending = req(5, 100, 2);
+    _ = a.page(gpa, 5, &.{ 100, 101, 102 });
+    try std.testing.expect(!a.full());
+    // Como o gateway faz quando passa do teto.
+    a.known.clearRetainingCapacity();
+    a.mark(gpa, &pending);
+    try std.testing.expectEqualSlices(Id, &.{102}, a.page(gpa, 5, &.{ 100, 101, 102 }).?.slice());
 }

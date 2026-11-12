@@ -111,8 +111,11 @@ pub const sent = struct {
     /// servidor errado (DM ou grupo pedindo, ou outro servidor) e os que o Discord
     /// recusaria (um segundo do mesmo servidor em menos de 30 s). Os três últimos: 0.
     pub var member_requests: A = .init(0);
-    /// Só os do servidor grande (o QA conta um servidor só; os outros seguem no ritmo deles).
+    /// Só os do servidor grande (o QA conta um servidor só; os outros seguem no ritmo
+    /// deles): quantos, a hora do último e o tamanho do primeiro.
     pub var member_large: A = .init(0);
+    pub var member_large_at: A = .init(0);
+    pub var member_large_first_n: A = .init(0);
     pub var member_guild: A = .init(0);
     pub var member_n: A = .init(0);
     pub var member_at: A = .init(0);
@@ -1414,7 +1417,10 @@ pub const Gateway = struct {
                 else => continue,
             };
             _ = sent.member_requests.fetchAdd(1, .monotonic);
-            if (r.guild == guildId(large_guild)) _ = sent.member_large.fetchAdd(1, .monotonic);
+            if (r.guild == guildId(large_guild)) {
+                if (sent.member_large.fetchAdd(1, .monotonic) == 0) sent.member_large_first_n.store(r.n, .release);
+                sent.member_large_at.store(@intCast(now), .release);
+            }
             sent.member_guild.store(r.guild, .release);
             sent.member_n.store(r.n, .release);
             sent.member_at.store(@intCast(now), .release);

@@ -79,9 +79,6 @@ const client_state_json =
     \\{"guild_hashes":{},"highest_last_message_id":"0","read_state_version":0,"user_guild_settings_version":-1,"user_settings_version":-1}
 ;
 
-/// Um op 8 que saiu (`req.guild` 0 = vaga).
-const SentMembers = struct { seq: u32 = 0, req: member_ask.Request = .{ .guild = 0 } };
-
 pub const Gateway = struct {
     commands: Queue(ev.Command),
     sink: Sink,
@@ -144,7 +141,8 @@ pub const Gateway = struct {
     members_ask: member_ask.Asker = .{},
     /// Os últimos op 8 que saíram, com o número do `nonce`: um RATE_LIMITED devolve o
     /// pedido recusado para a fila (achado pelo nonce, ou o mais novo daquele servidor).
-    members_sent: [8]SentMembers = @splat(.{}),
+    /// Do tamanho da fila: um RESUMED que solta tudo de uma vez não sobrescreve nenhum.
+    members_sent: [16]member_ask.Sent = @splat(.{}),
     members_seq: u32 = 0,
     /// Última lista de membros pedida (op 14): repetida depois de um READY.
     sub_guild: Id = 0,
@@ -680,7 +678,7 @@ pub const Gateway = struct {
 
     /// Op 3, 4 e 14: entram na fila do teto e saem assim que houver vez
     /// (presença e lista de membros se juntam; voz sai na ordem, sem perder nenhum).
-    pub fn queueOp(g: *Gateway, it: gw_budget.Item) void {
+    pub fn queueOp(g: *Gateway, it: gw_budget.Op) void {
         switch (g.outbox.push(it)) {
             .queued, .coalesced => {},
             .merged => if (debug_log.isOn()) std.log.info("gateway: fila do op 4 cheia; o último estado de voz ficou no lugar do anterior", .{}),
@@ -712,7 +710,8 @@ pub const Gateway = struct {
         const left = g.outbox.pending();
         if (left == 0) {
             g.outbox_noted = false;
-        } else if (!g.outbox_noted) {
+        } else if (!g.outbox_noted and !g.outbox.budget.allows(now)) {
+            // (Só o teto: o op 8 esperando o lote ou a janela do servidor é o normal.)
             g.outbox_noted = true;
             if (debug_log.isOn()) std.log.info("gateway: teto de envio ({d} em 60 s); {d} op(s) esperando, o próximo em {d} ms", .{ g.outbox.budget.used(now), left, @max(g.outbox.due(now) - now, 0) });
         }
@@ -746,6 +745,9 @@ pub const Gateway = struct {
                 const p = member_ask.payload(&buf, &r, seq) orelse return true;
                 if (debug_log.isOn()) std.log.info("gateway: op 8 com {d} pessoa(s) do servidor {d}", .{ r.n, r.guild });
                 if (!g.writeWs(p)) return false;
+                // A janela conta do fim da escrita (o writeWs pode esperar o socket).
+                const sent_at = monoMs();
+                g.outbox.hold(r.guild, sent_at + gw_budget.members_window_ms, sent_at);
                 g.members_sent[seq % g.members_sent.len] = .{ .seq = seq, .req = r };
                 g.members_seq +%= 1;
                 return true;
@@ -1150,13 +1152,15 @@ pub const Gateway = struct {
         var info = g.infoOf(j.array(j.get(m, "roles")));
         info.timeout_s = timeoutOf(m);
         g.emit(.{ .member_info = .{ .guild = gid, .user = uid, .info = info } });
+        // Com os cargos (a cor) entregues: o op 8 não precisa pedir esta pessoa.
+        g.members_ask.see(alloc, gid, uid);
         g.memberFace(gid, uid, m);
     }
 
-    /// Apelido e foto do servidor de um objeto `member` (perfil do servidor).
+    /// Apelido e foto do servidor de um objeto `member` (perfil do servidor). Sozinho
+    /// (menção, voz, perfil) não marca a pessoa como conhecida para o op 8: a cor do
+    /// cargo não veio junto.
     fn memberFace(g: *Gateway, gid: Id, uid: Id, m: Value) void {
-        // Todo `member` passa por aqui: quem já é conhecido não entra num op 8.
-        g.members_ask.see(alloc, gid, uid);
         var pb: [128]u8 = undefined;
         const read = face_json.read(&pb, gid, uid, m) orelse return;
         const ch = g.faces.filter(alloc, gid, uid, read) orelse return;
@@ -1215,6 +1219,8 @@ pub const Gateway = struct {
         g.upsert(u);
         if (j.get(m, "presence")) |p| g.emit(.{ .presence_update = .{ .user = uid, .status = statusOf(p), .activity = presenceActivity(p), .activities = presenceActivities(p) } });
         g.memberFace(guild, uid, m);
+        // A linha da lista leva os cargos: conhecida para o op 8.
+        g.members_ask.see(alloc, guild, uid);
         var info = g.infoOf(j.array(j.get(m, "roles")));
         info.timeout_s = timeoutOf(m);
         return .{ .member = .{ .user = uid, .info = info } };
@@ -1302,14 +1308,9 @@ pub const Gateway = struct {
         if (std.mem.eql(u8, t, "READY")) return g.onReady(d, arena);
         // Limite de um op específico: o op 8 volta para a fila e espera; o resto só registra.
         if (std.mem.eql(u8, t, "RATE_LIMITED")) {
-            const secs: f64 = switch (j.get(d, "retry_after") orelse Value.null) {
-                .float => |f| f,
-                .integer => |n| @floatFromInt(n),
-                else => 0,
-            };
             const op = j.int(j.get(d, "opcode")) orelse -1;
-            if (debug_log.isOn()) std.log.info("gateway: o Discord limitou o op {d}; esperar {d:.1} s", .{ op, secs });
-            if (op == 8) g.membersLimited(d, secs);
+            if (debug_log.isOn()) std.log.info("gateway: o Discord limitou o op {d}; esperar {d} ms", .{ op, member_ask.limited(d).wait_ms });
+            if (op == 8) g.membersLimited(d);
             return;
         }
         if (std.mem.eql(u8, t, "RESUMED")) {
@@ -1835,27 +1836,16 @@ pub const Gateway = struct {
     /// `retry_after`, nunca menos que a janela de 30 s, com ou sem nonce. O pedido
     /// recusado (pelo nonce, ou o mais novo daquele servidor) volta para a fila; sem
     /// servidor nenhum, todo op 8 espera.
-    fn membersLimited(g: *Gateway, d: Value, secs: f64) void {
-        const meta = j.get(d, "meta") orelse Value.null;
-        var guild = j.id(j.get(meta, "guild_id")) orelse 0;
-        var pick: ?*SentMembers = null;
-        if (j.str(j.get(meta, "nonce"))) |nonce| if (member_ask.nonceSeq(nonce)) |seq| {
-            for (&g.members_sent) |*x| if (x.req.guild != 0 and x.seq == seq) {
-                pick = x;
-            };
-        };
-        if (pick == null and guild != 0) for (&g.members_sent) |*x| if (x.req.guild == guild) {
-            if (pick == null or x.seq -% pick.?.seq < 1 << 31) pick = x;
-        };
+    fn membersLimited(g: *Gateway, d: Value) void {
+        var lim = member_ask.limited(d);
         var back: ?member_ask.Request = null;
-        if (pick) |x| {
+        if (member_ask.pickSent(&g.members_sent, lim)) |x| {
             back = x.req;
-            if (guild == 0) guild = x.req.guild;
+            if (lim.guild == 0) lim.guild = x.req.guild;
             // Um segundo RATE_LIMITED do mesmo pedido não o põe na fila duas vezes.
             x.req.guild = 0;
         }
-        const wait_ms: i64 = @intFromFloat(std.math.clamp(secs, 0, 600) * 1000);
-        if (!g.outbox.holdMembers(monoMs(), guild, wait_ms, if (back) |*r| r else null)) g.members_ask.unmark(&back.?);
+        if (!g.outbox.holdMembers(monoMs(), lim.guild, lim.wait_ms, if (back) |*r| r else null)) g.members_ask.unmark(&back.?);
         g.flushOutbox();
     }
 
@@ -2827,6 +2817,11 @@ pub const Gateway = struct {
         // ainda vale sai de novo logo abaixo e no fim). Quem estava num op 8 que
         // não saiu volta a poder ser pedido.
         for (g.outbox.members[0..g.outbox.members_n]) |*w| g.members_ask.unmark(&w.req);
+        // O que saiu na sessão velha e não teve resposta não vai ter mais.
+        for (&g.members_sent) |*x| if (x.req.guild != 0) {
+            g.members_ask.unmark(&x.req);
+            x.req.guild = 0;
+        };
         g.outbox.forgetPending();
         g.voice_unconfirmed = null;
         // O pedido de voz pode ter chegado antes do READY; agora o gateway
@@ -4815,6 +4810,12 @@ pub const Gateway = struct {
             var authors: [member_ask.max_ids]Id = undefined;
             const n = @min(items.len, authors.len);
             for (items[0..n], authors[0..n]) |m, *a| a.* = user_json.authorId(m);
+            // Passou do teto: esquece tudo menos quem está num op 8 ainda sem resposta.
+            if (g.members_ask.full()) {
+                g.members_ask.known.clearRetainingCapacity();
+                for (g.outbox.members[0..g.outbox.members_n]) |*w| g.members_ask.mark(alloc, &w.req);
+                for (&g.members_sent) |*x| if (x.req.guild != 0) g.members_ask.mark(alloc, &x.req);
+            }
             if (g.members_ask.page(alloc, members, authors[0..n])) |r| g.queueMembers(r);
         }
     }

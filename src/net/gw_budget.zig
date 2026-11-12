@@ -128,6 +128,9 @@ pub const MembersHold = struct { guild: Id, until_ms: i64 };
 /// `channel_info`: o servidor do op 43.
 /// `members`: um op 8 com os autores de uma página de histórico.
 pub const Item = union(enum) { presence, lazy: Lazy, voice: Voice, channel_info: Id, members: member_ask.Request };
+/// O que entra por `push` (o op 8 entra por `pushMembers`, que sabe a hora e devolve o
+/// que não coube).
+pub const Op = union(enum) { presence, lazy: Lazy, voice: Voice, channel_info: Id };
 
 pub const Push = enum {
     queued,
@@ -153,17 +156,19 @@ pub const Outbox = struct {
     /// Op 43 esperando, na ordem em que chegaram (um por servidor).
     info: [8]Id = undefined,
     info_n: usize = 0,
-    /// Op 8 esperando, por último (o que é só cosmético espera o resto). Um por
-    /// servidor, mais o que passou dos 100 (sai numa janela seguinte).
+    /// Op 8 esperando, por último (o que é só cosmético espera o resto). No máximo
+    /// dois por servidor: o que espera e o que passou dos 100 (sai na janela seguinte).
     members: [16]MembersWait = undefined,
     members_n: usize = 0,
-    /// Por servidor: o último envio mais a janela, ou a espera de um RATE_LIMITED.
-    holds: [32]MembersHold = undefined,
+    /// Por servidor: o último envio mais a janela, ou a espera de um RATE_LIMITED. Mais
+    /// vagas do que op 8 cabem no teto numa janela: uma espera que não venceu nunca é
+    /// despejada (sem vaga, o op 8 de um servidor novo espera uma vencer).
+    holds: [128]MembersHold = undefined,
     holds_n: usize = 0,
     /// RATE_LIMITED sem dizer de que servidor: nenhum op 8 até lá.
     members_after: i64 = 0,
 
-    pub fn push(o: *Outbox, it: Item) Push {
+    pub fn push(o: *Outbox, it: Op) Push {
         switch (it) {
             .presence => {
                 const was = o.presence;
@@ -205,11 +210,6 @@ pub const Outbox = struct {
                 o.info_n += 1;
                 return .queued;
             },
-            // (O op 8 entra por `pushMembers`, que sabe a hora e devolve o que não coube.)
-            .members => |r| {
-                var rest = r;
-                return if (o.pushMembers(&rest, 0)) .queued else .replaced_oldest;
-            },
         }
     }
 
@@ -217,11 +217,15 @@ pub const Outbox = struct {
     /// que sobra vai para outro, que só sai numa janela seguinte. false: a fila encheu, e o
     /// que não entrou fica em `r` (quem chama devolve essas pessoas ao Asker).
     pub fn pushMembers(o: *Outbox, r: *member_ask.Request, now_ms: i64) bool {
+        var same: usize = 0;
         for (o.members[0..o.members_n]) |*w| {
+            if (w.req.guild != r.guild) continue;
+            same += 1;
             member_ask.mergeInto(&w.req, r);
             if (r.n == 0) return true;
         }
-        if (o.members_n == o.members.len) return false;
+        // Um servidor não toma a fila dos outros.
+        if (same >= 2 or o.members_n == o.members.len) return false;
         o.members[o.members_n] = .{ .req = r.*, .ready_ms = now_ms + members_batch_ms };
         o.members_n += 1;
         r.n = 0;
@@ -237,35 +241,41 @@ pub const Outbox = struct {
         return until;
     }
 
-    /// O próximo op 8 de `guild` não sai antes de `until_ms` (vale a espera mais longa).
-    fn hold(o: *Outbox, guild: Id, until_ms: i64, now_ms: i64) void {
-        for (o.holds[0..o.holds_n]) |*h| if (h.guild == guild) {
-            h.until_ms = @max(h.until_ms, until_ms);
-            return;
-        };
-        // As que já venceram dão lugar.
+    /// As esperas que já venceram dão lugar.
+    fn pruneHolds(o: *Outbox, now_ms: i64) void {
         var k: usize = 0;
         for (o.holds[0..o.holds_n]) |h| if (h.until_ms > now_ms) {
             o.holds[k] = h;
             k += 1;
         };
         o.holds_n = k;
-        if (o.holds_n < o.holds.len) {
-            o.holds[o.holds_n] = .{ .guild = guild, .until_ms = until_ms };
-            o.holds_n += 1;
-            return;
-        }
-        // 32 servidores pedidos na mesma janela: a espera que vence primeiro dá lugar.
-        var min_i: usize = 0;
-        for (o.holds[0..o.holds_n], 0..) |h, i| if (h.until_ms < o.holds[min_i].until_ms) {
-            min_i = i;
-        };
-        o.holds[min_i] = .{ .guild = guild, .until_ms = until_ms };
     }
 
-    /// O op 8 que pode sair agora (o lote fechou e o servidor não está esperando).
+    /// Dá para guardar a espera de `guild` (ela já tem vaga, ou sobra uma)?
+    fn canHold(o: *const Outbox, guild: Id, now_ms: i64) bool {
+        if (o.holds_n < o.holds.len) return true;
+        for (o.holds[0..o.holds_n]) |h| if (h.guild == guild or h.until_ms <= now_ms) return true;
+        return false;
+    }
+
+    /// O próximo op 8 de `guild` não sai antes de `until_ms` (vale a espera mais longa).
+    /// Uma espera que não venceu nunca sai daqui: sem vaga (só com mais op 8 numa janela
+    /// do que o teto deixa), a de agora fica sem guardar e `canHold` segura os próximos.
+    pub fn hold(o: *Outbox, guild: Id, until_ms: i64, now_ms: i64) void {
+        for (o.holds[0..o.holds_n]) |*h| if (h.guild == guild) {
+            h.until_ms = @max(h.until_ms, until_ms);
+            return;
+        };
+        if (o.holds_n == o.holds.len) o.pruneHolds(now_ms);
+        if (o.holds_n == o.holds.len) return;
+        o.holds[o.holds_n] = .{ .guild = guild, .until_ms = until_ms };
+        o.holds_n += 1;
+    }
+
+    /// O op 8 que pode sair agora: o lote fechou, o servidor não está esperando e a
+    /// espera dele tem onde ficar.
     fn nextMembers(o: *const Outbox, now_ms: i64) ?usize {
-        for (o.members[0..o.members_n], 0..) |w, i| if (now_ms >= w.ready_ms and now_ms >= o.holdOf(w.req.guild)) return i;
+        for (o.members[0..o.members_n], 0..) |w, i| if (now_ms >= w.ready_ms and now_ms >= o.holdOf(w.req.guild) and o.canHold(w.req.guild, now_ms)) return i;
         return null;
     }
 
@@ -384,20 +394,15 @@ pub const Outbox = struct {
         return o.pushMembers(x, 0);
     }
 
-    /// Saímos do servidor: o op 8 dele sai da fila e a espera dele acaba (quem chama já
-    /// esqueceu as pessoas de lá no Asker).
+    /// Saímos do servidor: o op 8 dele sai da fila (quem chama já esqueceu as pessoas de
+    /// lá no Asker). A espera fica: o limite é por servidor e por sessão, e sair não muda
+    /// a sessão (voltar em menos de 30 s não pede de novo antes da hora).
     pub fn forgetMembers(o: *Outbox, guild: Id) void {
         var i: usize = o.members_n;
         while (i > 0) {
             i -= 1;
             if (o.members[i].req.guild == guild) o.dropMembersAt(i);
         }
-        var k: usize = 0;
-        for (o.holds[0..o.holds_n]) |h| if (h.guild != guild) {
-            o.holds[k] = h;
-            k += 1;
-        };
-        o.holds_n = k;
     }
 
     /// Conexão nova: os limites recomeçam; o que espera continua esperando.
@@ -410,8 +415,8 @@ pub const Outbox = struct {
     /// novo o que ainda vale (voz, lista de membros; a presença foi no IDENTIFY).
     /// O op 8 também sai (pode ser de um servidor que deixamos enquanto estávamos
     /// fora): quem chama devolve as pessoas dele ao Asker antes, e elas são pedidas
-    /// de novo quando a página aparecer. Os limites e as esperas do op 8 ficam: a
-    /// conexão é a mesma.
+    /// de novo quando a página aparecer. O teto fica (o READY chega na mesma conexão)
+    /// e as esperas do op 8 também: não custa nada esperar a janela que já corria.
     pub fn forgetPending(o: *Outbox) void {
         o.presence = false;
         o.lazy_n = 0;
@@ -683,18 +688,29 @@ test "op 8: RATE_LIMITED segura o servidor mesmo sem nonce e sem retry_after; se
     try t.expectEqual(@as(Id, 8), o.pop(100_000 + members_window_ms).?.members.guild);
 }
 
-test "op 8: sair do servidor tira o pedido da fila e a espera; fila cheia devolve o que não entrou" {
+test "op 8: sair e voltar ao servidor não encurta a espera; fila cheia devolve o que não entrou" {
     var o: Outbox = .{};
     var a = page(5, 100, 2);
     try t.expect(o.pushMembers(&a, 0));
-    try t.expect(o.holdMembers(0, 5, 60_000, null));
+    try t.expectEqual(@as(Id, 5), o.pop(members_batch_ms).?.members.guild);
+    // Saímos com um pedido esperando: ele sai da fila, a espera do servidor fica.
+    var b = page(5, 200, 2);
+    try t.expect(o.pushMembers(&b, 2000));
     o.forgetMembers(5);
     try t.expectEqual(@as(usize, 0), o.members_n);
-    // Voltou ao servidor: pede sem esperar a recusa de antes.
-    var again = page(5, 100, 2);
-    try t.expect(o.pushMembers(&again, 0));
-    try t.expectEqual(@as(Id, 5), o.pop(members_batch_ms).?.members.guild);
-    // 16 servidores esperando: o 17º não entra e fica inteiro em `r`.
+    // Voltamos logo: o pedido novo espera a janela do que já saiu.
+    var again = page(5, 300, 2);
+    try t.expect(o.pushMembers(&again, 4000));
+    try t.expect(o.pop(members_batch_ms + members_window_ms - 1) == null);
+    try t.expectEqual(@as(Id, 5), o.pop(members_batch_ms + members_window_ms).?.members.guild);
+    // No máximo dois por servidor na fila (o que espera e o que passou dos 100).
+    var x = page(6, 1000, 100);
+    var y = page(6, 2000, 100);
+    var z = page(6, 3000, 5);
+    try t.expect(o.pushMembers(&x, 0) and o.pushMembers(&y, 0));
+    try t.expect(!o.pushMembers(&z, 0));
+    try t.expectEqual(@as(u8, 5), z.n);
+    // 16 esperando: o próximo não entra e fica inteiro em `r`.
     var g: Id = 10;
     while (o.members_n < o.members.len) : (g += 1) {
         var r = page(g, 1, 1);
@@ -706,6 +722,35 @@ test "op 8: sair do servidor tira o pedido da fila e a espera; fila cheia devolv
     // Sessão nova: o op 8 sai da fila (quem chama devolve as pessoas ao Asker).
     o.forgetPending();
     try t.expectEqual(@as(usize, 0), o.members_n);
+}
+
+test "op 8: muitas esperas ao mesmo tempo: nenhuma é despejada antes de vencer" {
+    var o: Outbox = .{};
+    // O servidor 1 manda o dele e ainda tem 50 esperando a janela.
+    var first = page(1, 1000, 100);
+    var rest = page(1, 2000, 50);
+    try t.expect(o.pushMembers(&first, 0) and o.pushMembers(&rest, 0));
+    try t.expectEqual(@as(Id, 1), o.pop(members_batch_ms).?.members.guild);
+    // Mais 40 servidores, um op 8 cada, dentro da mesma janela.
+    var g: Id = 100;
+    var now: i64 = members_batch_ms;
+    while (g < 140) : (g += 1) {
+        var r = page(g, 1, 1);
+        try t.expect(o.pushMembers(&r, now));
+        now += 100;
+        while (o.pop(now + members_batch_ms)) |it| try t.expect(it.members.guild != 1);
+    }
+    // Os 50 do servidor 1 continuam esperando a janela dele, nem um ms antes.
+    try t.expect(o.pop(members_batch_ms + members_window_ms - 1) == null);
+    try t.expectEqual(@as(Id, 1), o.pop(members_batch_ms + members_window_ms).?.members.guild);
+    // Todas as vagas de espera ocupadas por esperas que não venceram: um servidor novo
+    // espera uma vencer em vez de tomar o lugar dela.
+    var full: Outbox = .{};
+    for (0..full.holds.len) |i| full.hold(@as(Id, 500 + i), 50_000, 0);
+    var newcomer = page(7, 1, 1);
+    try t.expect(full.pushMembers(&newcomer, 0));
+    try t.expect(full.pop(49_999) == null);
+    try t.expectEqual(@as(Id, 7), full.pop(50_000).?.members.guild);
 }
 
 test "op 8: depois de tudo e no teto; o op 43 sai antes" {

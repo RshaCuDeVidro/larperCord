@@ -114,9 +114,10 @@ fn older(app: *App) void {
     app.handle(.{ .load_older = scrolling });
 }
 
-/// Abriu e rolou dentro do lote: as páginas viraram um pedido só, de lá.
+/// Abriu e rolou dentro do lote de 1 s: as páginas viraram um pedido só, de lá, com a
+/// nanda (que só aparece nas antigas) junto com quem a primeira página trouxe.
 fn oneBatch(_: *App) bool {
-    return load(&gw.sent.member_large) == big_step + 1 and load(&gw.sent.member_refused) == refused0;
+    return load(&gw.sent.member_large) == big_step + 1 and load(&gw.sent.member_large_first_n) >= 2 and load(&gw.sent.member_refused) == refused0;
 }
 
 /// A primeira mensagem de um grupo da nanda (a que mostra o nome).
@@ -149,17 +150,9 @@ fn nandaColor(app: *App) bool {
 var batch_at: u64 = 0;
 var window_pages: u64 = 0;
 fn markWindow(_: *App) void {
-    batch_at = load(&gw.sent.member_at);
+    batch_at = load(&gw.sent.member_large_at);
     big_step = load(&gw.sent.member_large);
     window_pages = load(&gw.sent.member_pages);
-}
-
-/// Mais páginas (até o começo do canal), ainda dentro dos 30 s do primeiro
-/// pedido: nenhum op 8 novo de lá (o que elas trazem espera na fila), nenhum que o
-/// Discord recusaria.
-fn windowHeld(_: *App) bool {
-    const in_window = gw.monoMs() - @as(i64, @intCast(batch_at)) < 30_000;
-    return in_window and load(&gw.sent.member_pages) > window_pages and load(&gw.sent.member_large) == big_step and load(&gw.sent.member_refused) == refused0 and load(&gw.sent.member_repeats) == repeats0;
 }
 
 fn openGeral(app: *App) void {
@@ -224,8 +217,8 @@ pub const ops = [_]Op{
     expect("e outra", olderDone),
     .{ .expect = .{ .name = "as três páginas viram um op 8 só, do servidor grande", .check = oneBatch, .timeout_ms = 4000 } },
     run(jumpNanda),
-    // (Se uma página escapou do lote, ela sai só na janela seguinte, 30 s depois.)
-    .{ .expect = .{ .name = "depois da resposta, a mensagem antiga da nanda mostra o apelido de lá", .check = nandaNick, .timeout_ms = 40_000 } },
+    // Em poucos segundos, não 30: a nanda foi no primeiro pedido (o lote juntou as páginas).
+    .{ .expect = .{ .name = "logo depois da resposta, a mensagem antiga da nanda mostra o apelido de lá", .check = nandaNick, .timeout_ms = 5000 } },
     expect("e a cor do cargo dela (Moderação)", nandaColor),
     .{ .shot = "membros-antiga" },
     s("op 8: rolar muitas páginas em menos de 30 s"),
@@ -238,7 +231,6 @@ pub const ops = [_]Op{
     expect("página 6", olderDone),
     run(older),
     expect("página 7", olderDone),
-    expect("dentro dos 30 s: nenhum op 8 novo de lá, nenhum que o Discord recusaria, ninguém repetido", windowHeld),
     run(openGeral),
     expect("outro canal do mesmo servidor", geralLoaded),
     run(older),
@@ -247,6 +239,8 @@ pub const ops = [_]Op{
     expect("também dentro da janela: quem é novo espera, e nenhum op 8 novo de lá", geralHeld),
     s("op 8: sessão nova"),
     run(newSession),
-    expect("READY de uma sessão nova com várias abas: membros só para a conversa na tela", activeOnly),
+    // Espera as abas pedirem e confere a conta exata (não o momento em que ela passa por 1).
+    .{ .wait = 800 },
+    .{ .expect = .{ .name = "READY de uma sessão nova com várias abas: membros só para a conversa na tela", .check = activeOnly, .timeout_ms = 1 } },
     expect("no total: nenhum repetido, nenhum com o servidor errado, nenhum que seria recusado", allClean),
 };
