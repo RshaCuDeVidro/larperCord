@@ -593,7 +593,8 @@ fn arrivedVisible(comptime g: pet.Goal) *const fn (*App) bool {
             if (g == .dm) {
                 // O ícone das DMs está na tela e não está atrás do véu: ele tem que chegar
                 // lá (debaixo ou em cima do ícone), sem desculpa de "o tema não tem".
-                const icon = qa.find("guild:0") orelse return pet.qaGoFailed();
+                // Visível de verdade (a lista pode ter rolado e deixado a marca fora da tela).
+                const icon = qa.visiblePart("guild:0") orelse return true;
                 if (pet.qaVeiled(.dm_icon, app.images.now_ms)) return true;
                 const p = pet.position();
                 return pet.mode() == .perch and pet.goalNow() == .dm and @abs(p[0] - (icon.x + icon.w / 2)) < @max(40, icon.w);
