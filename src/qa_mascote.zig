@@ -126,6 +126,133 @@ fn openingBack(app: *App) void {
     app.login.phase = .hidden;
 }
 
+// --- Dentro do app ------------------------------------------------------------------
+
+fn openSaved(app: *App) void {
+    app.handle(.toggle_saved);
+}
+fn savedSleeps(_: *App) bool {
+    return qa.find("saved-empty") != null;
+}
+fn closeSaved(app: *App) void {
+    app.handle(.toggle_saved);
+}
+fn dropConnection(app: *App) void {
+    @import("ui/root.zig").qa_banner = true;
+    app.store.connection = .reconnecting;
+}
+fn bannerShown(_: *App) bool {
+    return qa.find("conn-banner") != null;
+}
+fn goOffline(app: *App) void {
+    app.store.connection = .offline;
+}
+fn restoreConnection(app: *App) void {
+    app.store.connection = .ready;
+    @import("ui/root.zig").qa_banner = false;
+}
+fn bannerGone(_: *App) bool {
+    return qa.find("conn-banner") == null;
+}
+var history_was: @import("core/store.zig").History = .loaded;
+fn historyLoading(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    const cs = app.store.channel(ch) orelse return;
+    history_was = cs.history;
+    cs.history = .loading;
+}
+fn historyBack(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    const cs = app.store.channel(ch) orelse return;
+    cs.history = history_was;
+}
+fn openAbout(app: *App) void {
+    app.st.settings.page = .sobre;
+    app.handle(.open_settings);
+}
+var about_before: u8 = 0;
+fn noteAbout(_: *App) void {
+    about_before = @import("ui/settings.zig").aboutClicks();
+}
+fn aboutReacted(_: *App) bool {
+    return @import("ui/settings.zig").aboutClicks() != about_before;
+}
+var login_before: u8 = 0;
+fn loginIdle(app: *App) void {
+    app.login.begin(.form);
+    app.login.t = 3.0;
+    login_before = app.login.react_n;
+}
+fn loginReacted(app: *App) bool {
+    return app.login.react_n != login_before;
+}
+fn loginHide(app: *App) void {
+    app.login.phase = .hidden;
+}
+
+// --- O mascote do canto ------------------------------------------------------------
+
+const pet = @import("ui/mascote_pet.zig");
+
+fn petShown(_: *App) bool {
+    return qa.find("pet") != null and pet.mode() == .home;
+}
+fn sendLaugh(app: *App) void {
+    pet.onSend("KKKKKKK", app.images.now_ms);
+}
+fn laughing(_: *App) bool {
+    return pet.reaction() == .laugh;
+}
+fn sendGg(app: *App) void {
+    pet.onSend("gg wp", app.images.now_ms);
+}
+fn celebrating(_: *App) bool {
+    return pet.reaction() == .gg;
+}
+fn sendSad(app: *App) void {
+    pet.onSend("que triste :(", app.images.now_ms);
+}
+fn ping(app: *App) void {
+    pet.onPing(app.images.now_ms);
+}
+fn pinged(_: *App) bool {
+    return pet.reaction() == .ping;
+}
+fn fled(_: *App) bool {
+    return pet.mode() == .away;
+}
+fn home(_: *App) void {
+    pet.qaHome();
+}
+var start_pos: [2]f32 = .{ 0, 0 };
+fn notePos(_: *App) void {
+    start_pos = pet.position();
+}
+fn thrown(_: *App) bool {
+    return pet.mode() != .home and pet.mode() != .grabbed;
+}
+fn backHome(_: *App) bool {
+    return pet.mode() == .home;
+}
+fn idleLong(app: *App) void {
+    pet.qaIdleFor(4 * 60 * 1000, app.images.now_ms);
+}
+fn sleeping(app: *App) bool {
+    return pet.isAsleep(app.images.now_ms);
+}
+fn petOff(app: *App) void {
+    app.st.settings.mascot_pet = false;
+}
+fn petGone(_: *App) bool {
+    return qa.find("pet") == null;
+}
+fn petOn(app: *App) void {
+    app.st.settings.mascot_pet = true;
+}
+fn dropTarget(_: *App, b: []u8) []const u8 {
+    return std.fmt.bufPrint(b, "composer", .{}) catch "";
+}
+
 // --- A abertura do demo ----------------------------------------------------------
 
 fn demoOpening(app: *App) void {
@@ -215,6 +342,79 @@ pub const ops = [_]Op{
     expect("\"sortear\" também abre", loginShown),
     .{ .shot = "abertura-sorteada" },
     run(openingBack),
+
+    s("mascote dentro do app"),
+    run(openSaved),
+    expect("sem mensagens salvas: o mascote dorme em cima do aviso", savedSleeps),
+    .{ .wait = 700 },
+    .{ .shot = "mascote-app-dormindo" },
+    run(closeSaved),
+    run(historyLoading),
+    .{ .wait = 400 },
+    .{ .shot = "mascote-app-carregando" },
+    run(historyBack),
+    run(dropConnection),
+    .{ .expect = .{ .name = "caiu a conexão: o aviso com o mascote aparece depois de 1,5 s", .check = bannerShown, .timeout_ms = 3500 } },
+    .{ .shot = "mascote-app-reconectando" },
+    run(goOffline),
+    .{ .wait = 600 },
+    .{ .shot = "mascote-app-sem-conexao" },
+    run(restoreConnection),
+    expect("conectou de novo: o aviso some", bannerGone),
+    run(openAbout),
+    run(noteAbout),
+    click("about-mascot"),
+    expect("clicar no mascote do Sobre faz ele reagir", aboutReacted),
+    .{ .wait = 250 },
+    .{ .shot = "mascote-app-sobre-reagindo" },
+    run(closeSettings),
+    run(loginIdle),
+    click("login-mascot"),
+    expect("clicar no mascote da abertura também", loginReacted),
+    .{ .wait = 200 },
+    .{ .shot = "mascote-app-abertura-reagindo" },
+    run(loginHide),
+
+    s("mascote no canto"),
+    expect("o mascote senta em cima da caixa de mensagem", petShown),
+    .{ .shot = "pet-casa" },
+    run(sendLaugh),
+    expect("\"KKKKKKK\": ele ri", laughing),
+    .{ .wait = 250 },
+    .{ .shot = "pet-rindo" },
+    run(sendGg),
+    expect("\"gg\": comemora com confete", celebrating),
+    .{ .wait = 350 },
+    .{ .shot = "pet-gg" },
+    run(sendSad),
+    .{ .wait = 300 },
+    .{ .shot = "pet-triste" },
+    run(ping),
+    expect("chegou menção: ele se assusta", pinged),
+    .{ .wait = 150 },
+    .{ .shot = "pet-mencao" },
+    run(home),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    click("pet"),
+    expect("cutucado cinco vezes: fica bravo e emburra", fled),
+    .{ .wait = 500 },
+    .{ .shot = "pet-bravo" },
+    run(home),
+    .{ .wait = 100 },
+    run(notePos),
+    .{ .drag = .{ .from = .{ .mark = "pet" }, .to = .{ .at = .{ .key = "composer", .fx = 0.3, .fy = -6 } } } },
+    expect("pegar e soltar no ar: ele voa (e cai)", thrown),
+    .{ .shot = "pet-voando" },
+    .{ .expect = .{ .name = "depois de quicar e ficar tonto, volta andando para casa", .check = backHome, .timeout_ms = 9000 } },
+    run(idleLong),
+    expect("ninguém mexe há uns minutos: ele dorme", sleeping),
+    .{ .shot = "pet-dormindo" },
+    run(petOff),
+    expect("desligado nas Configurações, ele some", petGone),
+    run(petOn),
 
     s("abertura do demo"),
     run(demoOpening),

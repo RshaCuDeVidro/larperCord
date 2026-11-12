@@ -89,6 +89,8 @@ pub const Settings = struct {
     /// A abertura do Terminal (ui/mascote_terminal.zig `Opening`): 0 = boot de terminal,
     /// 1 = chuva de código, 2 = TV sintonizando, 3 = pixels, 4 = portal, 5 = sortear a cada vez.
     mascot_opening: u8 = 0,
+    /// O mascote que mora no canto, em cima da caixa de mensagem (ui/mascote_pet.zig).
+    mascot_pet: bool = true,
     /// O tempo da call ao lado de cada canal de voz (ui/voice_timer.zig): ligado, o
     /// formato (um de core/voice_timer.zig `presets`, ou `custom_index` com o
     /// `voice_timer_pattern` da pessoa).

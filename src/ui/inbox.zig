@@ -8,6 +8,7 @@ const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
+const mascote = @import("mascote.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
@@ -149,7 +150,8 @@ pub fn openMessage(ctx: *d.Ctx, channel: Id, id: Id) void {
 
 fn empty(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y: f32, title: []const u8, sub: []const u8) f32 {
     const fam = ctx.ui;
-    const cy = y + 70;
+    mascote.inApp(ctx, dl, body.x + body.w / 2, y + 58, 78, .sleep, .inbox, 8);
+    const cy = y + 112;
     const tw = d.width(fam.get(.bold), 16, title);
     d.text(dl, fam.get(.bold), 16, body.x + (body.w - tw) / 2, cy, ctx.col(.text), title);
     const sw = d.width(fam.get(.regular), 13.5, sub);

@@ -9,6 +9,7 @@ const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
+const mascote = @import("mascote.zig");
 const anim = @import("anim.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
@@ -103,7 +104,7 @@ pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     }
     const pending = incomingCount(ctx);
     for ([_]Tab{ .online, .all, .pending, .blocked, .add }) |t| {
-        const sel = ctx.st.friends_tab == @intFromEnum(t);
+        const sel = ctx.st.friends_tab == @backingInt(t);
         var lb: [48]u8 = undefined;
         const label = if (tty) std.fmt.bufPrint(&lb, "[{s}]", .{tabLabel(t, narrow)}) catch "" else tabLabel(t, narrow);
         const font = fam.get(if (sel) .semibold else .medium);
@@ -111,10 +112,10 @@ pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         const extra: f32 = if (t == .pending and pending > 0) 24 else 0;
         const tr: d.Rect = .{ .x = x, .y = r.y + r.h / 2 - 14, .w = tw + pad + extra, .h = 28 };
         if (tr.right() > r.right() - 8) break;
-        const hb = d.hit(ctx, 40 + @as(usize, @intFromEnum(t)), tr);
+        const hb = d.hit(ctx, 40 + @as(usize, @backingInt(t)), tr);
         qa.mark(tr, "friends-tab:{s}", .{@tagName(t)});
-        if (hb.clicked) ctx.st.friends_tab = @intFromEnum(t);
-        const k = anim.to(anim.id("ftab", @intFromEnum(t)), if (sel) 1 else if (hb.hovered) 0.5 else 0, 22);
+        if (hb.clicked) ctx.st.friends_tab = @backingInt(t);
+        const k = anim.to(anim.id("ftab", @backingInt(t)), if (sel) 1 else if (hb.hovered) 0.5 else 0, 22);
         // "Adicionar amigo" é um botão verde, como no Discord (aberto, só o texto fica verde).
         const add = t == .add and !tty;
         const green = ctx.col(.online);
@@ -143,7 +144,7 @@ pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
 
 pub fn page(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     const fam = ctx.familyFor(n);
-    const tab: Tab = @enumFromInt(@min(ctx.st.friends_tab, @intFromEnum(Tab.add)));
+    const tab: Tab = @fromBackingInt(@intCast(@min(ctx.st.friends_tab, @backingInt(Tab.add))));
     const dl = d.beginRegion(ctx, "##friends", r, c.ImGuiWindowFlags_NoScrollbar);
     const o = c.ImGui_GetCursorScreenPos();
     var y = o.y + 18;
@@ -176,7 +177,12 @@ pub fn page(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
             .blocked => i18n.tr("Você não bloqueou ninguém.", "You haven't blocked anyone."),
         };
         const tw = d.width(fam.get(.medium), 15, msg);
-        d.text(dl, fam.get(.medium), 15, r.x + (r.w - tw) / 2, r.y + r.h * 0.38, ctx.col(.faint), msg);
+        const my = r.y + r.h * 0.38;
+        // Ninguém por aqui: o mascote dorme em cima do aviso.
+        if (my - 120 > y) {
+            mascote.inApp(ctx, dl, r.x + r.w / 2, my - 58, 96, .sleep, .friends, 8);
+        }
+        d.text(dl, fam.get(.medium), 15, r.x + (r.w - tw) / 2, my, ctx.col(.faint), msg);
         d.endRegion(ctx, y, r.x);
         return;
     }

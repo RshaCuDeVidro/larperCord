@@ -41,6 +41,9 @@ pub const Login = struct {
     err_buf: [200]u8 = undefined,
     err_len: usize = 0,
     err_at: f32 = -10,
+    /// O último clique no mascote e quantos já foram (cada clique, uma reação).
+    react_at: f32 = -10,
+    react_n: u8 = 0,
     want_focus: bool = true,
     /// Texto do "Voltar" no topo do cartão (vazio = sem). Ex.: "Voltar para ana".
     back_buf: [96]u8 = undefined,
@@ -364,8 +367,22 @@ pub fn draw(l: *Login, env: Env) ?Result {
     const since_err = t - l.err_at;
     if (since_err < 0.7) shake = @sin(since_err * 42) * 9 * @exp(-since_err * 5);
     if (l.phase == .connecting) bob += @sin(t * 4) * 2;
+    // Clicar no mascote faz ele reagir (pulo, giro ou susto).
+    const hero_r: Rect = .{ .x = hero_cx - logo_size * 0.45, .y = hero_cy - logo_size * 0.4, .w = logo_size * 0.9, .h = logo_size * 0.75 };
+    qa.mark(hero_r, "login-mascot", .{});
+    if (l.phase != .leaving and c.ImGui_IsMouseClicked(0) and hero_r.contains(f.mouse.x, f.mouse.y)) {
+        l.react_at = t;
+        l.react_n +%= 1;
+    }
+    const react_t = t - l.react_at;
     switch (env.mascot) {
         .classico => {
+            if (react_t >= 0 and react_t < mascote.reaction_seconds) {
+                const x = react_t / 0.55;
+                bob -= if (x < 1) @sin(std.math.pi * x) * (1 - x) * logo_size * 0.14 else 0;
+                pose.spin = react_t * 12;
+                pose.eyes = 1.15;
+            }
             const zoom = 1 + 0.18 * outCubic(leave_k);
             logo.draw(f.dl, hero_cx + shake * 0.6, hero_cy + bob, logo_size * zoom, pose);
         },
@@ -380,6 +397,8 @@ pub fn draw(l: *Login, env: Env) ?Result {
             .light = env.light,
             .reduce = env.reduce,
             .opening = env.opening,
+            .react = if (react_t < mascote.reaction_seconds) react_t else -1,
+            .react_variant = l.react_n,
         }),
     }
 

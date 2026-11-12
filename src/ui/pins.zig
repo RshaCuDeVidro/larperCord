@@ -4,6 +4,7 @@ const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
+const mascote = @import("mascote.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
@@ -108,8 +109,14 @@ fn moreButton(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y: f32, channel: Id,
     return y + 48;
 }
 
-fn message(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y: f32, t1: []const u8, t2: []const u8, mark: []const u8) f32 {
+fn message(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y0: f32, t1: []const u8, t2: []const u8, mark: []const u8) f32 {
     const fam = ctx.ui;
+    var y = y0;
+    // Nada fixado: o mascote dorme em cima do aviso.
+    if (std.mem.eql(u8, mark, "pins-empty")) {
+        mascote.inApp(ctx, dl, body.x + body.w / 2, y + 58, 78, .sleep, .pins, 8);
+        y += 42;
+    }
     const w1 = d.width(fam.get(.bold), 16, t1);
     const w2 = d.width(fam.get(.regular), 13.5, t2);
     d.text(dl, fam.get(.bold), 16, body.x + (body.w - w1) / 2, y + 70, ctx.col(.text), t1);

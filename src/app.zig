@@ -1762,6 +1762,8 @@ pub const App = struct {
                 const ch = st.activeChannel() orelse return;
                 // Não dá para mandar agora: o texto continua na caixa.
                 if (!app.sendAllowed(ch)) return app.keepDraft(text);
+                // O mascote do canto reage ao que você escreveu (só aqui no computador).
+                @import("ui/mascote_pet.zig").onSend(text, now());
                 // O que foi escolhido na lista vira a menção exata (pelo ID).
                 const chosen = mentions.expand(app.gpa, &app.store, app.guildOfChannel(ch), text, autocomplete.tokens()) catch return;
                 defer app.gpa.free(chosen);
@@ -2379,6 +2381,7 @@ pub const App = struct {
         // Silêncio e nível de notificação vêm da conta (app_conta.zig).
         if (verdict != .hidden and @import("app_conta.zig").allowsNotify(app, m, cs, verdict == .important)) {
             f.notified +%= 1;
+            @import("ui/mascote_pet.zig").onPing(now());
             app.notify(m, cs);
         }
         if (verdict != .important and f.focusOn(now()) and !cs.info.unread and app.st.activeChannel() != m.channel) return m.channel;

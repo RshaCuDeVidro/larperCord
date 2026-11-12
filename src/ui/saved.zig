@@ -6,6 +6,7 @@ const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
+const mascote = @import("mascote.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
@@ -116,6 +117,8 @@ pub fn draw(ctx: *d.Ctx) void {
     const o = c.ImGui_GetCursorScreenPos();
     var y = o.y + 10;
     if (list.items.items.len == 0) {
+        mascote.inApp(ctx, bdl, body.x + body.w / 2, y + 58, 78, .sleep, .saved, 8);
+        y += 42;
         const t1 = i18n.tr("Nenhuma mensagem salva ainda.", "No saved messages yet.");
         const t2 = i18n.tr("Botão direito numa mensagem → Salvar mensagem.", "Right-click a message → Save Message.");
         const w1 = d.width(fam.get(.bold), 16, t1);

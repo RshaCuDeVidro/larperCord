@@ -52,6 +52,44 @@ pub fn pickOpening(setting: u8, seed: u64) Opening {
     return .of(@intCast(seed % Opening.count));
 }
 
+/// As reações do mascote do canto (ui/mascote_pet.zig).
+pub const Reaction = enum { none, hop, ping, laugh, gg, sad, wave, love, angry, wake, poke };
+
+/// Algo em minúsculas (só ASCII) contém `needle`?
+pub fn has(text: []const u8, needle: []const u8) bool {
+    if (needle.len > text.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= text.len) : (i += 1) {
+        var ok = true;
+        for (needle, 0..) |ch, j| {
+            if (std.ascii.toLower(text[i + j]) != ch) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) return true;
+    }
+    return false;
+}
+
+/// "gg" como palavra (não o "gg" de "bigger").
+pub fn hasWord(text: []const u8, word: []const u8) bool {
+    var it = std.mem.tokenizeAny(u8, text, " \t\n.,!?;:()[]\"'");
+    while (it.next()) |w| if (w.len == word.len and has(w, word)) return true;
+    return false;
+}
+
+/// A reação a uma mensagem que você mandou (só olha o texto aqui; nada sai daqui).
+pub fn reactionFor(text: []const u8) Reaction {
+    const t = text[0..@min(text.len, 400)];
+    if (has(t, "kkk") or has(t, "haha") or has(t, "hehe") or has(t, "rsrs") or hasWord(t, "lol") or hasWord(t, "lmao") or hasWord(t, "kek")) return .laugh;
+    if (hasWord(t, "gg") or hasWord(t, "ggwp") or hasWord(t, "ez") or has(t, "parabéns") or has(t, "parabens") or has(t, "congrats")) return .gg;
+    if (has(t, ":(") or has(t, ":'(") or has(t, "t-t") or has(t, "triste") or hasWord(t, "sad") or has(t, "😢") or has(t, "😭")) return .sad;
+    if (has(t, "<3") or has(t, "❤") or has(t, "te amo") or has(t, "love you") or has(t, "🥰")) return .love;
+    if (has(t, "bom dia") or has(t, "boa tarde") or has(t, "boa noite") or hasWord(t, "oi") or hasWord(t, "olá") or hasWord(t, "ola") or hasWord(t, "salve") or hasWord(t, "eae") or hasWord(t, "hello") or hasWord(t, "hi") or hasWord(t, "hey") or hasWord(t, "tchau") or hasWord(t, "bye")) return .wave;
+    return .hop;
+}
+
 pub fn seg(t: f32, a: f32, b: f32) f32 {
     return std.math.clamp((t - a) / (b - a), 0, 1);
 }
@@ -184,4 +222,17 @@ test "abertura: a escolhida vale; \"sortear\" passa pelas cinco; byte de fora vi
         const o: Opening = @fromBackingInt(@intCast(i));
         try std.testing.expect(openingSeconds(o) >= openingEnd(o));
     }
+}
+
+test "a reação ao que você escreve" {
+    try std.testing.expectEqual(Reaction.laugh, reactionFor("KKKKKKK que isso"));
+    try std.testing.expectEqual(Reaction.laugh, reactionFor("lol"));
+    try std.testing.expectEqual(Reaction.gg, reactionFor("gg wp"));
+    try std.testing.expectEqual(Reaction.hop, reactionFor("bigger egg"));
+    try std.testing.expectEqual(Reaction.sad, reactionFor("ficou triste :("));
+    try std.testing.expectEqual(Reaction.wave, reactionFor("Bom dia galera"));
+    try std.testing.expectEqual(Reaction.wave, reactionFor("oi"));
+    try std.testing.expectEqual(Reaction.hop, reactionFor("oito horas"));
+    try std.testing.expectEqual(Reaction.love, reactionFor("vcs <3"));
+    try std.testing.expectEqual(Reaction.hop, reactionFor("bora jogar"));
 }

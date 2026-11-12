@@ -12,6 +12,8 @@ const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
+const mascote = @import("mascote.zig");
+const mascote_pet = @import("mascote_pet.zig");
 const anim = @import("anim.zig");
 const w = @import("widgets.zig");
 const rich = @import("rich.zig");
@@ -187,7 +189,7 @@ fn measure(ctx: *d.Ctx, g: Geo, m: *StoredMessage, flags: u8) f32 {
     // O idioma entra na chave: "(editado)" e "(edited)" têm larguras diferentes.
     // A decoração dos plugins também, quando uma regra ou um plugin mudam.
     const deco_gen: u32 = if (decoIndex(false)) |dx| dx.layout_gen else 0;
-    const key: u32 = @as(u32, @intFromEnum(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19);
+    const key: u32 = @as(u32, @backingInt(g.variant)) | (@as(u32, ctx.st.theme_gen) << 2) | (@as(u32, flags) << 10) | (@as(u32, @intFromBool(i18n.en())) << 18) | (deco_gen << 19);
     // Uma entrada nova nesta mensagem (uma tradução que chegou) invalida a medida.
     if (decoIndex(true)) |dx| _ = dx.view(m, ctx.store.me);
     if (m.layout_w == g.wrap and m.layout_variant == key) return m.height;
@@ -949,6 +951,10 @@ fn skeleton(ctx: *d.Ctx, g: Geo, r: d.Rect) void {
         d.rect(ctx.dl, .{ .x = tx, .y = y - 2, .w = (r.w - tx + r.x - 60) * wfrac, .h = 10 }, col, 5);
         y -= 62;
     }
+    // O mascote digitando "..." por cima, enquanto as mensagens chegam.
+    if (r.h > 200 and r.w > 200) {
+        mascote.inApp(ctx, ctx.dl, r.x + r.w / 2, r.y + r.h * 0.42, 92, .loading, .history, if (ctx.store.connection == .ready) 30 else 0);
+    }
 }
 
 fn snippet(buf: []u8, s: []const u8) []const u8 {
@@ -1183,7 +1189,7 @@ fn toolbar(ctx: *d.Ctx, dl: *c.ImDrawList, m: *const StoredMessage, x_at: f32, t
         if (i == items.len - 1 and n_plugin > 0) x = toolbarPlugins(ctx, dl, m, x, tr.y + 2, bw);
         const br: d.Rect = .{ .x = x, .y = tr.y + 2, .w = bw, .h = 32 };
         const hb = d.hit(ctx, @truncate((m.msg.id *% 7) +% i + 900), br);
-        qa.mark(br, "tb:{d}:{d}", .{m.msg.id, i});
+        qa.mark(br, "tb:{d}:{d}", .{ m.msg.id, i });
         if (hb.hovered) d.rect(dl, br, ctx.col(.hover).mix(ctx.col(.text), 0.05), 5);
         const fs: f32 = if (it.emoji) 18 else 17;
         const font = ctx.ui.get(if (it.emoji) .regular else .bold);
@@ -1812,6 +1818,13 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
             d.tip(ctx, sr, i18n.tr("Enviar  (Enter)", "Send  (Enter)"), sh.hovered);
         }
         input_r = opt_r.x - 4;
+    }
+    // O lugar do mascote do canto, à esquerda dos botões: ele mora ali dentro e não
+    // cobre nada da conversa nem da caixa.
+    if (ctx.st.settings.mascot_pet and r.w > 320) {
+        const slot_w: f32 = 46;
+        input_r -= slot_w;
+        mascote_pet.slot(.{ .x = input_r + 2, .y = r.y, .w = slot_w, .h = r.h }, ctx.now_ms);
     }
 
     const fs = ctx.th.font_size;

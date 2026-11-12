@@ -9,6 +9,8 @@ const theme_mod = @import("../theme/theme.zig");
 const d = @import("draw.zig");
 const i18n = @import("i18n.zig");
 const anim = @import("anim.zig");
+const mascote = @import("mascote.zig");
+const qa = @import("qa.zig");
 const rail = @import("comp_rail.zig");
 const channels = @import("comp_channels.zig");
 const chat = @import("comp_chat.zig");
@@ -184,6 +186,8 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     palette.draw(ctx);
     search.draw(ctx);
     toast(ctx);
+    connectionBanner(ctx);
+    @import("mascote_pet.zig").draw(ctx);
     // Chamada chegando: por cima de tudo, em qualquer tema.
     @import("chamada.zig").overlay(ctx);
     shortcuts(ctx);
@@ -223,6 +227,41 @@ fn toast(ctx: *d.Ctx) void {
     d.rect(ctx.fg, r, (if (t.is_error) ctx.col(.danger) else ctx.col(.overlay)).alpha(k), 17);
     if (!t.is_error) d.border(ctx.fg, r, ctx.col(.accent).alpha(0.6 * k), 17, 1);
     d.text(ctx.fg, font, fs, r.x + 18, d.centerY(r, fs), (if (t.is_error) d.Rgba.white else ctx.col(.text)).alpha(k), t.text());
+}
+
+/// Caiu a conexão (fora do demo, depois de conectar): um aviso pequeno no topo,
+/// com o mascote digitando "..." enquanto reconecta, ou preocupado sem rede. Só
+/// depois de 1,5 s, para uma queda rápida não piscar na tela.
+/// O QA mostra o aviso na demonstração (que nunca perde a conexão de verdade).
+pub var qa_banner = false;
+
+fn connectionBanner(ctx: *d.Ctx) void {
+    const conn = ctx.store.connection;
+    const down = ctx.store.ready and (!ctx.store.demo or qa_banner) and (conn == .reconnecting or conn == .offline or conn == .failed);
+    if (!down) return;
+    const since = mascote.age(.offline, ctx.now_ms);
+    if (since < 1.5) {
+        anim.at(ctx.now_ms + @as(i64, @intFromFloat((1.5 - since) * 1000)) + 5);
+        return;
+    }
+    const k = std.math.clamp((since - 1.5) / 0.25, 0, 1);
+    if (k < 1) anim.at(ctx.now_ms + 16);
+    const font = ctx.ui.get(.semibold);
+    const fs: f32 = 13.5;
+    const text = switch (conn) {
+        .reconnecting => i18n.tr("Reconectando ao Discord…", "Reconnecting to Discord…"),
+        .failed => i18n.tr("Não deu para conectar ao Discord.", "Couldn't connect to Discord."),
+        else => i18n.tr("Sem conexão. Tentando de novo…", "No connection. Trying again…"),
+    };
+    const tw = d.width(font, fs, text);
+    const toast_on = ctx.now_ms < ctx.st.toast.until_ms;
+    const r: d.Rect = .{ .x = ctx.win.x + (ctx.win.w - tw - 64) / 2, .y = ctx.win.y + (if (toast_on) @as(f32, 56) else 14) - (1 - k) * 10, .w = tw + 64, .h = 38 };
+    qa.mark(r, "conn-banner", .{});
+    d.shadow(ctx.fg, r, 19, 12, ctx.col(.shadow).alpha(k));
+    d.rect(ctx.fg, r, ctx.col(.overlay).alpha(k), 19);
+    d.border(ctx.fg, r, (if (conn == .reconnecting) ctx.col(.idle) else ctx.col(.danger)).alpha(0.7 * k), 19, 1);
+    mascote.inApp(ctx, ctx.fg, r.x + 24, r.y + r.h / 2 + 1, 34, if (conn == .reconnecting) .loading else .offline, .offline, 20);
+    d.text(ctx.fg, font, fs, r.x + 46, d.centerY(r, fs), ctx.col(.text).alpha(k), text);
 }
 
 /// A lista que as configurações e o site mostram fica em ui/atalhos.zig: mudou
