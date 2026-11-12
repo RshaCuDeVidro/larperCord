@@ -583,7 +583,8 @@ pub const Action = union(enum) {
     resend_message: struct { channel: Id, nonce: u64 },
     discard_message: struct { channel: Id, nonce: u64 },
     /// O cartão de perfil abriu: busca o perfil completo (uma vez por pessoa).
-    want_profile: Id,
+    /// O perfil de alguém, como aparece no servidor `guild` (0 = o global).
+    want_profile: struct { user: Id, guild: Id },
     /// Online, ausente, não perturbe ou invisível (offline), até mudar.
     set_status: types.Status,
     /// O mesmo, por um tempo (`minutes`; 0 = até mudar), escolhido no submenu.
@@ -597,7 +598,7 @@ pub const Action = union(enum) {
     /// Recusa um pedido, cancela o nosso, desfaz a amizade ou desbloqueia.
     remove_relationship: struct { user: Id, from: @import("conta.zig").Origin },
     /// Perfil grande (o cartão com abas); `tab`: 0 atividade, 1 amigos, 2 servidores.
-    open_full_profile: struct { user: Id, tab: u8 = 0 },
+    open_full_profile: struct { user: Id, tab: u8 = 0, guild: ?Id = null },
     set_note: struct { user: Id, text: []const u8 },
     /// Atividade sem imagem: busca o ícone do jogo (uma vez por aplicação).
     want_app_icon: Id,

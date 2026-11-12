@@ -187,6 +187,10 @@ pub const App = struct {
     gw_signaled: std.atomic.Value(bool) = .init(false),
     /// Perfis já pedidos nesta sessão (um pedido por pessoa).
     asked_profiles: std.AutoHashMapUnmanaged(types.Id, void) = .empty,
+    /// O último perfil pedido de cada pessoa: de que servidor e quando. O Store guarda
+    /// um perfil por pessoa, e ele muda com o servidor ("no servidor desde", o perfil
+    /// de lá): outro servidor pede de novo, e o mesmo só se não chegou em 30 s.
+    profile_asks: std.AutoHashMapUnmanaged(types.Id, struct { guild: types.Id, ms: i64 }) = .empty,
     profiles_gen: u32 = 0,
     /// Cópia do tema com a cor de destaque e os cantos das configurações.
     th_custom: @import("theme/theme.zig").Theme = undefined,
@@ -547,6 +551,7 @@ pub const App = struct {
         app.st.volumes.deinit(app.gpa);
         app.st.conta.deinit();
         app.asked_profiles.deinit(app.gpa);
+        app.profile_asks.deinit(app.gpa);
         var colors_it = app.theme_colors.iterator();
         while (colors_it.next()) |e| app.gpa.free(e.key_ptr.*);
         app.theme_colors.deinit(app.gpa);
@@ -769,6 +774,7 @@ pub const App = struct {
         _ = app.st.drafts.switchTo(app.gpa, 0, &app.st.input, app.st.editing == 0);
         app.st.filtros.resetSession();
         app.asked_profiles.clearRetainingCapacity();
+        app.profile_asks.clearRetainingCapacity();
         app.clearUploads();
         app.st.viewer = null;
         app.st.saved.clear(app.gpa);
@@ -1496,20 +1502,23 @@ pub const App = struct {
             },
             .set_status => |status| @import("app_conta.zig").setStatus(app, status, 0, false),
             .set_status_for => |sf| @import("app_conta.zig").setStatus(app, sf.status, @import("core/conta.zig").statusExpiry(sf.status, sf.minutes, now()), false),
-            .want_profile => |user| {
-                // Por servidor também: "no servidor desde" muda com ele.
-                const key = user ^ (st.guild *% 0x9E3779B97F4A7C15);
+            .want_profile => |wp| {
+                const user = wp.user;
                 // O Store esvaziou os perfis: dá para pedir de novo.
                 if (app.profiles_gen != app.store.profiles_gen) {
                     app.profiles_gen = app.store.profiles_gen;
-                    app.asked_profiles.clearRetainingCapacity();
+                    app.profile_asks.clearRetainingCapacity();
                 }
-                if (app.asked_profiles.contains(key)) return;
-                app.asked_profiles.put(app.gpa, key, {}) catch return;
-                app.cmd(.{ .fetch_profile = .{ .user = user, .guild = st.guild } });
+                const now_ms = now();
+                if (app.profile_asks.get(user)) |ask| if (ask.guild == wp.guild) {
+                    const have = if (app.store.profiles.get(user)) |p| p.guild == wp.guild else false;
+                    if (have or now_ms - ask.ms < 30_000) return;
+                };
+                app.profile_asks.put(app.gpa, user, .{ .guild = wp.guild, .ms = now_ms }) catch return;
+                app.cmd(.{ .fetch_profile = .{ .user = user, .guild = wp.guild } });
             },
             .open_full_profile => |fp| {
-                st.popup = .{ .profile_full = .{ .user = fp.user } };
+                st.popup = .{ .profile_full = .{ .user = fp.user, .guild = fp.guild } };
                 st.profile_tab = fp.tab;
             },
             .set_note => |n| {

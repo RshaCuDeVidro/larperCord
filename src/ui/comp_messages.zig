@@ -1262,10 +1262,12 @@ fn toolbarPlugins(ctx: *d.Ctx, dl: *c.ImDrawList, m: *const StoredMessage, x_in:
 
 /// Nome/avatar clicável. O ID inclui a mensagem: a mesma pessoa aparece em
 /// várias mensagens visíveis e IDs repetidos impedem o ImGui de clicar.
-fn nameHit(ctx: *d.Ctx, uid: Id, msg_id: Id, r: d.Rect, salt: u64) void {
+/// O cartão abre com o perfil do servidor da mensagem (num painel da tela dividida,
+/// pode não ser o selecionado).
+fn nameHit(ctx: *d.Ctx, gid: Id, uid: Id, msg_id: Id, r: d.Rect, salt: u64) void {
     const hb = d.hit(ctx, @truncate(msg_id *% 1_000_003 +% uid *% 131 +% salt), r);
     qa.mark(r, "user:{d}", .{uid});
-    if (hb.clicked) ctx.popup(.{ .profile = .{ .user = uid, .x = r.right() + 4, .y = r.y } });
+    if (hb.clicked) ctx.popup(.{ .profile = .{ .user = uid, .x = r.right() + 4, .y = r.y, .guild = gid } });
     if (hb.right) ctx.popup(.{ .menu = .{ .kind = .user, .id = uid, .x = ctx.mouse.x, .y = ctx.mouse.y } });
 }
 
@@ -1387,11 +1389,11 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 if (g.avatar > 0) {
                     const ar: d.Rect = .{ .x = r.x + 16, .y = y, .w = g.avatar, .h = g.avatar };
                     w.avatarIn(ctx, dl, gid, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
-                    nameHit(ctx, m.msg.author, m.msg.id, ar, 1);
+                    nameHit(ctx, gid, m.msg.author, m.msg.id, ar, 1);
                 }
                 const nw = d.width(fam.get(.semibold), g.size, name);
                 const nr: d.Rect = .{ .x = tx, .y = y, .w = nw, .h = g.line_h };
-                nameHit(ctx, m.msg.author, m.msg.id, nr, 2);
+                nameHit(ctx, gid, m.msg.author, m.msg.id, nr, 2);
                 d.text(dl, fam.get(.semibold), g.size, tx, y + (g.line_h - g.size * 1.2) / 2, role_col.alpha(alpha), name);
                 w.markName(nr, "msg", m.msg.author, name);
                 if (ctx.hovering(nr)) d.line(dl, tx, nr.bottom() - 2, tx + nw, nr.bottom() - 2, role_col, 1);
@@ -1487,7 +1489,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             const name_col_w = @max(col_w - mark_w, 24);
             const nw = @min(d.width(fam.get(.bold), g.size, name), name_col_w);
             const nick_col = if (group) role_col else role_col.alpha(0.35);
-            nameHit(ctx, m.msg.author, m.msg.id, .{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, 3);
+            nameHit(ctx, gid, m.msg.author, m.msg.id, .{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, 3);
             _ = d.textClipped(dl, fam.get(.bold), g.size, x + col_w - nw, ty, nick_col.alpha(alpha), name, name_col_w);
             w.markName(.{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, "msg", m.msg.author, name);
             w.botMark(ctx, dl, fam.get(.bold), g.size, x + col_w - nw - mark_w, y, g.line_h, u, (if (group) @as(f32, 1) else 0.35) * alpha);
@@ -1524,7 +1526,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 y += g.spacing;
                 if (!self) {
                     const nw = d.width(fam.get(.semibold), 13, name);
-                    nameHit(ctx, m.msg.author, m.msg.id, .{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, 4);
+                    nameHit(ctx, gid, m.msg.author, m.msg.id, .{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, 4);
                     d.text(dl, fam.get(.semibold), 13, r.x + left_pad + 6, y, role_col, name);
                     w.markName(.{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, "msg", m.msg.author, name);
                     _ = w.botTag(ctx, dl, r.x + left_pad + 6 + nw, y + 8, u, false, 1);
@@ -1543,7 +1545,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             if (!self and g.avatar > 0 and group) {
                 const ar: d.Rect = .{ .x = r.x + 20, .y = br.y, .w = g.avatar, .h = g.avatar };
                 w.avatarIn(ctx, dl, gid, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
-                nameHit(ctx, m.msg.author, m.msg.id, ar, 5);
+                nameHit(ctx, gid, m.msg.author, m.msg.id, ar, 5);
             }
             var ty = br.y + 7;
             if (reply) {

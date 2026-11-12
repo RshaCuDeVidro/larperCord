@@ -200,7 +200,7 @@ fn list(ctx: *d.Ctx, dl_outer: *c.ImDrawList, body: d.Rect, guild: Id) void {
             w.markName(rr, "people", uid, name);
             _ = w.botTag(ctx, bdl, rr.x + 40 + nw, rr.y + rr.h / 2, u, false, 1);
             // Clicar abre o cartão da pessoa (no lugar desta lista).
-            if (hb.clicked) ctx.popup(.{ .profile = .{ .user = uid, .x = rr.right() + 8, .y = rr.y } });
+            if (hb.clicked) ctx.popup(.{ .profile = .{ .user = uid, .x = rr.right() + 8, .y = rr.y, .guild = guild } });
         }
         y += row_h;
     }

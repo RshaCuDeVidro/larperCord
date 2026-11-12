@@ -12,6 +12,7 @@ const R = @import("qa_runner.zig");
 const Op = R.Op;
 const qa = @import("ui/qa.zig");
 const gw = @import("net/fake_gateway.zig");
+const face_json = @import("net/face_json.zig");
 const types = @import("core/types.zig");
 const platform = @import("platform/window.zig");
 const Rect = @import("theme/layout.zig").Rect;
@@ -143,9 +144,12 @@ fn cardShown(_: *App) bool {
     const av = qa.find("profile-avatar") orelse return false;
     return named("card", ana, "Aninha") and named("global", ana, "ana.exe") and serverAvatarIn(ana, av);
 }
+/// Na tela: a bio e o banner do perfil do servidor (e os pronomes de lá no Store, à
+/// parte dos globais).
 fn cardServerProfile(app: *App) bool {
     const p = app.store.profiles.get(ana) orelse return false;
-    return p.server and p.guild == g0 and std.mem.eql(u8, p.pronouns, "ela/elu") and qa.find("profile-banner") != null;
+    return p.guild == g0 and std.mem.eql(u8, p.guild_pronouns, "ela/elu") and !std.mem.eql(u8, p.pronouns, "ela/elu") and
+        qa.find("profile-bio-srv") != null and qa.find("profile-banner-srv") != null;
 }
 
 fn openFull(app: *App) void {
@@ -186,7 +190,97 @@ fn cardGlobal(app: *App) bool {
     const av = qa.find("profile-avatar") orelse return false;
     const p = app.store.profiles.get(ana) orelse return false;
     return named("card", ana, "ana.exe") and find("nome:global:{d}:ana.exe", .{ana}) == null and !serverAvatarIn(ana, av) and
-        p.guild == g1 and !p.server;
+        p.guild == g1 and qa.find("profile-bio-srv") == null and qa.find("profile-banner-srv") == null;
+}
+
+/// De volta ao primeiro servidor, o cartão pede o perfil de lá de novo (o Store tinha o
+/// do outro servidor).
+fn cardServerAgain(app: *App) bool {
+    const p = app.store.profiles.get(ana) orelse return false;
+    return app.st.guild == g0 and p.guild == g0 and named("card", ana, "Aninha") and qa.find("profile-bio-srv") != null;
+}
+
+/// Configurações → Minha conta: os pronomes e a bio são os globais, mesmo com um
+/// servidor com perfil próprio selecionado (senão salvar gravaria os de lá como globais).
+fn openAccount(app: *App) void {
+    app.st.settings.page = .conta;
+    app.st.settings.open = true;
+}
+fn accountGlobal(app: *App) bool {
+    const f = @import("ui/settings_conta.zig").qaFields();
+    // (A bio do servidor fala do larperCord; a global, não.)
+    return app.st.guild == g0 and std.mem.eql(u8, f[0], "ele/dele") and f[1].len > 0 and std.mem.indexOf(u8, f[1], "larperCord") == null;
+}
+fn closeSettings(app: *App) void {
+    app.st.settings.open = false;
+}
+
+/// Um GUILD_MEMBER_UPDATE parcial (ganhou um cargo, sem `nick`) chega pelo mesmo
+/// leitor do gateway (net/face_json.zig): o apelido fica.
+fn partialUpdate(app: *App) void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const v = std.json.parseFromSliceLeaky(std.json.Value, arena.allocator(), "{\"guild_id\":\"500000\",\"user\":{\"id\":\"1001\"},\"roles\":[\"7\"],\"avatar\":\"demo\"}", .{}) catch return;
+    var pb: [128]u8 = undefined;
+    const ch = face_json.read(&pb, g0, ana, v) orelse return;
+    var o = face_json.owned(std.heap.c_allocator, ch);
+    // A foto da demonstração não é um caminho do CDN: fica a de antes.
+    if (o.face.avatar) |t| std.heap.c_allocator.free(t);
+    o.face.avatar = null;
+    o.keep_avatar = true;
+    push(app, .{ .member_face = .{ .guild = g0, .user = ana, .face = o.face, .keep_nick = o.keep_nick, .keep_avatar = o.keep_avatar } });
+}
+fn nickKept(_: *App) bool {
+    const r = find("member:{d}", .{ana}) orelse return false;
+    return namedIn("member", ana, "Aninha", r) and serverAvatarIn(ana, r);
+}
+
+/// O apelido muda com a conversa já medida: a menção na resposta muda junto, e a
+/// mensagem é medida de novo (a menção continua dentro dela).
+const long_nick = "Aninha Comprida";
+fn renameAna(app: *App) void {
+    push(app, .{ .member_face = .{ .guild = g0, .user = ana, .face = .{ .nick = std.heap.c_allocator.dupe(u8, long_nick) catch return }, .keep_avatar = true } });
+}
+fn renamed(_: *App) bool {
+    const r = find("msg:{d}", .{second}) orelse return false;
+    const m = find("nome:mention:{d}:" ++ long_nick, .{ana}) orelse return false;
+    return m.bottom() <= r.bottom() + 1 and namedIn("reply", ana, long_nick, r);
+}
+fn renameBack(app: *App) void {
+    push(app, .{ .member_face = .{ .guild = g0, .user = ana, .face = .{ .nick = std.heap.c_allocator.dupe(u8, "Aninha") catch return }, .keep_avatar = true } });
+}
+fn nameBack(_: *App) bool {
+    return named("mention", ana, "Aninha");
+}
+
+/// "Respondendo a" na barra da caixa: o apelido.
+fn replyToFirst(app: *App) void {
+    app.st.reply_to = first;
+}
+fn replyingShown(_: *App) bool {
+    return named("replying", ana, "Aninha");
+}
+fn cancelReply(app: *App) void {
+    app.st.reply_to = 0;
+}
+
+/// Na DM com a ana: o nome global.
+fn openDm(app: *App) void {
+    app.handle(.{ .select_channel = gw.dmId(0) });
+}
+fn dmOpen(app: *App) bool {
+    const cs = app.store.channel(gw.dmId(0)) orelse return false;
+    return app.st.activeChannel() == gw.dmId(0) and cs.history == .loaded;
+}
+var dm_msg: Id = 0;
+fn dmMessage(app: *App) void {
+    const now = gw.nowMs();
+    dm_msg = types.makeSnowflake(now, 0x3e003);
+    push(app, .{ .message_create = .{ .id = dm_msg, .channel = gw.dmId(0), .author = ana, .timestamp = @divTrunc(now, 1000), .content = std.heap.c_allocator.dupe(u8, "e aí <@1001>?") catch return } });
+}
+fn dmGlobal(_: *App) bool {
+    const r = find("msg:{d}", .{dm_msg}) orelse return false;
+    return namedIn("msg", ana, "ana.exe", r) and namedIn("mention", ana, "ana.exe", r) and !serverAvatarIn(ana, r);
 }
 
 pub const ops = [_]Op{

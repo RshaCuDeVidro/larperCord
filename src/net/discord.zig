@@ -2660,28 +2660,15 @@ pub const Gateway = struct {
             pf.boost_ms = j.isoTime(j.str(j.get(gm, "premium_since")) orelse "") * 1000;
             g.memberFace(guild, uid, gm);
         }
-        // O perfil do servidor: a bio, os pronomes e o banner de lá entram no lugar
-        // dos globais (o que vier vazio fica o global).
-        if (guild != 0) if (j.get(v, "guild_member_profile")) |gp| {
-            const gbio = j.str(j.get(gp, "bio")) orelse "";
-            if (gbio.len > 0) if (dupeOpt(gbio)) |t| {
-                if (pf.bio.len > 0) alloc.free(pf.bio);
-                pf.bio = t;
-                pf.server = true;
-            } else |_| {};
-            const gpro = j.str(j.get(gp, "pronouns")) orelse "";
-            if (gpro.len > 0) if (dupeOpt(gpro)) |t| {
-                if (pf.pronouns.len > 0) alloc.free(pf.pronouns);
-                pf.pronouns = t;
-                pf.server = true;
-            } else |_| {};
+        // O perfil do servidor fica à parte dos globais (o cartão mostra o de lá; as
+        // Configurações, os globais).
+        if (guild != 0) {
+            const sp = face_json.serverProfile(v);
             var bb: [128]u8 = undefined;
-            if (user_json.guildPath(&bb, guild, uid, "banners", j.str(j.get(gp, "banner")) orelse "")) |path| if (dupeOpt(path)) |t| {
-                if (pf.banner.len > 0) alloc.free(pf.banner);
-                pf.banner = t;
-                pf.server = true;
-            } else |_| {};
-        };
+            pf.guild_bio = dupeOpt(sp.bio) catch "";
+            pf.guild_pronouns = dupeOpt(sp.pronouns) catch "";
+            pf.guild_banner = dupeOpt(user_json.guildPath(&bb, guild, uid, "banners", sp.banner) orelse "") catch "";
+        }
         var mg: std.ArrayList(Id) = .empty;
         for (j.array(j.get(v, "mutual_guilds"))) |m| if (j.id(j.get(m, "id"))) |id| mg.append(alloc, id) catch {};
         pf.mutual_guilds = mg.toOwnedSlice(alloc) catch &.{};

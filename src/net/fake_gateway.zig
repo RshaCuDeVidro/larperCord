@@ -769,19 +769,19 @@ pub const Gateway = struct {
                     cns[0] = .{ .kind = try alloc.dupe(u8, "github"), .name = try alloc.dupe(u8, seed.name), .url = try std.fmt.allocPrint(alloc, "https://github.com/{s}", .{seed.name}) };
                     cns[1] = .{ .kind = try alloc.dupe(u8, "steam"), .name = try alloc.dupe(u8, seed.name), .url = "" };
                     const nf: u32 = @intCast(mf.items.len);
-                    // A ana tem perfil no primeiro servidor: bio, pronomes e banner de lá.
-                    const server = fp.guild == guildId(0) and fp.user == 1001;
+                    // A ana e a gente têm perfil no primeiro servidor: bio, pronomes e
+                    // (a ana) banner de lá, à parte dos globais.
+                    const server = fp.guild == guildId(0) and (fp.user == 1001 or fp.user == me_id);
                     g.emit(.{ .profile = .{ .user = fp.user, .profile = .{
-                        .banner = if (server) try alloc.dupe(u8, "demo:3") else if (fp.user % 2 == 1) try alloc.dupe(u8, "demo:1") else "",
+                        .banner = if (fp.user % 2 == 1) try alloc.dupe(u8, "demo:1") else "",
                         .accent = 0x5865F2,
-                        .bio = if (server)
-                            try i18n.allocPrint(alloc, "aqui eu cuido dos **temas** do larperCord 🎨", "here I look after larperCord's **themes** 🎨", .{})
-                        else
-                            try i18n.allocPrint(alloc, "oi! sou **{s}** 👋\nfalo de zig, rice e café.", "hi! I'm **{s}** 👋\ninto zig, ricing and coffee.", .{seed.name}),
-                        .pronouns = try alloc.dupe(u8, if (server) "ela/elu" else if (fp.user % 3 == 0) "ela/dela" else "ele/dele"),
+                        .bio = try i18n.allocPrint(alloc, "oi! sou **{s}** 👋\nfalo de zig, rice e café.", "hi! I'm **{s}** 👋\ninto zig, ricing and coffee.", .{seed.name}),
+                        .pronouns = try alloc.dupe(u8, if (fp.user % 3 == 0) "ela/dela" else "ele/dele"),
                         .username = try std.fmt.allocPrint(alloc, "{s}_{d}", .{ seed.name, fp.user % 100 }),
                         .guild = fp.guild,
-                        .server = server,
+                        .guild_bio = if (server) try i18n.allocPrint(alloc, "aqui eu cuido dos **temas** do larperCord 🎨", "here I look after larperCord's **themes** 🎨", .{}) else "",
+                        .guild_pronouns = if (server) try alloc.dupe(u8, "ela/elu") else "",
+                        .guild_banner = if (server and fp.user == 1001) try alloc.dupe(u8, "demo:3") else "",
                         .joined_ms = if (fp.guild != 0) nowMs() - @as(i64, @intCast(fp.user % 40 + 3)) * 30 * 86_400_000 else 0,
                         .mutual_guilds = try mg.toOwnedSlice(alloc),
                         .mutual_friends = try mf.toOwnedSlice(alloc),

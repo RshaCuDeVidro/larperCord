@@ -542,7 +542,7 @@ pub const Store = struct {
     }
 
     fn freeProfile(p: types.Profile) void {
-        for ([_][]const u8{ p.banner, p.bio, p.pronouns, p.username }) |t| if (t.len > 0) ev_alloc.free(t);
+        for ([_][]const u8{ p.banner, p.bio, p.pronouns, p.username, p.guild_bio, p.guild_pronouns, p.guild_banner }) |t| if (t.len > 0) ev_alloc.free(t);
         if (p.mutual_guilds.len > 0) ev_alloc.free(p.mutual_guilds);
         if (p.mutual_friends.len > 0) ev_alloc.free(p.mutual_friends);
         for (p.connections) |cn| for ([_][]const u8{ cn.kind, cn.name, cn.url }) |t| if (t.len > 0) ev_alloc.free(t);
@@ -1726,6 +1726,9 @@ pub const Store = struct {
                     var bit = s.bios.valueIterator();
                     while (bit.next()) |b| s.gpa.free(b.*);
                     s.bios.clearRetainingCapacity();
+                    var gbit = s.guild_bios.valueIterator();
+                    while (gbit.next()) |b| s.gpa.free(b.*);
+                    s.guild_bios.clearRetainingCapacity();
                 }
                 const gop = try s.profiles.getOrPut(s.gpa, pr.user);
                 if (gop.found_existing) freeProfile(gop.value_ptr.*);
@@ -1734,6 +1737,8 @@ pub const Store = struct {
                 const bg = try s.bios.getOrPut(s.gpa, pr.user);
                 if (bg.found_existing) s.gpa.free(bg.value_ptr.*);
                 bg.value_ptr.* = spans;
+                if (s.guild_bios.fetchRemove(pr.user)) |kv| s.gpa.free(kv.value);
+                if (pr.profile.guild_bio.len > 0) try s.guild_bios.put(s.gpa, pr.user, try markdown.parse(s.gpa, pr.profile.guild_bio));
             },
             .relationship => |r| {
                 if (r.kind == .none) {

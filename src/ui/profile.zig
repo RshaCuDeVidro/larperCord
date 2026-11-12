@@ -99,11 +99,16 @@ fn accountMs(uid: Id) i64 {
 
 // --- Seções -------------------------------------------------------------------
 
-/// O perfil guardado, se vale aqui: um com a bio, os pronomes ou o banner de
-/// outro servidor espera o deste chegar (o pedido sai ao abrir).
+/// O perfil guardado como o cartão mostra aqui: num servidor, a bio, os pronomes e o
+/// banner do perfil de lá no lugar dos globais, quando o perfil guardado é desse
+/// servidor e a pessoa tem (o de outro servidor mostra os globais até o daqui
+/// chegar). `guild_bio` fica preenchido só quando a bio mostrada é a de lá.
 fn profileFor(ctx: *const d.Ctx, uid: Id, gid: Id) ?types.Profile {
-    const p = ctx.store.profiles.get(uid) orelse return null;
-    if (p.server and p.guild != gid) return null;
+    var p = ctx.store.profiles.get(uid) orelse return null;
+    const here = gid != 0 and p.guild == gid;
+    if (here and p.guild_bio.len > 0) p.bio = p.guild_bio else p.guild_bio = "";
+    if (here and p.guild_pronouns.len > 0) p.pronouns = p.guild_pronouns;
+    if (here and p.guild_banner.len > 0) p.banner = p.guild_banner;
     return p;
 }
 
@@ -223,7 +228,10 @@ fn bio(col: *Col, uid: Id, pf: ?types.Profile, heading: bool) void {
     const p = pf orelse return;
     if (p.bio.len == 0) return;
     const ctx = col.ctx;
-    const spans = ctx.store.bios.get(uid) orelse return;
+    // A do perfil do servidor (ver `profileFor`) ou a global.
+    const server = p.guild_bio.len > 0;
+    const spans = (if (server) ctx.store.guild_bios.get(uid) else ctx.store.bios.get(uid)) orelse return;
+    if (server and col.dl != null) qa.mark(.{ .x = col.x, .y = col.y, .w = col.w, .h = 19 }, "profile-bio-srv", .{});
     const opts: rich.Opts = .{ .family = ctx.ui, .size = 13.5, .line_h = 19, .color = ctx.col(.text).mix(ctx.col(.muted), 0.1), .underline_links = ctx.st.settings.underline_links };
     if (heading) col.label(i18n.tr("SOBRE MIM", "ABOUT ME"));
     const t = rich.layout(col.dl, ctx.store, ctx.th, spans, col.x, col.y, col.w, opts, ctx.mouse);
@@ -617,6 +625,7 @@ fn header(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, uid: Id, gid: Id, pf: ?type
                 // Por baixo do botão do canto: quem está em cima ganha o clique.
                 const hb = d.hitUnder(ctx, ids + 1, br);
                 qa.mark(br, "profile-banner", .{});
+                if (p.guild_banner.len > 0 and p.banner.ptr == p.guild_banner.ptr) qa.mark(br, "profile-banner-srv", .{});
                 if (hb.clicked) {
                     var fb: [192]u8 = undefined;
                     att.openOriginal(ctx, w.bannerFull(&fb, uid, p.banner), name, @intCast(t.w), @intCast(t.h));
@@ -686,11 +695,10 @@ fn cornerButton(ctx: *d.Ctx, dl: *c.ImDrawList, id: usize, r: d.Rect, tipText: [
 
 // --- Cartão pequeno -------------------------------------------------------------
 
-pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32) void {
+pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32, gid: Id) void {
     if (ctx.store.user(uid) == null) return popup.close(ctx);
     const hook = isWebhook(ctx, uid);
-    if (!hook) ctx.act(.{ .want_profile = uid });
-    const gid = ctx.st.guild;
+    if (!hook) ctx.act(.{ .want_profile = .{ .user = uid, .guild = gid } });
     const pf = profileFor(ctx, uid, gid);
     const width: f32 = 340;
     const banner_h: f32 = if (pf != null and pf.?.banner.len > 0) 120 else 92;
@@ -713,7 +721,7 @@ pub fn card(ctx: *d.Ctx, uid: Id, x: f32, y: f32) void {
     d.border(dl, r, ctx.col(.border), radius, 1);
     // Abre o perfil grande.
     const fr: d.Rect = .{ .x = r.right() - 40, .y = r.y + 10, .w = 28, .h = 28 };
-    if (cornerButton(ctx, dl, 905, fr, i18n.tr("Ver perfil completo", "View Full Profile"), "profile-full")) ctx.act(.{ .open_full_profile = .{ .user = uid } });
+    if (cornerButton(ctx, dl, 905, fr, i18n.tr("Ver perfil completo", "View Full Profile"), "profile-full")) ctx.act(.{ .open_full_profile = .{ .user = uid, .guild = gid } });
     icons.expand(dl, fr.x + 14, fr.y + 14, d.Rgba.white.alpha(0.9).u());
     // "Mais": o menu da pessoa (amizade, ignorar, bloquear, moderar…).
     if (uid != ctx.store.me and !hook) {
@@ -775,10 +783,9 @@ fn body(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
 /// Quando a aba do perfil grande mudou (o conteúdo novo entra com fade).
 var tab_t0: i64 = 0;
 
-pub fn full(ctx: *d.Ctx, uid: Id) void {
+pub fn full(ctx: *d.Ctx, uid: Id, gid: Id) void {
     if (ctx.store.user(uid) == null) return popup.close(ctx);
-    if (!isWebhook(ctx, uid)) ctx.act(.{ .want_profile = uid });
-    const gid = ctx.st.guild;
+    if (!isWebhook(ctx, uid)) ctx.act(.{ .want_profile = .{ .user = uid, .guild = gid } });
     const pf = profileFor(ctx, uid, gid);
     const mw = @min(ctx.win.w - 48, 960);
     const mh = @min(ctx.win.h - 48, 720);
