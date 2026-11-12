@@ -201,6 +201,8 @@ fn autohide(ctx: *d.Ctx, p: layout.Placed, i: usize) void {
     const near = p.rect.inset(-48, -48).contains(ctx.mouse.x, ctx.mouse.y) or ctx.st.popup != .none;
     const k = anim.to(anim.id("autohide", i), if (near) 1 else 0, 10);
     if (k > 0.98) return;
+    // Escondido atrás do véu: o mascote do canto não vai até lá.
+    @import("mascote_pet.zig").veiled(p.node.name, ctx.now_ms);
     d.rect(ctx.fg, p.rect, ctx.col(.bg).alpha(0.9 * (1 - k)), 0);
     // Escondido, fica um tracinho na beirada dizendo que tem algo ali.
     const hx = if (p.rect.x - ctx.win.x < ctx.win.right() - p.rect.right()) p.rect.x + 5 else p.rect.right() - 8;

@@ -92,7 +92,7 @@ pub const Settings = struct {
     mascot_opening: u8 = 0,
     /// O mascote que mora no canto, em cima da caixa de mensagem (ui/mascote_pet.zig).
     mascot_pet: bool = true,
-    /// A vida própria dele (ui/mascote_vida.zig): 0 = desligada, 1 = calma, 2 = normal,
+    /// A vida própria dele (ui/mascote_pet.zig): 0 = desligada, 1 = calma, 2 = normal,
     /// 3 = agitada (de quanto em quanto tempo ele faz alguma coisa sozinho).
     mascot_life: u8 = 2,
     /// Passeia pela janela e pula junto quando você troca de canal.
@@ -109,6 +109,7 @@ pub const Settings = struct {
     mascot_plant: bool = true,
     mascot_plant_days: u8 = 0,
     mascot_plant_day: i16 = 0,
+    mascot_plant_wilted: bool = false,
     /// O tempo da call ao lado de cada canal de voz (ui/voice_timer.zig): ligado, o
     /// formato (um de core/voice_timer.zig `presets`, ou `custom_index` com o
     /// `voice_timer_pattern` da pessoa).
