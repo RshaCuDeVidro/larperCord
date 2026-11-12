@@ -391,6 +391,55 @@ fn emit(list: []const Char, at: usize) ?usize {
     return n;
 }
 
+// --- A caixa de mensagem ---------------------------------------------------------------
+
+/// O lugar de cada caractere de uma linha da caixa de mensagem (o InputText do ImGui), no
+/// gancho `larper_input_bidi` de imgui_widgets.cpp. `line`: uma linha visual (o ImGui quebra
+/// o parágrafo pela largura); `para`: o parágrafo inteiro dela, até o "\n", de onde vem a
+/// direção (a primeira letra forte). Escreve, na ordem em que vão para a tela, o caractere
+/// moldado (`cp_out`; o lugar vazio que sobra do lam + alef sai como `fill`, sem largura) e
+/// o byte de onde ele veio, contado do começo da linha (`off_out`), e se ele está num trecho
+/// da direita para a esquerda (`rtl_out`: o cursor "antes" dele fica à direita). `base_rtl`:
+/// a linha termina na borda direita. Devolve quantos; 0 = parágrafo sem letra RTL (o ImGui
+/// desenha como sempre) ou linha que não coube.
+pub fn inputLine(line_ptr: [*]const u8, line_len: c_int, para_ptr: [*]const u8, para_len: c_int, cp_out: [*]u32, off_out: [*]c_int, rtl_out: [*]u8, cap: c_int, base_rtl: *bool) callconv(.c) c_int {
+    const ln = line_ptr[0..@intCast(@max(line_len, 0))];
+    const para = para_ptr[0..@intCast(@max(para_len, 0))];
+    if (!hasRtl(para)) return 0;
+    const rtl = baseRtl(para);
+    base_rtl.* = rtl;
+    var i: usize = 0;
+    var len: usize = 0;
+    const max = @min(max_line, @as(usize, @intCast(@max(cap, 0))));
+    while (i < ln.len) : (len += 1) {
+        if (len == max) return 0;
+        input_offs[len] = @intCast(i);
+        cps[len] = decode(ln, &i);
+    }
+    if (len == 0) return 0;
+    const l: Index = @intCast(len);
+    fribidi_get_bidi_types(&cps, l, &types);
+    fribidi_get_bracket_types(&cps, l, &types, &brackets);
+    var base: ParType = if (rtl) par_rtl else par_ltr;
+    arena_used = 0;
+    if (fribidi_get_par_embedding_levels_ex(&types, &brackets, l, &base, &levels) == 0) return 0;
+    fribidi_get_joining_types(&cps, l, &props);
+    fribidi_join_arabic(&types, l, &levels, &props);
+    fribidi_shape(flags, &levels, l, &props, &cps);
+    for (0..len) |k| input_map[k] = @intCast(k);
+    if (fribidi_reorder_line(flags, &types, l, 0, base, &levels, &cps, &input_map) == 0) return 0;
+    // O reorder_line reordena o texto e o mapa, não os níveis: a direção vem do lógico.
+    for (0..len) |k| {
+        const logical: usize = @intCast(input_map[k]);
+        cp_out[k] = cps[k];
+        off_out[k] = input_offs[logical];
+        rtl_out[k] = @intCast(levels[logical] & 1);
+    }
+    return l;
+}
+var input_offs: [max_line]c_int = undefined;
+var input_map: [max_line]Index = undefined;
+
 // --- Palavras de uma mensagem -----------------------------------------------------------
 
 /// A direção de um pedaço que entra no parágrafo como um caractere só (menção, emoji, código,
@@ -628,4 +677,48 @@ test "pedaço num nível só: espelho, ordem e emoji inteiro" {
     // Nível par: o número e o latino como estão.
     try std.testing.expect(visualRun("12", false) == null);
     try std.testing.expect(visualRun("problem", false) == null);
+}
+
+test "caixa de mensagem: linha em árabe na ordem da tela, com o byte de cada letra" {
+    const para = "سلام abc";
+    var cp: [32]u32 = undefined;
+    var off: [32]c_int = undefined;
+    var dir: [32]u8 = undefined;
+    var rtl = false;
+    const n: usize = @intCast(inputLine(para.ptr, para.len, para.ptr, para.len, &cp, &off, &dir, cp.len, &rtl));
+    try std.testing.expect(rtl);
+    // 4 letras árabes, o espaço e abc: um lugar por caractere lógico.
+    try std.testing.expectEqual(@as(usize, 8), n);
+    // Parágrafo da direita para a esquerda: "abc" fica à esquerda, na ordem dele, e o árabe
+    // termina na direita, do último para o primeiro (a primeira letra, no byte 0, é a última).
+    try std.testing.expectEqual(@as(c_int, 9), off[0]); // a
+    try std.testing.expectEqual(@as(c_int, 10), off[1]); // b
+    try std.testing.expectEqual(@as(c_int, 11), off[2]); // c
+    try std.testing.expectEqual(@as(c_int, 0), off[n - 1]); // س, a primeira letra
+    try std.testing.expectEqual(@as(u8, 0), dir[0]); // "abc": da esquerda para a direita
+    try std.testing.expectEqual(@as(u8, 1), dir[n - 1]); // o árabe: da direita para a esquerda
+    // Moldada: a primeira letra, no começo da palavra, é a forma inicial do sin.
+    try std.testing.expectEqual(@as(u32, 0xFEB3), cp[n - 1]);
+}
+
+test "caixa de mensagem: parágrafo sem letra RTL fica com o ImGui" {
+    const para = "hello (world) 123";
+    var cp: [32]u32 = undefined;
+    var off: [32]c_int = undefined;
+    var dir: [32]u8 = undefined;
+    var rtl = true;
+    try std.testing.expectEqual(@as(c_int, 0), inputLine(para.ptr, para.len, para.ptr, para.len, &cp, &off, &dir, cp.len, &rtl));
+}
+
+test "caixa de mensagem: linha em inglês num parágrafo árabe vai para a direita" {
+    const para = "مرحبا hello world";
+    const ln = para[para.len - "world".len ..];
+    var cp: [32]u32 = undefined;
+    var off: [32]c_int = undefined;
+    var dir: [32]u8 = undefined;
+    var rtl = false;
+    const n: usize = @intCast(inputLine(ln.ptr, ln.len, para.ptr, para.len, &cp, &off, &dir, cp.len, &rtl));
+    try std.testing.expect(rtl);
+    try std.testing.expectEqual(@as(usize, 5), n);
+    try std.testing.expectEqual(@as(c_int, 0), off[0]); // w continua primeiro dentro do trecho
 }

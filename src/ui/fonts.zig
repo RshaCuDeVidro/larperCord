@@ -37,6 +37,8 @@ const match_em: c_uint = 1 << 10; // ImGuiFreeTypeLoaderFlags_LarperMatchEm
 /// O ImGui avisa quando nenhuma fonte tem uma letra (imgui_draw.cpp), enquanto as fontes reserva
 /// não entraram. Fontes não entram no meio do quadro: aqui só marca, e `loadWanted` carrega.
 extern var larper_glyph_missing: ?*const fn (c_uint) callconv(.c) void;
+/// O lugar de cada letra de uma linha com árabe ou hebraico nos campos de texto (ui/bidi.zig).
+extern var larper_input_bidi: ?*const fn ([*]const u8, c_int, [*]const u8, c_int, [*]u32, [*]c_int, [*]u8, c_int, *bool) callconv(.c) c_int;
 extern fn larper_font_source_to(font: *c.ImFont, data: *const anyopaque, font_no: c_int, pos: c_int) void;
 extern var larper_glyph_plain: ?*const fn (c_uint) callconv(.c) c_uint;
 extern var larper_glyph_invisible: ?*const fn (c_uint) callconv(.c) bool;
@@ -232,6 +234,7 @@ pub const Fonts = struct {
         larper_glyph_missing = onGlyphMissing;
         larper_glyph_plain = onGlyphPlain;
         larper_glyph_invisible = onGlyphInvisible;
+        larper_input_bidi = @import("bidi.zig").inputLine;
         if (resolve("emoji", 80, 0)) |m| {
             defer std.heap.c_allocator.free(m.path);
             f.emoji = f.mapPath(m.path) catch null;
