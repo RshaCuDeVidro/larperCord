@@ -4928,6 +4928,93 @@ static bool LarperBidiMouse(ImGuiContext& g, ImGuiInputTextState* state, ImGuiIn
     return true;
 }
 
+// [larperCord] ← e → numa linha com árabe ou hebraico andam na tela, não no texto: a seta leva ao
+// lugar de cursor mais perto daquele lado. Na ponta da linha, o stb anda no texto para o lado que
+// fica ali na tela (e passa para a linha de cima ou de baixo). Sem Shift e com seleção, ela se
+// recolhe na ponta daquele lado da tela. false = linha comum, e o stb resolve como sempre.
+static bool LarperBidiArrow(ImGuiContext& g, ImGuiInputTextState* state, ImGuiInputTextFlags flags, float wrap_width, float avail, int dir, bool shift)
+{
+    if (!larper_input_bidi || !LarperMaybeRtl(state->TextSrc, state->TextSrc + state->TextLen))
+        return false;
+    ImStb::STB_TexteditState* stb = state->Stb;
+    static ImGuiTextIndex index;
+    index.Offsets.resize(0);
+    const char* buf = state->TextSrc;
+    const char* buf_end = buf + state->TextLen;
+    InputTextLineIndexBuild(flags, &index, buf, buf_end, wrap_width, INT_MAX, NULL);
+    index.EndOffset = (int)(buf_end - buf);
+    // A linha do cursor, como em InputTextLineIndexGetPosOffset.
+    const int cursor_n = stb->cursor;
+    int* it_begin = index.Offsets.begin();
+    int* it_end = index.Offsets.end();
+    const int* it = ImLowerBound(it_begin, it_end, cursor_n);
+    if (it > it_begin)
+        if (it == it_end || *it != cursor_n || (state->WrapWidth > 0.0f && state->LastMoveDirectionLR == ImGuiDir_Right && buf[cursor_n - 1] != '\n' && buf[cursor_n - 1] != 0))
+            it--;
+    const int line_no = (it == it_begin) ? 0 : index.Offsets.index_from_ptr(it);
+    const char* p = index.get_line_begin(buf, line_no);
+    const char* p_eol = index.get_line_end(buf, line_no);
+    if (!LarperBidiLayout(g, buf, buf_end, p, p_eol, avail, &LarperBidi))
+        return false;
+    const LarperBidiLine& L = LarperBidi;
+    const int base = (int)(p - buf);
+    const int line_len = (int)(p_eol - p);
+    if (!shift && stb->select_start != stb->select_end)
+    {
+        const int a = ImMin(stb->select_start, stb->select_end), b = ImMax(stb->select_start, stb->select_end);
+        if (a < base || b > base + line_len)
+            return false;
+        const bool a_left = LarperBidiCaretX(L, a - base) < LarperBidiCaretX(L, b - base);
+        const int pos = ((dir < 0) == a_left) ? a : b;
+        stb->cursor = stb->select_start = stb->select_end = pos;
+        stb->has_preferred_x = 0;
+        state->CursorFollow = true;
+        state->CursorAnimReset();
+        return true;
+    }
+    const int cur = cursor_n - base;
+    const float cx = LarperBidiCaretX(L, cur);
+    // Os lugares de cursor da linha: antes de cada caractere e o fim dela.
+    int best = -1;
+    float best_x = 0.0f;
+    for (int k = 0; k <= L.N; k++)
+    {
+        const int b = (k < L.N) ? L.Off[k] : line_len;
+        if (b == cur)
+            continue;
+        const float x = LarperBidiCaretX(L, b);
+        const bool side = (dir < 0) ? (x < cx - 0.5f) : (x > cx + 0.5f);
+        if (side && (best < 0 || ((dir < 0) ? x > best_x : x < best_x)))
+        {
+            best = b;
+            best_x = x;
+        }
+    }
+    if (best < 0)
+    {
+        // Ponta da linha: o lado da tela vira o lado do texto conforme a direção do parágrafo.
+        const bool logical_back = (dir < 0) != L.BaseRtl;
+        state->OnKeyPressed((logical_back ? STB_TEXTEDIT_K_LEFT : STB_TEXTEDIT_K_RIGHT) | (shift ? STB_TEXTEDIT_K_SHIFT : 0));
+        return true;
+    }
+    const int pos = base + best;
+    state->LastMoveDirectionLR = (pos < cursor_n) ? ImGuiDir_Left : ImGuiDir_Right;
+    if (shift)
+    {
+        if (stb->select_start == stb->select_end)
+            stb->select_start = stb->cursor;
+        stb->cursor = stb->select_end = pos;
+    }
+    else
+    {
+        stb->cursor = stb->select_start = stb->select_end = pos;
+    }
+    stb->has_preferred_x = 0;
+    state->CursorFollow = true;
+    state->CursorAnimReset();
+    return true;
+}
+
 // Edit a string of text
 // - buf_size account for the zero-terminator, so a buf_size of 6 can hold "Hello" but not "Hello!".
 //   This is so we can easily call InputText() on static arrays using ARRAYSIZE() and to match
@@ -5381,8 +5468,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
         // FIXME: Should use more Shortcut() and reduce IsKeyPressed()+SetKeyOwner(), but requires modifiers combination to be taken account of.
         // FIXME-OSX: Missing support for Alt(option)+Right/Left = go to end of line, or next line if already in end of line.
-        if (IsKeyPressed(ImGuiKey_LeftArrow))                        { state->OnKeyPressed((is_startend_key_down ? STB_TEXTEDIT_K_LINESTART : is_wordmove_key_down ? STB_TEXTEDIT_K_WORDLEFT : STB_TEXTEDIT_K_LEFT) | k_mask); }
-        else if (IsKeyPressed(ImGuiKey_RightArrow))                  { state->OnKeyPressed((is_startend_key_down ? STB_TEXTEDIT_K_LINEEND : is_wordmove_key_down ? STB_TEXTEDIT_K_WORDRIGHT : STB_TEXTEDIT_K_RIGHT) | k_mask); }
+        // [larperCord] Numa linha com árabe ou hebraico, ← e → andam na tela (LarperBidiArrow).
+        const float larper_avail_k = wrap_width > 0.0f ? wrap_width : ImMax(1.0f, inner_size.x - style.FramePadding.x * 2.0f);
+        if (IsKeyPressed(ImGuiKey_LeftArrow))                        { if (is_startend_key_down || is_wordmove_key_down || !LarperBidiArrow(g, state, flags, wrap_width, larper_avail_k, -1, io.KeyShift)) state->OnKeyPressed((is_startend_key_down ? STB_TEXTEDIT_K_LINESTART : is_wordmove_key_down ? STB_TEXTEDIT_K_WORDLEFT : STB_TEXTEDIT_K_LEFT) | k_mask); }
+        else if (IsKeyPressed(ImGuiKey_RightArrow))                  { if (is_startend_key_down || is_wordmove_key_down || !LarperBidiArrow(g, state, flags, wrap_width, larper_avail_k, 1, io.KeyShift)) state->OnKeyPressed((is_startend_key_down ? STB_TEXTEDIT_K_LINEEND : is_wordmove_key_down ? STB_TEXTEDIT_K_WORDRIGHT : STB_TEXTEDIT_K_RIGHT) | k_mask); }
         else if (IsKeyPressed(ImGuiKey_UpArrow) && is_multiline)     { if (io.KeyCtrl) SetScrollY(draw_window, ImMax(draw_window->Scroll.y - g.FontSize, 0.0f)); else state->OnKeyPressed((is_startend_key_down ? STB_TEXTEDIT_K_TEXTSTART : STB_TEXTEDIT_K_UP) | k_mask); }
         else if (IsKeyPressed(ImGuiKey_DownArrow) && is_multiline)   { if (io.KeyCtrl) SetScrollY(draw_window, ImMin(draw_window->Scroll.y + g.FontSize, GetScrollMaxY())); else state->OnKeyPressed((is_startend_key_down ? STB_TEXTEDIT_K_TEXTEND : STB_TEXTEDIT_K_DOWN) | k_mask); }
         else if (IsKeyPressed(ImGuiKey_PageUp) && is_multiline)      { state->OnKeyPressed(STB_TEXTEDIT_K_PGUP | k_mask); scroll_y -= row_count_per_page * g.FontSize; }

@@ -325,6 +325,11 @@ fn boxCursorEnd(app: *App) bool {
     return std.mem.eql(u8, boxText(app), box_ar) and autocomplete.cursor == box_ar.len;
 }
 
+/// Uma letra antes do fim ("م" tem 2 bytes).
+fn boxCursorBackOne(app: *App) bool {
+    return std.mem.eql(u8, boxText(app), box_ar) and autocomplete.cursor == box_ar.len - 2;
+}
+
 fn boxBackspaced(app: *App) bool {
     const box = qa.find("composer") orelse return false;
     return std.mem.eql(u8, boxText(app), box_ar_cut) and autocomplete.cursor == box_ar_cut.len and larper_input_caret[0] > box.x + box.w * 0.5;
@@ -957,6 +962,14 @@ pub const ops_theme = [_]Op{
     expect("clicar na ponta direita põe o cursor no começo do texto", boxCursorStart),
     .{ .click = .{ .at = .{ .key = "composer", .fx = 0.02, .fy = 0.5 } } },
     expect("clicar à esquerda do texto põe o cursor no fim dele", boxCursorEnd),
+    .{ .key = .{ .key = c.ImGuiKey_RightArrow } },
+    expect("→ anda para a direita na tela: no árabe, volta uma letra no texto", boxCursorBackOne),
+    .{ .key = .{ .key = c.ImGuiKey_LeftArrow } },
+    expect("← anda para a esquerda: volta ao fim", boxCursorEnd),
+    .{ .key = .{ .key = c.ImGuiKey_LeftArrow } },
+    expect("← na ponta esquerda não anda para o outro lado", boxCursorEnd),
+    .{ .key = .{ .key = c.ImGuiKey_RightArrow, .shift = true } },
+    // Shift+→ seleciona a letra à direita do cursor, a última digitada; o backspace a apaga.
     .{ .key = .{ .key = c.ImGuiKey_Backspace } },
     expect("backspace apaga a última letra digitada, a da ponta esquerda", boxBackspaced),
     .{ .key = .{ .key = c.ImGuiKey_A, .ctrl = true } },
