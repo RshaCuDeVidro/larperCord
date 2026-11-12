@@ -157,8 +157,53 @@ fn crowdScrolls(_: *App) bool {
 fn crowdGone(_: *App) bool {
     return find("grid-tile:{d}", .{crowd[0]}) == null and find("grid-tile:{d}", .{ana}) != null;
 }
+/// Saiu pelo vermelho da tela: fora da call, e de volta ao segundo servidor, de onde a
+/// tela foi aberta (lista e conversa dele).
 fn leftCall(app: *App) bool {
-    return app.st.voice == null and !app.st.call_view and qa.find("composer") != null;
+    const ch = app.st.activeChannel() orelse return false;
+    return app.st.voice == null and !app.st.call_view and qa.find("composer") != null and
+        app.st.guild == g1 and app.store.guildOfChannel(ch) == g1;
+}
+const games0: Id = gw.channelId(0, 14);
+/// O que o clique num canal de voz faz (comp_channels): entra e abre a tela. (O
+/// "Jogando" fica embaixo da faixa de voz com quatro pessoas na call de cima.)
+fn switchCall(app: *App) void {
+    app.handle(.{ .toggle_voice = games0 });
+    app.handle(.{ .show_call = games0 });
+}
+/// Na tela, clicar em outro canal de voz troca de call e continua na tela.
+fn onGames(app: *App) bool {
+    return app.st.voice == games0 and app.st.call_view and qa.find("grid-view") != null;
+}
+/// Esc depois de trocar de call ainda volta para o segundo servidor.
+fn backToGuild1Again(app: *App) bool {
+    const ch = app.st.activeChannel() orelse return false;
+    return app.st.voice == games0 and !app.st.call_view and app.st.guild == g1 and app.store.guildOfChannel(ch) == g1;
+}
+/// A foto aberta grande por cima da tela: Esc fecha só ela.
+fn viewerOpen(app: *App) bool {
+    return app.st.viewer != null;
+}
+fn viewerClosedStillView(app: *App) bool {
+    return app.st.viewer == null and app.st.call_view;
+}
+/// A tela da call de um servidor que ainda não foi aberto nesta sessão: a lista de
+/// membros dele chega (o pedido sai ao abrir a tela).
+const call3: Id = gw.channelId(3, 13);
+fn callFreshGuild(app: *App) void {
+    app.handle(.{ .toggle_voice = call3 });
+    app.handle(.{ .show_call = call3 });
+}
+fn freshMembers(app: *App) bool {
+    var keys: [4][56]u8 = undefined;
+    var lens: [4]u8 = undefined;
+    return app.st.call_view and app.st.voice == call3 and qa.keysWith(&.{"member:"}, &keys, &lens) > 0;
+}
+fn leaveFresh(app: *App) void {
+    app.handle(.leave_voice);
+}
+fn backInDm(app: *App) bool {
+    return app.st.voice == null and !app.st.call_view and app.st.activeChannel() == dm0 and app.st.guild == 0;
 }
 
 const g1: Id = gw.guildId(1);
@@ -297,6 +342,11 @@ pub const ops = [_]Op{
     .{ .text = "Call da madrugada" },
     key(c.ImGuiKey_Enter),
     expect("a paleta no canal da call em que já estamos abre a tela, sem sair", viewOpen),
+    click("grid-tile:1001"),
+    click("menu:Ver foto de perfil"),
+    expect("a foto da ana aberta grande por cima da tela", viewerOpen),
+    key(c.ImGuiKey_Escape),
+    expect("Esc com a foto aberta fecha só ela", viewerClosedStillView),
 
     s("tela da call: tamanhos"),
     .{ .resize = .{ 1920, 1080 } },
@@ -327,8 +377,13 @@ pub const ops = [_]Op{
     run(removeCrowd),
     .{ .resize = .{ 1280, 800 } },
     expect("quem saiu some da grade", crowdGone),
+    run(switchCall),
+    expect("na tela, ir para outro canal de voz troca de call e continua na tela", onGames),
+    key(c.ImGuiKey_Escape),
+    expect("Esc depois de trocar de call ainda volta para o segundo servidor", backToGuild1Again),
+    click("voice-view"),
     click("grid-leave"),
-    expect("sair pelo botão da tela sai da call e volta para a conversa", leftCall),
+    expect("sair pelo vermelho da tela sai da call e volta para o segundo servidor, de onde ela abriu", leftCall),
 
     s("tela da call: DM"),
     run(openDm0),
@@ -338,14 +393,25 @@ pub const ops = [_]Op{
     shot("call-dm"),
     click("grid-leave"),
     expect("sair pela faixa", dmLeft),
+
+    s("tela da call: servidor ainda não aberto"),
+    run(callFreshGuild),
+    expect("a tela da call de um servidor nunca aberto traz a lista de membros dele", freshMembers),
+    run(leaveFresh),
+    expect("sair volta para a DM", backInDm),
 };
 
 // --- Cada tema -----------------------------------------------------------------------
 
 /// Entra na call pelo clique, como uma pessoa: no canal de voz (na lista de canais do
 /// tema) ou, sem ela, pela ação.
+/// O que veio antes na bateria pode ter tirado alguém da call (a chamada no grupo leva a
+/// ana): a ana, a duda e o kaique voltam para a Call da madrugada antes de conferir.
 fn joinCall(app: *App) void {
     app.handle(.{ .select_guild = g0 });
+    const cs = app.store.channel(call0) orelse return;
+    for ([_]Id{ ana, duda, kaique }) |uid| if (std.mem.indexOfScalar(Id, cs.voice_members.items, uid) == null)
+        push(app, .{ .voice_state = .{ .channel = call0, .user = uid } });
 }
 /// O canal de voz à vista (nos temas de linha alta ele fica abaixo da dobra): o
 /// clique; senão, a ação.
