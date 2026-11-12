@@ -26,7 +26,7 @@
 - In the call mixer, each person now has "Remove noise" and "Even out volume", both off by default and only for that person. Remove noise runs the same noise suppression as your microphone on their sound (it uses a little CPU while they talk, so it's per person). Even out volume raises a quiet voice and lowers a loud one toward everyone else's level, without lifting the background hiss in their pauses. Your choices are saved and apply to every call.
 
 **Keybinds**
-- Keybinds can be changed, from ShuyaGit's request (#18). In Settings → Keybinds, click a shortcut and press the new keys. Combinations already in use, fixed ones (copy, paste, new line) and plain letters are refused with the reason; "Default" puts one back. The mute and deafen button tips show your current keys.
+- Keybinds can be changed, from ShuyaGit's request (#18). In Settings → Keybinds, click a shortcut and press the new keys. Combinations already in use, fixed ones (copy, paste, new line, moving through text), plain letters and Ctrl+Alt with a letter (AltGr on many keyboards) are refused with the reason; "Default" puts one back. Tips that mention a shortcut show your current keys.
 
 **Text in any language**
 - "Online", "Offline", "Proxy" and other words that were missing from the translation files now show in Japanese and Russian, and so do the descriptions and options of the built-in themes, the status duration submenu, the message box tips and the image actions, from DivannKokos's report (#20). The theme card shows the whole description, in up to two lines, with the rest on hover.
