@@ -358,10 +358,14 @@ pub const Command = union(enum) {
     /// Editar servidor ou grupo: só o que mudou (null/keep = deixa como está).
     edit_place: EditPlace,
     react: struct { channel: Id, id: Id, emoji: types.Reaction, add: bool },
-    fetch_history: Id,
+    /// A última página de um canal. `members`: o servidor da conversa que se está vendo;
+    /// o gateway pede (op 8) os membros dos autores da página que ainda não conhece,
+    /// para o apelido e a cor do cargo nas mensagens antigas (0 = não pede: DM, grupo,
+    /// a caixa de entrada carregando por baixo). O mesmo nas outras páginas.
+    fetch_history: struct { channel: Id, members: Id = 0 },
     search_messages: SearchRequest,
     /// Mais 50 mensagens antes de `before` (rolagem para cima).
-    fetch_older: struct { channel: Id, before: Id },
+    fetch_older: struct { channel: Id, before: Id, members: Id = 0 },
     /// "fulano está digitando" (o Discord limita a um a cada ~8 s).
     typing: Id,
     /// Entrar (channel != null) ou sair da call.
@@ -426,9 +430,9 @@ pub const Command = union(enum) {
     /// Alocado com o c_allocator.
     ack_bulk: []const [2]Id,
     /// 50 mensagens em volta de `id` (chega como `history` com `around`).
-    fetch_around: struct { channel: Id, id: Id },
+    fetch_around: struct { channel: Id, id: Id, members: Id = 0 },
     /// Mais 50 depois de `after`, voltando para o presente.
-    fetch_newer: struct { channel: Id, after: Id },
+    fetch_newer: struct { channel: Id, after: Id, members: Id = 0 },
     fetch_pins: Id,
     /// A próxima página de fixadas (as de antes de `before`).
     fetch_more_pins: struct { channel: Id, before: envio.PinCursor },

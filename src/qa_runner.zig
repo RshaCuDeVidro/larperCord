@@ -3279,6 +3279,7 @@ const ops_perfil = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @impor
 const ops_perfil_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_perfil.zig").ops_theme;
 const ops_call = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops;
 const ops_call_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops_theme;
+const ops_membros = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_membros.zig").ops;
 const ops_mascote = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote.zig").ops;
 const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_real;
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
@@ -3334,6 +3335,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "perfil-tema", &ops_perfil_tema },
     .{ "call", &ops_call },
     .{ "call-tema", &ops_call_tema },
+    .{ "membros", &ops_membros },
     .{ "mascote", &ops_mascote },
     .{ "plugins-real", &ops_plugins_real },
     .{ "vitrine", &ops_vitrine },
