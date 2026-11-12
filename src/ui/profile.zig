@@ -134,7 +134,7 @@ fn names(col: *Col, uid: Id, pf: ?types.Profile, gid: Id, big: bool) void {
         if (hb.clicked) ctx.act(.{ .open_full_profile = .{ .user = uid } });
     }
     col.y += ns + 8;
-    if (name.ptr != u.name.ptr) {
+    if (!std.mem.eql(u8, name, u.name)) {
         // Com apelido: o nome global logo embaixo, menor, como no Discord.
         const gs: f32 = if (big) 15.5 else 14.5;
         if (col.dl) |dl| {

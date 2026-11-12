@@ -121,7 +121,7 @@ pub fn previewText(ctx: *const d.Ctx, buf: []u8, m: *const StoredMessage) []cons
         k += 1 + e.fields.len;
         for (e.blocks) |*b| {
             if (b.kind == .text and k < m.embed_spans.len) {
-                const first = core.previewSpans(buf, ctx.store, m.embed_spans[k]);
+                const first = core.previewSpans(buf, ctx.store, ctx.store.guildOfChannel(m.msg.channel), m.embed_spans[k]);
                 if (first.len > 0) return first;
             }
             k += 1;
