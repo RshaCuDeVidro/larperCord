@@ -233,7 +233,7 @@ pub fn botMark(ctx: *d.Ctx, dl: *c.ImDrawList, font: *c.ImFont, size: f32, x: f3
     d.text(dl, font, size, x, y + (h - size * 1.2) / 2, ctx.col(.accent).alpha(alpha), "⚙");
     const r: d.Rect = .{ .x = x, .y = y, .w = d.width(font, size, "⚙"), .h = h };
     qa.mark(r, "bot-tag:{d}", .{who.id});
-    d.tip(ctx, r, if (who.verified_bot) i18n.tr("Bot verificado", "Verified bot") else "Bot", ctx.hovering(r));
+    d.tip(ctx, r, if (who.verified_bot) i18n.tr("Bot verificado", "Verified bot") else i18n.tr("Bot", "Bot"), ctx.hovering(r));
 }
 
 pub fn statusGlyph(s: types.Status) []const u8 {

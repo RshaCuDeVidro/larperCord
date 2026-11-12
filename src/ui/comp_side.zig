@@ -243,10 +243,10 @@ fn dmProfile(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, uid: types.Id, tty: boo
     y += 30;
     d.circle(dl, r.x + 21, y + 8, 5, w.statusColor(ctx, u.status));
     d.text(dl, fam.get(.medium), 13, r.x + 32, y, ctx.col(.muted), switch (u.status) {
-        .online => "Online",
+        .online => i18n.tr("Online", "Online"),
         .idle => i18n.tr("Ausente", "Idle"),
         .dnd => i18n.tr("Não perturbe", "Do Not Disturb"),
-        .offline => "Offline",
+        .offline => i18n.tr("Offline", "Offline"),
     });
     y += 30;
     const card: d.Rect = .{ .x = r.x + 12, .y = y, .w = r.w - 24, .h = if (u.activity != null) 124 else 70 };
@@ -277,7 +277,7 @@ const Item = enum { conn, ping, ram, frame, voice, theme, keys, clock, me, mic, 
 
 fn statusLabel(st: types.Status) []const u8 {
     return switch (st) {
-        .online => "Online",
+        .online => i18n.tr("Online", "Online"),
         .idle => i18n.tr("Ausente", "Idle"),
         .dnd => i18n.tr("Não perturbe", "Do Not Disturb"),
         .offline => i18n.tr("Invisível", "Invisible"),

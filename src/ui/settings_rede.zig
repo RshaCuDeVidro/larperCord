@@ -23,7 +23,7 @@ var proxy_err: ?proxy.BuildError = null;
 /// A página inteira.
 pub fn page(p: anytype) void {
     p.title(i18n.tr("Rede", "Network"));
-    p.heading("Proxy");
+    p.heading(i18n.tr("Proxy", "Proxy"));
     form(p, .settings);
 }
 

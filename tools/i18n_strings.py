@@ -429,6 +429,26 @@ def collect(files):
     return uses, dynamic
 
 
+THEMES = ROOT / "themes"
+THEME_EN = re.compile(r'\b(?:description|label)-en="((?:[^"\\]|\\.)*)"')
+
+
+def theme_uses():
+    """Os textos em inglês dos temas embutidos (themes/builtin.zig): a descrição do
+    tema e o nome e a descrição de cada opção. O app procura esse inglês nas tabelas
+    (themeText em src/ui/settings.zig). Temas da comunidade ficam só em pt/en."""
+    names = re.findall(r'@embedFile\("([^"]+\.kdl)"\)', (THEMES / "builtin.zig").read_text(encoding="utf-8"))
+    uses = []
+    for name in names:
+        path = THEMES / name
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for m in THEME_EN.finditer(line):
+                text = re.sub(r"\\(.)", lambda e: {"n": "\n", "t": "\t"}.get(e.group(1), e.group(1)), m.group(1))
+                if text:
+                    uses.append(Use(text, False, path.relative_to(ROOT).as_posix(), n, "tema " + name[:-4]))
+    return uses
+
+
 _files = None
 
 
@@ -832,6 +852,7 @@ def main():
     a = ap.parse_args()
     files = source_files()
     uses, dynamic = collect(files)
+    uses += theme_uses()
     if a.check:
         return cmd_check(uses, dynamic, a.lang)
     if a.pending:

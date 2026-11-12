@@ -624,8 +624,7 @@ fn page(p: *Page, previews: []const Preview) void {
                 for (ctx.th.options, 0..) |o, i| {
                     const cur = ctx.th.option(o.name) orelse o.default;
                     var v = cur;
-                    const en = i18n.en();
-                    p.toggle(if (en and o.label_en.len > 0) o.label_en else o.label, if (en and o.description_en.len > 0) o.description_en else o.description, &v);
+                    p.toggle(themeText(o.label, o.label_en), themeText(o.description, o.description_en), &v);
                     if (v != cur) ctx.act(.{ .set_theme_option = .{ .index = i, .value = v } });
                 }
             }
@@ -647,7 +646,7 @@ fn page(p: *Page, previews: []const Preview) void {
             p.segmented(&.{ i18n.tr("Do tema", "Theme"), i18n.tr("Retos", "Square"), i18n.tr("Suaves", "Soft"), i18n.tr("Redondos", "Round") }, &s.corners);
             p.divider();
             themeColors(p);
-            p.heading("Layout");
+            p.heading(i18n.tr("Layout", "Layout"));
             p.toggle(i18n.tr("Lista de membros", "Member list"), i18n.tr("Mostra quem está no servidor (quando o tema tem uma).", "Shows who's in the server (when the theme has one)."), &s.show_member_list);
             p.toggle(i18n.tr("Barra de status", "Status bar"), i18n.tr("Conexão, ping, RAM e relógio (quando o tema tem uma).", "Connection, ping, RAM and clock (when the theme has one)."), &s.show_status_bar);
             p.note(i18n.tr("Arraste a divisa entre os painéis para mudar a largura da lista de canais, da lista de membros e da tela dividida. Duplo clique na divisa volta ao padrão do tema.", "Drag the edge between panels to resize the channel list, the member list and split view. Double-click an edge to go back to the theme's default."));
@@ -786,12 +785,20 @@ fn page(p: *Page, previews: []const Preview) void {
     }
 }
 
+/// O texto de um tema no idioma da interface. O inglês do .kdl é a chave nas tabelas
+/// de tradução (tools/i18n_strings.py coleta os -en dos temas embutidos); tema da
+/// comunidade sem tradução fica em inglês, e sem inglês, no português.
+fn themeText(pt: []const u8, en: []const u8) []const u8 {
+    return if (en.len == 0) pt else i18n.tr(pt, en);
+}
+
 fn themeGrid(p: *Page, previews: []const Preview) void {
     const ctx = p.ctx;
     const cols: usize = if (p.w > 600) 3 else 2;
     const gap: f32 = 14;
     const cw = (p.w - gap * @as(f32, @floatFromInt(cols - 1))) / @as(f32, @floatFromInt(cols));
-    const ch: f32 = cw * 0.62 + 48;
+    // Embaixo da miniatura: o nome e a descrição em até duas linhas.
+    const ch: f32 = cw * 0.62 + 64;
     for (previews, 0..) |pv, i| {
         const col = i % cols;
         const row = i / cols;
@@ -803,11 +810,17 @@ fn themeGrid(p: *Page, previews: []const Preview) void {
         const k = anim.to(anim.id("tcard", i), if (sel) 1 else if (hb.hovered) 0.5 else 0, 18);
         d.rect(p.dl, r, ctx.col(.rail).mix(ctx.col(.elevated), 0.4), 12);
         // Miniatura com as cores do tema.
-        const m: d.Rect = .{ .x = r.x + 8, .y = r.y + 8, .w = r.w - 16, .h = r.h - 56 };
+        const m: d.Rect = .{ .x = r.x + 8, .y = r.y + 8, .w = r.w - 16, .h = r.h - 72 };
         miniature(p.dl, pv, m);
         d.border(p.dl, r, ctx.col(.accent).alpha(0.25 + 0.75 * k), 12, 1 + k * 1.5);
-        d.text(p.dl, p.font(.semibold), 15, r.x + 12, r.bottom() - 42, ctx.col(.text), pv.name);
-        _ = d.textClipped(p.dl, p.font(.regular), 12, r.x + 12, r.bottom() - 22, ctx.col(.muted), if (i18n.en() and pv.description_en.len > 0) pv.description_en else pv.description, r.w - 24);
+        d.text(p.dl, p.font(.semibold), 15, r.x + 12, r.bottom() - 58, ctx.col(.text), pv.name);
+        const desc = themeText(pv.description, pv.description_en);
+        _ = inbox.wrapText(p.dl, p.font(.regular), 12, r.x + 12, r.bottom() - 38, r.w - 24, desc, 2, ctx.col(.muted));
+        // Japonês não tem espaço para quebrar (fica numa linha, cortada), e uma descrição
+        // longa pode passar das duas linhas: o texto inteiro aparece ao passar o mouse.
+        const desc_w = d.width(p.font(.regular), 12, desc);
+        const no_break = std.mem.indexOfScalar(u8, desc, ' ') == null;
+        if (desc_w > r.w - 24 and (no_break or desc_w > (r.w - 24) * 1.8)) d.tip(ctx, r, desc, hb.hovered);
         if (sel) {
             d.circle(p.dl, r.right() - 18, r.y + 18, 10, ctx.col(.accent));
             d.line(p.dl, r.right() - 22, r.y + 18, r.right() - 19, r.y + 21, ctx.col(.accent_text), 2);

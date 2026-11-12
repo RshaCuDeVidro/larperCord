@@ -535,7 +535,7 @@ pub fn userPanel(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
             _ = d.textClipped(ctx.dl, fam.get(.regular), 12, card.x + 44, card.y + 19, ctx.col(.muted), act, card.w - 48);
         } else {
             const name = switch (me.status) {
-                .online => "Online",
+                .online => i18n.tr("Online", "Online"),
                 .idle => i18n.tr("Ausente", "Idle"),
                 .dnd => i18n.tr("Não perturbe", "Do Not Disturb"),
                 .offline => i18n.tr("Invisível", "Invisible"),

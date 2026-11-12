@@ -538,7 +538,7 @@ fn form(f: *Frame, x: f32, y0: f32, w: f32) ?Result {
     y += 46;
 
     // Campo do token.
-    f.text(.medium, 13, x, y, f.p.text, "Token");
+    f.text(.medium, 13, x, y, f.p.text, i18n.tr("Token", "Token"));
     y += 22;
     const fr: Rect = .{ .x = x, .y = y, .w = w, .h = 46 };
     qa.mark(fr, "login:token", .{});
@@ -750,7 +750,7 @@ fn proxyCard(f: *Frame, x: f32, y0: f32, w: f32) ?Result {
         f.text(.medium, 13.5, x + 16, d.centerY(br, 13.5), col, label);
         y += 34;
     }
-    f.text(.semibold, 24, x, y, f.p.text, "Proxy");
+    f.text(.semibold, 24, x, y, f.p.text, i18n.tr("Proxy", "Proxy"));
     y += 40;
     const hook = f.env.proxy.?;
     // Os campos com a fonte e as cores do cartão.

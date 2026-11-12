@@ -22,7 +22,7 @@ const Tab = enum(u8) { online, all, pending, blocked, add };
 
 fn tabLabel(t: Tab, narrow: bool) []const u8 {
     return switch (t) {
-        .online => "Online",
+        .online => i18n.tr("Online", "Online"),
         .all => i18n.tr("Todos", "All"),
         .pending => i18n.tr("Pendentes", "Pending"),
         .blocked => i18n.tr("Bloqueados", "Blocked"),
@@ -339,10 +339,10 @@ fn addFriend(ctx: *d.Ctx, fam: *d.Family, dl: *c.ImDrawList, x: f32, y_in: f32, 
 fn statusText(s: types.Status, buf: []u8) []const u8 {
     _ = buf;
     return switch (s) {
-        .online => "Online",
+        .online => i18n.tr("Online", "Online"),
         .idle => i18n.tr("Ausente", "Idle"),
         .dnd => i18n.tr("Não perturbe", "Do Not Disturb"),
-        .offline => "Offline",
+        .offline => i18n.tr("Offline", "Offline"),
     };
 }
 
