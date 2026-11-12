@@ -131,7 +131,7 @@ The official client is a whole browser dressed up as an app. On the same PC:
 - **Multiple accounts.** Your own name's menu lists the saved accounts (name and picture) and switches
   right away; "Add account" goes back to sign-in without forgetting the others. The sign-in screen
   lists them too, and a token Discord refuses is forgotten instead of being tried again.
-- **Discord-style settings** (`Ctrl+,`): 18 pages, theme switching with thumbnails,
+- **Discord-style settings** (`Ctrl+,`): 19 pages, theme switching with thumbnails,
   accent color and corners, **custom colors per theme and mode in hex**, font scale,
   compact mode, reduced motion, 12/24 h clock, spoilers…, saved in
   `~/.config/larpercord/settings.kdl` (`%APPDATA%\larpercord\settings.kdl` on Windows). If
@@ -284,7 +284,7 @@ No magic, just many small decisions:
 5. **Markdown is parsed once**, when the message arrives. The UI only lays out the
    spans, with a **height cache per width**.
 6. **A virtualized list**: binary search for the first visible item, then draw only the screen.
-7. **Memory has ceilings**: 1,500 messages per channel and 3,000 in total, with old ones freed. After a
+7. **Memory has ceilings**: 1,500 messages per channel and, by default, 2,000 in total (Settings → Performance changes it), with old ones freed. After a
    minute in the tray or minimized, images leave memory too, except small ones that were on screen.
 8. **On Linux, fontconfig gets freed** after fonts are resolved (`FcFini` + `malloc_trim`). Windows has
    no fontconfig: fonts are opened straight from `C:\Windows\Fonts`.
