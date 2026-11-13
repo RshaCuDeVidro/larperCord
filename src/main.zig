@@ -21,6 +21,7 @@ const ev = @import("core/event.zig");
 const Queue = @import("net/queue.zig").Queue;
 const timeline = @import("platform/timeline.zig");
 const instance = @import("platform/instance.zig");
+const apagar = @import("platform/apagar.zig");
 
 const usage =
     \\larperCord — cliente de Discord nativo e leve
@@ -116,6 +117,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
             // O mascote do ícone (de uma versão sem o argumento: o principal).
             const mascot = it.next() orelse "terminal";
             @import("platform/tray.zig").helperMain(open.ptr, quit.ptr, std.mem.eql(u8, mascot, "classico"));
+        } else if (std.mem.eql(u8, arg, "--apagar-resto")) {
+            // Só o próprio app chama (platform/apagar.zig): o que o Windows não deixou
+            // apagar com o app aberto sai depois que ele fecha.
+            const pid = std.fmt.parseInt(u32, it.next() orelse return fail("--apagar-resto precisa do processo"), 10) catch return fail("processo inválido");
+            return apagar.resto(pid);
         } else if (std.mem.eql(u8, arg, "--list-themes")) {
             for (builtin_themes.list) |t| std.debug.print("{s}\n", .{t.name});
             return;
@@ -147,11 +153,17 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const app = try App.create(std.heap.c_allocator, opts);
     instance.listen(app.win.wake_type);
     const ok = app.run();
+    // "Apagar todos os dados": antes do vigia, porque o chaveiro pode pedir a senha
+    // dele. Daqui em diante nada grava; o resto do encerramento não salva nada.
+    const wipe = app.wipe_wanted;
+    if (wipe) apagar.comecar(opts.qa);
     // Fechou a janela: o processo termina de qualquer jeito, mesmo que uma
     // thread de rede demore a largar (nunca fica rodando escondido).
     _ = c.SDL_DetachThread(c.SDL_CreateThread(watchdog, "quit", null));
     const restart = app.restart_wanted;
     app.destroy();
+    // Com tudo fechado, o que a primeira passada não conseguiu apagar.
+    if (wipe) apagar.terminar();
     // No QA, reiniciar só confere a saída: a cópia nova entraria na conta de quem roda.
     if (restart and !opts.qa) @import("net/updater.zig").spawnSelf();
     if (!ok) std.process.exit(1);
@@ -193,6 +205,8 @@ fn tlsCheck(url: [:0]const u8) void {
 fn watchdog(_: ?*anyopaque) callconv(.c) c_int {
     c.SDL_Delay(3000);
     std.log.warn("encerramento demorou mais de 3 s; saindo assim mesmo", .{});
+    // Apagando os dados: o que ainda não saiu sai antes de o processo acabar.
+    apagar.noVigia();
     std.c._exit(0);
 }
 

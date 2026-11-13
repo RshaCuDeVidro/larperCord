@@ -50,6 +50,7 @@
 
 **Instalação**
 - `install.sh --purge` e `install.ps1 -Purge` também apagam as configurações, o cache, o FFmpeg baixado, os seus sons e as contas salvas, do pedido do DivannKokos (#12). Desinstalar sem a opção continua guardando as configurações.
+- Configurações → Avançado → "Apagar todos os dados…" faz o mesmo de dentro do app, sem desinstalar: depois de confirmar, apaga as configurações, os seus temas, mascotes, sons e plugins, os rascunhos e as mensagens salvas, o cache das conversas, o FFmpeg baixado, os registros de depuração e as contas salvas com os tokens do chaveiro (no Windows, do Gerenciador de Credenciais), e fecha. Nada é gravado de novo na saída.
 
 **Site e documentação**
 - Criador de temas: um divisor entre as prévias clara e escura dá mais largura a uma delas; clique duplo volta ao meio.

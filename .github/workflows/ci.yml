@@ -69,6 +69,42 @@ jobs:
           $p = Start-Process -FilePath bin\larpercord.exe -ArgumentList '--qa','--theme','classico' -NoNewWindow -Wait -PassThru -RedirectStandardOutput qa-out\ffmpeg-out.txt -RedirectStandardError qa-out\ffmpeg-err.txt
           Get-Content qa-out\ffmpeg-out.txt,qa-out\ffmpeg-err.txt -ErrorAction SilentlyContinue | Select-String -Pattern 'passaram|falharam|^\s+- \[|panic' | ForEach-Object { $_.Line }
           exit $p.ExitCode
+      # "Apagar todos os dados" com as pastas de mentira em qa-out\apagar (como tools/qa_apagar.sh):
+      # um arquivo só leitura, uma junção para fora (sai a junção, nunca o que ela aponta) e
+      # outro programa ao lado. O Gerenciador de Credenciais de verdade nunca é tocado no QA.
+      - name: Delete all data
+        shell: pwsh
+        env:
+          SDL_VIDEO_DRIVER: windows
+          LARPER_RENDERER: software
+          QA_SUITE: apagar
+        run: |
+          $r = Join-Path $PWD 'qa-out\apagar'
+          $cfg = Join-Path $r 'config\larpercord'
+          $cache = Join-Path $r 'cache\larpercord'
+          New-Item -ItemType Directory -Force "$cfg\tokens","$cfg\themes","$cache\messages\1","$cache\ffmpeg","$r\fora","$r\config\outro-app" | Out-Null
+          Set-Content "$cfg\settings.kdl" 'settings theme="classico"'
+          Set-Content "$cfg\tokens\123" 'token-de-mentira'
+          Set-Content "$cache\messages\1\2.bin" 'cache'
+          Set-Content "$cache\debug.log" 'registro'
+          Set-Content "$cache\ffmpeg\avcodec-61.dll" 'dll'
+          Set-ItemProperty "$cache\ffmpeg\avcodec-61.dll" -Name IsReadOnly -Value $true
+          Set-Content "$r\fora\importante.txt" 'fica'
+          New-Item -ItemType Junction -Path "$cfg\themes\link" -Target "$r\fora" | Out-Null
+          Set-Content "$r\config\outro-app\keep.txt" 'fica'
+          $env:QA_APAGAR_RAIZ = $r
+          $env:XDG_CONFIG_HOME = Join-Path $r 'config'
+          $env:XDG_CACHE_HOME = Join-Path $r 'cache'
+          $p = Start-Process -FilePath bin\larpercord.exe -ArgumentList '--qa','--theme','classico' -NoNewWindow -Wait -PassThru -RedirectStandardOutput qa-out\apagar-out.txt -RedirectStandardError qa-out\apagar-err.txt
+          Get-Content qa-out\apagar-out.txt,qa-out\apagar-err.txt -ErrorAction SilentlyContinue | Select-String -Pattern 'passaram|falharam|^\s+- \[|panic|apagar:' | ForEach-Object { $_.Line }
+          $bad = 0
+          if ($p.ExitCode -ne 0) { "saiu com o código $($p.ExitCode)"; $bad = 1 }
+          if (Test-Path $cfg) { "sobrou $cfg"; Get-ChildItem -Recurse -Force $cfg | ForEach-Object { $_.FullName }; $bad = 1 }
+          if (Test-Path $cache) { "sobrou $cache"; Get-ChildItem -Recurse -Force $cache | ForEach-Object { $_.FullName }; $bad = 1 }
+          if (-not (Test-Path "$r\fora\importante.txt")) { "apagou o que a junção apontava"; $bad = 1 }
+          if (-not (Test-Path "$r\config\outro-app\keep.txt")) { "apagou a pasta de outro programa"; $bad = 1 }
+          if ($bad -eq 0) { "apagar: tudo passou" }
+          exit $bad
       - uses: actions/upload-artifact@v4
         if: always()
         with:

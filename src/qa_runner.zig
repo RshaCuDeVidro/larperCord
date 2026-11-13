@@ -3284,6 +3284,7 @@ const ops_cache_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @impo
 // Sem esperar o READY: o começo é justamente o que aparece antes dele.
 const ops_cache_b = @import("qa_cache.zig").ops_b;
 const ops_mascote = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote.zig").ops;
+const ops_apagar = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_apagar.zig").ops;
 const ops_mascote_visual = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote_visual.zig").ops;
 const ops_mascote_folha = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mascote_visual.zig").ops_folha;
 const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_real;
@@ -3345,6 +3346,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "cache-a", &ops_cache_a },
     .{ "cache-b", &ops_cache_b },
     .{ "mascote", &ops_mascote },
+    .{ "apagar", &ops_apagar },
     .{ "mascote-visual", &ops_mascote_visual },
     .{ "mascote-folha", &ops_mascote_folha },
     .{ "plugins-real", &ops_plugins_real },

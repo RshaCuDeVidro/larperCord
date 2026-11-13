@@ -90,6 +90,8 @@ fn install() !void {
     updater.wakeUi();
     var db: [512]u8 = undefined;
     const dir = ffmpeg.localDir(&db) orelse return error.Disk;
+    // Os dados foram apagados enquanto baixava: o FFmpeg não volta para a pasta.
+    if (@import("../platform/apagar.zig").on()) return error.Disk;
     var dz: [520]u8 = undefined;
     if (!c.SDL_CreateDirectory((std.fmt.bufPrintSentinel(&dz, "{s}", .{dir}, 0) catch return error.Disk).ptr)) return error.Disk;
     // Tudo em ".part" antes: uma falha no meio não deixa metade de um FFmpeg na pasta.
@@ -101,6 +103,7 @@ fn install() !void {
         const part = std.fmt.bufPrintSentinel(&pb, "{s}/{s}.part", .{ dir, name }, 0) catch return error.Disk;
         if (!c.SDL_SaveFile(part.ptr, body.ptr, body.len)) return error.Disk;
     }
+    if (@import("../platform/apagar.zig").on()) return error.Disk;
     for (wanted) |name| {
         const part = std.fmt.bufPrintSentinel(&pb, "{s}/{s}.part", .{ dir, name }, 0) catch return error.Disk;
         const final = std.fmt.bufPrintSentinel(&fb, "{s}/{s}", .{ dir, name }, 0) catch return error.Disk;

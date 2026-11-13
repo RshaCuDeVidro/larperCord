@@ -32,6 +32,8 @@ Open settings with `Ctrl+,`. Changes apply right away and are saved in `settings
 
 **Save debug log** writes `debug.log` in the cache folder (`~/.cache/larpercord/` on Linux, `%LOCALAPPDATA%\larpercord\` on Windows) until you turn it off or close the app. **Open the log folder** and **Copy the file path** take you to it. The token never goes in the file. On Windows this is how you see the app's log, since the Windows build has no console.
 
+**Delete all data…**, at the end of the same page, deletes everything larperCord keeps on this computer without uninstalling it: the settings and cache folders (settings, your themes, mascots, sounds and plugins, drafts, saved messages, the message cache, the downloaded FFmpeg and the logs) and the saved accounts with their tokens in the keyring or Credential Manager. It asks first, and **Cancel** is right there; after you confirm, the app closes and nothing gets written back on the way out. Your Discord account isn't touched.
+
 ## Privacy choices worth knowing
 
 | Option | Default | Effect |
