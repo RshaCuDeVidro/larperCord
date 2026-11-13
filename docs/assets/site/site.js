@@ -670,11 +670,13 @@
     ], { duration: 620, easing: "cubic-bezier(.3,.7,.3,1)" });
     svg.classList.add("grin");
     setTimeout(function () { svg.classList.remove("grin"); }, 900);
-    var shades = svg.querySelector(".ma-shades");
-    shades.animate([
-      { transform: "none" }, { transform: "translateY(-190px) rotate(-14deg)", offset: .42 }, { transform: "translateY(-120px) rotate(12deg)", offset: .6 },
-      { transform: "translateY(14px)", offset: .86 }, { transform: "none" }
-    ], { duration: 860, easing: "cubic-bezier(.3,.7,.3,1)" });
+    // As orelhas balançam com o pulo.
+    svg.querySelectorAll(".ma-ear").forEach(function (ear, i) {
+      var d = i ? 1 : -1;
+      ear.animate([
+        { transform: "none" }, { transform: "rotate(" + 28 * d + "deg)", offset: .35 }, { transform: "rotate(" + -10 * d + "deg)", offset: .65 }, { transform: "none" }
+      ], { duration: 700, easing: "cubic-bezier(.3,.7,.3,1)" });
+    });
     var r = mascotBtn.getBoundingClientRect(), cs = getComputedStyle(html), cols = [cs.getPropertyValue("--accent"), cs.getPropertyValue("--mention"), cs.getPropertyValue("--text")];
     for (var k = 0; k < 16; k++) (function (k) {
       var sp = document.createElement("i"), a = k / 16 * Math.PI * 2, d = 50 + Math.random() * 80;
@@ -687,13 +689,13 @@
     })(k);
   });
 
-  // Com os óculos abaixados (ponteiro em cima), os olhos seguem o ponteiro.
+  // Com o ponteiro em cima, o rosto segue o ponteiro (em unidades do desenho).
   if (mascotBtn && !calm) {
     var heroMa = mascotBtn.querySelector(".ma");
     mascotBtn.addEventListener("pointermove", function (e) {
       var b = mascotBtn.getBoundingClientRect();
-      heroMa.style.setProperty("--px", (((e.clientX - b.left) / b.width - 0.5) * 44).toFixed(1) + "px");
-      heroMa.style.setProperty("--py", (((e.clientY - b.top) / b.height - 0.5) * 16).toFixed(1) + "px");
+      heroMa.style.setProperty("--px", (((e.clientX - b.left) / b.width - 0.5) * 10).toFixed(1) + "px");
+      heroMa.style.setProperty("--py", (((e.clientY - b.top) / b.height - 0.5) * 6).toFixed(1) + "px");
     }, { passive: true });
   }
 
@@ -702,21 +704,23 @@
   if (mascotBtn && !calm) {
     var ma = mascotBtn.querySelector(".ma"), heroOn = true, act = 0;
     new IntersectionObserver(function (es) { heroOn = es[0].isIntersecting; }).observe(mascotBtn);
-    var glare = ma.querySelector(".ma-glare"), spark = ma.querySelector(".ma-spark"), shadesEl = ma.querySelector(".ma-shades");
-    var eyes = ma.querySelector(".ma-eyes"), g1 = ma.querySelector(".ma-g1"), g2 = ma.querySelector(".ma-g2");
+    var earL = ma.querySelector(".ma-ear-l"), earR = ma.querySelector(".ma-ear-r"), eye = ma.querySelector(".ma-eye"), drop = ma.querySelector(".ma-drop");
+    var g1 = ma.querySelector(".ma-g1"), g2 = ma.querySelector(".ma-g2");
+    function twitch(ear, d) {
+      ear.animate([{ transform: "none" }, { transform: "rotate(" + 16 * d + "deg)", offset: .3 }, { transform: "rotate(" + -6 * d + "deg)", offset: .6 }, { transform: "none" }], { duration: 520, easing: "ease-out" });
+    }
     var acts = [
-      function () { glare.animate([{ transform: "translateX(-520px)" }, { transform: "translateX(860px)" }], { duration: 760, easing: "cubic-bezier(.5,0,.3,1)" }); },
-      function () { spark.animate([{ transform: "none" }, { transform: "scale(1.45) rotate(90deg)", offset: .45 }, { transform: "scale(.85) rotate(180deg)", offset: .75 }, { transform: "rotate(180deg)" }], { duration: 760, easing: "cubic-bezier(.3,1.4,.5,1)" }); },
+      function () { twitch(earR, 1); },
+      function () { eye.animate([{ transform: "none" }, { transform: "scaleY(.15)", offset: .5 }, { transform: "none" }], { duration: 240 }); },
       function () {
         if (title) { title.classList.add("glitching"); setTimeout(function () { title.classList.remove("glitching"); }, 600); }
         [[g1, -34, 8], [g2, 34, -8]].forEach(function (x) {
           x[0].animate([{ opacity: 0.85, transform: "translate(" + x[1] + "px," + x[2] + "px)" }, { opacity: 0.85, transform: "translate(" + -x[1] + "px," + -x[2] + "px)", offset: .6 }, { opacity: 0 }], { duration: 300, easing: "steps(3)" });
         });
       },
-      function () { glare.animate([{ transform: "translateX(-520px)" }, { transform: "translateX(860px)" }], { duration: 760, easing: "cubic-bezier(.5,0,.3,1)" }); },
+      function () { twitch(earL, -1); },
       function () {
-        shadesEl.animate([{ transform: "none" }, { transform: "translateY(92px) rotate(-2.5deg)", offset: .16 }, { transform: "translateY(92px) rotate(-2.5deg)", offset: .84 }, { transform: "none" }], { duration: 2300, easing: "ease-in-out" });
-        eyes.animate([{ transform: "none" }, { transform: "none", offset: .46 }, { transform: "scaleY(.1)", offset: .5 }, { transform: "none", offset: .54 }, { transform: "none" }], { duration: 2300 });
+        drop.animate([{ transform: "none", opacity: 1 }, { transform: "translateY(16px)", opacity: 0, offset: .7 }, { transform: "translateY(-4px)", opacity: 0, offset: .71 }, { transform: "none", opacity: 1 }], { duration: 1600, easing: "ease-in" });
       }
     ];
     setInterval(function () {

@@ -579,36 +579,38 @@ html[data-display=pixel] .prose h2{font-size:22px}
   html[data-display=pixel] .ticker{font-size:11px}
 }
 
-/* Mascote: assume a cor do tema; no tema do site, as cores originais */
-.ma{--e:var(--accent);--c1:color-mix(in srgb,var(--accent) 62%,#1a0030);--c2:color-mix(in srgb,var(--accent) 36%,#12002a);overflow:visible;display:block;width:100%;height:auto}
-html[data-theme=larper] .ma{--e:#f03cff;--c1:#7a0bd0;--c2:#4b0790}
-.ma path,.ma g,.ma ellipse{transform-box:fill-box;transform-origin:center}
-.ma-edge{fill:var(--e);transition:fill .3s}
-.ma-core{fill:var(--c1);transition:fill .3s;transform-origin:0 0;transform-box:view-box}
-.ma-shade{fill:var(--c2);transition:fill .3s}
-.ma-line{fill:none;stroke:#12061f;stroke-width:26;stroke-linejoin:round}
-.ma-ink{fill:#12061f}
-.ma-spark{fill:var(--e);stroke:#12061f;stroke-width:18;stroke-linejoin:round}
-.brand:hover .ma-spark,.mascot:hover .ma-spark{animation:twinkle 1s cubic-bezier(.3,1.5,.5,1) infinite}
-@keyframes twinkle{0%,100%{transform:none}40%{transform:scale(1.42) rotate(90deg)}75%{transform:scale(.82) rotate(180deg)}}
-.ma-white{fill:#f4f1fa}
-.ma-lid{fill:none;stroke:#12061f;stroke-width:17;stroke-linejoin:round}
-.ma-iris{fill:#12061f;translate:var(--px,0px) var(--py,0px);transition:translate .12s ease-out}
-.ma-arm{fill:none;stroke:#12061f;stroke-width:30;stroke-linecap:round}
-.ma-lens{stroke:#12061f;stroke-width:20;stroke-linejoin:round}
-.ma-tint{fill:var(--e);opacity:.16}
-.ma-glare{fill:#fff;opacity:.62;transform:translateX(-520px);transform-box:view-box}
-.ma-shades{transform-box:view-box;transform-origin:700px 540px;transition:translate .2s cubic-bezier(.3,1.5,.5,1)}
-.mascot .ma-shades{animation:shadesdrop .95s .25s cubic-bezier(.3,1.5,.5,1) backwards}
-@keyframes shadesdrop{0%{transform:translateY(-860px) rotate(-22deg);opacity:0}15%{opacity:1}}
-.mascot:hover .ma-shades{translate:0 96px}
-.mascot .ma{animation:bob 3.8s ease-in-out infinite;transform-origin:50% 90%}
-@keyframes bob{0%,100%{transform:none}50%{transform:translateY(-6%) scale(.985,1.025)}}
+/* Mascote (o Terminal): assume a cor do tema; no tema do site, as cores originais */
+.ma{--h1:color-mix(in srgb,var(--accent) 82%,#fff);--h2:color-mix(in srgb,var(--accent) 82%,#12002a);--fur:color-mix(in srgb,var(--accent) 40%,#fff);--drop:color-mix(in srgb,var(--accent) 32%,#fff);overflow:visible;display:block;width:100%;height:auto}
+html[data-theme=larper] .ma{--h1:#9d40ff;--h2:#7a1fe6;--fur:#f7a8ff;--drop:#d8b4fe}
+.ma path,.ma g{transform-box:fill-box;transform-origin:center}
+/* O espelho das peças da direita (o transform do próprio SVG) parte da origem do desenho */
+.ma [transform]{transform-box:view-box;transform-origin:0 0}
+.ma-s1{stop-color:var(--h1);transition:stop-color .3s}
+.ma-s2{stop-color:var(--h2);transition:stop-color .3s}
+.ma-fur{fill:none;stroke:var(--fur);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.ma-ink{fill:none;stroke:#12061f;stroke-width:5.4;stroke-linecap:round;stroke-linejoin:round}
+.ma-mouth{stroke-width:2.6;transition:d .22s}
+.ma-drop{fill:var(--drop)}
+.ma-ear{transform-origin:50% 95%;transition:rotate .25s cubic-bezier(.3,1.6,.5,1)}
+.ma-face{translate:var(--px,0px) var(--py,0px);transition:translate .12s ease-out}
 .ma-ghost{opacity:0}
 .ma-g1{fill:#06b6d4}.ma-g2{fill:#ff2bd6}
-.ma-mouth{transition:d .22s}
-.mascot:hover .ma-mouth,.ma.grin .ma-mouth{d:path("M720 720 C830 742 930 716 992 636 C1006 668 992 702 968 720 C900 772 810 776 724 744 Z")}
-.mascot:hover .ma-spark{animation-duration:.9s}
+/* O do topo: as orelhas saltam com mola ao abrir, a gota escorre e o "_" pisca como cursor */
+.mascot .ma-ear{animation:earpop .7s .2s cubic-bezier(.3,1.6,.5,1) backwards}
+@keyframes earpop{0%{scale:1 0}}
+.mascot .ma-drop{animation:dropin .9s .7s ease-out backwards}
+@keyframes dropin{0%{opacity:0;translate:0 -6px}}
+.mascot .ma-cur{animation:cur 1.1s steps(1) infinite}
+@keyframes cur{50%{opacity:0}}
+.mascot:hover .ma-ear-l,.brand:hover .ma-ear-l{rotate:-10deg}
+.mascot:hover .ma-ear-r,.brand:hover .ma-ear-r{rotate:10deg}
+.mascot:hover .ma-mouth,.ma.grin .ma-mouth{d:path("M50 66 Q63.57 80 78 65")}
+.mascot .ma{animation:bob 3.8s ease-in-out infinite;transform-origin:50% 90%}
+@keyframes bob{0%,100%{transform:none}50%{transform:translateY(-6%) scale(.985,1.025)}}
+/* Pequeno (no topo das páginas e andando na barra): traços grossos, como no ícone da bandeja */
+.brand .ma-ink,.buddy .ma-ink{stroke-width:7.6}
+.brand .ma-mouth,.buddy .ma-mouth{stroke-width:4.2}
+:is(.brand,.buddy) :is(.ma-fur,.ma-drop){display:none}
 .mascot{background:none;border:0}
 .mascot::before{content:"";position:absolute;inset:-22%;z-index:-1;background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 42%,transparent),transparent);pointer-events:none}
 .mascot.pop{transform:none}
@@ -761,15 +763,14 @@ html[data-theme=larper] .ma{--e:#f03cff;--c1:#7a0bd0;--c2:#4b0790}
   .ring{display:none}
 }
 @media (prefers-reduced-motion:reduce){
-  .ma-shades{animation:none}
-  .ma-glare{display:none}
+  .mascot :is(.ma-ear,.ma-drop,.ma-cur){animation:none}
 }
 /* Modo leve: em máquina sem folga, ou escolhido na paleta */
 html.lite :is(.aurora,.pixels,.spot,.ring,.stage::before,.units::after){display:none}
 html.lite .morph::after{display:none}
 html.lite .morph-sway,html.lite .morph-tilt{transform:none!important}
 html.lite .morph-app,html.lite .morph-sway,html.lite .morph-tilt{transform-style:flat}
-html.lite .stage-float,html.lite .window::before,html.lite .mascot .ma,html.lite .chain div::after,html.lite .chain::after{animation:none}
+html.lite .stage-float,html.lite .window::before,html.lite .mascot .ma,html.lite .mascot .ma-cur,html.lite .chain div::after,html.lite .chain::after{animation:none}
 /* Fora da tela, nada anima */
 [data-off],[data-off] *,[data-off]::before,[data-off]::after,[data-off] *::before,[data-off] *::after{animation-play-state:paused!important}
 @media print{.statusbar,.fx-layer,.topnav,.side,.toc,.pager{display:none}body{padding:0}}
@@ -823,7 +824,7 @@ html.lite .stage-float,html.lite .window::before,html.lite .mascot .ma,html.lite
 .topnav svg{display:block;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .topnav svg .fill{fill:currentColor;stroke:none}
 .brand{flex:none;display:flex;align-items:center;gap:10px;min-width:max-content;white-space:nowrap;color:var(--text);text-decoration:none;font:800 18px/1 var(--sans);font-stretch:80%;letter-spacing:-.01em}
-.brand .ma{width:38px;height:28px;flex:none;transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
+.brand .ma{width:34px;height:31px;flex:none;transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
 .topnav .brand svg{stroke:none}
 .brand:hover .ma{transform:scale(1.18) rotate(-5deg)}
 [data-brand]{white-space:nowrap}

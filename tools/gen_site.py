@@ -497,37 +497,44 @@ def markdown(src, rewrite, skip_h1=False):
 
 
 # ------------------------------------------------------------- Mascote ----
-# O desenho de assets/logo-mark.svg, em peças que o site anima (site.css e site.js).
-BODY = "M340 258 L568 188 L625 268 Q700 262 778 268 L838 182 Q960 200 1048 248 C1180 420 1260 620 1262 812 C1180 880 1080 920 985 945 L930 830 Q700 850 482 802 L428 938 C320 910 220 870 148 830 C150 620 220 420 340 258 Z"
-EYE_L = "M338 600 L660 548 C640 640 590 702 482 705 C400 705 346 662 338 600 Z"
-EYE_R = "M698 540 L1068 455 C1086 540 1048 612 950 614 C842 614 736 600 698 540 Z"
-MOUTH = "M728 742 C830 722 922 700 980 652 C988 668 980 680 962 690 C900 722 822 742 732 750 Z"
-SPARK = "M1095 160 C1105 250 1120 282 1240 296 C1130 310 1112 340 1110 436 C1100 340 1080 322 940 322 C1060 306 1088 272 1095 160 Z"
-
-
-def shrink(path, cx, cy, k, nx, ny):
-    """A forma do olho é a da lente, menor: a pálpebra reta dá a cara de deboche."""
-    xy = 0
-
-    def repl(m):
-        nonlocal xy
-        v = float(m.group(0))
-        xy += 1
-        return f"{(nx + (v - cx) * k) if xy % 2 else (ny + (v - cy) * k):.1f}"
-
-    return re.sub(r"-?\d+(?:\.\d+)?", repl, path)
-
-
-EYE_LS = shrink(EYE_L, 499, 626, 0.6, 496, 628)
-EYE_RS = shrink(EYE_R, 885, 535, 0.6, 884, 536)
+# O Terminal (assets/mascote-terminal.svg, o mascote principal do app), em peças que o
+# site anima (site.css e site.js): as orelhas, o rosto que segue o ponteiro, o ">" que
+# pisca, o "_" que pisca como o cursor de um terminal e a gota de suor.
+EAR = "M11 26 C13 12 16 -3 20 -14 Q21 -16.5 23.5 -15.5 C35 -9 47 0 59 9 L34 24 Z"
+FUR = "M24 15 l2.6 -7 l1.6 5 l2.8 -8 l1.8 6 l3 -7 l1.8 5 l3 -5.5 l1 4"
+HEAD = "M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07Z"
+EYE = "M31 41 L49 50 L31 59"
+CURSOR = "M73 58 L95 58"
+MOUTH = "M52 69 Q63.57 75 76 68"
+DROP = "M103 28 q-3.4 6 0 8.6 q3.4 -2.6 0 -8.6 Z"
+MIRROR = "translate(127.14 0) scale(-1 1)"
 
 
 def mascot(uid):
-    return f'''<svg class="ma" viewBox="100 110 1200 900" aria-hidden="true" focusable="false"><defs><clipPath id="ma-b{uid}"><path d="{BODY}"/></clipPath><clipPath id="ma-l{uid}"><path d="{EYE_L}"/><path d="{EYE_R}"/></clipPath><clipPath id="ma-e{uid}"><path d="{EYE_LS}"/><path d="{EYE_RS}"/></clipPath><linearGradient id="ma-lens{uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b0a44"/><stop offset=".55" stop-color="#0c0316"/><stop offset="1" stop-color="#040108"/></linearGradient></defs><g class="ma-rig"><path class="ma-ghost ma-g1" d="{BODY}"/><path class="ma-ghost ma-g2" d="{BODY}"/><g clip-path="url(#ma-b{uid})"><path class="ma-edge" d="{BODY}"/><path class="ma-core" d="{BODY}" transform="translate(12.5 45) scale(0.95)"/><path class="ma-shade" d="M150 690 C230 810 330 870 470 900 L440 980 L100 980 L100 690 Z"/></g><path class="ma-line" d="{BODY}"/><g class="ma-eyes"><path class="ma-white" d="{EYE_LS}"/><path class="ma-white" d="{EYE_RS}"/><g clip-path="url(#ma-e{uid})"><ellipse class="ma-iris" cx="520" cy="634" rx="30" ry="36"/><ellipse class="ma-iris" cx="908" cy="538" rx="30" ry="36"/></g><path class="ma-lid" d="{EYE_LS}"/><path class="ma-lid" d="{EYE_RS}"/></g><path class="ma-mouth ma-ink" d="{MOUTH}"/><g class="ma-shades"><path class="ma-arm" d="M345 596 L196 566"/><path class="ma-arm" d="M1066 458 L1196 424"/><path class="ma-arm" d="M655 554 Q680 528 702 544"/><path class="ma-lens" fill="url(#ma-lens{uid})" d="{EYE_L}"/><path class="ma-lens" fill="url(#ma-lens{uid})" d="{EYE_R}"/><g clip-path="url(#ma-l{uid})"><path class="ma-tint" d="M300 640 L1100 450 L1100 520 L300 700 Z"/><path class="ma-glare" d="M250 760 L350 760 L620 420 L520 420 Z M400 760 L440 760 L710 420 L670 420 Z"/></g></g><path class="ma-spark" d="{SPARK}"/></g></svg>'''
+    grad = f'url(#ma-h{uid})'
+    return (f'<svg class="ma" viewBox="-10 -34 147.14 134" aria-hidden="true" focusable="false">'
+            f'<defs><linearGradient id="ma-h{uid}" gradientUnits="userSpaceOnUse" x1="14" y1="-16" x2="113" y2="96">'
+            f'<stop class="ma-s1" offset="0"/><stop class="ma-s2" offset="1"/></linearGradient></defs>'
+            f'<g class="ma-rig"><path class="ma-ghost ma-g1" d="{HEAD}"/><path class="ma-ghost ma-g2" d="{HEAD}"/>'
+            f'<path class="ma-ear ma-ear-l" fill="{grad}" d="{EAR}"/>'
+            f'<g class="ma-ear ma-ear-r"><path fill="{grad}" transform="{MIRROR}" d="{EAR}"/></g>'
+            f'<path class="ma-head" fill="{grad}" d="{HEAD}"/>'
+            f'<path class="ma-fur" d="{FUR}"/><path class="ma-fur" transform="{MIRROR}" d="{FUR}"/>'
+            f'<g class="ma-face"><path class="ma-ink ma-eye" d="{EYE}"/><path class="ma-ink ma-cur" d="{CURSOR}"/>'
+            f'<path class="ma-ink ma-mouth" d="{MOUTH}"/></g><path class="ma-drop" d="{DROP}"/></g></svg>')
 
 
 def live_icon():
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><style>@keyframes t{{0%,80%,100%{{transform:scale(1) rotate(0)}}90%{{transform:scale(1.35) rotate(90deg)}}}}@keyframes g{{0%,70%{{transform:translateX(-420px)}}90%,100%{{transform:translateX(900px)}}}}#s{{transform-box:fill-box;transform-origin:center;animation:t 3.4s infinite}}#g{{animation:g 3.6s infinite}}</style><defs><clipPath id="c"><path d="{EYE_L}"/><path d="{EYE_R}"/></clipPath></defs><rect width="512" height="512" rx="116" fill="#0a050f"/><g transform="translate(28 85) scale(0.38) translate(-100 -110)"><path d="{BODY}" fill="#F03CFF"/><path d="{BODY}" fill="#7A0BD0" transform="translate(12.5 45) scale(0.95)"/><path d="{BODY}" fill="none" stroke="#12061F" stroke-width="26" stroke-linejoin="round"/><path d="M345 596 L196 566M1066 458 L1196 424M655 554 Q680 528 702 544" fill="none" stroke="#12061F" stroke-width="26"/><path d="{EYE_L}" fill="#12061F"/><path d="{EYE_R}" fill="#12061F"/><g clip-path="url(#c)"><path id="g" d="M300 760 L420 760 L690 420 L570 420 Z" fill="#fff" opacity=".55"/></g><path d="{MOUTH}" fill="#12061F"/><path id="s" d="{SPARK}" fill="#FF3CF0" stroke="#12061F" stroke-width="18"/></g></svg>'''
+    """O ícone da aba: o Terminal na placa escura (assets/icon-terminal.svg), com o "_"
+    piscando como cursor onde o navegador anima SVG."""
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><style>@keyframes c{{50%{{opacity:0}}}}#c{{animation:c 1.1s steps(1) infinite}}</style>'
+            f'<defs><radialGradient id="b" cx="0.3" cy="0.2" r="0.95"><stop offset="0" stop-color="#2A1550"/><stop offset="1" stop-color="#0B0616"/></radialGradient>'
+            f'<linearGradient id="h" gradientUnits="userSpaceOnUse" x1="14" y1="-16" x2="113" y2="96"><stop offset="0" stop-color="#9D40FF"/><stop offset="1" stop-color="#7A1FE6"/></linearGradient></defs>'
+            f'<rect width="512" height="512" rx="116" fill="url(#b)"/><g transform="translate(256 262) scale(2.85) translate(-63.57 -33)">'
+            f'<path d="{EAR}" fill="url(#h)"/><path d="{EAR}" fill="url(#h)" transform="{MIRROR}"/><path d="{HEAD}" fill="url(#h)"/>'
+            f'<g fill="none" stroke="#F7A8FF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="{FUR}"/><path d="{FUR}" transform="{MIRROR}"/></g>'
+            f'<g fill="none" stroke="#12061F" stroke-linecap="round" stroke-linejoin="round" stroke-width="5.4"><path d="{EYE}"/><path id="c" d="{CURSOR}"/>'
+            f'<path d="{MOUTH}" stroke-width="2.6"/></g><path d="{DROP}" fill="#D8B4FE"/></g></svg>')
 
 
 # ------------------------------------------------------------ Layouts ----

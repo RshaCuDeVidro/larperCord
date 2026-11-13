@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Gera assets/logo.svg (símbolo + nome) e assets/icon-classico.svg (o ícone do
-mascote Clássico) a partir de assets/logo-mark.svg, com o texto "larperCord"
-convertido em curvas (Inter)."""
+"""Gera assets/logo.svg e logo-light.svg (o mascote Terminal, o principal, mais o nome)
+a partir de assets/mascote-terminal.svg, com o texto "larperCord" convertido em curvas
+(Inter), e assets/icon-classico.svg (o ícone do mascote Clássico) a partir de
+assets/logo-mark.svg. O site usa cópias de logo*.svg em docs/assets/."""
 import re, sys
 from pathlib import Path
 from fontTools.ttLib import TTFont
@@ -28,11 +29,13 @@ def word(text, x, baseline, size, tracking=-0.02):
         cx += hmtx[g][0] * scale + tracking * size
     return pen.getCommands(), cx - tracking * size
 
-mark = (root / "assets/logo-mark.svg").read_text()
-defs = re.search(r"<defs>.*?</defs>", mark, re.S).group(0)
-# Tudo depois do <defs> (o desenho), no espaço do viewBox "100 110 1200 900".
-body = mark.split("</defs>", 1)[1].rsplit("</svg>", 1)[0]
-VB = (100, 110, 1200, 900)
+def parts(name):
+    """O <defs> e tudo depois dele (o desenho), no espaço do viewBox do arquivo."""
+    src = (root / name).read_text()
+    return re.search(r"<defs>.*?</defs>", src, re.S).group(0), src.split("</defs>", 1)[1].rsplit("</svg>", 1)[0]
+
+defs, body = parts("assets/mascote-terminal.svg")
+VB = (-10, -34, 147.14, 134)
 
 # Lockup horizontal: símbolo com 160 de altura + texto.
 H = 160
@@ -46,7 +49,7 @@ W = int(MW + 22 + w1 + w2 + 24)
 for theme, ink in (("", "#F4F1FF"), ("-light", "#17112E")):
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 {W} {H}" width="{W}" height="{H}">
   <title>larperCord</title>
-  {defs.replace('id="lc-grad"', 'id="lc-grad"').replace("</defs>", f'''  <linearGradient id="lc-word" gradientUnits="userSpaceOnUse" x1="{MW + 22 + w1:.0f}" y1="0" x2="{W:.0f}" y2="{H}">
+  {defs.replace("</defs>", f'''  <linearGradient id="lc-word" gradientUnits="userSpaceOnUse" x1="{MW + 22 + w1:.0f}" y1="0" x2="{W:.0f}" y2="{H}">
       <stop offset="0" stop-color="#A855FF"/><stop offset="1" stop-color="#F03CFF"/>
     </linearGradient>
   </defs>''')}
@@ -59,7 +62,8 @@ for theme, ink in (("", "#F4F1FF"), ("-light", "#17112E")):
 '''
     (root / f"assets/logo{theme}.svg").write_text(svg)
 
-# Ícone do app: o símbolo num quadrado arredondado escuro.
+# O ícone do Clássico: o símbolo num quadrado arredondado escuro.
+defs, body = parts("assets/logo-mark.svg")
 icon = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 512 512" width="512" height="512">
   <title>larperCord</title>
   {defs.replace("</defs>", '''  <radialGradient id="lc-bg" cx="0.3" cy="0.2" r="0.95">
