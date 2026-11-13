@@ -18,6 +18,7 @@ const S = @import("ui/settings_state.zig");
 const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
 const Id = types.Id;
+const ime = @import("ui/ime.zig");
 
 fn s(name: []const u8) Op {
     return .{ .section = name };
@@ -928,6 +929,15 @@ fn raiseWindow(app: *App) void {
     _ = c.SDL_RaiseWindow(app.win.window);
 }
 
+/// O SDL só manda o texto em conversão (`SDL_EVENT_TEXT_EDITING`) se souber que
+/// o app desenha a composição; sem a dica, o IME fica só com a janela nativa.
+fn imeHintSet(_: *App) bool {
+    const h = c.SDL_GetHint(c.SDL_HINT_IME_IMPLEMENTED_UI);
+    if (h == null) return false;
+    const hint = std.mem.span(@as([*:0]const u8, @ptrCast(h)));
+    return std.mem.indexOf(u8, hint, "composition") != null;
+}
+
 /// O que o SDL entrega ao IME está em coordenadas da janela, e a interface, em pontos. Com
 /// escala do sistema, só num X de verdade: `QA_SUITE=ime` e SDL_VIDEO_X11_SCALING_FACTOR.
 /// (O cursor começa um pouco antes da marcação da caixa.)
@@ -945,8 +955,61 @@ fn imeInPlace(app: *App) bool {
     return x >= (box.x - 4) * k and x <= box.right() * k and y >= box.y * k and y <= box.bottom() * k and r.h > 0;
 }
 
+// --- Texto em conversão do IME -------------------------------------------------------------
+
+/// Entra no laço de eventos como o SDL faria com o IME de verdade. O texto é um
+/// literal estático: o SDL não libera eventos empurrados por `SDL_PushEvent`.
+fn pushIme(app: *App, ev_type: u32, text: [*:0]const u8, start: c_int, length: c_int) void {
+    var e = std.mem.zeroes(c.SDL_Event);
+    e.type = ev_type;
+    e.edit.windowID = c.SDL_GetWindowID(app.win.window);
+    if (ev_type == c.SDL_EVENT_TEXT_EDITING) {
+        e.edit.text = text;
+        e.edit.start = start;
+        e.edit.length = length;
+    } else {
+        e.text.text = text;
+    }
+    _ = c.SDL_PushEvent(&e);
+}
+fn imeCompose(app: *App) void {
+    pushIme(app, c.SDL_EVENT_TEXT_EDITING, "にほん", 0, 3);
+}
+fn imeConvert(app: *App) void {
+    pushIme(app, c.SDL_EVENT_TEXT_EDITING, "日本", 0, 2);
+}
+fn imeCancel(app: *App) void {
+    pushIme(app, c.SDL_EVENT_TEXT_EDITING, "", 0, 0);
+}
+fn imeCommit(app: *App) void {
+    // Como o SDL: o fim da conversão vem antes do texto decidido.
+    pushIme(app, c.SDL_EVENT_TEXT_EDITING, "", 0, 0);
+    pushIme(app, c.SDL_EVENT_TEXT_INPUT, "日本", 0, 0);
+}
+fn imeComposing(_: *App) bool {
+    return ime.isComposing();
+}
+fn imeFinished(_: *App) bool {
+    return !ime.isComposing();
+}
+fn composerHasJapan(app: *App) bool {
+    const n = std.mem.indexOfScalar(u8, &app.st.input, 0) orelse app.st.input.len;
+    return std.mem.eql(u8, app.st.input[0..n], "日本");
+}
+/// Sai da caixa clicando no canal aberto: o ImGui copia o que estava nela para
+/// o `st.input` (é o que um clique fora da caixa faz).
+fn tActiveChannel(app: *App, b: []u8) []const u8 {
+    const id = app.st.activeChannel() orelse return "";
+    return std.fmt.bufPrint(b, "channel:{d}", .{id}) catch "";
+}
+fn clearComposer(app: *App) void {
+    @memset(&app.st.input, 0);
+    app.st.input_sync = true;
+}
+
 pub const ops_ime = [_]Op{
     s("janela do IME"),
+    expect("o SDL sabe que a conversão é desenhada aqui", imeHintSet),
     .{ .run = raiseWindow },
     .{ .wait = 200 },
     click("composer"),
@@ -956,6 +1019,36 @@ pub const ops_ime = [_]Op{
     expect("com a interface maior também", imeInPlace),
     .{ .run = uiNormal },
     .{ .wait = 200 },
+    s("texto em conversão"),
+    click("composer"),
+    .{ .run = imeCompose },
+    .{ .wait = 150 },
+    expect("o texto em conversão aparece na caixa", imeComposing),
+    .{ .shot = "ime-conversao" },
+    .{ .run = imeConvert },
+    .{ .wait = 150 },
+    expect("a conversão nova toma o lugar da anterior", imeComposing),
+    .{ .shot = "ime-conversao-nova" },
+    .{ .run = imeCommit },
+    .{ .wait = 150 },
+    expect("a conversão terminou", imeFinished),
+    // Clicar no canal aberto tira o foco da caixa; o ImGui copia o que estava
+    // nela para o `st.input`, como num clique fora dela.
+    .{ .click = .{ .dyn = tActiveChannel } },
+    .{ .wait = 250 },
+    expect("o texto decidido ficou na caixa", composerHasJapan),
+    .{ .shot = "ime-decidido" },
+    s("cancelar a conversão"),
+    .{ .run = clearComposer },
+    click("composer"),
+    .{ .wait = 150 },
+    .{ .run = imeCompose },
+    .{ .wait = 150 },
+    expect("a conversão abre de novo", imeComposing),
+    .{ .run = imeCancel },
+    .{ .wait = 150 },
+    expect("cancelar tira o texto em conversão", imeFinished),
+    .{ .shot = "ime-cancelado" },
     key(c.ImGuiKey_Escape),
 };
 

@@ -40,6 +40,7 @@
 - "Online", "Offline", "Proxy" and other words that were missing from the translation files now show in Japanese and Russian, and so do the descriptions and options of the built-in themes, the status duration submenu, the message box tips and the image actions, from DivannKokos's report (#20). The theme card shows the whole description, in up to two lines, with the rest on hover.
 - Translated text no longer gets cut off in Russian and Japanese: About, the wait notice when joining servers, the focus mode note and "N mentions in <server>" with a long server name. Buttons and notes in Settings no longer run past their edge either. From DivannKokos's report (#22).
 - Russian uses ё where it belongs, from DivannKokos (#21).
+- Japanese, Chinese and Korean input shows while you're converting it in the message box, with the underline, instead of appearing only after you pick the candidate, from ryokky3 (#23).
 - With Arabic or Hebrew at the bottom of the conversation, the jump-to-present button moves to the left corner instead of covering the start of those lines.
 
 **Lighter**

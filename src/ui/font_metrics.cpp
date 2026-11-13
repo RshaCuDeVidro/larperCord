@@ -39,6 +39,12 @@ extern "C" int larper_font_index_size(ImFont* font, float size) {
     return font->GetFontBaked(size)->IndexLookup.Size;
 }
 
+// O sublinhado do texto em conversão do IME (ui/ime.zig), nas posições que o
+// ImGui acabou de calcular para o InputText ativo.
+extern "C" void larper_input_underline(int start, int len, unsigned int col, float thickness) {
+    ImGui::InputTextDrawUnderline(start, len, (ImU32)col, thickness);
+}
+
 // Põe a janela atual (entre Begin e End) na frente das outras sem pegar o foco do
 // teclado: quem está digitando em outra janela continua digitando. As bindings em C
 // não expõem a função interna.
