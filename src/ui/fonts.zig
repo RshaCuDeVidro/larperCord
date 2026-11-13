@@ -6,6 +6,7 @@ const std = @import("std");
 const sys = @import("../platform/sys.zig");
 const plain_letters = @import("../core/plain_letters.zig");
 const font_blocks = @import("font_blocks.zig");
+const font_names = @import("font_names.zig");
 const c = @import("c");
 
 pub const Weight = enum(u3) { regular, medium, semibold, bold, italic };
@@ -19,6 +20,8 @@ var builtin_tag: u8 = 0;
 pub const Family = struct {
     name: []const u8,
     faces: [5]*c.ImFont,
+    /// Veio de `installedFamily` (no Windows, da lista das pastas de fontes).
+    installed: bool = false,
 
     pub fn get(f: *const Family, w: Weight) *c.ImFont {
         return f.faces[@intFromEnum(w)];
@@ -148,7 +151,12 @@ pub fn installedNames() []const []const u8 {
     if (sys.windows) {
         // A lista do Windows é a mesma que resolve as famílias (ver `windowsFonts`).
         for (windowsFonts()) |f| out.append(alloc, f.name) catch break;
-    } else fcFamilies(alloc, &out) catch {};
+    } else {
+        fcFamilies(alloc, &out) catch {};
+        // Como depois de aplicar o tema (App.applyThemeStyle): o cache do fontconfig com
+        // todas as fontes do sistema (~MBs) sai da memória, e volta sozinho se alguém pedir.
+        c.FcFini();
+    }
     const slice = out.toOwnedSlice(alloc) catch return &.{};
     std.mem.sort([]const u8, slice, {}, nameLess);
     // Juntas no fim da ordenação, as cópias da mesma família saem uma só.
@@ -239,7 +247,7 @@ pub const Fonts = struct {
     atlas: *c.ImFontAtlas,
     families: std.ArrayList(*Family) = .empty,
     /// Famílias que o sistema não tem: sem perguntar de novo a cada quadro (ver `forgetMissing`).
-    missing: std.ArrayList([]u8) = .empty,
+    missing: std.ArrayList(struct { name: []u8, installed: bool }) = .empty,
     maps: std.StringHashMapUnmanaged([]u8) = .empty,
     faces: std.ArrayList(struct { data: [*]u8, index: c_int, font: *c.ImFont }) = .empty,
     emoji: ?[]u8 = null,
@@ -493,7 +501,7 @@ pub const Fonts = struct {
 
     /// O primeiro de `files` (em C:\Windows\Fonts) que existe e tem todas as letras de prova.
     fn windowsFile(f: *Fonts, files: []const []const u8, probes: []const u32) ?Match {
-        const windir = if (c.SDL_getenv("WINDIR")) |w| std.mem.span(w) else "C:/Windows";
+        const windir = windowsDir();
         var pb: [300]u8 = undefined;
         for (files) |file| {
             const p2 = std.fmt.bufPrintSentinel(&pb, "{s}/Fonts/{s}", .{ windir, file }, 0) catch continue;
@@ -514,22 +522,34 @@ pub const Fonts = struct {
 
     /// Família pelo nome ("Inter", "JetBrains Mono"...). Carrega se preciso.
     pub fn family(f: *Fonts, name: []const u8) !*Family {
-        for (f.families.items) |fam| if (std.mem.eql(u8, fam.name, name)) return fam;
-        for (f.missing.items) |m| if (std.mem.eql(u8, m, name)) return error.FontNotFound;
-        const faces = f.loadFaces(name) catch |e| {
-            if (f.gpa.dupe(u8, name)) |n| f.missing.append(f.gpa, n) catch f.gpa.free(n) else |_| {}
+        return f.familyFrom(name, false);
+    }
+
+    /// A família escolhida nas Configurações, uma de `installedNames`. No Windows vem da
+    /// lista lida das pastas de fontes, nunca trocada por uma parecida: a `family` cai na
+    /// Segoe UI, na Georgia ou na Consolas quando não acha um arquivo com o nome.
+    pub fn installedFamily(f: *Fonts, name: []const u8) !*Family {
+        return f.familyFrom(name, sys.windows);
+    }
+
+    fn familyFrom(f: *Fonts, name: []const u8, installed: bool) !*Family {
+        for (f.families.items) |fam| if (fam.installed == installed and std.mem.eql(u8, fam.name, name)) return fam;
+        for (f.missing.items) |m| if (m.installed == installed and std.mem.eql(u8, m.name, name)) return error.FontNotFound;
+        const faces = f.loadFaces(name, installed) catch |e| {
+            if (f.gpa.dupe(u8, name)) |n| f.missing.append(f.gpa, .{ .name = n, .installed = installed }) catch f.gpa.free(n) else |_| {}
             return e;
         };
         const fam = try f.gpa.create(Family);
         errdefer f.gpa.destroy(fam);
-        fam.* = .{ .name = try f.gpa.dupe(u8, name), .faces = faces };
+        fam.* = .{ .name = try f.gpa.dupe(u8, name), .faces = faces, .installed = installed };
         errdefer f.gpa.free(fam.name);
         try f.families.append(f.gpa, fam);
         return fam;
     }
 
-    /// Os cinco pesos da família, de onde o sistema disser.
-    fn loadFaces(f: *Fonts, name: []const u8) ![5]*c.ImFont {
+    /// Os cinco pesos da família, de onde o sistema disser (ou da lista das pastas, ver
+    /// `installedFamily`).
+    fn loadFaces(f: *Fonts, name: []const u8, installed: bool) ![5]*c.ImFont {
         const specs = [_]struct { w: c_int, slant: c_int }{
             .{ .w = 80, .slant = 0 }, // regular
             .{ .w = 100, .slant = 0 }, // medium
@@ -539,7 +559,7 @@ pub const Fonts = struct {
         };
         var faces: [5]*c.ImFont = undefined;
         for (specs, 0..) |s, i| {
-            const m = resolve(name, s.w, s.slant) orelse return error.FontNotFound;
+            const m = (if (installed) resolveInstalled(name, s.w, s.slant) else resolve(name, s.w, s.slant)) orelse return error.FontNotFound;
             defer std.heap.c_allocator.free(m.path);
             const data = try f.mapPath(m.path);
             faces[i] = try f.faceFor(data, m.index);
@@ -550,7 +570,7 @@ pub const Fonts = struct {
     /// Tema novo (ou recarregado): as famílias que faltavam são procuradas de novo (uma
     /// fonte pode ter sido instalada com o app aberto).
     pub fn forgetMissing(f: *Fonts) void {
-        for (f.missing.items) |m| f.gpa.free(m);
+        for (f.missing.items) |m| f.gpa.free(m.name);
         f.missing.clearRetainingCapacity();
     }
 
@@ -720,7 +740,7 @@ const Match = struct { path: [:0]u8, index: c_int };
 /// Sem fontconfig: procura em C:\\Windows\\Fonts. Primeiro um arquivo com o nome
 /// da família; senão a fonte do sistema do mesmo tipo (Segoe UI, Georgia, Consolas).
 fn resolveWindows(name: []const u8, weight: c_int, slant: c_int) ?Match {
-    const windir = if (c.SDL_getenv("WINDIR")) |w| std.mem.span(w) else "C:/Windows";
+    const windir = windowsDir();
     const italic = slant != 0;
     const bold = weight >= 200;
     const semi = weight >= 180 and !bold;
@@ -751,8 +771,23 @@ fn resolveWindows(name: []const u8, weight: c_int, slant: c_int) ?Match {
         const p = std.fmt.bufPrintSentinel(&pb, "{s}/Fonts/{s}.ttf", .{ windir, file }, 0) catch continue;
         if (sys.exists(p.ptr)) return .{ .path = std.heap.c_allocator.dupeSentinel(u8, p, 0) catch return null, .index = 0 };
     }
-    // Último recurso: as fontes lidas das pastas do Windows (ver `windowsFonts`) — o
-    // nome veio do arquivo, então o arquivo resolve a família de volta.
+    return null;
+}
+
+/// A pasta do Windows. A variável se chama "windir" (minúsculas) e o SDL_getenv
+/// diferencia maiúsculas: só "WINDIR" não acha nada no Windows.
+fn windowsDir() []const u8 {
+    for ([_][*:0]const u8{ "windir", "WINDIR", "SystemRoot" }) |v| {
+        if (c.SDL_getenv(v)) |w| return std.mem.span(w);
+    }
+    return "C:/Windows";
+}
+
+/// Uma família escolhida nas Configurações (ver `installedFamily`): no Windows, a face
+/// da lista das pastas de fontes com esse nome que melhor serve ao peso pedido; nos
+/// outros sistemas, o fontconfig (a lista veio dele).
+fn resolveInstalled(name: []const u8, weight: c_int, slant: c_int) ?Match {
+    if (!sys.windows) return resolve(name, weight, slant);
     const want_bold = weight >= 200;
     const want_semi = weight >= 180 and !want_bold;
     const want_italic = slant != 0;
@@ -778,14 +813,19 @@ var win_fonts: ?[]WinFont = null;
 
 /// As fontes do Windows, lidas das pastas do sistema (C:\Windows\Fonts) e da pessoa
 /// (%LOCALAPPDATA%\Microsoft\Windows\Fonts): o nome de cada família está na tabela
-/// "name" do arquivo, junto do subgrupo (Bold, Italic…), que diz o peso. Montada uma
-/// vez (as fontes não são instaladas com o app aberto) e fica até o fim.
+/// "name" do arquivo, junto do subgrupo (Bold, Italic…), que diz o peso. De cada
+/// arquivo só sai o cabeçalho e essa tabela (ui/font_names.zig), não o arquivo inteiro.
+/// Montada uma vez, quando a lista das Configurações ou uma família escolhida pedem
+/// (as fontes não são instaladas com o app aberto), e fica até o fim.
 fn windowsFonts() []WinFont {
     if (win_fonts) |l| return l;
     const alloc = std.heap.c_allocator;
     var out: std.ArrayList(WinFont) = .empty;
-    if (c.SDL_getenv("WINDIR")) |w| scanWindowsFonts(alloc, &out, std.mem.span(w), "Fonts");
-    if (c.SDL_getenv("LOCALAPPDATA")) |l| scanWindowsFonts(alloc, &out, std.mem.span(l), "Microsoft/Windows/Fonts");
+    const scratch = alloc.alloc(u8, font_names.max_table) catch return &.{};
+    defer alloc.free(scratch);
+    var ctx: ScanCtx = .{ .alloc = alloc, .out = &out, .scratch = scratch };
+    scanWindowsFonts(&ctx, windowsDir(), "Fonts");
+    if (c.SDL_getenv("LOCALAPPDATA")) |l| scanWindowsFonts(&ctx, std.mem.span(l), "Microsoft/Windows/Fonts");
     const slice = out.toOwnedSlice(alloc) catch return &.{};
     std.mem.sort(WinFont, slice, {}, struct {
         fn less(_: void, a: WinFont, b: WinFont) bool {
@@ -797,14 +837,13 @@ fn windowsFonts() []WinFont {
 }
 
 /// Os arquivos de fonte de uma pasta do Windows entram na lista com o nome da família
-/// de cada face (.ttf, .otf, .ttc — o cabeçalho diz quantas faces o arquivo tem).
-const ScanCtx = struct { alloc: std.mem.Allocator, out: *std.ArrayList(WinFont) };
+/// de cada face (.ttf, .otf, .ttc: o cabeçalho diz quantas faces o arquivo tem).
+const ScanCtx = struct { alloc: std.mem.Allocator, out: *std.ArrayList(WinFont), scratch: []u8 };
 
-fn scanWindowsFonts(alloc: std.mem.Allocator, out: *std.ArrayList(WinFont), dir: []const u8, rest: []const u8) void {
+fn scanWindowsFonts(ctx: *ScanCtx, dir: []const u8, rest: []const u8) void {
     var pb: [520]u8 = undefined;
     const root = std.fmt.bufPrintSentinel(&pb, "{s}/{s}", .{ dir, rest }, 0) catch return;
-    var ctx = ScanCtx{ .alloc = alloc, .out = out };
-    _ = c.SDL_EnumerateDirectory(root.ptr, enumerateFontFile, &ctx);
+    _ = c.SDL_EnumerateDirectory(root.ptr, enumerateFontFile, ctx);
 }
 
 fn enumerateFontFile(ud: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8) callconv(.c) c.SDL_EnumerationResult {
@@ -812,29 +851,29 @@ fn enumerateFontFile(ud: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8
     const ext = std.fs.path.extension(std.mem.span(fname));
     if (!std.ascii.eqlIgnoreCase(ext, ".ttf") and !std.ascii.eqlIgnoreCase(ext, ".otf") and
         !std.ascii.eqlIgnoreCase(ext, ".ttc")) return c.SDL_ENUM_CONTINUE;
+    // O SDL garante a barra no fim de `dirname`.
     var fb: [520]u8 = undefined;
-    const file = std.fmt.bufPrintSentinel(&fb, "{s}/{s}", .{ std.mem.span(dirname), std.mem.span(fname) }, 0) catch return c.SDL_ENUM_CONTINUE;
+    const file = std.fmt.bufPrintSentinel(&fb, "{s}{s}", .{ std.mem.span(dirname), std.mem.span(fname) }, 0) catch return c.SDL_ENUM_CONTINUE;
+    const io = c.SDL_IOFromFile(file.ptr, "rb") orelse return c.SDL_ENUM_CONTINUE;
+    defer _ = c.SDL_CloseIO(io);
+    const r: font_names.Reader = .{ .ctx = io, .readFn = readIo };
+    var offs: [font_names.max_faces]u32 = undefined;
     const alloc = ctx.alloc;
-    const out = ctx.out;
-    var size: usize = 0;
-    const data = c.SDL_LoadFile(file.ptr, &size) orelse return c.SDL_ENUM_CONTINUE;
-    defer c.SDL_free(data);
-    const bytes: []const u8 = @as([*]const u8, @ptrCast(data))[0..size];
-    for (0..sfntFaceCount(bytes)) |i| {
-        var names: FaceNames = .{};
-        if (!sfntFaceNames(bytes, i, &names)) continue;
+    for (offs[0..font_names.faces(r, &offs)], 0..) |face, i| {
+        var names: font_names.Names = .{};
+        if (!font_names.read(r, face, ctx.scratch, &names)) continue;
         const path = alloc.dupeSentinel(u8, file, 0) catch continue;
         const name = alloc.dupe(u8, names.family()) catch {
             alloc.free(path);
             continue;
         };
-        out.append(alloc, .{
+        ctx.out.append(alloc, .{
             .name = name,
             .path = path,
             .index = @intCast(i),
-            .bold = names.subHas("bold"),
-            .italic = names.subHas("italic") or names.subHas("oblique"),
-            .semi = names.subHas("semi") or names.subHas("medium"),
+            .bold = names.has("bold"),
+            .italic = names.has("italic") or names.has("oblique"),
+            .semi = names.has("semi") or names.has("medium"),
         }) catch {
             alloc.free(name);
             alloc.free(path);
@@ -843,108 +882,11 @@ fn enumerateFontFile(ud: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8
     return c.SDL_ENUM_CONTINUE;
 }
 
-/// Cabeçalho sfnt: u16 e u32 grandes, nos offsets das tabelas.
-fn be16(b: []const u8, at: usize) u16 {
-    if (at + 2 > b.len) return 0;
-    return (@as(u16, b[at]) << 8) | b[at + 1];
-}
-
-fn be32(b: []const u8, at: usize) u32 {
-    if (at + 4 > b.len) return 0;
-    return (@as(u32, b[at]) << 24) | (@as(u32, b[at + 1]) << 16) | (@as(u32, b[at + 2]) << 8) | b[at + 3];
-}
-
-/// Os nomes de uma face do arquivo: o da família (nameID 1) e o do subgrupo (nameID 2).
-/// O tamanho é fixo: as configurações são copiadas e comparadas byte a byte, e um nome
-/// que não cabe sai truncado (fonte alguma tem família de 64 bytes).
-const FaceNames = struct {
-    family_buf: [64]u8 = undefined,
-    family_len: usize = 0,
-    sub_buf: [32]u8 = undefined,
-    sub_len: usize = 0,
-
-    fn family(n: *const FaceNames) []const u8 {
-        return n.family_buf[0..n.family_len];
-    }
-
-    /// O subgrupo (em minúsculas, ver `scanWindowsFonts`) tem esta palavra?
-    fn subHas(n: *const FaceNames, word: []const u8) bool {
-        return std.mem.indexOf(u8, n.sub_buf[0..n.sub_len], word) != null;
-    }
-};
-
-/// Quantas faces o arquivo tem (1, salvo nas coleções .ttc).
-fn sfntFaceCount(data: []const u8) usize {
-    if (be32(data, 0) != 0x74746366) return 1; // "ttcf"
-    return be32(data, 8);
-}
-
-/// Os nomes da face `i`: a tabela "name" tem um par por escrita e idioma; fica com a
-/// primeira que decodifique (a da Windows, em utf-16, vem primeiro na tabela).
-fn sfntFaceNames(data: []const u8, i: usize, out: *FaceNames) bool {
-    // Sem nome de família nos registros conhecidos, sai falsa: sem isto, um arquivo
-    // cujo nome só existe em plataforma que não sabemos ler saía com o campo solto.
-    out.family_len = 0;
-    out.sub_len = 0;
-    var face: usize = 0;
-    if (be32(data, 0) == 0x74746366) {
-        if (be32(data, 8) <= i) return false;
-        face = be32(data, 12 + i * 4);
-    } else if (i != 0) return false;
-    const ntables = be16(data, face + 4);
-    var at: usize = face + 12;
-    for (0..ntables) |_| {
-        if (at + 16 > data.len) return false;
-        if (std.mem.eql(u8, data[at .. at + 4], "name")) break;
-        at += 16;
-    } else return false;
-    var fo: usize = be32(data, at + 8);
-    const count = be16(data, fo + 2);
-    const strings = fo + be16(data, fo + 4);
-    fo += 6;
-    for (0..count) |_| {
-        if (fo + 12 > data.len) break;
-        const platform = be16(data, fo);
-        const name_id = be16(data, fo + 6);
-        const len = be16(data, fo + 8);
-        const str = strings + be16(data, fo + 10);
-        fo += 12;
-        if (str + len > data.len) continue;
-        const dst = if (name_id == 1) &out.family_buf else if (name_id == 2) &out.sub_buf else continue;
-        const dn = if (name_id == 1) &out.family_len else &out.sub_len;
-        if (dn.* > 0) continue; // a primeira que veio fica
-        if (platform == 0 or platform == 3) {
-            dn.* = utf16Be(data[str .. str + len], dst);
-        } else if (platform == 1) {
-            const n = @min(len, dst.len);
-            for (data[str .. str + n], 0..) |ch, j| {
-                if (ch < 0x20) continue;
-                dst[j] = ch;
-                dn.* += 1;
-            }
-        }
-    }
-    return out.family_len > 0;
-}
-
-/// Utf-16 (a tabela "name" é big-endian) para utf-8, no buffer `out`.
-fn utf16Be(src: []const u8, out: []u8) usize {
-    var n: usize = 0;
-    var i: usize = 0;
-    while (i + 1 < src.len and n < out.len) {
-        var cp: u32 = be16(src, i);
-        i += 2;
-        if (cp >= 0xD800 and cp < 0xDC00 and i + 1 < src.len) {
-            const lo = be16(src, i);
-            if (lo >= 0xDC00 and lo < 0xE000) {
-                cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-                i += 2;
-            }
-        }
-        if (cp == 0 or cp == 0xFFFF) break;
-        n += std.unicode.utf8Encode(@intCast(cp), out[n..]) catch break;
-    }
-    return n;
+/// font_names.Reader de um arquivo aberto pelo SDL.
+fn readIo(ctx: *anyopaque, off: u64, buf: []u8) usize {
+    const io: *c.SDL_IOStream = @ptrCast(@alignCast(ctx));
+    if (c.SDL_SeekIO(io, @intCast(off), c.SDL_IO_SEEK_SET) < 0) return 0;
+    return c.SDL_ReadIO(io, buf.ptr, buf.len);
 }
 
 /// As famílias que o fontconfig conhece (a lista das Configurações nos outros sistemas).
