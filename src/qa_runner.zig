@@ -3427,16 +3427,11 @@ pub const Runner = struct {
     fn scrollTo(r: *Runner, app: *App, p: [2]f32) bool {
         const h = app.io.*.DisplaySize.y;
         if (p[1] > 2 and p[1] < h - 2) return false;
-        // Roda aos poucos, um passo por par de quadros: a marcação lida vem do quadro
-        // anterior, e um passo grande (6+) oscilava sem parar em cima do alvo (o
-        // clique media a posição velha e caía fora). 2 linhas por passo chega em
-        // tempo nas páginas compridas (Aparência com as fontes) sem passar reto.
-        if (r.settle == 0) {
-            r.pos(app, .{ app.io.*.DisplaySize.x * 0.6, h * 0.5 });
-            c.ImGuiIO_AddMouseWheelEvent(app.io, 0, if (p[1] >= h - 2) -2 else 2);
-            r.settle = 1;
-        } else r.settle = 0;
+        r.pos(app, .{ app.io.*.DisplaySize.x * 0.6, h * 0.5 });
+        c.ImGuiIO_AddMouseWheelEvent(app.io, 0, if (p[1] >= h - 2) -2 else 2);
         r.sub = 0;
+        // Espera a rolagem acontecer e as posições serem redesenhadas.
+        r.settle = 4;
         return true;
     }
 
