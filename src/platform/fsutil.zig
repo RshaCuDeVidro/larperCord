@@ -6,6 +6,7 @@
 const std = @import("std");
 const sys = @import("sys.zig");
 const c = @import("c");
+const apagar = @import("apagar.zig");
 
 /// $XDG_CONFIG_HOME/larpercord/<nome> (ou ~/.config/larpercord/<nome>);
 /// `nome` vazio dá a própria pasta.
@@ -20,6 +21,8 @@ pub fn configPath(buf: []u8, name: []const u8) ?[:0]const u8 {
 /// (…/larpercord e o que fica dentro dela) voltam para 700 mesmo se já
 /// existiam; as de fora (o ~/.config, o ~/.cache) não mudam de permissão.
 pub fn ensureDir(dir: []const u8) bool {
+    // Apagando todos os dados (platform/apagar.zig): nenhuma pasta volta.
+    if (apagar.on()) return false;
     var buf: [512]u8 = undefined;
     if (dir.len == 0 or dir.len >= buf.len) return false;
     @memcpy(buf[0..dir.len], dir);
@@ -65,6 +68,8 @@ pub fn keepBroken(path: [:0]const u8) void {
 }
 
 fn replace(path: [:0]const u8, bytes: []const u8, durable: bool) bool {
+    // Apagando todos os dados: nada grava de novo, nem quem ainda estava de pé.
+    if (apagar.on()) return false;
     var tbuf: [528]u8 = undefined;
     // Com o PID: duas instâncias abertas não escrevem no mesmo temporário.
     const tmp = std.fmt.bufPrintSentinel(&tbuf, "{s}.{d}.tmp", .{ path, c.getpid() }, 0) catch return false;

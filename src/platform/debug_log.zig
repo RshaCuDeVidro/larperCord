@@ -58,7 +58,8 @@ pub fn set(on: bool) void {
     if (mutex == null) mutex = c.SDL_CreateMutex();
     c.SDL_LockMutex(mutex);
     defer c.SDL_UnlockMutex(mutex);
-    enabled.store(on and (isOn() or prepare()), .monotonic);
+    // Apagando todos os dados (platform/apagar.zig), o registro não volta.
+    enabled.store(on and !@import("apagar.zig").on() and (isOn() or prepare()), .monotonic);
 }
 
 /// Confere na hora de ligar que dá para gravar lá (sem isso o botão ficaria ligado sem

@@ -539,6 +539,8 @@ pub const Action = union(enum) {
     /// Abre o seletor de pasta para o FFmpeg (ui/settings_video.zig).
     pick_ffmpeg_dir,
     restart,
+    /// "Apagar todos os dados", confirmado (ui/settings.zig): apaga e fecha o app.
+    wipe_data,
     react: struct { id: Id, emoji: types.Reaction },
     open_dm: Id,
     send_dm: struct { user: Id, text: []const u8 },

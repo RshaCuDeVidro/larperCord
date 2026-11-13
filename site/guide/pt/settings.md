@@ -32,6 +32,8 @@ O **Renderizador**, em Configurações → Desempenho, é **Automático** ou um 
 
 **Salvar registro de depuração** grava o `debug.log` na pasta de cache (`~/.cache/larpercord/` no Linux, `%LOCALAPPDATA%\larpercord\` no Windows) até você desligar ou fechar o app. **Abrir a pasta do registro** e **Copiar o caminho do arquivo** levam até ele. O token nunca entra no arquivo. No Windows é assim que se vê o registro do app, porque a versão para Windows não tem console.
 
+**Apagar todos os dados…**, no fim da mesma página, apaga tudo o que o larperCord guarda neste computador sem desinstalar: as pastas de configurações e de cache (configurações, os seus temas, mascotes, sons e plugins, rascunhos, mensagens salvas, o cache de mensagens, o FFmpeg baixado e os registros) e as contas salvas, com os tokens do chaveiro ou do Gerenciador de Credenciais. Ele pergunta antes, com o **Cancelar** ao lado; depois de confirmar, o app fecha e nada é gravado de volta na saída. A sua conta do Discord não é tocada.
+
 ## Escolhas de privacidade que valem conhecer
 
 | Opção | Padrão | Efeito |

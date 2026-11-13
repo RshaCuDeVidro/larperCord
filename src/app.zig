@@ -53,6 +53,7 @@ const state_cache = @import("net/state_cache.zig");
 const state_snapshot = @import("core/state_snapshot.zig");
 const jsonx = @import("net/jsonx.zig");
 const fsutil = @import("platform/fsutil.zig");
+const apagar = @import("platform/apagar.zig");
 const accounts_store = @import("net/accounts_store.zig");
 const app_accounts = @import("app_accounts.zig");
 const app_chamada = @import("app_chamada.zig");
@@ -161,6 +162,9 @@ pub const App = struct {
     /// Parar o laço e sair de verdade (nunca para a bandeja). Só da thread da
     /// interface: de outra, chame `Window.wake` em seguida para acordar o laço.
     restart_wanted: bool = false,
+    /// "Apagar todos os dados" confirmado: sai como no reinício e o main apaga
+    /// (platform/apagar.zig). No QA o laço segue até o fim da bateria.
+    wipe_wanted: bool = false,
     /// Verificações seguidas sem painel com a janela escondida.
     tray_misses: u8 = 0,
     /// A janela está escondida na bandeja (fechou, ou clicou no ícone).
@@ -578,22 +582,25 @@ pub const App = struct {
     }
 
     pub fn destroy(app: *App) void {
+        // Apagando todos os dados: nada do que sai daqui vai para o disco
+        // (platform/apagar.zig fecha a porta também para quem não passa por aqui).
+        const keep = !apagar.on();
         tray.hide();
         sys.toastExpire(0, true);
         instance.stopListening();
-        app.saveSettings();
+        if (keep) app.saveSettings();
         // A aba ativa do conjunto em uso (o resto já foi gravado na hora).
-        if (app.store.ready or app.store.from_cache) app_conjuntos.flush(app);
+        if (keep and (app.store.ready or app.store.from_cache)) app_conjuntos.flush(app);
         // Primeiro: mesmo com um servidor travado, o filho morre antes do vigia de main.zig.
         lsp_net.shutdown();
         voz_audio.shutdown();
         _ = c.SDL_RemoveTimer(app.timer);
         // O painel aberto agora volta aberto na próxima vez.
-        plugin_host.savePrefs();
+        if (keep) plugin_host.savePrefs();
         app.plugins.deinit();
         // O que estava na caixa de texto vira o rascunho do canal.
         _ = app.st.drafts.switchTo(app.gpa, 0, &app.st.input, app.st.editing == 0);
-        app.saveDrafts();
+        if (keep) app.saveDrafts();
         app.st.drafts.deinit(app.gpa);
         app.st.filtros.deinit(app.gpa);
         app.st.volumes.deinit(app.gpa);
@@ -607,8 +614,10 @@ pub const App = struct {
         app.notifiers.deinit(app.gpa);
         app_presenca.shutdown();
         app.stopNet();
-        msg_cache.flushDirty(&app.store);
-        _ = state_cache.save(&app.store);
+        if (keep) {
+            msg_cache.flushDirty(&app.store);
+            _ = state_cache.save(&app.store);
+        }
         msg_cache.deinit();
         app.login.clearToken();
         app.events.deinit();
@@ -1966,6 +1975,7 @@ pub const App = struct {
             .restart => if (app.opts.qa) st.showToast(now(), false, "reiniciando", "restarting", .{}) else {
                 app.restart_wanted = true;
             },
+            .wipe_data => app.wipe_wanted = true,
             .edit_place => |e| {
                 // A interface aloca em gpa; a rede libera com o alocador dela.
                 const ca = std.heap.c_allocator;
@@ -2932,8 +2942,9 @@ pub const App = struct {
         var record_n: u32 = 0;
 
         while (running) {
-            // Reinício pedido: sai como qualquer "Sair", sem passar pela bandeja.
-            if (app.restart_wanted) {
+            // Reinício (ou apagar os dados) pedido: sai como qualquer "Sair", sem passar
+            // pela bandeja.
+            if (app.restart_wanted or (app.wipe_wanted and !app.opts.qa)) {
                 _ = c.SDL_HideWindow(app.win.window);
                 break;
             }

@@ -49,6 +49,7 @@
 
 **Install**
 - `install.sh --purge` and `install.ps1 -Purge` also delete the settings, the cache, the downloaded FFmpeg, your sounds and the saved accounts, from DivannKokos's request (#12). Uninstalling without it still keeps your settings.
+- Settings → Advanced → "Delete all data…" does the same from inside the app, without uninstalling it: after you confirm, it deletes the settings, your themes, mascots, sounds and plugins, drafts and saved messages, the conversation cache, the downloaded FFmpeg, the debug logs and the saved accounts with their tokens in the keyring (Windows Credential Manager), then closes. Nothing gets written back on the way out.
 
 **Site and docs**
 - Theme builder: a divider between the dark and light previews gives one of them more width; double click puts it back in the middle.

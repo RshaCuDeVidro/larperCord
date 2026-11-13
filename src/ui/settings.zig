@@ -1053,6 +1053,7 @@ fn page(p: *Page, previews: []const Preview) void {
             }
             textSection(p);
             debugSection(p);
+            dataSection(p);
         },
         .filtros => @import("settings_filtros.zig").page(ctx, p.dl, p.x, &p.y, p.w),
         .voz => @import("settings_voz.zig").draw(p),
@@ -1468,6 +1469,60 @@ fn debugSection(p: *Page) void {
     }
     p.note(i18n.tr("O token nunca entra no arquivo. Ele traz IDs de canais e servidores, nomes de arquivos de mídia e dados da chamada, então dê uma olhada antes de mandar.", "Your token never goes in the file. It has channel and server IDs, media file names and call data, so take a look before you send it."));
     challengeCounts(p);
+}
+
+/// A pergunta do "Apagar todos os dados" está aberta, e o último quadro em que a página
+/// apareceu (saiu dela ou fechou as configurações: a pergunta volta fechada).
+var wipe_confirm = false;
+var wipe_frame: c_int = -10;
+
+/// "Apagar todos os dados" (platform/apagar.zig): o mesmo que o --purge dos instaladores,
+/// sem desinstalar. O botão pergunta antes; confirmar apaga e fecha o app.
+fn dataSection(p: *Page) void {
+    if (sys.web) return;
+    const apagar = @import("../platform/apagar.zig");
+    const ctx = p.ctx;
+    const frame = c.ImGui_GetFrameCount();
+    if (frame - wipe_frame > 1) wipe_confirm = false;
+    wipe_frame = frame;
+    p.divider();
+    p.heading(i18n.tr("Dados neste computador", "Data on this computer"));
+    var ps: apagar.Pastas = .{};
+    apagar.pastas(&ps);
+    var shown: [2][520]u8 = undefined;
+    var buf: [1300]u8 = undefined;
+    p.note(i18n.fmt(&buf, "O larperCord guarda tudo em {s} e {s}.", "larperCord keeps everything in {s} and {s}.", .{ shownPath(&shown[0], ps.get(0)), shownPath(&shown[1], ps.get(1)) }));
+    if (!wipe_confirm) {
+        if (p.button(i18n.tr("Apagar todos os dados…", "Delete all data…"), true)) wipe_confirm = true;
+        return;
+    }
+    const y0 = p.y;
+    p.note(i18n.tr(
+        "Isto apaga deste computador as configurações, os seus temas, mascotes, sons e plugins, os rascunhos e as mensagens salvas, o cache das conversas, o FFmpeg baixado, os registros de depuração e as contas salvas, junto com os tokens guardados no chaveiro. Não dá para desfazer. A sua conta do Discord não muda, e o programa continua instalado.",
+        "This deletes from this computer your settings, your themes, mascots, sounds and plugins, drafts and saved messages, the conversation cache, the downloaded FFmpeg, the debug logs and the saved accounts, along with the tokens kept in the keyring. It can't be undone. Your Discord account doesn't change, and the program stays installed.",
+    ));
+    p.note(i18n.tr("O larperCord fecha logo em seguida.", "larperCord closes right after."));
+    qa.mark(.{ .x = p.x, .y = y0, .w = 10, .h = 10 }, "wipe-confirm", .{});
+    // Cancelar vem primeiro e sem a cor de perigo.
+    if (p.buttonSoft(i18n.tr("Cancelar", "Cancel"))) wipe_confirm = false;
+    p.sameLine();
+    if (p.button(i18n.tr("Apagar tudo e fechar", "Delete everything and close"), true)) {
+        wipe_confirm = false;
+        ctx.act(.wipe_data);
+    }
+}
+
+/// O caminho como o sistema mostra (barras invertidas no Windows).
+fn shownPath(buf: *[520]u8, p: ?[:0]const u8) []const u8 {
+    const path = p orelse return "?";
+    const n = @min(path.len, buf.len);
+    @memcpy(buf[0..n], path[0..n]);
+    if (sys.windows) {
+        for (buf[0..n]) |*ch| {
+            if (ch.* == '/') ch.* = '\\';
+        }
+    }
+    return buf[0..n];
 }
 
 /// Quantas vezes o Discord desafiou a conta desde que o app abriu (net/challenge.zig).

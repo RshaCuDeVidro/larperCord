@@ -79,6 +79,8 @@ curl -fsSL https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/insta
 
 With `--purge` on Linux, or `-Purge` on Windows, in place of the uninstall option, it also deletes the settings, the cache, the downloaded FFmpeg, your sounds and the saved accounts: the settings and cache folders, plus each account's entry in the keyring (Linux) or Credential Manager (Windows). It closes larperCord first, so the app can't write its settings back on the way out. On Arch, the AUR package is removed with your package manager, like `pacman -R larpercord-bin`, and the zip or the portable file are just deleted; the settings stay in the folders listed in [Settings and files](page:settings#files-on-disk).
 
+To delete the same data and keep larperCord installed, use Settings → Advanced → **Delete all data…** inside the app.
+
 ## Build and run
 
 ```bash
