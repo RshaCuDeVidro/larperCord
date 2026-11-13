@@ -2,6 +2,9 @@
 
 ## 0.6.5
 
+**Aparência**
+- Configurações → Aparência escolhe as fontes da interface e do código entre as instaladas no dispositivo: a lista lê os arquivos de fonte, com o nome da família de cada arquivo (o Windows lê C:\Windows\Fonts e a sua pasta de fontes; nos outros sistemas, o fontconfig responde). "Do tema" volta ao que o tema pede, e a escolha fica salva. Japonês e russo seguem os textos novos.
+
 **Mascote**
 - Um mascote novo, o Terminal, com a piscadinha ">_", agora é o principal, com uma abertura toda nova: um cursor de terminal pisca, uma linha de TV de tubo acende e abre o corpo, as orelhas saltam, o rosto é digitado, ele mostra "..." enquanto conecta e desliga como uma TV antiga quando o app abre. O demo também mostra a abertura inteira.
 - Mais quatro aberturas para escolher em Configurações → Mascote → Abertura: Código, TV, Pixels e Portal, ou Sortear, para cada vez ser uma. "Ver a abertura de novo" toca de novo.
