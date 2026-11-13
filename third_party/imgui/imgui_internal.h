@@ -1340,6 +1340,7 @@ struct IMGUI_API ImGuiInputTextState
     ImVec2                  TextDrawScroll;
     ImRect                  TextClipRect;
     ImDrawList*             TextDrawList;
+    float                   TextAvailR;             // larperCord: largura em que uma linha em árabe ou hebraico termina à direita
     bool                    CursorFollow;           // set when we want scrolling to follow the current cursor position (not always!)
     bool                    CursorCenterY;          // set when we want scrolling to be centered over the cursor position (while resizing a word-wrapping field)
     bool                    SelectedAllMouseLock;   // after a double-click to select all, we ignore further mouse drags to update selection

@@ -1007,6 +1007,39 @@ fn clearComposer(app: *App) void {
     app.st.input_sync = true;
 }
 
+extern fn larper_input_active_text() ?[*:0]const u8;
+extern var larper_input_underline_x: [4]f32;
+
+fn activeText() []const u8 {
+    const p = larper_input_active_text() orelse return "";
+    return std.mem.span(p);
+}
+/// A conversão está no texto que a caixa mostra, com o sublinhado embaixo dela.
+fn imeShownInBox(_: *App) bool {
+    const box = qa.find("composer") orelse return false;
+    const u = larper_input_underline_x;
+    return std.mem.eql(u8, activeText(), "にほん") and u[1] - u[0] > 4 and u[0] >= box.x and u[1] <= box.right();
+}
+const ime_ar = "السلام عليكم ";
+/// Numa linha em árabe (que termina à direita), o sublinhado fica embaixo da conversão
+/// onde ela está na tela, e não onde estaria numa linha da esquerda para a direita.
+fn imeUnderlineRtl(_: *App) bool {
+    const box = qa.find("composer") orelse return false;
+    const u = larper_input_underline_x;
+    return std.mem.eql(u8, activeText(), ime_ar ++ "にほん") and u[1] - u[0] > 4 and
+        u[2] > box.x + box.w * 0.5 and u[0] >= u[2] - 0.5 and u[1] <= u[3] + 0.5;
+}
+/// Em outro campo (a paleta), a conversão aparece numa caixinha sobre ele.
+fn imeFloatOnPalette(app: *App) bool {
+    const f = qa.find("ime-float") orelse return false;
+    const field = qa.find("palette-input") orelse return false;
+    return app.st.palette.open and R.hasInk(app, "ime-float") and f.y < field.bottom() and f.bottom() > field.y;
+}
+fn paletteHasJapan(app: *App) bool {
+    const n = std.mem.indexOfScalar(u8, &app.st.palette.query, 0) orelse app.st.palette.query.len;
+    return qa.find("ime-float") == null and std.mem.eql(u8, app.st.palette.query[0..n], "日本");
+}
+
 pub const ops_ime = [_]Op{
     s("janela do IME"),
     expect("o SDL sabe que a conversão é desenhada aqui", imeHintSet),
@@ -1024,6 +1057,7 @@ pub const ops_ime = [_]Op{
     .{ .run = imeCompose },
     .{ .wait = 150 },
     expect("o texto em conversão aparece na caixa", imeComposing),
+    expect("a caixa mostra a conversão, sublinhada", imeShownInBox),
     .{ .shot = "ime-conversao" },
     .{ .run = imeConvert },
     .{ .wait = 150 },
@@ -1049,6 +1083,31 @@ pub const ops_ime = [_]Op{
     .{ .wait = 150 },
     expect("cancelar tira o texto em conversão", imeFinished),
     .{ .shot = "ime-cancelado" },
+    s("conversão numa linha em árabe"),
+    .{ .run = clearComposer },
+    click("composer"),
+    .{ .wait = 150 },
+    .{ .text = ime_ar },
+    .{ .run = imeCompose },
+    .{ .wait = 150 },
+    expect("o sublinhado fica embaixo da conversão, na ordem da tela", imeUnderlineRtl),
+    .{ .shot = "ime-arabe" },
+    .{ .run = imeCancel },
+    .{ .wait = 150 },
+    .{ .key = .{ .key = c.ImGuiKey_A, .ctrl = true } },
+    key(c.ImGuiKey_Backspace),
+    s("conversão em outro campo"),
+    .{ .key = .{ .key = c.ImGuiKey_K, .ctrl = true } },
+    .{ .wait = 200 },
+    .{ .run = imeCompose },
+    .{ .wait = 150 },
+    expect("a conversão aparece numa caixinha sobre o campo da paleta", imeFloatOnPalette),
+    .{ .shot = "ime-paleta" },
+    .{ .run = imeCommit },
+    .{ .wait = 150 },
+    expect("a caixinha some e o texto decidido entra na paleta", paletteHasJapan),
+    key(c.ImGuiKey_Escape),
+    .{ .wait = 150 },
     key(c.ImGuiKey_Escape),
 };
 

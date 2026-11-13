@@ -106,3 +106,22 @@ extern "C" bool larper_text_ink(ImFont* font, float size, const char* s, const c
     }
     return any;
 }
+
+// Onde o campo de texto ativo pôs o cursor neste quadro (ui/ime.zig): a conversão do IME
+// de um campo que não é a caixa do chat aparece ali.
+extern "C" bool larper_ime_pos(float* x, float* y, float* h) {
+    const ImGuiPlatformImeData& ime = GImGui->PlatformImeData;
+    if (!ime.WantVisible) return false;
+    *x = ime.InputPos.x;
+    *y = ime.InputPos.y;
+    *h = ime.InputLineHeight;
+    return true;
+}
+
+// QA: o texto do campo ativo como ele está na tela (com a conversão do IME dentro dele).
+extern "C" const char* larper_input_active_text() {
+    ImGuiContext& g = *GImGui;
+    const ImGuiInputTextState& st = g.InputTextState;
+    if (st.ID == 0 || st.ID != g.ActiveId || st.TextA.Data == NULL) return nullptr;
+    return st.TextA.Data;
+}

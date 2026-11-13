@@ -196,6 +196,8 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     // Chamada chegando: por cima de tudo, em qualquer tema.
     @import("chamada.zig").overlay(ctx);
     shortcuts(ctx);
+    // A conversão do IME num campo que não é a caixa do chat: por cima de tudo, no cursor dele.
+    @import("ime.zig").floating(ctx);
 }
 
 /// `autohide`: o componente some (fica quase invisível) até o mouse chegar

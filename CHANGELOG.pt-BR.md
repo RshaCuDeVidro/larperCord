@@ -40,7 +40,7 @@
 - "Online", "Offline", "Proxy" e outras palavras que faltavam nos arquivos de tradução agora aparecem em japonês e em russo, assim como as descrições e as opções dos temas embutidos, o submenu de prazo do status, as dicas da caixa de mensagem e as ações das imagens, do relato do DivannKokos (#20). O cartão do tema mostra a descrição inteira, em até duas linhas, e o resto ao passar o mouse.
 - O texto traduzido não sai mais cortado em russo e japonês: Sobre, o aviso de espera para entrar em servidores, a nota do modo foco e "N menções em <servidor>" com nome comprido. Botões e notas das Configurações também não passam mais da borda. Do relato do DivannKokos (#22).
 - O russo usa ё onde deve, do DivannKokos (#21).
-- O texto em japonês, chinês e coreano aparece na caixa de mensagem enquanto você escolhe o candidato, com o sublinhado, em vez de só depois de decidir, do ryokky3 (#23).
+- O texto em japonês, chinês e coreano aparece na caixa de mensagem enquanto você escolhe o candidato, com o sublinhado, em vez de só depois de decidir, do ryokky3 (#23). Nos outros campos (busca, paleta de comandos, Configurações), ele aparece numa caixinha no cursor.
 - Com árabe ou hebraico no fim da conversa, o botão de voltar ao fim vai para o canto esquerdo em vez de cobrir o começo dessas linhas.
 
 **Mais leve**

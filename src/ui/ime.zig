@@ -10,16 +10,24 @@
 //!
 //! O sublinhado é desenhado por `larper_input_underline` (ui/font_metrics.cpp),
 //! que usa as mesmas posições do texto que o ImGui acabou de calcular.
+//!
+//! A dica que faz o SDL mandar a conversão vale para o app inteiro: com ela, a
+//! janela nativa do IME some de todos os campos (no Windows e no ibus/fcitx).
+//! Nos outros campos (busca, paleta, configurações) a conversão aparece numa
+//! caixinha sobre o cursor, como a janela nativa fazia (`floating`).
 const std = @import("std");
 const c = @import("c");
+const d = @import("draw.zig");
+const qa = @import("qa.zig");
 
 /// O SDL manda o texto em UTF-8; uma conversão maior que isto é cortada.
 const max_preedit = 256;
 
 extern fn larper_input_underline(start: c_int, len: c_int, col: c_uint, thickness: f32) void;
+extern fn larper_ime_pos(x: *f32, y: *f32, h: *f32) bool;
 
-/// A caixa de texto do chat estava com o foco no último quadro. O IME só vale
-/// para ela (os outros campos do ImGui continuam sem composição por enquanto).
+/// A caixa de texto do chat estava com o foco no último quadro. A conversão entra
+/// nela; a de qualquer outro campo vai para a caixinha de `floating`.
 pub var composer_active = false;
 
 var applied = false; // o texto em conversão está no buffer do ImGui
@@ -33,12 +41,22 @@ var pending_len: usize = 0;
 
 var committing = false; // o texto foi decidido: tira o em conversão do buffer
 
+/// O texto em conversão de outro campo, que o ImGui não tem onde pôr.
+var float_text: [max_preedit]u8 = undefined;
+var float_len: usize = 0;
+
 /// Lê o evento do SDL. Chamar antes de `cImGui_ImplSDL3_ProcessEvent`: o texto
 /// decidido continua indo para o ImGui por lá.
 pub fn onSdlEvent(e: *const c.SDL_Event) void {
     if (e.type == c.SDL_EVENT_TEXT_EDITING) {
-        if (!composer_active) return;
         const p = e.edit.text;
+        if (!composer_active) {
+            // Outro campo: vai para a caixinha (texto vazio é o fim da conversão).
+            const s = if (p == null) "" else std.mem.span(@as([*:0]const u8, @ptrCast(p)));
+            float_len = utf8Fit(s, max_preedit);
+            @memcpy(float_text[0..float_len], s[0..float_len]);
+            return;
+        }
         if (p == null) return;
         const s = std.mem.span(@as([*:0]const u8, @ptrCast(p)));
         const n = utf8Fit(s, max_preedit);
@@ -48,6 +66,7 @@ pub fn onSdlEvent(e: *const c.SDL_Event) void {
         return;
     }
     if (e.type == c.SDL_EVENT_TEXT_INPUT) {
+        float_len = 0;
         // O texto decidido vem depois do último `TEXT_EDITING`. Qualquer
         // conversão que ainda estava esperando era ele: não volta como nova.
         if (applied or pending) {
@@ -148,6 +167,34 @@ pub fn beginComposer() void {
 pub fn endComposer(active_now: bool) void {
     drawn = true;
     composer_active = active_now;
+    // A conversão de outro campo não continua aqui.
+    if (active_now) float_len = 0;
+}
+
+/// A conversão de um campo que não é a caixa do chat, numa caixinha sobre o
+/// cursor dele. Chamar depois de tudo desenhado: é o campo ativo que diz ao
+/// ImGui onde está o cursor, a cada quadro.
+pub fn floating(ctx: *d.Ctx) void {
+    if (float_len == 0 or composer_active) return;
+    var x: f32 = 0;
+    var y: f32 = 0;
+    var h: f32 = 0;
+    if (!larper_ime_pos(&x, &y, &h) or h <= 0) {
+        // Nenhum campo com o foco: a conversão morreu com ele.
+        float_len = 0;
+        return;
+    }
+    const t = float_text[0..float_len];
+    const font = ctx.ui.get(.regular);
+    const pad: f32 = 4;
+    var r: d.Rect = .{ .x = x, .y = y - 2, .w = d.width(font, h, t) + pad * 2, .h = h + 4 };
+    // Perto da borda direita, a caixinha vai para a esquerda e continua inteira.
+    r.x = @max(ctx.win.x, @min(r.x, ctx.win.x + ctx.win.w - r.w));
+    d.rect(ctx.fg, r, ctx.col(.elevated), 4);
+    d.border(ctx.fg, r, ctx.col(.accent).alpha(0.6), 4, 1);
+    d.text(ctx.fg, font, h, r.x + pad, r.y + 2, ctx.col(.text), t);
+    d.line(ctx.fg, r.x + pad, r.y + 2 + h, r.x + r.w - pad, r.y + 2 + h, ctx.col(.text), 1);
+    qa.mark(r, "ime-float", .{});
 }
 
 /// A caixa perdeu o foco com uma conversão aberta: o ImGui acabou de copiar o

@@ -6029,6 +6029,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         state->TextDrawScroll = draw_scroll;
         state->TextClipRect = clip_rect;
         state->TextDrawList = draw_window->DrawList;
+        state->TextAvailR = larper_avail_r;
     }
 
     // Render text
@@ -6137,7 +6138,10 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
 // larperCord: underline for an IME preedit range that lives in the active InputText buffer.
 // Called right after InputTextEx() by the message composer, while g.InputTextLineIndex and the
-// text draw position saved above still match the widget.
+// text draw position saved above still match the widget. Lines with Arabic or Hebrew are on
+// screen in visual order (LarperBidiLayout): there the underline follows the characters, in as
+// many pieces as the preedit takes on screen, like the selection.
+extern "C" { float larper_input_underline_x[4] = { 0.0f, 0.0f, 0.0f, 0.0f }; } // [larperCord] QA: onde o sublinhado ficou e onde a linha dele vai na tela
 void ImGui::InputTextDrawUnderline(int text_start, int text_len, ImU32 col, float thickness)
 {
     ImGuiContext& g = *GImGui;
@@ -6154,6 +6158,8 @@ void ImGui::InputTextDrawUnderline(int text_start, int text_len, ImU32 col, floa
     const char* buf = state->TextA.Data;
     const char* buf_end = buf + state->TextLen;
     const int line_count = line_index->Offsets.Size;
+    const bool rtl_text = larper_input_bidi != nullptr && LarperMaybeRtl(buf, buf_end);
+    float qa_x0 = FLT_MAX, qa_x1 = -FLT_MAX, qa_line0 = 0.0f, qa_line1 = 0.0f;
     ImDrawList* draw_list = state->TextDrawList;
     draw_list->PushClipRect(state->TextClipRect.Min, state->TextClipRect.Max, true);
     for (int line_n = 0; line_n < line_count; line_n++)
@@ -6168,13 +6174,47 @@ void ImGui::InputTextDrawUnderline(int text_start, int text_len, ImU32 col, floa
         const int b = ImMin(text_end, line_end_ofs);
         if (a >= b)
             continue;
-        const float x0 = InputTextCalcTextSize(&g, line, buf + a, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
-        const float x1 = InputTextCalcTextSize(&g, line, buf + b, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
         const ImVec2 pos = state->TextDrawPos - state->TextDrawScroll + ImVec2(0.0f, line_n * g.FontSize);
         const float y = pos.y + g.FontSize - thickness;
+        if (rtl_text && LarperBidiLayout(g, buf, buf_end, line, line_end, state->TextAvailR, &LarperBidi))
+        {
+            const LarperBidiLine& L = LarperBidi;
+            const int s0 = a - line_start_ofs, s1 = b - line_start_ofs;
+            const float x0 = pos.x + L.Start;
+            float run_a = 0.0f, run_b = -1.0f;
+            for (int k = 0; k <= L.N; k++)
+            {
+                const bool in = k < L.N && L.Off[k] >= s0 && L.Off[k] < s1;
+                if (in && run_b >= run_a && L.X[k] <= run_b + 0.5f) { run_b = L.X[k] + L.Adv[k]; continue; }
+                if (run_b > run_a)
+                {
+                    draw_list->AddLine(ImVec2(x0 + run_a, y), ImVec2(x0 + run_b, y), col, thickness);
+                    qa_x0 = ImMin(qa_x0, x0 + run_a);
+                    qa_x1 = ImMax(qa_x1, x0 + run_b);
+                }
+                if (in) { run_a = L.X[k]; run_b = run_a + L.Adv[k]; }
+                else run_b = -1.0f;
+            }
+            qa_line0 = x0;
+            qa_line1 = x0 + L.Width;
+            continue;
+        }
+        const float x0 = InputTextCalcTextSize(&g, line, buf + a, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
+        const float x1 = InputTextCalcTextSize(&g, line, buf + b, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
         draw_list->AddLine(ImVec2(pos.x + x0, y), ImVec2(pos.x + x1, y), col, thickness);
+        qa_x0 = ImMin(qa_x0, pos.x + x0);
+        qa_x1 = ImMax(qa_x1, pos.x + x1);
+        qa_line0 = pos.x;
+        qa_line1 = pos.x + InputTextCalcTextSize(&g, line, line_end, buf_end, NULL, NULL, ImDrawTextFlags_WrapKeepBlanks).x;
     }
     draw_list->PopClipRect();
+    if (qa_x1 > qa_x0)
+    {
+        larper_input_underline_x[0] = qa_x0;
+        larper_input_underline_x[1] = qa_x1;
+        larper_input_underline_x[2] = qa_line0;
+        larper_input_underline_x[3] = qa_line1;
+    }
 }
 
 void ImGui::DebugNodeInputTextState(ImGuiInputTextState* state)
