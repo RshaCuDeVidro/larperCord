@@ -1,9 +1,11 @@
 # What changed in each version
 
-## 0.6.5
+## 0.6.6
 
 **Appearance**
-- Settings → Appearance picks the fonts for the interface and for code from the ones installed on your device: the list reads the font files themselves, with the family name from each file (Windows reads C:\Windows\Fonts and your own fonts folder; on other systems fontconfig answers). "Theme" goes back to what the theme asks for, and the choice is saved. Japanese and Russian follow the new texts.
+- Settings → Appearance picks the fonts for the interface and for code from the ones installed on your device: the list reads the font files themselves, with the family name from each file (Windows reads C:\Windows\Fonts and your own fonts folder; on other systems fontconfig answers). "Theme" goes back to what the theme asks for, and the choice is saved. Japanese follows the new texts.
+
+## 0.6.5
 
 **Mascot**
 - A new mascot, Terminal, with a ">_" wink, is now the main one, with an all-new opening: a terminal cursor blinks, a tube-TV line lights up and opens the body, the ears spring up, the face gets typed in, it shows "..." while connecting, and it switches off like an old TV as the app opens. The demo plays the whole opening too.
