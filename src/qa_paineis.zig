@@ -1151,11 +1151,17 @@ fn fontUiOpen(app: *App) bool {
     _ = app;
     return qa.find("font-theme:0") != null;
 }
+/// A escolhida chega ao quadro: a família com que ele desenha é ela, não a do tema.
+fn drawsWith(app: *App, mono: bool) bool {
+    const set = &app.st.settings;
+    const chosen = if (mono) set.font_mono.slice() else set.font_ui.slice();
+    return chosen.len > 0 and std.mem.eql(u8, app.textFamily(app.customTheme(), mono).name, chosen);
+}
 fn fontUiPicked(app: *App) bool {
-    return app.st.settings.font_ui.len > 0 and qa.find("font-theme:0") == null;
+    return drawsWith(app, false) and qa.find("font-theme:0") == null;
 }
 fn fontMonoPicked(app: *App) bool {
-    return app.st.settings.font_mono.len > 0;
+    return drawsWith(app, true);
 }
 fn fontUiBackToTheme(app: *App) bool {
     return app.st.settings.font_ui.len == 0;

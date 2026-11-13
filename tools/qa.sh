@@ -12,11 +12,8 @@ total_fail=0
 run() {
     local label="$1"; shift
     # Cada bateria começa sem o cache de mensagens da anterior (QA_KEEP_CACHE: a que
-    # abre pelo que a anterior gravou), e sem configurações: o QA agora grava em
-    # qa-out/ (nada nas do usuário), e cada bateria começa com os padrões do tema.
+    # abre pelo que a anterior gravou).
     [ -n "${QA_KEEP_CACHE:-}" ] || rm -rf qa-out/cache
-    rm -f qa-out/settings.kdl qa-out/drafts.kdl
-    rm -rf qa-out/accounts qa-out/tokens
     local out; out=$("$@" 2>&1 | grep -v '^info:')
     local line; line=$(echo "$out" | grep 'passaram')
     local summary="${line%%(*}"

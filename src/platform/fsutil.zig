@@ -8,15 +8,10 @@ const sys = @import("sys.zig");
 const c = @import("c");
 const apagar = @import("apagar.zig");
 
-/// O QA (--qa) nunca mexe nas configurações de verdade: tudo em qa-out/.
-/// Ligado no main.zig ao aceitar --qa, antes de qualquer leitura.
-pub var qa = false;
-
 /// $XDG_CONFIG_HOME/larpercord/<nome> (ou ~/.config/larpercord/<nome>);
-/// `nome` vazio dá a própria pasta. No QA, qa-out/<nome>.
+/// `nome` vazio dá a própria pasta.
 pub fn configPath(buf: []u8, name: []const u8) ?[:0]const u8 {
     const sep: []const u8 = if (name.len > 0) "/" else "";
-    if (qa) return std.fmt.bufPrintSentinel(buf, "qa-out{s}{s}", .{ sep, name }, 0) catch null;
     var hb: [512]u8 = undefined;
     const base = sys.configHome(&hb) orelse return null;
     return std.fmt.bufPrintSentinel(buf, "{s}/larpercord{s}{s}", .{ base, sep, name }, 0) catch null;
