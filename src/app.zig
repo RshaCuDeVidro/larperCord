@@ -329,6 +329,8 @@ pub const App = struct {
         // vídeo que toque antes do primeiro quadro já acha a pasta do FFmpeg.
         proxy.set(app.st.settings.proxy.slice(), app.st.settings.proxy_all);
         ffmpeg.setDir(app.st.settings.ffmpeg_dir.slice());
+        // O mudo da última vez continua ao entrar numa call.
+        app.st.muted = app.st.settings.mute_me;
         // No QA e nos prints ninguém abre o microfone de verdade.
         voz_audio.force_dummy = opts.qa or opts.shot != null;
         voz_audio.qa_sounds_dir = opts.qa or opts.shot != null;
@@ -2098,14 +2100,18 @@ pub const App = struct {
             },
             .toggle_mute => {
                 st.muted = !st.muted;
+                st.settings.mute_me = st.muted;
                 if (st.voice != null) voz_audio.play(if (st.muted) .mute else .unmute);
                 if (st.voice != null) app.cmd(.{ .voice_flags = .{ .mute = st.muted, .deaf = st.deafened } });
+                app.saveSettings();
             },
             .toggle_deafen => {
                 st.deafened = !st.deafened;
                 if (st.deafened) st.muted = true;
+                st.settings.mute_me = st.muted;
                 if (st.voice != null) voz_audio.play(if (st.deafened) .deafen else .undeafen);
                 if (st.voice != null) app.cmd(.{ .voice_flags = .{ .mute = st.muted, .deaf = st.deafened } });
+                app.saveSettings();
             },
             .toggle_voice_mixer => st.voice_mixer = !st.voice_mixer,
             .start_call => |ch| app_chamada.start(app, ch),
