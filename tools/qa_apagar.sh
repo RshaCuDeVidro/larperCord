@@ -64,12 +64,16 @@ done
 
 echo "apagar fora de QA_APAGAR_RAIZ não apaga nada"
 seed
-before=$(cd "$R" && find . | sort | md5sum)
+before=$(cd "$R" && find . | sort)
 out=$(run_app "$R/outra-raiz"); code=$?
 line=$(echo "$out" | grep 'passaram')
 echo "$line" | grep -q ' 0 falharam' || { bad "a bateria falhou"; echo "$out" | sed -n '/^Falhas:/,$p' | sed 's/^/    /'; }
-after=$(cd "$R" && find . | sort | md5sum)
-[ "$before" = "$after" ] && ok "nenhum arquivo saiu" || { bad "apagou fora da raiz:"; diff <(echo "$before") <(echo "$after"); }
+after=$(cd "$R" && find . | sort)
+# Só o que sumiu conta: o driver de vídeo ou o fontconfig podem criar o cache deles em XDG_CACHE_HOME.
+gone=$(comm -23 <(echo "$before") <(echo "$after"))
+[ -z "$gone" ] && ok "nenhum arquivo saiu" || { bad "apagou fora da raiz:"; echo "$gone" | sed 's/^/    /'; }
+new=$(comm -13 <(echo "$before") <(echo "$after"))
+[ -z "$new" ] || echo "$new" | sed 's/^/    (apareceu, não é apagar) /'
 echo "$out" | grep -q "só dentro de QA_APAGAR_RAIZ" && ok "e avisou por quê" || bad "não avisou que ficou"
 
 [ "$fail" = 0 ] && echo "apagar: tudo passou" || { echo "apagar: houve falhas"; exit 1; }
