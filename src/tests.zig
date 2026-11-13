@@ -78,6 +78,7 @@ test {
     _ = @import("ui/i18n.zig");
     _ = @import("ui/horario.zig");
     _ = @import("ui/atalhos.zig");
+    _ = @import("ui/ime.zig");
     _ = @import("core/combinacao.zig");
     _ = @import("ui/syntax.zig");
     _ = @import("ui/bidi.zig");
