@@ -3291,6 +3291,15 @@ const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ 
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
 const ops_plugins_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_a;
 const ops_plugins_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_b;
+const ops_fontes = [_]Op{
+    expect("pronto", ready),
+    click("user-btn:2"),
+    expect("abre", settingsOpen),
+    click("settings:Aparência"),
+    .{ .wait = 120 },
+} ++ @import("qa_paineis.zig").ops_fontes ++ [_]Op{
+    key(c.ImGuiKey_Escape),
+};
 
 /// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
@@ -3336,6 +3345,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "entrada", &ops_entrada },
     .{ "proxy", &ops_proxy },
     .{ "sem-fontes", &ops_sem_fontes },
+    .{ "fontes", &ops_fontes },
     .{ "interacoes", &ops_interacoes },
     .{ "cronometro", &ops_cronometro },
     .{ "perfil", &ops_perfil },
@@ -3417,11 +3427,16 @@ pub const Runner = struct {
     fn scrollTo(r: *Runner, app: *App, p: [2]f32) bool {
         const h = app.io.*.DisplaySize.y;
         if (p[1] > 2 and p[1] < h - 2) return false;
-        r.pos(app, .{ app.io.*.DisplaySize.x * 0.6, h * 0.5 });
-        c.ImGuiIO_AddMouseWheelEvent(app.io, 0, if (p[1] >= h - 2) -2 else 2);
+        // Roda aos poucos, um passo por par de quadros: a marcação lida vem do quadro
+        // anterior, e um passo grande (6+) oscilava sem parar em cima do alvo (o
+        // clique media a posição velha e caía fora). 2 linhas por passo chega em
+        // tempo nas páginas compridas (Aparência com as fontes) sem passar reto.
+        if (r.settle == 0) {
+            r.pos(app, .{ app.io.*.DisplaySize.x * 0.6, h * 0.5 });
+            c.ImGuiIO_AddMouseWheelEvent(app.io, 0, if (p[1] >= h - 2) -2 else 2);
+            r.settle = 1;
+        } else r.settle = 0;
         r.sub = 0;
-        // Espera a rolagem acontecer e as posições serem redesenhadas.
-        r.settle = 4;
         return true;
     }
 

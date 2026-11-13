@@ -833,10 +833,10 @@ fn fontPicker(p: *Page, mono: bool) void {
         ctx.act(.apply_font);
     }
     _ = d.textClipped(dd.dl, p.font(if (cur.len == 0) .semibold else .regular), 14, theme_r.rect.x + 8, d.centerY(theme_r.rect, 14), if (cur.len == 0) ctx.col(.text) else ctx.col(.muted), i18n.tr("Do tema", "Theme"), theme_r.rect.w - 16);
-    for (names) |n| {
+    for (names, 0..) |n, i| {
         const sel = cur.len > 0 and std.ascii.eqlIgnoreCase(n, cur.slice());
         const ro = dd.row(row_h, sel);
-        qa.mark(ro.rect, "font-opt:{s}", .{if (mono) "mono" else "ui"});
+        qa.mark(ro.rect, "font-opt:{s}:{d}", .{ if (mono) "mono" else "ui", i });
         if (ro.hit.clicked) {
             cur.set(n);
             dropdown.close();

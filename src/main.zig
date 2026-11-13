@@ -78,6 +78,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
             if (!@import("ui/qa.zig").compiled) return fail("este build não tem o QA: compile com -Doptimize=debug ou -Dqa=true");
             opts.qa = true;
             opts.live = false;
+            // Configurações, tokens e afins do QA ficam em qa-out/ (nunca nos do usuário).
+            @import("platform/fsutil.zig").qa = true;
             if (@import("c").SDL_getenv("SDL_VIDEO_DRIVER") == null) _ = @import("c").SDL_setenv_unsafe("SDL_VIDEO_DRIVER", "offscreen", 1);
         } else if (std.mem.eql(u8, arg, "--lang")) {
             const l = it.next() orelse return fail("--lang precisa de pt, en, ja ou ru");
