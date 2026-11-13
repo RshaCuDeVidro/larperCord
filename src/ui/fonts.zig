@@ -821,7 +821,7 @@ fn enumerateFontFile(ud: ?*anyopaque, dirname: [*c]const u8, fname: [*c]const u8
     defer c.SDL_free(data);
     const bytes: []const u8 = @as([*]const u8, @ptrCast(data))[0..size];
     for (0..sfntFaceCount(bytes)) |i| {
-        var names: FaceNames = undefined;
+        var names: FaceNames = .{};
         if (!sfntFaceNames(bytes, i, &names)) continue;
         const path = alloc.dupeSentinel(u8, file, 0) catch continue;
         const name = alloc.dupe(u8, names.family()) catch {
@@ -882,6 +882,10 @@ fn sfntFaceCount(data: []const u8) usize {
 /// Os nomes da face `i`: a tabela "name" tem um par por escrita e idioma; fica com a
 /// primeira que decodifique (a da Windows, em utf-16, vem primeiro na tabela).
 fn sfntFaceNames(data: []const u8, i: usize, out: *FaceNames) bool {
+    // Sem nome de família nos registros conhecidos, sai falsa: sem isto, um arquivo
+    // cujo nome só existe em plataforma que não sabemos ler saía com o campo solto.
+    out.family_len = 0;
+    out.sub_len = 0;
     var face: usize = 0;
     if (be32(data, 0) == 0x74746366) {
         if (be32(data, 8) <= i) return false;
