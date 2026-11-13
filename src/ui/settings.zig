@@ -1469,7 +1469,7 @@ fn rendererSection(p: *Page) void {
     }
     const win = @import("../platform/window.zig");
     const active = std.mem.sliceTo(&win.active_renderer, 0);
-    var buf: [200]u8 = undefined;
+    var buf: [400]u8 = undefined;
     p.note(i18n.fmt(&buf, "Em uso agora: {s}. A troca vale na próxima vez que o larperCord abrir.", "In use now: {s}. A change applies the next time larperCord opens.", .{rendererLabel(active)}));
     qa.mark(.{ .x = p.x, .y = p.y - 20, .w = 10, .h = 10 }, "renderer-active:{s}", .{active});
     if (win.renderer_fallback) qa.mark(.{ .x = p.x, .y = p.y, .w = 10, .h = 10 }, "renderer-fallback", .{});
