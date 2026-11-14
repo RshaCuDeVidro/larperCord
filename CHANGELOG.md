@@ -2,6 +2,9 @@
 
 ## 0.6.5
 
+**Messages**
+- Italic with the asterisk now works in the middle of a word (a*b*c and あ*い*う), like Discord. The underscore keeps the word-boundary rule that protects snake_case.
+
 **Mascot**
 - A new mascot, Terminal, with a ">_" wink, is now the main one, with an all-new opening: a terminal cursor blinks, a tube-TV line lights up and opens the body, the ears spring up, the face gets typed in, it shows "..." while connecting, and it switches off like an old TV as the app opens. The demo plays the whole opening too.
 - Four more openings to pick from in Settings → Mascot → Opening: Code, TV, Pixels and Portal, or Shuffle for a different one each time. "Replay the opening" plays it again.
