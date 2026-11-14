@@ -3,7 +3,7 @@
 ## 0.6.6
 
 **Aparência**
-- Configurações → Aparência escolhe as fontes da interface e do código entre as instaladas no dispositivo: a lista lê os arquivos de fonte, com o nome da família de cada arquivo (o Windows lê C:\Windows\Fonts e a sua pasta de fontes; nos outros sistemas, o fontconfig responde). "Do tema" volta ao que o tema pede, e a escolha fica salva. O japonês segue os textos novos.
+- Configurações → Aparência escolhe as fontes da interface e do código entre as instaladas no dispositivo: a lista lê os arquivos de fonte, com o nome da família de cada arquivo (o Windows lê C:\Windows\Fonts e a sua pasta de fontes; nos outros sistemas, o fontconfig responde). "Do tema" volta ao que o tema pede, e a escolha fica salva, do ryokky3 (#26). O japonês segue os textos novos.
 
 ## 0.6.5
 

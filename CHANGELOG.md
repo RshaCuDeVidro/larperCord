@@ -3,7 +3,7 @@
 ## 0.6.6
 
 **Appearance**
-- Settings → Appearance picks the fonts for the interface and for code from the ones installed on your device: the list reads the font files themselves, with the family name from each file (Windows reads C:\Windows\Fonts and your own fonts folder; on other systems fontconfig answers). "Theme" goes back to what the theme asks for, and the choice is saved. Japanese follows the new texts.
+- Settings → Appearance picks the fonts for the interface and for code from the ones installed on your device: the list reads the font files themselves, with the family name from each file (Windows reads C:\Windows\Fonts and your own fonts folder; on other systems fontconfig answers). "Theme" goes back to what the theme asks for, and the choice is saved, from ryokky3 (#26). Japanese follows the new texts.
 
 ## 0.6.5
 
