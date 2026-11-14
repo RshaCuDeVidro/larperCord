@@ -642,7 +642,7 @@
 "Ethiopic" "эфиопское письмо"
 "Even out volume" "Выровнять громкость"
 "every connection" "все соединения"
-"Every update is signed; a version without the right signature isn't installed." "Каждое обновление подписано; версия без правильной подписи не установлена."
+"Every update is signed; a version without the right signature isn't installed." "Каждое обновление подписано; версия без правильной подписи не будет установлена."
 "Everyone can send one message every {s} in this channel." "В этом канале каждый может отправлять одно сообщение раз в {s}."
 "Everything else (images, avatars) only comes from Discord's servers." "Всё остальное (изображения, аватары) поступает только с серверов Discord."
 "exited by itself (code {d})" "завершился сам (код {d})"
