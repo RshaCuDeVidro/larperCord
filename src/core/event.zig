@@ -10,6 +10,7 @@ const polls = @import("polls.zig");
 const InviteCode = @import("links.zig").InviteCode;
 const ThreadEdit = @import("thread_edit.zig").Edit;
 const stickers = @import("stickers.zig");
+const artwork = @import("artwork.zig");
 const UrlPair = @import("media_refresh.zig").Pair;
 const moderacao = @import("moderacao.zig");
 const entrada = @import("entrada.zig");
@@ -480,6 +481,10 @@ pub const Command = union(enum) {
     fetch_sticker_packs,
     /// Manda uma figurinha (`sticker_ids`) na conversa.
     send_sticker: struct { channel: Id, sticker: Id, nonce: u64 },
+    /// Emoji or stickers as plain image attachments: the net thread downloads each from
+    /// Discord's CDN and uploads it like any file (core/artwork.zig). `items` is
+    /// allocated with the c_allocator.
+    send_artwork: struct { channel: Id, nonce: u64, reply_to: Id = 0, opts: envio.SendOpts = .{}, items: []const artwork.Asset },
     /// Interação com um bot ou o índice de comandos (core/interaction.zig).
     interaction: interaction.Cmd,
     shutdown,
@@ -675,6 +680,8 @@ pub const Action = union(enum) {
     fetch_sticker_packs,
     /// Um clique numa figurinha do seletor: manda na conversa.
     send_sticker: struct { channel: Id, sticker: Id },
+    /// A click on a sticker the account can't send natively: its artwork goes out as an image.
+    send_artwork: struct { channel: Id, asset: artwork.Asset },
     /// Um clique num botão, uma escolha num menu, um modal ou um comando:
     /// sempre um pedido só (ui/interact.zig). Textos no c_allocator.
     interaction: interaction.Cmd,

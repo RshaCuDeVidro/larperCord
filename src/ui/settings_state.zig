@@ -139,6 +139,9 @@ pub const Settings = struct {
     autoplay_gifs: bool = true,
     /// Imagens e GIFs que vêm de links (embeds).
     show_embeds: bool = true,
+    /// Offer custom emoji that need Nitro (animated, or from another server) and send
+    /// them as an attached image (core/artwork.zig). Off: they stay locked.
+    suggest_nitro_emojis: bool = true,
     /// Modo economia: imagens, avatares e anexos só baixam ao clicar.
     data_saver: bool = false,
     /// Prévia do markdown acima da caixa de texto, quando tem formatação.

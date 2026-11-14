@@ -16,6 +16,7 @@ const emoji_data = @import("emoji_data.zig");
 const emoji_img = @import("emoji_img.zig");
 const autocomplete = @import("autocomplete.zig");
 const types = @import("../core/types.zig");
+const artwork = @import("../core/artwork.zig");
 const state = @import("state.zig");
 const Id = types.Id;
 
@@ -291,6 +292,17 @@ fn contextGuild(ctx: *d.Ctx, target: Id) Id {
     return cs.info.guild;
 }
 
+/// May this locked custom emoji go out as an attached image? Needs the setting on, a
+/// normal message (a reaction can't carry an image) and permission to attach files in
+/// the open channel. An emoji its server made unavailable stays locked.
+pub fn sendsAsImage(ctx: *const d.Ctx, e: *const types.Emoji, guild: Id, target: Id) bool {
+    if (target != 0 or !ctx.st.settings.suggest_nitro_emojis) return false;
+    if (ctx.store.emojiUse(e, guild) != .needs_nitro) return false;
+    const ch = ctx.st.activeChannel() orelse return false;
+    const cs = ctx.store.channel(ch) orelse return false;
+    return ctx.store.channelPermissions(&cs.info) & artwork.attach_files != 0;
+}
+
 fn pick(ctx: *d.Ctx, cl: Cell, target: Id, guild: Id) void {
     const st = ctx.st;
     switch (cl) {
@@ -302,17 +314,23 @@ fn pick(ctx: *d.Ctx, cl: Cell, target: Id, guild: Id) void {
             } else ctx.act(.{ .react = .{ .id = target, .emoji = types.Reaction.init(glyph) } });
         },
         .custom => |*e| {
+            const image = sendsAsImage(ctx, e, guild, target);
             switch (ctx.store.emojiUse(e, guild)) {
                 .ok => {},
-                .needs_nitro => return st.showToast(ctx.now_ms, true, "este emoji precisa de Nitro: é animado ou de outro servidor", "this emoji requires Nitro: it's animated or from another server", .{}),
+                .needs_nitro => if (!image) return st.showToast(ctx.now_ms, true, "este emoji precisa de Nitro: é animado ou de outro servidor", "this emoji requires Nitro: it's animated or from another server", .{}),
                 .unavailable => return st.showToast(ctx.now_ms, true, "este emoji está indisponível no servidor dele", "this emoji is unavailable in its server", .{}),
             }
             remember(st, true, e.id, 0, e.name, e.animated);
             if (target == 0) {
                 var sb: [40]u8 = undefined;
-                var rb: [64]u8 = undefined;
+                var rb: [192]u8 = undefined;
                 const shown_txt = std.fmt.bufPrint(&sb, ":{s}:", .{e.name}) catch return;
-                const repl = std.fmt.bufPrint(&rb, "<{s}:{s}:{d}>", .{ if (e.animated) "a" else "", e.name, e.id }) catch return;
+                // Sent as an image: the token expands to a named CDN link, which the send
+                // path turns into an attachment (core/artwork.zig).
+                const repl: []const u8 = if (image)
+                    artwork.markdown(&rb, .{ .emoji = .{ .id = e.id, .animated = e.animated } }, e.name) orelse return
+                else
+                    std.fmt.bufPrint(&rb, "<{s}:{s}:{d}>", .{ if (e.animated) "a" else "", e.name, e.id }) catch return;
                 autocomplete.addToken(shown_txt, repl);
                 autocomplete.insertAtCursor(st, shown_txt);
             } else ctx.act(.{ .react = .{ .id = target, .emoji = types.Reaction.initCustom(e.name, e.id, e.animated) } });
@@ -523,13 +541,13 @@ pub fn draw(ctx: *d.Ctx, target: Id, x: f32, y: f32) void {
     // Rodapé: o que está sob o mouse.
     const fr: d.Rect = .{ .x = r.x, .y = r.bottom() - footer_h, .w = r.w, .h = footer_h };
     d.line(dl, r.x + 1, fr.y, r.right() - 1, fr.y, ctx.col(.border), 1);
-    if (hovered) |cl| footer(ctx, dl, cl, fr, guild) else d.text(dl, ctx.ui.get(.regular), 12, fr.x + 14, d.centerY(fr, 12), ctx.col(.faint), i18n.tr("Passe o mouse para ver o nome", "Hover to see the name"));
+    if (hovered) |cl| footer(ctx, dl, cl, fr, guild, target) else d.text(dl, ctx.ui.get(.regular), 12, fr.x + 14, d.centerY(fr, 12), ctx.col(.faint), i18n.tr("Passe o mouse para ver o nome", "Hover to see the name"));
 }
 
-fn lockedFor(ctx: *const d.Ctx, cl: Cell, guild: Id) bool {
+fn lockedFor(ctx: *const d.Ctx, cl: Cell, guild: Id, target: Id) bool {
     return switch (cl) {
         .uni => false,
-        .custom => |*e| ctx.store.emojiUse(e, guild) != .ok,
+        .custom => |*e| ctx.store.emojiUse(e, guild) != .ok and !sendsAsImage(ctx, e, guild, target),
     };
 }
 
@@ -546,7 +564,7 @@ fn drawCell(ctx: *d.Ctx, dl: *c.ImDrawList, cl: Cell, er: d.Rect, sec: Section, 
         d.rect(dl, er.inset(2, 2), ctx.col(.hover).mix(ctx.col(.text), 0.05), 6);
         hovered = cl;
     }
-    const locked = lockedFor(ctx, cl, guild);
+    const locked = lockedFor(ctx, cl, guild, target);
     switch (cl) {
         .uni => |u| {
             const font = ctx.ui.get(.regular);
@@ -576,7 +594,7 @@ fn drawCell(ctx: *d.Ctx, dl: *c.ImDrawList, cl: Cell, er: d.Rect, sec: Section, 
     if (hb.clicked) pick(ctx, cl, target, guild);
 }
 
-fn footer(ctx: *d.Ctx, dl: *c.ImDrawList, cl: Cell, fr: d.Rect, guild: Id) void {
+fn footer(ctx: *d.Ctx, dl: *c.ImDrawList, cl: Cell, fr: d.Rect, guild: Id, target: Id) void {
     const cy = fr.y + fr.h / 2;
     const f = ctx.ui.get(.semibold);
     var nb: [80]u8 = undefined;
@@ -594,7 +612,7 @@ fn footer(ctx: *d.Ctx, dl: *c.ImDrawList, cl: Cell, fr: d.Rect, guild: Id) void 
             const name = std.fmt.bufPrint(&nb, ":{s}:", .{e.name}) catch "";
             const hint: []const u8 = switch (ctx.store.emojiUse(e, guild)) {
                 .ok => if (ctx.store.guild(e.guild)) |g| g.name else "",
-                .needs_nitro => i18n.tr("precisa de Nitro", "requires Nitro"),
+                .needs_nitro => if (sendsAsImage(ctx, e, guild, target)) i18n.tr("vai como imagem", "sent as an image") else i18n.tr("precisa de Nitro", "requires Nitro"),
                 .unavailable => i18n.tr("indisponível", "unavailable"),
             };
             const hw = d.width(ctx.ui.get(.regular), 12, hint);

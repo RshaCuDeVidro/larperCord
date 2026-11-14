@@ -1104,6 +1104,8 @@ pub const Gateway = struct {
                     }
                     try g.nonce_replies.append(alloc, .{ .at_ms = nowMs() + 90, .msg = m });
                 },
+                // The demo has no network to fetch artwork from.
+                .send_artwork => |a| alloc.free(a.items),
             };
             cmds.clearRetainingCapacity();
             try g.tick(nowMs());
