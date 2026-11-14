@@ -87,6 +87,7 @@ test {
     _ = @import("core/event.zig");
     _ = @import("ui/rich_plan.zig");
     _ = @import("ui/font_blocks.zig");
+    _ = @import("ui/font_names.zig");
     _ = @import("ui/settings_state.zig");
     _ = @import("ui/guild_color.zig");
     _ = @import("ui/device_pick.zig");

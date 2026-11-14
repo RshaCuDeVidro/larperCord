@@ -8,6 +8,7 @@ const anim = @import("anim.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
 const S = @import("settings_state.zig");
+const fonts_mod = @import("fonts.zig");
 const i18n = @import("i18n.zig");
 const custom = @import("../theme/custom.zig");
 const Preview = @import("../theme/manager.zig").Preview;
@@ -636,6 +637,8 @@ pub fn draw(ctx: *d.Ctx, previews: []const Preview) void {
 
 var color_slot: i32 = -1;
 const color_key: usize = 0x8c000;
+const font_ui_key: usize = 0x9500;
+const font_mono_key: usize = 0x9501;
 var color_cell: d.Rect = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
 var color_buf: [10]u8 = @splat(0);
 var color_sync = false;
@@ -786,6 +789,63 @@ fn themeColors(p: *Page) void {
     colorEditor(p);
 }
 
+/// A fonte da interface (e a do código, `mono`): as famílias instaladas no dispositivo
+/// (ui/fonts.zig) numa lista por cima da página, com "Do tema" voltando ao que o tema pede.
+fn fontPicker(p: *Page, mono: bool) void {
+    const ctx = p.ctx;
+    const s = &ctx.st.settings;
+    const cur = if (mono) &s.font_mono else &s.font_ui;
+    const key = if (mono) font_mono_key else font_ui_key;
+    const label = if (mono) i18n.tr("Fonte do código", "Code font") else i18n.tr("Fonte da interface", "Interface font");
+    const names = fonts_mod.installedNames();
+
+    const box_w = @min(@as(f32, 230), p.w * 0.42);
+    const box_r: d.Rect = .{ .x = p.x + p.w - box_w, .y = p.y, .w = box_w, .h = 36 };
+    const lw = d.textClipped(p.dl, p.font(.medium), 15, p.x, p.y + 9, ctx.col(.text), label, box_r.x - p.x - 12);
+    p.markText(.{ .x = p.x, .y = p.y + 9, .w = lw, .h = 18 });
+    const hb = d.hit(ctx, key, box_r);
+    qa.mark(box_r, "font-{s}", .{if (mono) "mono" else "ui"});
+    if (hb.clicked) dropdown.toggle(key);
+    const opened = dropdown.isOpen(key);
+    d.rect(p.dl, box_r, ctx.col(.rail).mix(ctx.col(.elevated), if (hb.hovered) 0.4 else 0.2), ctx.th.radius);
+    d.border(p.dl, box_r, if (hb.hovered or opened) ctx.col(.accent).alpha(0.6) else ctx.col(.border), ctx.th.radius, 1);
+    _ = d.textClipped(p.dl, p.font(.medium), 14, box_r.x + 12, d.centerY(box_r, 14), ctx.col(.text), if (cur.len == 0) i18n.tr("Do tema", "Theme") else cur.slice(), box_r.w - 40);
+    icons.chevron(p.dl, box_r.right() - 18, box_r.y + 18, ctx.col(.muted).u(), if (opened) 0 else 1);
+    p.y += 44;
+
+    // A lista: "Do tema" e as famílias instaladas, aberta na escolhida.
+    const row_h: f32 = 34;
+    var at: f32 = 0;
+    if (cur.len > 0) for (names, 0..) |n, i| {
+        if (std.ascii.eqlIgnoreCase(n, cur.slice())) {
+            at = row_h * @as(f32, @floatFromInt(i + 1));
+            break;
+        }
+    };
+    const dd_c = dropdown.beginAt(ctx, key, box_r, @max(box_r.w, 260), row_h * @as(f32, @floatFromInt(names.len + 1)), at) orelse return;
+    var dd = dd_c;
+    defer dd.end();
+    const theme_r = dd.row(row_h, cur.len == 0);
+    qa.mark(theme_r.rect, "font-theme:{}", .{@intFromBool(mono)});
+    if (theme_r.hit.clicked) {
+        cur.set("");
+        dropdown.close();
+        ctx.act(.apply_font);
+    }
+    _ = d.textClipped(dd.dl, p.font(if (cur.len == 0) .semibold else .regular), 14, theme_r.rect.x + 8, d.centerY(theme_r.rect, 14), if (cur.len == 0) ctx.col(.text) else ctx.col(.muted), i18n.tr("Do tema", "Theme"), theme_r.rect.w - 16);
+    for (names, 0..) |n, i| {
+        const sel = cur.len > 0 and std.ascii.eqlIgnoreCase(n, cur.slice());
+        const ro = dd.row(row_h, sel);
+        qa.mark(ro.rect, "font-opt:{s}:{d}", .{ if (mono) "mono" else "ui", i });
+        if (ro.hit.clicked) {
+            cur.set(n);
+            dropdown.close();
+            ctx.act(.apply_font);
+        }
+        _ = d.textClipped(dd.dl, p.font(if (sel) .semibold else .regular), 14, ro.rect.x + 8, d.centerY(ro.rect, 14), if (sel) ctx.col(.text) else ctx.col(.muted), n, ro.rect.w - 16);
+    }
+}
+
 /// O editor de uma cor: flutua sobre a grade, colado na cor clicada.
 fn colorEditor(p: *Page) void {
     const ctx = p.ctx;
@@ -861,6 +921,14 @@ fn page(p: *Page, previews: []const Preview) void {
                 }
             }
             p.divider();
+            p.heading(i18n.tr("Fontes", "Fonts"));
+            fontPicker(p, false);
+            fontPicker(p, true);
+            p.note(i18n.tr(
+                "Escolha entre as fontes instaladas no dispositivo; \"Do tema\" segue o que cada tema pede.",
+                "Pick from the fonts installed on your device; \"Theme\" keeps what each theme asks for.",
+            ));
+            if (fonts_mod.installedNames().len == 0) p.note(i18n.tr("Nenhuma fonte encontrada no sistema.", "No fonts found on the system."));
             p.heading(i18n.tr("Escala da fonte", "Font scaling"));
             p.slider(i18n.tr("Tamanho do texto", "Text size"), &s.font_scale, 0.8, 1.3, "{d:.0}%", 100);
             p.slider(i18n.tr("Tamanho da interface", "Interface size"), &s.ui_scale, 0.75, 2, "{d:.0}%", 100);
@@ -1401,7 +1469,7 @@ fn rendererSection(p: *Page) void {
     }
     const win = @import("../platform/window.zig");
     const active = std.mem.sliceTo(&win.active_renderer, 0);
-    var buf: [200]u8 = undefined;
+    var buf: [400]u8 = undefined;
     p.note(i18n.fmt(&buf, "Em uso agora: {s}. A troca vale na próxima vez que o larperCord abrir.", "In use now: {s}. A change applies the next time larperCord opens.", .{rendererLabel(active)}));
     qa.mark(.{ .x = p.x, .y = p.y - 20, .w = 10, .h = 10 }, "renderer-active:{s}", .{active});
     if (win.renderer_fallback) qa.mark(.{ .x = p.x, .y = p.y, .w = 10, .h = 10 }, "renderer-fallback", .{});

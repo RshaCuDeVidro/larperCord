@@ -3291,6 +3291,15 @@ const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ 
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
 const ops_plugins_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_a;
 const ops_plugins_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_b;
+const ops_fontes = [_]Op{
+    expect("pronto", ready),
+    click("user-btn:2"),
+    expect("abre", settingsOpen),
+    click("settings:Aparência"),
+    .{ .wait = 120 },
+} ++ @import("qa_paineis.zig").ops_fontes ++ [_]Op{
+    key(c.ImGuiKey_Escape),
+};
 
 /// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
@@ -3336,6 +3345,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "entrada", &ops_entrada },
     .{ "proxy", &ops_proxy },
     .{ "sem-fontes", &ops_sem_fontes },
+    .{ "fontes", &ops_fontes },
     .{ "interacoes", &ops_interacoes },
     .{ "cronometro", &ops_cronometro },
     .{ "perfil", &ops_perfil },

@@ -1111,11 +1111,105 @@ pub const ops_ime = [_]Op{
     key(c.ImGuiKey_Escape),
 };
 
+// --- Fontes instaladas (Aparência) -------------------------------------------------
+
+/// Roda a página de configurações até as fontes: a rolagem automática do robô
+/// chegou lá de 2 linhas por tentativa, lenta demais para o fim da página.
+fn wheelSettings(app: *App, wheel: f32) void {
+    c.ImGuiIO_AddMousePosEvent(app.io, app.io.*.DisplaySize.x * 0.6, app.io.*.DisplaySize.y * 0.5);
+    c.ImGuiIO_AddMouseWheelEvent(app.io, 0, wheel);
+}
+/// Um giro da roda na direção das listas de fonte: a rolagem automática do robô
+/// anda de 2 linhas por tentativa, lenta demais para o fim da página (e um giro
+/// grande passa reto). Passos médios, parando quando as duas listas aparecem.
+fn wheelStep(app: *App) void {
+    if (qa.visiblePart("font-ui") != null and qa.visiblePart("font-mono") != null) return;
+    const r = qa.find("font-ui") orelse return wheelSettings(app, -2);
+    if (r.y >= app.io.*.DisplaySize.y - 2) {
+        wheelSettings(app, -2);
+    } else if (r.bottom() <= 2) {
+        wheelSettings(app, 2);
+    }
+}
+const ops_font_scroll = blk: {
+    var seq: [60]Op = undefined;
+    for (0..30) |i| {
+        seq[i * 2] = .{ .run = wheelStep };
+        seq[i * 2 + 1] = .{ .wait = 40 };
+    }
+    break :blk seq;
+};
+fn fontsVisible(app: *App) bool {
+    _ = app;
+    return qa.visiblePart("font-ui") != null and qa.visiblePart("font-mono") != null;
+}
+fn fontListsFilled(app: *App) bool {
+    _ = app;
+    return @import("ui/fonts.zig").installedNames().len > 0;
+}
+fn fontUiOpen(app: *App) bool {
+    _ = app;
+    return qa.find("font-theme:0") != null;
+}
+/// A escolhida chega ao quadro: a família com que ele desenha é ela, não a do tema.
+fn drawsWith(app: *App, mono: bool) bool {
+    const set = &app.st.settings;
+    const chosen = if (mono) set.font_mono.slice() else set.font_ui.slice();
+    return chosen.len > 0 and std.mem.eql(u8, app.textFamily(app.customTheme(), mono).name, chosen);
+}
+fn fontUiPicked(app: *App) bool {
+    return drawsWith(app, false) and qa.find("font-theme:0") == null;
+}
+fn fontMonoPicked(app: *App) bool {
+    return drawsWith(app, true);
+}
+fn fontUiBackToTheme(app: *App) bool {
+    return app.st.settings.font_ui.len == 0;
+}
+fn fontsBackToTheme(app: *App) bool {
+    return app.st.settings.font_ui.len == 0 and app.st.settings.font_mono.len == 0;
+}
+
 const check = expect("nada se sobrepõe na página", noOverlap);
 
 fn pageOps(comptime name: []const u8, comptime slug: []const u8) [4]Op {
     return .{ click("settings:" ++ name), .{ .wait = 120 }, expect("nada se sobrepõe em " ++ name, noOverlap), .{ .shot = "73p-" ++ slug } };
 }
+
+/// A bateria das fontes instaladas: em separado para rodar depressa (QA_SUITE=fontes),
+/// e na fila das páginas logo depois de Aparência abrir.
+pub const ops_fontes = [_]Op{
+    s("fontes instaladas na Aparência"),
+} ++ ops_font_scroll ++ [_]Op{
+    // Assenta a rolagem antes de medir/clicar (as marcações vêm do quadro anterior).
+    .{ .wait = 300 },
+    expect("a rolagem chega às listas de fonte", fontsVisible),
+    expect("as famílias instaladas aparecem nas duas listas", fontListsFilled),
+    click("font-ui"),
+    .{ .wait = 150 },
+    expect("a lista da interface abre, começando em Do tema", fontUiOpen),
+    click("font-opt:ui:0"),
+    .{ .wait = 300 },
+    expect("escolher uma família aplica e fecha a lista", fontUiPicked),
+    .{ .shot = "73d-fonte-ui-escolhida" },
+    click("font-ui"),
+    .{ .wait = 150 },
+    click("font-theme:0"),
+    .{ .wait = 300 },
+    expect("Do tema volta ao padrão", fontUiBackToTheme),
+    click("font-mono"),
+    .{ .wait = 150 },
+    click("font-opt:mono:0"),
+    .{ .wait = 300 },
+    expect("o mesmo vale para a fonte do código", fontMonoPicked),
+    .{ .shot = "73e-fonte-codigo-escolhida" },
+    click("font-mono"),
+    .{ .wait = 150 },
+    click("font-theme:1"),
+    .{ .wait = 300 },
+    expect("e Do tema volta nas duas", fontsBackToTheme),
+    expect("e nada se sobrepõe na Aparência", noOverlap),
+};
 
 pub const ops_pages = [_]Op{
     s("configurações sem nada sobreposto"),
@@ -1151,7 +1245,7 @@ pub const ops_pages = [_]Op{
     .{ .shot = "73c-atualizacoes-pequena" },
     .{ .resize = .{ 1280, 800 } },
     .{ .wait = 200 },
-} ++ pageOps("Minha conta", "conta") ++ pageOps("Privacidade", "privacidade") ++ pageOps("Alertas e filtros", "filtros") ++ pageOps("Aparência", "aparencia") ++ pageOps("Acessibilidade", "acessibilidade") ++ pageOps("Chat", "chat") ++ pageOps("Voz", "voz") ++ pageOps("Notificações", "notificacoes") ++ pageOps("Atalhos de teclado", "atalhos") ++ pageOps("Idioma", "idioma") ++ pageOps("Rede", "rede") ++ pageOps("Avançado", "avancado") ++ pageOps("Desempenho", "desempenho") ++ pageOps("Erros no código", "lsp") ++ pageOps("Plugins", "plugins") ++ pageOps("Sobre", "sobre") ++ [_]Op{
+} ++ pageOps("Minha conta", "conta") ++ pageOps("Privacidade", "privacidade") ++ pageOps("Alertas e filtros", "filtros") ++ pageOps("Aparência", "aparencia") ++ ops_fontes ++ pageOps("Acessibilidade", "acessibilidade") ++ pageOps("Chat", "chat") ++ pageOps("Voz", "voz") ++ pageOps("Notificações", "notificacoes") ++ pageOps("Atalhos de teclado", "atalhos") ++ pageOps("Idioma", "idioma") ++ pageOps("Rede", "rede") ++ pageOps("Avançado", "avancado") ++ pageOps("Desempenho", "desempenho") ++ pageOps("Erros no código", "lsp") ++ pageOps("Plugins", "plugins") ++ pageOps("Sobre", "sobre") ++ [_]Op{
     key(c.ImGuiKey_Escape),
     .{ .wait = 350 },
 };

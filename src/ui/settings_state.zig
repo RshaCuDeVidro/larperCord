@@ -65,6 +65,10 @@ pub const Settings = struct {
     /// Traço e encaixe das letras nos pixels (ui/fonts.zig).
     text_weight: f32 = 1,
     text_hinting: u8 = 0,
+    /// Famílias escolhidas nas Configurações entre as instaladas no dispositivo
+    /// (vazia = a que o tema pede; a lista vem de ui/fonts.zig).
+    font_ui: Text = .{},
+    font_mono: Text = .{},
     /// Limites de memória, em Desempenho: imagens e cada GIF (MB), e mensagens somando os canais.
     image_cache_mb: f32 = 32,
     gif_limit_mb: f32 = 32,
