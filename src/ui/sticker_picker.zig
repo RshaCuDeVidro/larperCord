@@ -81,8 +81,9 @@ const Layout = struct {
         const dl = l.dl;
         const use = stickers.canSend(st, l.here, ctx.store.premium_type, l.perms);
         // What the account can't send natively goes out as an attached image, if the
-        // channel allows attachments. A sticker its server made unavailable stays locked.
-        const as_image = (use == .needs_nitro or use == .no_permission) and l.perms & artwork.attach_files != 0;
+        // channel allows attachments: no Nitro, no external-sticker permission, or a
+        // sticker its server made unavailable (it lost its boost level).
+        const as_image = use != .ok and l.perms & artwork.attach_files != 0;
         const sendable = use == .ok or as_image;
         const hb = d.hit(ctx, @truncate(st.id ^ 0x571C_0000), r);
         qa.mark(r, "sticker:{d}", .{st.id});
@@ -133,7 +134,10 @@ const Layout = struct {
                 i18n.fmt(&tb, "{s} · precisa de Nitro fora do servidor dela", "{s} · needs Nitro outside its server", .{st.name})
             else
                 i18n.fmt(&tb, "{s} · este canal não permite figurinhas de fora", "{s} · this channel doesn't allow external stickers", .{st.name}),
-            .unavailable => i18n.fmt(&tb, "{s} · indisponível (o servidor perdeu o impulso)", "{s} · unavailable (the server lost its boost)", .{st.name}),
+            .unavailable => if (as_image)
+                i18n.fmt(&tb, "{s} · indisponível no servidor · vai como imagem anexada", "{s} · unavailable on its server · sent as an attached image", .{st.name})
+            else
+                i18n.fmt(&tb, "{s} · indisponível (o servidor perdeu o impulso)", "{s} · unavailable (the server lost its boost)", .{st.name}),
         };
         d.tip(ctx, r, why, hb.hovered);
         return hb.clicked and sendable;
