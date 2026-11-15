@@ -6,9 +6,9 @@
 //!
 //! Linux: o Spotify fala MPRIS (org.mpris.MediaPlayer2) pelo D-Bus; a
 //! libdbus-1 é aberta na hora, como no ícone da bandeja (platform/sni.zig).
-//! Windows: a janela do Spotify tem o título "Artista - Título"; parado, ele
-//! vira só "Spotify" (e anúncio não entra), o que a própria comparação
-//! descarta.
+//! Windows: a janela do Spotify tem o título "Artista - Título" (vale até
+//! fechada na bandeja); parado, ele vira só "Spotify" (e anúncio não entra),
+//! o que a própria comparação descarta.
 //!
 //! A parte pura (título da janela, Metadata do MPRIS, mudança, a atividade)
 //! fica fora das chamadas de sistema, testada sem D-Bus nem janela.
@@ -195,7 +195,9 @@ fn detectWindows(out: *Track) bool {
 fn windowProc(hwnd: c.HWND, lparam: c.LPARAM) callconv(.c) c_int {
     const w: *ProcessWin = @ptrFromInt(@as(usize, @intCast(lparam)));
     if (w.found) return 0;
-    if (c.IsWindowVisible(hwnd) == 0) return 1;
+    // A janela nem precisa estar aberta: fechada na bandeja, o título segue
+    // mudando enquanto toca ("Spotify Premium" parado não vira faixa). Só o
+    // que tem título e é do Spotify conta.
     var len: c_int = c.GetWindowTextLengthW(hwnd);
     if (len <= 0) return 1;
     var pid: c.DWORD = 0;
