@@ -9,6 +9,7 @@
 #include <curl/curl.h>
 #include <opus/opus.h>
 #include <webp/decode.h>
+#include <webp/encode.h>
 #include <webp/demux.h>
 #include <fontconfig/fontconfig.h>
 #include <dave/dave.h>
@@ -68,6 +69,7 @@ opus_int32 opus_encode(OpusEncoder *st, const opus_int16 *pcm, int frame_size, u
 
 uint8_t *WebPDecodeRGBA(const uint8_t *data, size_t data_size, int *width, int *height) { (void)data; (void)data_size; (void)width; (void)height; return NULL; }
 void WebPFree(void *ptr) { free(ptr); }
+size_t WebPEncodeLosslessRGBA(const uint8_t *rgba, int width, int height, int stride, uint8_t **output) { (void)rgba; (void)width; (void)height; (void)stride; if (output) *output = NULL; return 0; }
 VP8StatusCode WebPGetFeaturesInternal(const uint8_t *data, size_t data_size, WebPBitstreamFeatures *features, int version) {
     (void)data; (void)data_size; (void)features; (void)version;
     return VP8_STATUS_UNSUPPORTED_FEATURE;

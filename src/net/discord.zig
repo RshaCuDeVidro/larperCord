@@ -59,6 +59,7 @@ const media_refresh = @import("../core/media_refresh.zig");
 const stickers = @import("../core/stickers.zig");
 const artwork = @import("../core/artwork.zig");
 const image_fetch = @import("../ui/images.zig");
+const apng_webp = @import("../ui/apng_webp.zig");
 const rpc_proto = @import("rpc_proto.zig");
 const interaction = @import("../core/interaction.zig");
 const Id = types.Id;
@@ -3886,6 +3887,30 @@ pub const Gateway = struct {
         }
     };
 
+    /// What turning an APNG into an animated WebP needs from C: stb_image decodes each
+    /// frame's PNG (as images.zig does for the player) and libwebp encodes each frame.
+    const ApngCodecs = struct {
+        pub fn decode(_: *ApngCodecs, png: []const u8, w: u32, h: u32, out: []u8) bool {
+            var iw: c_int = 0;
+            var ih: c_int = 0;
+            var comp: c_int = 0;
+            const px = c.stbi_load_from_memory(png.ptr, @intCast(png.len), &iw, &ih, &comp, 4) orelse return false;
+            defer c.stbi_image_free(px);
+            if (iw != w or ih != h) return false;
+            @memcpy(out, px[0..out.len]);
+            return true;
+        }
+
+        /// A complete lossless WebP file of the RGBA frame, owned by `alloc`.
+        pub fn encode(_: *ApngCodecs, rgba: []const u8, w: u32, h: u32) ?[]u8 {
+            var buf: [*c]u8 = null;
+            const n = c.WebPEncodeLosslessRGBA(rgba.ptr, @intCast(w), @intCast(h), @intCast(w * 4), &buf);
+            if (n == 0 or buf == null) return null;
+            defer c.WebPFree(buf);
+            return alloc.dupe(u8, buf[0..n]) catch null;
+        }
+    };
+
     /// Only PNG and GIF are artwork; anything else (an HTML error page...) is not sent.
     fn isArtworkImage(b: []const u8) bool {
         return std.mem.startsWith(u8, b, "\x89PNG\r\n\x1a\n") or std.mem.startsWith(u8, b, "GIF87a") or std.mem.startsWith(u8, b, "GIF89a");
@@ -3925,13 +3950,23 @@ pub const Gateway = struct {
             defer body.deinit(alloc);
             var collect: ArtSink = .{ .list = &body };
             if (!image_fetch.fetch(&curl, link_z, collect.sink(), &cancel, 20) or !isArtworkImage(body.items)) return g.artworkFailed();
+            // An animated PNG sticker would show as its first frame only on Discord, so
+            // it goes out as an animated WebP. Anything that can't be converted (not
+            // animated, too big, a codec failure) goes out as it is.
+            var converted: ?[]u8 = null;
+            defer if (converted) |webp| alloc.free(webp);
+            if (item == .sticker) {
+                var codecs: ApngCodecs = .{};
+                converted = apng_webp.toWebp(alloc, body.items, &codecs, 8 * 1024 * 1024, 300);
+            }
+            const out_bytes: []const u8 = converted orelse body.items;
             var nb: [64]u8 = undefined;
-            const fname = item.fileName(&nb) orelse return g.artworkFailed();
+            const fname = (if (converted != null) item.fileNameAs(&nb, "webp") else item.fileName(&nb)) orelse return g.artworkFailed();
             var pb: [640]u8 = undefined;
             const path_s = std.fmt.bufPrint(&pb, "{s}/{s}", .{ dir, fname }) catch return;
             const path = alloc.dupeSentinel(u8, path_s, 0) catch return;
             paths[i] = path;
-            if (!c.SDL_SaveFile(path.ptr, body.items.ptr, body.items.len)) return g.artworkFailed();
+            if (!c.SDL_SaveFile(path.ptr, out_bytes.ptr, out_bytes.len)) return g.artworkFailed();
         }
         // The command owns its own copies of the paths (freeCommand frees them); ours
         // stay in `paths` so the files can be removed once the upload is done.

@@ -42,6 +42,7 @@
 #define CURL_DISABLE_TYPECHECK 1
 #include <curl/curl.h>
 #include <webp/decode.h>
+#include <webp/encode.h>
 #include <webp/demux.h>
 #include <opus/opus.h>
 #include <dave/dave.h>

@@ -54,7 +54,12 @@ pub const Asset = union(enum) {
 
     /// The attachment's name on Discord: neutral, nothing that identifies the app.
     pub fn fileName(a: Asset, buf: []u8) ?[]const u8 {
-        return std.fmt.bufPrint(buf, "{s}-{d}.{s}", .{ if (a == .emoji) "emoji" else "sticker", a.id(), a.ext() }) catch null;
+        return a.fileNameAs(buf, a.ext());
+    }
+
+    /// The same with another extension (an animated PNG that became a WebP).
+    pub fn fileNameAs(a: Asset, buf: []u8, extension: []const u8) ?[]const u8 {
+        return std.fmt.bufPrint(buf, "{s}-{d}.{s}", .{ if (a == .emoji) "emoji" else "sticker", a.id(), extension }) catch null;
     }
 };
 
@@ -240,4 +245,5 @@ test "attachment file name" {
     var b: [64]u8 = undefined;
     try std.testing.expectEqualStrings("emoji-10.gif", (Asset{ .emoji = .{ .id = 10, .animated = true } }).fileName(&b).?);
     try std.testing.expectEqualStrings("sticker-20.png", (Asset{ .sticker = .{ .id = 20, .format = 3 } }).fileName(&b).?);
+    try std.testing.expectEqualStrings("sticker-21.gif", (Asset{ .sticker = .{ .id = 21, .format = 2 } }).fileNameAs(&b, "gif").?);
 }
