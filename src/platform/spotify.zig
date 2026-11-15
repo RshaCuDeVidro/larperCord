@@ -429,9 +429,9 @@ fn mprisName(buf: []u8) ?[:0]const u8 {
         d.dbus_message_iter_get_basic(&sub, @ptrCast(&p));
         const s = std.mem.span(p);
         if (std.mem.startsWith(u8, s, mpris_prefix)) {
-            if (any == null or std.ascii.indexOfIgnoreCase(s, "spotify") != null) {
+            if (any == null or std.ascii.findIgnoreCase(s, "spotify") != null) {
                 const copy = std.fmt.bufPrintSentinel(buf, "{s}", .{s}, 0) catch return any;
-                if (std.ascii.indexOfIgnoreCase(s, "spotify") != null) return copy;
+                if (std.ascii.findIgnoreCase(s, "spotify") != null) return copy;
                 any = copy;
             }
         }
