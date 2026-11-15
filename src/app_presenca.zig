@@ -7,6 +7,7 @@ const ev = @import("core/event.zig");
 const platform = @import("platform/window.zig");
 const rpc = @import("net/rpc_ipc.zig");
 const proto = @import("net/rpc_proto.zig");
+const spotify = @import("net/spotify_presenca.zig");
 const nowMs = @import("net/fake_gateway.zig").nowMs;
 
 /// O último comando mandado tinha atividade (ao desligar, manda limpar).
@@ -20,13 +21,14 @@ pub fn frame(app: *App) void {
     if (!want) {
         failed = false;
         if (rpc.running()) stop(app);
-        return;
+    } else if (!rpc.running() and !failed) {
+        if (!start(app)) {
+            failed = true;
+            app.st.showToast(nowMs(), true, "Rich Presence: não deu para abrir o discord-ipc (o Discord oficial está usando todos?)", "Rich Presence: couldn't open discord-ipc (is the official Discord using all of them?)", .{});
+        }
     }
-    if (rpc.running() or failed) return;
-    if (!start(app)) {
-        failed = true;
-        app.st.showToast(nowMs(), true, "Rich Presence: não deu para abrir o discord-ipc (o Discord oficial está usando todos?)", "Rich Presence: couldn't open discord-ipc (is the official Discord using all of them?)", .{});
-    }
+    // O Spotify é independente do discord-ipc: tem o quadro dele.
+    spotify.frame(app);
 }
 
 fn start(app: *App) bool {
@@ -43,12 +45,13 @@ fn start(app: *App) bool {
 
 fn stop(app: *App) void {
     rpc.stop();
-    if (showing) send(app, 0, null);
+    if (showing) _ = sendTo(app, 0, null);
 }
 
 /// Ao fechar o app (a sessão do gateway acaba junto, e a atividade com ela).
 pub fn shutdown() void {
     rpc.stop();
+    spotify.shutdown();
 }
 
 /// Thread do servidor: acorda a interface, que passa a atividade adiante.
@@ -60,19 +63,26 @@ fn wake(ctx: *anyopaque) void {
 /// Junto com os eventos da rede: a atividade nova, se houver.
 pub fn pump(app: *App) void {
     const u = rpc.take() orelse return;
-    send(app, u.app, u.activity);
+    showing = sendTo(app, u.app, u.activity) and u.activity != null;
 }
 
-fn send(app: *App, client: u64, act: ?*proto.Activity) void {
+/// Atividade nossa, sem aplicação (o Spotify, net/spotify_presenca.zig): vai
+/// com app 0 e o nome da própria atividade. Quem manda guarda o estado dela.
+pub fn sendSpotify(app: *App, act: ?*proto.Activity) void {
+    _ = sendTo(app, 0, act);
+}
+
+/// Manda o comando para a conta conectada (limpar é `act` null). true = foi;
+/// falso (sem conta) já consome a atividade que ia.
+fn sendTo(app: *App, client: u64, act: ?*proto.Activity) bool {
     const command: ev.Command = .{ .set_activity = .{ .app = client, .activity = act } };
     switch (app.net) {
         .none => {
             if (act) |a| std.heap.c_allocator.destroy(a);
-            showing = false;
-            return;
+            return false;
         },
         .fake => |*g| g.commands.push(command),
         .real => |*g| g.commands.push(command),
     }
-    showing = act != null;
+    return true;
 }

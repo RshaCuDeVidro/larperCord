@@ -3269,6 +3269,7 @@ const ops_limites = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @impo
 const ops_conta = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_conta.zig").ops;
 const ops_social = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_social.zig").ops;
 const ops_presenca = [_]Op{expect("carrega e mostra a conversa", ready)} ++ (if (@import("builtin").os.tag != .windows) @import("qa_presenca.zig").ops else [_]Op{});
+const ops_spotify = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_spotify.zig").ops;
 const ops_moderacao = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_moderacao.zig").ops;
 const ops_entrada = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_entrada.zig").ops;
 const ops_proxy = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_proxy.zig").ops;
@@ -3341,6 +3342,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "conta", &ops_conta },
     .{ "social", &ops_social },
     .{ "presenca", &ops_presenca },
+    .{ "spotify", &ops_spotify },
     .{ "moderacao", &ops_moderacao },
     .{ "entrada", &ops_entrada },
     .{ "proxy", &ops_proxy },

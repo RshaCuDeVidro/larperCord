@@ -393,7 +393,8 @@ pub const Gateway = struct {
     /// confere) e a nossa linha na interface. A aplicação tem nome inventado.
     fn setActivity(g: *Gateway, app: Id, act: ?*rpc_proto.Activity) void {
         defer if (act) |a| alloc.destroy(a);
-        if (act != null and !g.presence.known(app)) g.presence.learn(alloc, app, "{\"name\":\"Jogo de Teste\"}", false, "[{\"id\":\"4242\",\"type\":1,\"name\":\"logo\"}]");
+        // app 0 é a atividade nossa (Spotify): o nome vem dela mesma.
+        if (act != null and app != 0 and !g.presence.known(app)) g.presence.learn(alloc, app, "{\"name\":\"Jogo de Teste\"}", false, "[{\"id\":\"4242\",\"type\":1,\"name\":\"logo\"}]");
         g.presence.set(alloc, app, act);
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(alloc);
