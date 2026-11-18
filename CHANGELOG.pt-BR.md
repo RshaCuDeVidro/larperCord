@@ -12,6 +12,9 @@
 
 ## 0.6.5
 
+**Mensagens**
+- Itálico com o asterisco agora vale no meio da palavra (a*b*c e あ*い*う), como no Discord. O traço baixo continua exigindo a borda de palavra, que protege o snake_case.
+
 **Mascote**
 - Um mascote novo, o Terminal, com a piscadinha ">_", agora é o principal, com uma abertura toda nova: um cursor de terminal pisca, uma linha de TV de tubo acende e abre o corpo, as orelhas saltam, o rosto é digitado, ele mostra "..." enquanto conecta e desliga como uma TV antiga quando o app abre. O demo também mostra a abertura inteira.
 - Mais quatro aberturas para escolher em Configurações → Mascote → Abertura: Código, TV, Pixels e Portal, ou Sortear, para cada vez ser uma. "Ver a abertura de novo" toca de novo.

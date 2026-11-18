@@ -509,9 +509,10 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
             run_start = i;
             continue;
         }
-        // Marcadores de estilo.
+        // Marcadores de estilo. O `*` fica itálico até no meio da palavra (Discord:
+        // a*b*c); o `_` só na borda, para não quebrar snake_case.
         const marker: ?struct { len: usize, which: enum { bold, italic, strike, spoiler } } =
-            if (std.mem.startsWith(u8, rest, "**")) .{ .len = 2, .which = .bold } else if (std.mem.startsWith(u8, rest, "~~")) .{ .len = 2, .which = .strike } else if (std.mem.startsWith(u8, rest, "||")) .{ .len = 2, .which = .spoiler } else if ((rest[0] == '*' or rest[0] == '_') and italicBoundary(s, i)) .{ .len = 1, .which = .italic } else null;
+            if (std.mem.startsWith(u8, rest, "**")) .{ .len = 2, .which = .bold } else if (std.mem.startsWith(u8, rest, "~~")) .{ .len = 2, .which = .strike } else if (std.mem.startsWith(u8, rest, "||")) .{ .len = 2, .which = .spoiler } else if (rest[0] == '*' or (rest[0] == '_' and underscoreBoundary(s, i))) .{ .len = 1, .which = .italic } else null;
 
         if (marker) |m| {
             try Flush.run(&out, gpa, s, run_start, i, flags);
@@ -546,9 +547,9 @@ fn escapedLen(rest: []const u8) ?usize {
     };
 }
 
-/// `_` e `*` só contam como itálico na borda de uma palavra, para não
-/// quebrar coisas como snake_case.
-fn italicBoundary(s: []const u8, i: usize) bool {
+/// O `_` só conta como itálico na borda de uma palavra, para não quebrar coisas
+/// como snake_case (o `*` vale em qualquer lugar, como no Discord).
+fn underscoreBoundary(s: []const u8, i: usize) bool {
     const before = if (i == 0) ' ' else s[i - 1];
     const after = if (i + 1 < s.len) s[i + 1] else ' ';
     const word = struct {
@@ -571,6 +572,20 @@ test "estilos, código, menção e link" {
     try std.testing.expectEqual(@as(Id, 42), spans[5].mention.user);
     try std.testing.expect(spans[7].flags.link);
     try std.testing.expectEqualStrings(" snake_case", spans[8].text);
+}
+
+test "o asterisco fica itálico no meio da palavra; o traço baixo não" {
+    const a = std.testing.allocator;
+    const spans = try parse(a, "a*b*c e snake_case e あ*い*う");
+    defer a.free(spans);
+    var italics: usize = 0;
+    for (spans) |sp| {
+        if (!sp.flags.italic) continue;
+        italics += 1;
+        const want: []const u8 = if (italics == 1) "b" else "い";
+        try std.testing.expectEqualStrings(want, sp.text);
+    }
+    try std.testing.expectEqual(@as(usize, 2), italics);
 }
 
 test "bloco de código e menção a cargo" {
