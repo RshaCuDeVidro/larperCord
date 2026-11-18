@@ -79,6 +79,17 @@ const react_h: f32 = 30;
 var flash_id: Id = 0;
 var flash_until: i64 = 0;
 
+// Seleção na caixa do composer, em bytes (o `inputCallback` guarda enquanto ela está ativa) e
+// onde o fim dela (o caret) está na tela: a balança de Markdown (B e I) fica em cima do trecho
+// e precisa sobreviver aos quadros em que o clique no botão já soltou a caixa.
+var sel_start: i32 = -1;
+var sel_end: i32 = -1;
+var sel_x: f32 = 0;
+var sel_y: f32 = 0;
+var tb_rect: d.Rect = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
+var tb_shown = false; // a balança apareceu no quadro anterior
+var tb_press = false; // o mouse apertou em cima dela (o clique nela solta a caixa no mesmo quadro)
+
 /// A última mensagem a que um pulo chegou (o QA confere o clique numa resposta).
 pub fn jumpedTo() Id {
     return flash_id;
@@ -753,6 +764,7 @@ fn noteRtlText(y: f32, t: rich.Measure) void {
 
 /// Onde termina a área de texto do campo ativo (imgui_widgets.cpp): o QA clica ali.
 extern var larper_input_text_right: f32;
+extern var larper_input_caret: [2]f32;
 const unread_bar_h: f32 = 30;
 
 /// A linha vermelha "NOVAS MENSAGENS" entre a última lida e a primeira não lida.
@@ -1702,7 +1714,27 @@ fn inputCallback(data: [*c]c.ImGuiInputTextCallbackData) callconv(.c) c_int {
         }
     }
     autocomplete.cursor = @intCast(@max(data.*.CursorPos, 0));
+    // A seleção vem do stb_textedit: start é a âncora (onde apertou) e end o cursor (a ponta que
+    // se move). Dragando para a esquerda, start fica maior que end: guarda normalizado.
+    sel_start = @min(data.*.SelectionStart, data.*.SelectionEnd);
+    sel_end = @max(data.*.SelectionStart, data.*.SelectionEnd);
     return 0;
+}
+
+/// Coloca `marker` nas duas pontas do trecho [sel_a, sel_b) da caixa (Markdown:
+/// ** para negrito, * para itálico). Recarrega a caixa por `input_sync`.
+fn mdWrap(st: *@import("state.zig").State, sel_a: usize, sel_b: usize, marker: []const u8) void {
+    const len = std.mem.indexOfScalar(u8, &st.input, 0) orelse st.input.len;
+    if (sel_a > sel_b or sel_b > len or len + marker.len * 2 >= st.input.len) return;
+    var out: @TypeOf(st.input) = undefined;
+    @memcpy(out[0..sel_a], st.input[0..sel_a]);
+    @memcpy(out[sel_a..][0..marker.len], marker);
+    @memcpy(out[sel_a + marker.len ..][0 .. sel_b - sel_a], st.input[sel_a..sel_b]);
+    @memcpy(out[sel_b + marker.len ..][0..marker.len], marker);
+    @memcpy(out[sel_b + marker.len * 2 .. len + marker.len * 2], st.input[sel_b..len]);
+    out[len + marker.len * 2] = 0;
+    st.input = out;
+    st.input_sync = true;
 }
 
 /// Altura a mais da caixa de texto (as linhas além da primeira). Ela cresce
@@ -1970,7 +2002,51 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     const active = c.ImGui_IsItemActive();
     // O sublinhado do texto em conversão, por cima do que o ImGui desenhou.
     if (active) ime.underline(ctx.col(.text).u(), 1);
+    // Onde o fim da seleção (o caret) está na tela, para a balança de Markdown.
+    if (active and !ime.isComposing()) {
+        sel_x = larper_input_caret[0];
+        sel_y = larper_input_caret[1];
+    }
     lsp_ui.afterInput(ctx, dl, fam.get(.regular), .{ .x = input_x, .y = input_y, .w = input_w, .h = frame_h }, font_px, active, grown == composer_extra);
+    // Balança de Markdown: com trecho selecionado na caixa, B e I aparecem em cima dele
+    // (no lado do caret, a ponta que se move) e colocam ** / * nas duas pontas do trecho.
+    // O clique em cima dela solta a caixa no MESMO quadro (o ImGui desativa o campo no
+    // apertar): ela fica viva por `tb_press` até o botão soltar, senão o clique se perde.
+    const sel_len = sel_end - sel_start;
+    const want_bal = st.settings.md_bar and active and !ime.isComposing() and st.popup == .none and sel_start >= 0 and sel_len > 0;
+    const mouse_down = c.ImGui_IsMouseDown(0);
+    const mouse_released = c.ImGui_IsMouseReleased(0);
+    if (c.ImGui_IsMouseClicked(0) and tb_shown and tb_rect.contains(ctx.mouse.x, ctx.mouse.y)) tb_press = true;
+    if (tb_press and !mouse_down and !mouse_released) tb_press = false;
+    if (want_bal or (tb_press and (mouse_down or mouse_released))) {
+        const tb_h: f32 = 26;
+        const bw: f32 = 28;
+        const tb_w = bw * 2 + 6;
+        const tb: d.Rect = .{
+            .x = std.math.clamp(sel_x - tb_w / 2, input_x + 2, @max(input_x + 2, input_r - tb_w - 2)),
+            .y = @max(sel_y - font_px - tb_h - 6, ctx.win.y + 4),
+            .w = tb_w,
+            .h = tb_h,
+        };
+        d.rectFlags(dl, tb, ctx.col(.elevated), tb_h / 2, 0);
+        d.border(dl, tb, ctx.col(.border), tb_h / 2, 1);
+        const bb: d.Rect = .{ .x = tb.x + 2, .y = tb.y + 2, .w = bw, .h = tb_h - 4 };
+        const ib: d.Rect = .{ .x = bb.right() + 2, .y = bb.y, .w = bw, .h = bb.h };
+        qa.mark(bb, "composer-bold", .{});
+        qa.mark(ib, "composer-italic", .{});
+        const bh = d.hit(ctx, 41, bb);
+        const ih = d.hit(ctx, 42, ib);
+        d.text(dl, fam.get(.bold), fs, bb.x + (bb.w - d.width(fam.get(.bold), fs, "B")) / 2, d.centerY(bb, fs), if (bh.hovered) ctx.col(.text) else ctx.col(.muted), "B");
+        d.text(dl, fam.get(.regular), fs, ib.x + (ib.w - d.width(fam.get(.regular), fs, "I")) / 2, d.centerY(ib, fs), if (ih.hovered) ctx.col(.text) else ctx.col(.muted), "I");
+        if (bh.clicked) mdWrap(st, @intCast(sel_start), @intCast(sel_end), "**");
+        if (ih.clicked) mdWrap(st, @intCast(sel_start), @intCast(sel_end), "*");
+        tb_rect = tb;
+        tb_shown = true;
+        tb_press = (bh.held or ih.held) or (tb_press and (mouse_down or mouse_released));
+    } else {
+        tb_shown = false;
+        tb_press = false;
+    }
     // Seta para cima com a caixa vazia: edita a última mensagem.
     if (active and st.input[0] == 0 and c.ImGui_IsKeyPressed(c.ImGuiKey_UpArrow)) st.edit_last = true;
     if (keep) st.input = kept;

@@ -143,6 +143,8 @@ pub const Settings = struct {
     data_saver: bool = false,
     /// Prévia do markdown acima da caixa de texto, quando tem formatação.
     md_preview: bool = true,
+    /// Balança de Markdown: com texto selecionado na caixa, B e I colocam ** / * nas pontas.
+    md_bar: bool = true,
     /// Canal com não lidas abre na primeira delas, como no Discord (senão, no fim).
     open_at_unread: bool = true,
     /// Pasta com as bibliotecas do FFmpeg escolhida à mão (vazia = procurar sozinho;
