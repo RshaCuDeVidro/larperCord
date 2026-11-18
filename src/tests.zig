@@ -52,6 +52,9 @@ test {
     _ = @import("core/media_refresh.zig");
     _ = @import("core/ogg_opus.zig");
     _ = @import("core/stickers.zig");
+    _ = @import("core/artwork.zig");
+    _ = @import("core/webp_anim.zig");
+    _ = @import("ui/apng_webp.zig");
     _ = @import("core/reply_preview.zig");
     _ = @import("core/search_query.zig");
     _ = @import("core/accounts.zig");

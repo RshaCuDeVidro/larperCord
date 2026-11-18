@@ -20,6 +20,7 @@ const emoji_img = @import("emoji_img.zig");
 const engine = @import("../plugins/engine.zig");
 const types = @import("../core/types.zig");
 const mentions = @import("../core/mentions.zig");
+const artwork = @import("../core/artwork.zig");
 const State = @import("state.zig").State;
 const interact = @import("interact.zig");
 const Id = types.Id;
@@ -31,6 +32,8 @@ const Item = struct {
     id: Id = 0,
     animated: bool = false,
     locked: bool = false,
+    /// Locked for a native send, but goes out as an attached image (core/artwork.zig).
+    as_image: bool = false,
     /// Índice em `emoji_data` (kind == .emoji).
     uni: u16 = 0,
     color: u32 = 0,
@@ -97,7 +100,8 @@ pub var searches: u32 = 0;
 const Slot = struct {
     shown: [136]u8 = undefined,
     shown_len: u8 = 0,
-    repl: [48]u8 = undefined,
+    // Long enough for a named CDN link, `[name](https://cdn.discordapp.com/emojis/…)`.
+    repl: [192]u8 = undefined,
     repl_len: u8 = 0,
 };
 var slots: [16]Slot = undefined;
@@ -318,12 +322,15 @@ fn searchEmoji(ctx: *d.Ctx, ch: *const types.Channel, q: []const u8) void {
         const sc = nameScore(e.name, folded);
         if (sc == 0) continue;
         const use = ctx.store.emojiUse(e, ch.guild);
-        var it: Item = .{ .kind = .custom, .id = e.id, .animated = e.animated, .locked = use != .ok };
-        // O do próprio servidor primeiro; o que não dá para usar por último.
-        it.score = sc + (if (e.guild == ch.guild) @as(i32, 100) else 0) - (if (it.locked) @as(i32, 400) else 0);
+        const image = @import("emoji_picker.zig").sendsAsImage(ctx, e, ch.guild, 0);
+        var it: Item = .{ .kind = .custom, .id = e.id, .animated = e.animated, .locked = use != .ok and !image, .as_image = image };
+        // O do próprio servidor primeiro; o que não dá para usar por último; o que vai como imagem, depois do nativo.
+        it.score = sc + (if (e.guild == ch.guild) @as(i32, 100) else 0) - (if (it.locked) @as(i32, 400) else 0) - (if (image) @as(i32, 150) else 0);
         it.setName(e.name);
         if (it.locked) {
             it.setHint(if (use == .unavailable) i18n.tr("indisponível neste servidor", "unavailable in this server") else i18n.tr("precisa de Nitro", "requires Nitro"));
+        } else if (image) {
+            it.setHint(i18n.tr("vai como imagem", "sent as an image"));
         } else if (ctx.store.guild(entry.key_ptr.*)) |g| it.setHint(g.name);
         add(it);
     };
@@ -561,7 +568,7 @@ fn choose(ctx: *d.Ctx, index: usize) void {
         return;
     }
     var buf: [160]u8 = undefined;
-    var rb: [48]u8 = undefined;
+    var rb: [192]u8 = undefined;
     const name = it.name();
     if (it.kind == .app_command) {
         // O comando de um bot abre o formulário das opções; a caixa fica vazia.
@@ -599,7 +606,10 @@ fn choose(ctx: *d.Ctx, index: usize) void {
         .user => std.fmt.bufPrint(&rb, "<@{d}>", .{it.id}) catch null,
         .role => std.fmt.bufPrint(&rb, "<@&{d}>", .{it.id}) catch null,
         .channel, .voice => std.fmt.bufPrint(&rb, "<#{d}>", .{it.id}) catch null,
-        .custom => std.fmt.bufPrint(&rb, "<{s}:{s}:{d}>", .{ if (it.animated) "a" else "", name, it.id }) catch null,
+        .custom => if (it.as_image)
+            artwork.markdown(&rb, .{ .emoji = .{ .id = it.id, .animated = it.animated } }, name)
+        else
+            std.fmt.bufPrint(&rb, "<{s}:{s}:{d}>", .{ if (it.animated) "a" else "", name, it.id }) catch null,
         else => null,
     };
     if (it.kind == .custom or it.kind == .emoji) @import("emoji_picker.zig").remember(st, it.kind == .custom, it.id, it.uni, name, it.animated);

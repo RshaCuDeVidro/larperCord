@@ -12,6 +12,7 @@ const popup = @import("popup.zig");
 const media_url = @import("../net/media_url.zig");
 const types = @import("../core/types.zig");
 const stickers = @import("../core/stickers.zig");
+const artwork = @import("../core/artwork.zig");
 
 const cell: f32 = 86;
 const gap: f32 = 8;
@@ -44,6 +45,9 @@ const Layout = struct {
     perms: u64,
     channel: types.Id,
     chosen: ?types.Id = null,
+    /// The chosen sticker can't go out natively: send its artwork as an image instead.
+    chosen_image: bool = false,
+    chosen_format: u8 = 0,
 
     fn section(l: *Layout, s: Section) void {
         if (s.n == 0) return;
@@ -62,7 +66,11 @@ const Layout = struct {
             const r: d.Rect = .{ .x = l.area.x + col * (l.cell_w + gap), .y = l.area.y - l.scroll + l.y + row * (cell + gap), .w = l.cell_w, .h = cell };
             // Fora da tela não baixa nada.
             if (r.bottom() < l.area.y or r.y > l.area.bottom()) continue;
-            if (l.drawCell(st, r)) l.chosen = st.id;
+            if (l.drawCell(st, r)) {
+                l.chosen = st.id;
+                l.chosen_format = st.format;
+                l.chosen_image = stickers.canSend(st, l.here, l.ctx.store.premium_type, l.perms) != .ok;
+            }
         }
         const rows = (s.n + l.cols - 1) / l.cols;
         l.y += @as(f32, @floatFromInt(rows)) * (cell + gap);
@@ -72,6 +80,11 @@ const Layout = struct {
         const ctx = l.ctx;
         const dl = l.dl;
         const use = stickers.canSend(st, l.here, ctx.store.premium_type, l.perms);
+        // What the account can't send natively goes out as an attached image, if the
+        // channel allows attachments: no Nitro, no external-sticker permission, or a
+        // sticker its server made unavailable (it lost its boost level).
+        const as_image = use != .ok and l.perms & artwork.attach_files != 0;
+        const sendable = use == .ok or as_image;
         const hb = d.hit(ctx, @truncate(st.id ^ 0x571C_0000), r);
         qa.mark(r, "sticker:{d}", .{st.id});
         d.rect(dl, r, ctx.col(.elevated).mix(ctx.col(.text), if (hb.hovered) 0.05 else 0), 8);
@@ -94,7 +107,7 @@ const Layout = struct {
                 const k = @min(ir.w / tw, ir.h / th);
                 const x0 = ir.x + (ir.w - tw * k) / 2;
                 const y0 = ir.y + (ir.h - th * k) / 2;
-                const a: f32 = if (use == .ok) 1 else 0.35;
+                const a: f32 = if (sendable) 1 else 0.35;
                 c.ImDrawList_AddImageEx(dl, t.ref, d.v(x0, y0), d.v(x0 + tw * k, y0 + th * k), d.v(0, 0), d.v(1, 1), d.Rgba.white.col(a));
                 drawn = true;
             },
@@ -103,24 +116,31 @@ const Layout = struct {
         if (!drawn) {
             // Lottie (ou ainda chegando): o nome no lugar.
             const f = ctx.ui.get(.medium);
-            _ = d.textClipped(dl, f, 12, r.x + 8, d.centerY(r, 12) - (if (url == null) @as(f32, 7) else 0), ctx.col(if (use == .ok) .text else .faint), st.name, r.w - 16);
+            _ = d.textClipped(dl, f, 12, r.x + 8, d.centerY(r, 12) - (if (url == null) @as(f32, 7) else 0), ctx.col(if (sendable) .text else .faint), st.name, r.w - 16);
             if (url == null) {
                 const small = ctx.ui.get(.regular);
                 _ = d.textClipped(dl, small, 10.5, r.x + 8, d.centerY(r, 10.5) + 9, ctx.col(.faint), i18n.tr("animação (não exibida)", "animation (not shown)"), r.w - 16);
             }
         }
-        if (use != .ok) lockIcon(dl, r.right() - 14, r.y + 14, ctx.col(.muted));
-        if (hb.hovered and use == .ok) d.border(dl, r, ctx.col(.accent), 8, 2);
+        if (!sendable) lockIcon(dl, r.right() - 14, r.y + 14, ctx.col(.muted));
+        if (hb.hovered and sendable) d.border(dl, r, ctx.col(.accent), 8, 2);
         if (hb.hovered) c.ImGui_SetMouseCursor(c.ImGuiMouseCursor_Hand);
         var tb: [160]u8 = undefined;
         const why: []const u8 = switch (use) {
             .ok => st.name,
-            .needs_nitro => i18n.fmt(&tb, "{s} · precisa de Nitro fora do servidor dela", "{s} · needs Nitro outside its server", .{st.name}),
-            .no_permission => i18n.fmt(&tb, "{s} · este canal não permite figurinhas de fora", "{s} · this channel doesn't allow external stickers", .{st.name}),
-            .unavailable => i18n.fmt(&tb, "{s} · indisponível (o servidor perdeu o impulso)", "{s} · unavailable (the server lost its boost)", .{st.name}),
+            .needs_nitro, .no_permission => if (as_image)
+                i18n.fmt(&tb, "{s} · vai como imagem anexada", "{s} · sent as an attached image", .{st.name})
+            else if (use == .needs_nitro)
+                i18n.fmt(&tb, "{s} · precisa de Nitro fora do servidor dela", "{s} · needs Nitro outside its server", .{st.name})
+            else
+                i18n.fmt(&tb, "{s} · este canal não permite figurinhas de fora", "{s} · this channel doesn't allow external stickers", .{st.name}),
+            .unavailable => if (as_image)
+                i18n.fmt(&tb, "{s} · indisponível no servidor · vai como imagem anexada", "{s} · unavailable on its server · sent as an attached image", .{st.name})
+            else
+                i18n.fmt(&tb, "{s} · indisponível (o servidor perdeu o impulso)", "{s} · unavailable (the server lost its boost)", .{st.name}),
         };
         d.tip(ctx, r, why, hb.hovered);
-        return hb.clicked and use == .ok;
+        return hb.clicked and sendable;
     }
 };
 
@@ -198,7 +218,9 @@ pub fn body(ctx: *d.Ctx, r: d.Rect, top: f32, q: []const u8, appearing: bool) vo
         .ready => if (total == 0) centered(ctx, gdl, area, area.y + 40, if (q.len > 0) i18n.tr("Nada encontrado.", "Nothing found.") else i18n.tr("Nenhuma figurinha por aqui.", "No stickers here.")),
     }
     if (l.chosen) |id| {
-        ctx.act(.{ .send_sticker = .{ .channel = ch_id, .sticker = id } });
+        if (l.chosen_image) {
+            ctx.act(.{ .send_artwork = .{ .channel = ch_id, .asset = .{ .sticker = .{ .id = id, .format = l.chosen_format } } } });
+        } else ctx.act(.{ .send_sticker = .{ .channel = ch_id, .sticker = id } });
         popup.close(ctx);
     }
 }

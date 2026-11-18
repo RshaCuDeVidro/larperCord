@@ -150,6 +150,7 @@ const toggle_names = [_]struct { field: []const u8, pt: []const u8, en: []const 
     .{ .field = "underline_links", .pt = "Sublinhar links", .en = "Underline links" },
     .{ .field = "autoplay_gifs", .pt = "Reproduzir GIFs automaticamente", .en = "Automatically play GIFs" },
     .{ .field = "show_embeds", .pt = "Mostrar imagens de links", .en = "Show images from links" },
+    .{ .field = "suggest_nitro_emojis", .pt = "Sugerir emojis que precisam de Nitro", .en = "Suggest emojis that need Nitro" },
     .{ .field = "show_spoilers", .pt = "Sempre mostrar spoilers", .en = "Always show spoilers" },
     .{ .field = "md_preview", .pt = "Prévia do markdown", .en = "Markdown preview" },
     .{ .field = "open_at_unread", .pt = "Abrir na primeira não lida", .en = "Open at the first unread" },

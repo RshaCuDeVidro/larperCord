@@ -1017,6 +1017,8 @@ fn page(p: *Page, previews: []const Preview) void {
             p.toggle(i18n.tr("Mostrar imagens de links", "Show images from links"), i18n.tr("Imagens e GIFs de links mandados na conversa.", "Images and GIFs from links posted in chat."), &s.show_embeds);
             p.toggle(i18n.tr("Modo economia", "Data saver"), i18n.tr("Imagens, fotos de perfil e anexos só baixam quando você clica. Bom em rede ruim.", "Images, profile pictures and attachments only download when you click. Good on bad networks."), &s.data_saver);
             @import("settings_video.zig").section(p);
+            p.heading(i18n.tr("Emoji", "Emoji"));
+            p.toggle(i18n.tr("Sugerir emojis que precisam de Nitro", "Suggest emojis that need Nitro"), i18n.tr("Oferece emojis animados e de outros servidores no seletor e nas sugestões do dois-pontos, e manda como imagem anexada, sem Nitro. Desligado, ficam trancados.", "Offers animated and other servers' emojis in the picker and in : suggestions, and sends them as an attached image without Nitro. When off, they stay locked."), &s.suggest_nitro_emojis);
             p.heading(i18n.tr("Conteúdo", "Content"));
             p.toggle(i18n.tr("Sempre mostrar spoilers", "Always show spoilers"), i18n.tr("Revela o texto ||escondido|| sem precisar clicar.", "Reveals ||hidden|| text without clicking."), &s.show_spoilers);
             p.heading(i18n.tr("Leitura", "Reading"));

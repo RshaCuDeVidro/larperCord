@@ -42,6 +42,7 @@ const theme_mod = @import("theme/theme.zig");
 const plugin_host = @import("plugins/host.zig");
 const mentions = @import("core/mentions.zig");
 const envio = @import("core/envio.zig");
+const artwork = @import("core/artwork.zig");
 const autocomplete = @import("ui/autocomplete.zig");
 const ime = @import("ui/ime.zig");
 const interact = @import("ui/interact.zig");
@@ -1382,6 +1383,21 @@ pub const App = struct {
 
     /// Dá para mandar neste canal agora? Não dando (castigo, permissão, modo
     /// lento…), avisa o motivo e quem chamou não manda.
+    /// Emoji or stickers as plain image attachments; the net thread downloads them from
+    /// the CDN. No pending row: like a native sticker, the message arrives through the
+    /// gateway. Slow mode and the like were already checked by the caller.
+    fn sendArtwork(app: *App, ch: types.Id, assets: []const artwork.Asset, reply_to: types.Id, opts: envio.SendOpts) void {
+        const cs = app.store.channel(ch) orelse return;
+        if (app.store.channelPermissions(&cs.info) & artwork.attach_files == 0) {
+            app.st.showToast(now(), true, "você não pode anexar arquivos neste canal", "you can't attach files in this channel", .{});
+            return;
+        }
+        const items = std.heap.c_allocator.dupe(artwork.Asset, assets) catch return;
+        app.st.nonce +%= 1;
+        app.cmd(.{ .send_artwork = .{ .channel = ch, .nonce = app.st.nonce, .reply_to = reply_to, .opts = opts, .items = items } });
+        send_limits.noteSent(&app.store, ch, now());
+    }
+
     fn sendAllowed(app: *App, ch: types.Id) bool {
         const b = send_limits.blockForId(&app.store, ch, now());
         if (b.reason == .none) return true;
@@ -1532,6 +1548,13 @@ pub const App = struct {
         if (!app.sendAllowed(ch)) return;
         const out_text = mentions.expand(app.gpa, &app.store, app.guildOfChannel(ch), text, &.{}) catch return;
         defer app.gpa.free(out_text);
+        // Emoji the account can't send natively: a draft that is nothing but artwork
+        // links goes out as image attachments (core/artwork.zig). Mixed with text, the
+        // links stay in the message.
+        if (with_uploads and app.st.uploads.items.len == 0) {
+            var list: [artwork.max_items]artwork.Asset = undefined;
+            if (artwork.onlyLinks(out_text, &list)) |assets| return app.sendArtwork(ch, assets, reply_to, opts);
+        }
         app.st.nonce += 1;
         // Os arquivos da bandeja vão junto: aparecem na hora na cópia pendente.
         const ca = std.heap.c_allocator;
@@ -1734,6 +1757,11 @@ pub const App = struct {
                 st.nonce +%= 1;
                 app.cmd(.{ .send_sticker = .{ .channel = sk.channel, .sticker = sk.sticker, .nonce = st.nonce } });
                 send_limits.noteSent(&app.store, sk.channel, now());
+            },
+            .send_artwork => |art| {
+                // Like a sticker, it is a message: timeout, locked threads and slow mode apply.
+                if (!app.sendAllowed(art.channel)) return;
+                app.sendArtwork(art.channel, &[_]artwork.Asset{art.asset}, 0, .{});
             },
             .gif_favorites => {
                 app.store.gif_favorites.req +%= 1;

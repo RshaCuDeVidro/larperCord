@@ -57,6 +57,9 @@ const dm_order = @import("../core/dm_order.zig");
 const media_flags = @import("../core/media_flags.zig");
 const media_refresh = @import("../core/media_refresh.zig");
 const stickers = @import("../core/stickers.zig");
+const artwork = @import("../core/artwork.zig");
+const image_fetch = @import("../ui/images.zig");
+const apng_webp = @import("../ui/apng_webp.zig");
 const rpc_proto = @import("rpc_proto.zig");
 const interaction = @import("../core/interaction.zig");
 const Id = types.Id;
@@ -3458,6 +3461,7 @@ pub const Gateway = struct {
         switch (cmd) {
             .search_messages => |s| alloc.free(s.params),
             .set_note => |n| alloc.free(n.text),
+            .send_artwork => |a| alloc.free(a.items),
             .send_message => |m| {
                 alloc.free(m.content);
                 for (m.files) |f| alloc.free(f);
@@ -3865,6 +3869,122 @@ pub const Gateway = struct {
         g.voice_endpoint_len = 0;
     }
 
+    /// Collects one downloaded image in memory, capped at `artwork.max_bytes`.
+    const ArtSink = struct {
+        list: *std.ArrayList(u8),
+
+        fn sink(s: *ArtSink) image_fetch.Sink {
+            return .{ .ctx = s, .write = write };
+        }
+
+        fn write(ud: *anyopaque, chunk: []const u8, total: i64) bool {
+            const s: *ArtSink = @ptrCast(@alignCast(ud));
+            if (s.list.items.len + chunk.len > artwork.max_bytes or total > @as(i64, artwork.max_bytes)) return false;
+            s.list.appendSlice(alloc, chunk) catch return false;
+            return true;
+        }
+    };
+
+    /// What turning an APNG into an animated WebP needs from C: stb_image decodes each
+    /// frame's PNG (as images.zig does for the player) and libwebp encodes each frame.
+    const ApngCodecs = struct {
+        pub fn decode(_: *ApngCodecs, png: []const u8, w: u32, h: u32, out: []u8) bool {
+            var iw: c_int = 0;
+            var ih: c_int = 0;
+            var comp: c_int = 0;
+            const px = c.stbi_load_from_memory(png.ptr, @intCast(png.len), &iw, &ih, &comp, 4) orelse return false;
+            defer c.stbi_image_free(px);
+            if (iw != w or ih != h) return false;
+            @memcpy(out, px[0..out.len]);
+            return true;
+        }
+
+        /// A complete lossless WebP file of the RGBA frame, owned by `alloc`.
+        pub fn encode(_: *ApngCodecs, rgba: []const u8, w: u32, h: u32) ?[]u8 {
+            var buf: [*c]u8 = null;
+            const n = c.WebPEncodeLosslessRGBA(rgba.ptr, @intCast(w), @intCast(h), @intCast(w * 4), &buf);
+            if (n == 0 or buf == null) return null;
+            defer c.WebPFree(buf);
+            return alloc.dupe(u8, buf[0..n]) catch null;
+        }
+    };
+
+    /// Only PNG and GIF are artwork; anything else (an HTML error page...) is not sent.
+    fn isArtworkImage(b: []const u8) bool {
+        return std.mem.startsWith(u8, b, "\x89PNG\r\n\x1a\n") or std.mem.startsWith(u8, b, "GIF87a") or std.mem.startsWith(u8, b, "GIF89a");
+    }
+
+    /// Emoji or stickers as plain image attachments (core/artwork.zig): download each
+    /// from Discord's CDN (no token goes there), write it to a private temp folder, then
+    /// upload through the ordinary send_message path, so multipart, 429 and 413 all behave
+    /// as for any file. The message arrives through the gateway like any other.
+    fn sendArtwork(g: *Gateway, a: anytype) void {
+        const n = @min(a.items.len, artwork.max_items);
+        if (n == 0) return;
+        // A folder of our own. The attachment's name on Discord is the file's name, so
+        // these must not carry the app's name the way pasted images do.
+        var dir_buf: [512]u8 = undefined;
+        const dir = std.fmt.bufPrintSentinel(&dir_buf, "{s}/larpercord-art-{d}-{d}", .{ sys.tempDir(), c.getpid(), a.nonce }, 0) catch return;
+        sys.mkdirPrivate(dir.ptr);
+        var paths: [artwork.max_items]?[:0]u8 = @splat(null);
+        defer {
+            for (paths) |p| {
+                if (p) |path| {
+                    _ = c.SDL_RemovePath(path.ptr);
+                    alloc.free(path);
+                }
+            }
+            _ = c.SDL_RemovePath(dir.ptr);
+        }
+        var curl: ?*c.CURL = null;
+        defer if (curl) |h| c.curl_easy_cleanup(h);
+        var cancel = std.atomic.Value(bool).init(false);
+        for (a.items[0..n], 0..) |item, i| {
+            var ub: [200]u8 = undefined;
+            const link = artwork.url(&ub, item) orelse return g.artworkFailed();
+            var zb: [208]u8 = undefined;
+            const link_z = std.fmt.bufPrintSentinel(&zb, "{s}", .{link}, 0) catch return g.artworkFailed();
+            var body: std.ArrayList(u8) = .empty;
+            defer body.deinit(alloc);
+            var collect: ArtSink = .{ .list = &body };
+            if (!image_fetch.fetch(&curl, link_z, collect.sink(), &cancel, 20) or !isArtworkImage(body.items)) return g.artworkFailed();
+            // An animated PNG sticker would show as its first frame only on Discord, so
+            // it goes out as an animated WebP. Anything that can't be converted (not
+            // animated, too big, a codec failure) goes out as it is.
+            var converted: ?[]u8 = null;
+            defer if (converted) |webp| alloc.free(webp);
+            if (item == .sticker) {
+                var codecs: ApngCodecs = .{};
+                converted = apng_webp.toWebp(alloc, body.items, &codecs, 8 * 1024 * 1024, 300);
+            }
+            const out_bytes: []const u8 = converted orelse body.items;
+            var nb: [64]u8 = undefined;
+            const fname = (if (converted != null) item.fileNameAs(&nb, "webp") else item.fileName(&nb)) orelse return g.artworkFailed();
+            var pb: [640]u8 = undefined;
+            const path_s = std.fmt.bufPrint(&pb, "{s}/{s}", .{ dir, fname }) catch return;
+            const path = alloc.dupeSentinel(u8, path_s, 0) catch return;
+            paths[i] = path;
+            if (!c.SDL_SaveFile(path.ptr, out_bytes.ptr, out_bytes.len)) return g.artworkFailed();
+        }
+        // The command owns its own copies of the paths (freeCommand frees them); ours
+        // stay in `paths` so the files can be removed once the upload is done.
+        const files = alloc.alloc([:0]const u8, n) catch return;
+        var made: usize = 0;
+        for (paths[0..n]) |p| {
+            files[made] = alloc.dupeSentinel(u8, p.?, 0) catch {
+                for (files[0..made]) |f| alloc.free(f);
+                alloc.free(files);
+                return;
+            };
+            made += 1;
+        }
+        g.execute(.{ .send_message = .{ .channel = a.channel, .content = "", .nonce = a.nonce, .reply_to = a.reply_to, .files = files, .opts = a.opts } });
+    }
+
+    fn artworkFailed(g: *Gateway) void {
+        g.notice("não deu para baixar a imagem", "couldn't download the image", .{});
+    }
+
     fn execute(g: *Gateway, cmd: ev.Command) void {
         // Grava no fim da volta do laço, junto com as outras estrelas que chegaram.
         if (cmd == .gif_favorite) return g.queueFavorite(cmd.gif_favorite);
@@ -4090,6 +4210,7 @@ pub const Gateway = struct {
                 }
                 if (resp.status >= 300) g.noticeHttp(i18n.tr("não deu para enviar a figurinha", "couldn't send the sticker"), &resp);
             },
+            .send_artwork => |a| g.sendArtwork(a),
             .gif_favorites => |req| {
                 // Estrelas clicadas antes deste pedido gravam antes: a lista que volta já as tem.
                 g.flushFavorites();
