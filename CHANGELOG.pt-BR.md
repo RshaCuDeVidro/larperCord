@@ -7,6 +7,10 @@
 
 ## 0.6.6
 
+**Presença**
+
+- Configurações → Privacidade → Detectar o Spotify local: o que estiver tocando no Spotify do computador vira o seu status ("Ouvindo …"), sem Rich Presence nenhum. No Linux lê o player pelo MPRIS (o Spotify tem prioridade, qualquer player de mídia vale), no Windows lê o título da janela do Spotify. Manda de novo só quando algo muda (faixa, tocar↔pausar ou sumir), e o cronômetro segue a posição. Desligado, nada é detectado.
+
 **Aparência**
 - Configurações → Aparência escolhe as fontes da interface e do código entre as instaladas no dispositivo: a lista lê os arquivos de fonte, com o nome da família de cada arquivo (o Windows lê C:\Windows\Fonts e a sua pasta de fontes; nos outros sistemas, o fontconfig responde). "Do tema" volta ao que o tema pede, e a escolha fica salva, do ryokky3 (#26). O japonês segue os textos novos.
 

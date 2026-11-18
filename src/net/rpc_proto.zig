@@ -73,6 +73,10 @@ pub const Text = struct {
 pub const Activity = struct {
     /// 0 jogando, 2 ouvindo, 3 assistindo, 5 competindo (o que o RPC aceita).
     kind: u8 = 0,
+    /// Nome que aparece quando a atividade não tem aplicação (app 0): só a
+    /// atividade nossa usa (net/spotify_presenca.zig). O jogo não manda nome:
+    /// ele é sempre o da aplicação do client_id dele.
+    name: Text = .{},
     details: Text = .{},
     state: Text = .{},
     /// ms Unix (0 = não diz).
@@ -90,6 +94,7 @@ pub const Activity = struct {
     pub fn eql(a: *const Activity, b: *const Activity) bool {
         if (a.kind != b.kind or a.start_ms != b.start_ms or a.end_ms != b.end_ms or a.instance != b.instance) return false;
         if (a.party_size[0] != b.party_size[0] or a.party_size[1] != b.party_size[1]) return false;
+        if (!std.mem.eql(u8, a.name.slice(), b.name.slice())) return false;
         inline for (.{ "details", "state", "large_image", "large_text", "small_image", "small_text", "party_id" }) |f| {
             if (!std.mem.eql(u8, @field(a, f).slice(), @field(b, f).slice())) return false;
         }
@@ -188,7 +193,9 @@ fn field(out: *Out, gpa: Allocator, first: *bool, name: []const u8, s: []const u
 pub fn writeActivity(out: *Out, gpa: Allocator, a: *const Activity, app: u64, name: []const u8, assets: ?[]const Asset) !void {
     try out.print(gpa, "{{\"type\":{d},\"name\":", .{a.kind});
     try j.writeString(out, gpa, name);
-    try out.print(gpa, ",\"application_id\":\"{d}\"", .{app});
+    // Atividade sem aplicação (a nossa, do Spotify): o gateway recusa um id
+    // de mentira, então não vai application_id nenhum.
+    if (app != 0) try out.print(gpa, ",\"application_id\":\"{d}\"", .{app});
     var first = false;
     try field(out, gpa, &first, "details", a.details.slice());
     try field(out, gpa, &first, "state", a.state.slice());
@@ -549,10 +556,13 @@ pub const Presence = struct {
         p.current = null;
         p.current_app = 0;
         const a = act orelse return;
-        const info = p.apps.get(app) orelse return;
-        if (info.name.len == 0) return;
+        // Sem aplicação (app 0, a atividade do Spotify): o nome é o da própria
+        // atividade, sem imagens e sem application_id (rpc_proto.writeActivity).
+        const info = if (app == 0) null else p.apps.get(app) orelse return;
+        const name = if (info) |i| i.name else a.name.slice();
+        if (name.len == 0) return;
         var out: Out = .empty;
-        writeActivity(&out, gpa, a, app, info.name, info.assets) catch {
+        writeActivity(&out, gpa, a, app, name, if (info) |i| i.assets else null) catch {
             out.deinit(gpa);
             return;
         };
@@ -907,4 +917,37 @@ test "gateway: nome da aplicação, imagens por nome e op 3" {
     try testing.expect(p.known(88));
     p.set(ta, 88, &a);
     try testing.expect(p.current == null);
+}
+
+test "atividade sem aplicação (Spotify): nome da própria atividade e sem application_id" {
+    var p: Presence = .{};
+    defer p.deinit(ta);
+    var a: Activity = .{};
+    a.kind = 2;
+    a.name.set("Spotify", max_text);
+    a.details.set("Fase 3", max_text);
+    a.state.set("Artista de Teste", max_text);
+    a.start_ms = 1_700_000_000_000;
+    // O jogo não passa nome pela atividade: o dele vem sempre da aplicação.
+    p.set(ta, 77, &a);
+    try testing.expect(p.current == null);
+    // app 0: vai com o nome da própria atividade, sem application_id.
+    p.set(ta, 0, &a);
+    var out: Out = .empty;
+    defer out.deinit(ta);
+    try p.writeOp3(&out, ta, "online");
+    try testing.expectEqualStrings("{\"op\":3,\"d\":{\"status\":\"online\",\"since\":0,\"activities\":[{\"type\":2,\"name\":\"Spotify\",\"details\":\"Fase 3\",\"state\":\"Artista de Teste\",\"timestamps\":{\"start\":1700000000000}}],\"afk\":false}}", out.items);
+    const e = p.meEvent(ta, 42, .online);
+    try testing.expectEqualStrings("Ouvindo Spotify", e.presence_update.activity.?);
+    const list = e.presence_update.activities.?;
+    try testing.expectEqualStrings("Spotify", list[0].name);
+    try testing.expectEqualStrings("", list[0].image);
+    for (list) |x| for ([_][]const u8{ x.name, x.details, x.state, x.image }) |t| if (t.len > 0) ta.free(t);
+    ta.free(list);
+    ta.free(e.presence_update.activity.?);
+    // Limpar funciona igual (o op 3 volta sem atividades).
+    p.set(ta, 0, null);
+    out.clearRetainingCapacity();
+    try p.writeOp3(&out, ta, "online");
+    try testing.expect(std.mem.indexOf(u8, out.items, "\"activities\":[]") != null);
 }

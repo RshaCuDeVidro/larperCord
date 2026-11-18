@@ -7,6 +7,10 @@
 
 ## 0.6.6
 
+**Presence**
+
+- Settings → Privacy → Detect the local Spotify: what is playing in the desktop Spotify becomes your status ("Listening to …"), without any Rich Presence. On Linux it reads the player over MPRIS (the Spotify wins, any media player works), on Windows it reads the Spotify window title. It is sent again only when something changes (track, play↔pause or it going away), and the elapsed clock follows the position. Off: nothing is detected.
+
 **Appearance**
 - Settings → Appearance picks the fonts for the interface and for code from the ones installed on your device: the list reads the font files themselves, with the family name from each file (Windows reads C:\Windows\Fonts and your own fonts folder; on other systems fontconfig answers). "Theme" goes back to what the theme asks for, and the choice is saved, from ryokky3 (#26). Japanese follows the new texts.
 

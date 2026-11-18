@@ -4350,7 +4350,8 @@ pub const Gateway = struct {
             },
             .set_activity => |sa| {
                 // Rich Presence: nome e imagens da aplicação, uma vez por aplicação.
-                if (sa.activity != null and !g.presence.known(sa.app)) g.learnApp(sa.app);
+                // app 0 é a atividade nossa (Spotify): o nome vem dela mesma.
+                if (sa.activity != null and sa.app != 0 and !g.presence.known(sa.app)) g.learnApp(sa.app);
                 g.presence.set(alloc, sa.app, sa.activity);
                 // O op 3 sai pela fila do teto, montado na hora com o status
                 // personalizado e esta atividade (net/conta_net.zig).

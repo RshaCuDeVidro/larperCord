@@ -182,6 +182,10 @@ pub const Settings = struct {
     /// Rich Presence: jogos e apps mostram a atividade pelo discord-ipc
     /// (net/rpc_ipc.zig). Desligado, nada escuta.
     rich_presence: bool = false,
+    /// Spotify local: o que está tocando nele vira a atividade (Listening to
+    /// …), sem aplicação nenhuma (net/spotify_presenca.zig). Desligado, nada
+    /// é detectado.
+    spotify_presence: bool = false,
 
     /// Nosso status: 0 online, 1 ausente, 2 não perturbe, 3 invisível.
     /// Reaplicado ao conectar.
