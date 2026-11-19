@@ -79,9 +79,22 @@ fn onGlyphMissing(cp: c_uint) callconv(.c) void {
         // bloco dela, como nas outras escritas.
     }
     if (blockToSearch(cp)) |b| {
-        if (misses.note(b, cp)) return;
+        if (misses.note(b, cp) or noteRetry(cp)) return;
     }
     noteMissing(cp);
+}
+
+/// Letras sem fonte num bloco que já ganhou uma: cada uma procura outra, uma vez.
+var retry_buf: [16]u32 = undefined;
+var retry_n: usize = 0;
+
+fn noteRetry(cp: u32) bool {
+    if (std.mem.indexOfScalar(u32, missing_buf[0..missing_n], cp) != null) return false;
+    if (std.mem.indexOfScalar(u32, retry_buf[0..retry_n], cp) != null) return true;
+    if (retry_n == retry_buf.len) return false;
+    retry_buf[retry_n] = cp;
+    retry_n += 1;
+    return true;
 }
 
 fn noteMissing(cp: u32) void {
@@ -92,11 +105,11 @@ fn noteMissing(cp: u32) void {
     }
 }
 
-/// O bloco que uma letra sem fonte pede ao sistema, ou null se ela não pede: emoji vem da
-/// fonte de emoji, uso privado não é escrita nenhuma (cada fonte põe ali os ícones dela) e a
-/// letra estilizada já virou a comum (ver `onGlyphPlain`).
+/// O bloco que uma letra sem fonte pede ao sistema, ou null se ela não pede: uso privado não é
+/// escrita nenhuma (cada fonte põe ali os ícones dela) e a letra estilizada já virou a comum
+/// (ver `onGlyphPlain`).
 fn blockToSearch(cp: u32) ?font_blocks.Block {
-    if (inRanges(cp, &emoji_ranges) or plain_letters.of(cp) != null) return null;
+    if (plain_letters.of(cp) != null) return null;
     return switch (cp) {
         // Metades de par (não chegam sozinhas ao texto) e uso privado.
         0xD800...0xF8FF, 0xF0000...0x10FFFF => null,
@@ -137,7 +150,7 @@ pub fn missingLetters() []const u32 {
 
 /// O quadro que acabou pediu fontes: precisa de outro, mesmo sem evento nenhum.
 pub fn scriptsWanted() bool {
-    return std.mem.indexOfScalar(bool, &wanted, true) != null or misses.anyWanted();
+    return std.mem.indexOfScalar(bool, &wanted, true) != null or misses.anyWanted() or retry_n > 0;
 }
 
 /// As famílias de fontes instaladas no dispositivo, em ordem alfabética e sem
@@ -224,7 +237,7 @@ const Extra = struct { data: []u8, index: c_int, blocks: [extra_blocks_per_file]
 /// Tetos das outras escritas. Cada fonte entra em cada face do atlas (uma face do FreeType por
 /// face), e uma conversa com escritas demais não abre fonte sem fim: o que passar disso fica
 /// como letra sem fonte. Até 31 blocos separados cabem nas faixas do ImGui (font_blocks.exclude).
-const extra_files = 8;
+const extra_files = 12;
 const extra_blocks = 24;
 const extra_blocks_per_file = 16;
 /// Blocos procurados por vez: com mais, o resto fica para o próximo intervalo entre quadros.
@@ -364,17 +377,23 @@ pub const Fonts = struct {
     fn loadBlocks(f: *Fonts) void {
         for (0..blocks_per_load) |_| {
             const w = misses.next() orelse break;
-            if (f.blocks_n < extra_blocks) if (f.resolveChar(w.cp)) |m| {
-                defer std.heap.c_allocator.free(m.path);
-                if (f.addBlock(w.block, m, w.cp)) {
-                    // Só o nome do arquivo: o caminho pode ter o nome da pessoa (fontes da pasta dela).
-                    std.log.info("fontes: U+{X:0>4} (bloco {X:0>4}-{X:0>4}) vem de {s}", .{ w.cp, font_blocks.first(w.block), font_blocks.last(w.block), std.fs.path.basename(m.path) });
-                    continue;
-                }
-            };
-            std.log.info("fontes: U+{X:0>4} (bloco {X:0>4}-{X:0>4}) sem fonte no sistema", .{ w.cp, font_blocks.first(w.block), font_blocks.last(w.block) });
-            noteMissing(w.cp);
+            f.searchBlock(w.block, w.cp);
         }
+        for (retry_buf[0..retry_n]) |cp| f.searchBlock(font_blocks.of(cp).?, cp);
+        retry_n = 0;
+    }
+
+    fn searchBlock(f: *Fonts, b: font_blocks.Block, cp: u32) void {
+        if (f.blocks_n < extra_blocks) if (f.resolveChar(cp)) |m| {
+            defer std.heap.c_allocator.free(m.path);
+            if (f.addBlock(b, m, cp)) {
+                // Só o nome do arquivo: o caminho pode ter o nome da pessoa (fontes da pasta dela).
+                std.log.info("fontes: U+{X:0>4} (bloco {X:0>4}-{X:0>4}) vem de {s}", .{ cp, font_blocks.first(b), font_blocks.last(b), std.fs.path.basename(m.path) });
+                return;
+            }
+        };
+        std.log.info("fontes: U+{X:0>4} (bloco {X:0>4}-{X:0>4}) sem fonte no sistema", .{ cp, font_blocks.first(b), font_blocks.last(b) });
+        noteMissing(cp);
     }
 
     /// O bloco `b` passa a vir da fonte `m` em todas as faces. Falso se ela não serve: o FreeType
@@ -409,11 +428,10 @@ pub const Fonts = struct {
         return true;
     }
 
-    /// A fonte já está no atlas valendo para tudo (emoji, símbolos, reserva de um grupo).
+    /// A fonte já está no atlas valendo para tudo (emoji, símbolos).
     fn whole(f: *const Fonts, data: []u8, index: c_int) bool {
         if (f.emoji) |e| if (e.ptr == data.ptr) return true;
         if (f.symbols) |sym| if (sym.data.ptr == data.ptr and sym.index == index) return true;
-        for (f.cjk[0..f.cjk_n]) |o| if (o.data.ptr == data.ptr and o.index == index) return true;
         return false;
     }
 
