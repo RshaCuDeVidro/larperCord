@@ -1039,6 +1039,12 @@ pub const Checker = struct {
     fn value(ck: *Checker, n: *const kdl.Node, p: *const kdl.Prop, ps: *const Prop) error{OutOfMemory}!void {
         _ = n;
         const v = p.value;
+        // `$nome` que sobrou depois de trocar as variáveis (heranca.zig): uma opção, ou nada.
+        if (v.asString()) |s| if (s.len > 1 and s[0] == '$' and ps.kind != .boolean) {
+            const name = if (s[1] == '!') s[2..] else s[1..];
+            if (ck.knownOption(name)) return ck.issue(p.line, p.col, "'{s}' doesn't take an option ({s})", .{ p.key, s });
+            return ck.issue(p.line, p.col, "unknown variable or option '{s}'", .{s});
+        };
         switch (ps.kind) {
             .number => {
                 const x = v.asNumber() orelse return ck.issue(p.line, p.col, "'{s}' expects a number", .{p.key});

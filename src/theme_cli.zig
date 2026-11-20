@@ -8,6 +8,8 @@ const std = @import("std");
 const c = @import("c");
 const theme = @import("theme/theme.zig");
 const schema = @import("theme/schema.zig");
+const bases = @import("theme/bases.zig");
+const manager = @import("theme/manager.zig");
 const ctl_cli = @import("ctl_cli.zig");
 
 const gpa = std.heap.c_allocator;
@@ -47,6 +49,12 @@ fn before(_: void, a: schema.Issue, b: schema.Issue) bool {
     return a.col < b.col;
 }
 
+/// As bases de `extends`: a pasta do arquivo, a de temas do usuário, ./themes e os embutidos.
+fn baseDirs(path: []const u8, config: ?[]const u8, order: *[3][]const u8) bases.Dirs {
+    order.* = .{ std.fs.path.dirname(path) orelse ".", config orelse "", "themes" };
+    return .{ .dirs = order, .read = manager.readFile };
+}
+
 /// Os dois modos, e as opções no padrão, todas ligadas e todas desligadas: um bloco
 /// `colors when=opcao` com uma cor errada também aparece.
 fn checkFile(path: [:0]const u8, report: *schema.Report) !void {
@@ -55,6 +63,10 @@ fn checkFile(path: [:0]const u8, report: *schema.Report) !void {
         return report.add(.{ .severity = .@"error", .line = 0, .col = 0, .message = "can't read the file" });
     defer c.SDL_free(data);
     const src = @as([*]const u8, @ptrCast(data))[0..size];
+    const config = manager.configDir(gpa);
+    defer if (config) |cfg| gpa.free(cfg);
+    var order: [3][]const u8 = undefined;
+    const dirs = baseDirs(path, config, &order);
     var names: std.ArrayList([]const u8) = .empty;
     defer {
         for (names.items) |n| gpa.free(n);
@@ -65,9 +77,9 @@ fn checkFile(path: [:0]const u8, report: *schema.Report) !void {
         defer ov.deinit(gpa);
         if (round > 0) for (names.items) |n| try ov.put(gpa, n, round == 1);
         var diag: theme.Diagnostic = .{};
-        var t = theme.loadWith(gpa, src, .{ .mode = mode, .overrides = &ov, .report = report }, &diag) catch |err| {
+        var t = theme.loadWith(gpa, src, .{ .mode = mode, .overrides = &ov, .report = report, .bases = dirs.bases(), .self = path }, &diag) catch |err| {
             if (err == error.OutOfMemory) return err;
-            try report.add(.{ .severity = .@"error", .line = diag.line, .col = diag.column, .message = diag.message });
+            try report.add(.{ .severity = .@"error", .file = diag.file, .line = diag.line, .col = diag.column, .message = diag.message });
             if (names.items.len == 0) break;
             continue;
         };

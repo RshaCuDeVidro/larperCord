@@ -10,6 +10,8 @@
   var html = document.documentElement;
   var lang = html.dataset.lang === "pt" ? "pt" : "en";
   var DATA = JSON.parse(document.getElementById("tb-data").textContent);
+  // `extends` acha a base entre os temas embutidos que a página leva.
+  TB.setBases(function (n) { return TB.own(DATA.themes, n) ? DATA.themes[n].src : null; });
   var P = window.LC_TB_PREVIEW(TB, lang);
   var W = P.W, H = P.H;
   var pt = lang === "pt";

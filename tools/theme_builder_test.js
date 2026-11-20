@@ -37,6 +37,23 @@ function test(name, fn) {
 
 const sources = {};
 for (const t of THEMES) sources[t] = fs.readFileSync(path.join(ROOT, "themes", t + ".kdl"), "utf8");
+// As bases de `extends`: os temas embutidos (como na página) e alguns de mentira.
+const FAKES = {
+  "ciclo-a": 'extends "ciclo-b"', "ciclo-b": 'extends "ciclo-a"',
+  "fundo-1": 'extends "fundo-2"', "fundo-2": 'extends "fundo-3"', "fundo-3": 'extends "fundo-4"', "fundo-4": 'extends "fundo-5"', "fundo-5": "layout { messages }",
+  "base-x": [
+    'theme "base-x" author="eu" preview=glass',
+    'palette "#101010" "#ff0000"',
+    'colors { accent "#112233"; text "#eeeeee" }',
+    'colors mode=light { link "#010203" }',
+    'styles { style "card" bg="@accent" radius=12 border="@text" }',
+    'styles mode=light { style "card" grain="alpha(@text, 0.05)" }',
+    'options { option "brilho" label="Brilho base" default=#false; option "extra" label="Extra" }',
+    'vars { gap 7; tom "#ff0000" }',
+    'layout { column gap=$gap style=card { messages; composer } }',
+  ].join("\n"),
+};
+TB.setBases((n) => (TB.own(FAKES, n) ? FAKES[n] : TB.own(sources, n) ? sources[n] : null));
 const structureOf = {};
 for (const t of THEMES) structureOf[t] = TB.fromSource(sources[t], { base: t, name: t }).structure;
 const builtinStructure = (n) => structureOf[n];
@@ -442,6 +459,10 @@ tasks.push(test("every error has English and Portuguese text", () => {
     ["css-slow", () => { let clock = 0; TB.importDiscordCss(":root{" + "--v: #fff;".repeat(5000) + "}", { now: () => (clock += 100), budget: 1000 }); }],
     ["community-missing", () => TB.communityFromSource("// " + "x".repeat(TB.COMMUNITY_MAX))],
     ["layout-big", () => TB.expand(Object.assign(TB.compact(TB.fromSource(sources.zen)), { s: "layout {\n" + "  label\n".repeat(TB.LAYOUT_NODES) + "}" }), builtinStructure)],
+    ["extends-base", () => L('extends "nada"\nlayout { }'), "nada"], ["extends-one", () => L('extends "classico"\nextends "zen"')],
+    ["extends-name", () => L("extends 1")], ["extends-cycle", () => L('extends "ciclo-a"')], ["extends-deep", () => L('extends "fundo-1"')],
+    ["var-name", () => L('vars { "9x" 1 }\nlayout { }'), "9x"], ["var-value", () => L("vars { a }\nlayout { }"), "a"],
+    ["var-option", () => L('options { option "x" }\nvars { x 1 }\nlayout { }'), "x"], ["var-loop", () => L('vars { a "$b"; b "$a" }\nlayout { }')],
   ];
   const seen = new Set();
   for (const [code, fn, arg] of cases) {
@@ -982,6 +1003,18 @@ function submission(edit) {
   if (edit) edit(state);
   return state;
 }
+// Variáveis valem na galeria (o gerador troca como o app); `extends` não: o criador baixa o tema com a base dentro.
+tasks.push(test("community gallery takes vars and turns extends away with a way out", () => {
+  const kdl = TB.toKdl(submission()).replace(/^colors mode=dark \{\n    bg\s+"#[0-9a-f]+"/m, (m) => m.replace(/"#[0-9a-f]+"$/, '"$fundo"'));
+  const withVars = 'vars { fundo "#1d1a2b" }\n' + kdl;
+  assert.ok(withVars.includes('"$fundo"'), "the test uses the variable");
+  checkLoads(withVars, "vars");
+  const ok = communityCheck({ "neon-dusk.kdl": withVars });
+  assert.strictEqual(ok.code, 0, ok.out);
+  const ext = communityCheck({ "neon-dusk.kdl": kdl + '\nextends "classico"\n' });
+  assert.strictEqual(ext.code, 1, ext.out);
+  assert.ok(/extends isn't accepted in the gallery: open the theme in the theme builder/.test(ext.out), ext.out);
+}));
 tasks.push(test("community gallery accepts a theme exported by the builder", () => {
   const state = submission();
   assert.deepStrictEqual(TB.communityCheck(state, THEMES).filter((c) => !c.ok), []);
@@ -1294,6 +1327,55 @@ tasks.push(test("the tweaks come from the app's schema and match the ones the pa
     assert.deepStrictEqual(blobOf(page, "tb-schema").data, schema, file);
     assert.ok(page.indexOf('id="tb-schema"') < page.indexOf("theme-builder-core.js"), file + " schema before the core");
   }
+}));
+// `extends` e `vars` (src/theme/heranca.zig): a página abre um tema que estende um embutido como um
+// arquivo só, com as mesmas regras do app, e o que ela exporta carrega sem a base.
+tasks.push(test("extends and vars: the builder joins the base like the app and exports one file", () => {
+  // Variáveis: número, cor, dentro de uma expressão, uma usando outra, e cada modo com as dele.
+  const v = TB.loadTheme('vars { g 8; c "#ff0000"; meio "mix($c, #0000ff, 0.5)" }\nvars mode=light { c "#00ff00" }\ncolors { accent "$c"; link "$meio" }\nlayout { row gap=$g { messages } }', { mode: "dark" });
+  assert.deepStrictEqual(v.tokens.accent, [1, 0, 0, 1]);
+  assert.ok(Math.abs(v.tokens.link[0] - 0.5) < 0.01 && Math.abs(v.tokens.link[2] - 0.5) < 0.01);
+  assert.strictEqual(TB.num(v.layout.kids[0], "gap"), 8);
+  const vl = TB.loadTheme('vars { c "#ff0000" }\nvars mode=light { c "#00ff00" }\ncolors { accent "$c" }\nlayout { messages }', { mode: "light" });
+  assert.deepStrictEqual(vl.tokens.accent, [0, 1, 0, 1]);
+  // A opção continua com o `$` dela.
+  const o = TB.loadTheme('options { option "brilho" default=#false }\nvars { a 1 }\nstyles { style "s" sheen="$brilho" }\nlayout { messages }', { mode: "dark" });
+  assert.strictEqual(TB.str(o.styles.s, "sheen"), "$brilho");
+
+  // Um embutido como base: o layout dele, a cor do tema, e o arquivo exportado sem `extends`.
+  const rosa = TB.fromSource('theme "rosa"\nextends "classico"\nvars { d "#e0218a" }\ncolors { accent "$d" }', { name: "rosa" });
+  assert.strictEqual(rosa.colors.dark.accent, "#e0218a");
+  assert.strictEqual(rosa.colors.light.accent, "#e0218a");
+  assert.ok(rosa.structure.includes("layout") && !/^extends/m.test(rosa.structure));
+  const kdl = TB.toKdl(rosa);
+  checkLoads(kdl, "rosa");
+  assert.deepStrictEqual(TB.outline(rosa.structure).map((x) => x.name), TB.outline(structureOf.classico).map((x) => x.name));
+
+  // Cada regra, com uma base de mentira.
+  const child = [
+    'extends "base-x"', 'theme "filho"', 'colors { accent "#abcdef" }', 'styles { style "card" radius=4 }',
+    'options { option "brilho" label="Brilho filho" default=#true }', 'vars { gap 11 }',
+  ].join("\n");
+  for (const mode of ["dark", "light"]) {
+    const th = TB.loadTheme(child, { mode });
+    assert.strictEqual(th.name, "filho");
+    assert.strictEqual(th.author, "");
+    assert.strictEqual(th.preview, "glass");
+    assert.strictEqual(TB.toHex(th.tokens.accent), "#abcdef");
+    assert.strictEqual(TB.toHex(th.tokens.text), "#eeeeee");
+    const card = th.styles.card;
+    assert.strictEqual(TB.num(card, "radius"), 4);
+    // Como no app: no claro, o `card` da base é o do bloco `mode=light` (que troca o de cima inteiro),
+    // e o do tema junta as propriedades dele às desse.
+    assert.strictEqual(TB.str(card, "bg"), mode === "dark" ? "@accent" : null, mode + " bg");
+    assert.strictEqual(TB.str(card, "grain") !== null, mode === "light", mode + " grain");
+    assert.deepStrictEqual(th.options.map((x) => x.name + ":" + x.label), ["brilho:Brilho filho", "extra:Extra"]);
+    assert.strictEqual(TB.num(th.layout.kids[0], "gap"), 11);
+    if (mode === "light") assert.strictEqual(TB.toHex(th.tokens.link), "#010203");
+  }
+  const own = TB.loadTheme('extends "base-x"\npalette "#000000" "#00ffff"\nlayout { row { messages } }', { mode: "dark" });
+  assert.strictEqual(own.layout.kids[0].name, "row");
+  assert.strictEqual(TB.toHex(own.palette[1]), "#00ffff");
 }));
 // Na página não há `module`: o núcleo lê o esquema do bloco <script type="application/json" id="tb-schema">.
 tasks.push(test("in the page, the core reads the schema from the inline block", () => {

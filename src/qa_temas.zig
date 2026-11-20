@@ -15,6 +15,8 @@ const messages = @import("ui/comp_messages.zig");
 const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
 const reply_preview = @import("core/reply_preview.zig");
+const sys = @import("platform/sys.zig");
+const theme = @import("theme/theme.zig");
 
 fn expect(name: []const u8, f: *const fn (*App) bool) Op {
     return .{ .expect = .{ .name = name, .check = f } };
@@ -297,4 +299,139 @@ pub const ops_reply = [_]Op{
     .{ .click = .{ .dyn = tReplyLine } },
     expect("o clique na prévia leva ao arquivo", jumpedToOriginal),
     .{ .run = backToBottom },
+};
+
+// --- Tema do usuário que estende outro (QA_SUITE=tema-herda) -----------------------------
+// Dois arquivos na pasta de temas do usuário (a do ambiente isolado do QA): `qa-base` estende
+// o classico e põe a cor numa variável; `qa-herdeiro` estende o `qa-base` e troca a variável.
+// O app carrega o herdeiro com o layout do classico, a cor do herdeiro nas cores que a base
+// calcula, e recarrega quando a base muda (o que o vigia da pasta faz ao salvar).
+
+const base_v1 =
+    \\// Base de usuário do QA: o classico com o destaque numa variável.
+    \\theme "qa-base"
+    \\extends "classico"
+    \\vars { destaque "#e0218a" }
+    \\colors { accent "$destaque"; mention "$destaque" }
+    \\
+;
+const base_v2 =
+    \\// A mesma base, agora com um vermelho próprio para o perigo.
+    \\theme "qa-base"
+    \\extends "classico"
+    \\vars { destaque "#e0218a" }
+    \\colors { accent "$destaque"; mention "$destaque"; danger "#ff2020" }
+    \\
+;
+const herdeiro =
+    \\// Herda do qa-base (que herda do classico) e troca só a variável.
+    \\theme "qa-herdeiro" description="Herda do qa-base, que herda do classico."
+    \\extends "qa-base"
+    \\vars { destaque "#1fb26b" }
+    \\colors { link "mix($destaque, white, 0.3)" }
+    \\
+;
+
+var dir_buf: [600]u8 = undefined;
+
+fn userThemes() ?[:0]const u8 {
+    var hb: [512]u8 = undefined;
+    const base = sys.configHome(&hb) orelse return null;
+    return std.fmt.bufPrintSentinel(&dir_buf, "{s}/larpercord/themes", .{base}, 0) catch null;
+}
+
+fn writeTheme(name: []const u8, src: []const u8) void {
+    const dir = userThemes() orelse return;
+    var pb: [700]u8 = undefined;
+    const path = std.fmt.bufPrintSentinel(&pb, "{s}/{s}.kdl", .{ dir, name }, 0) catch return;
+    _ = c.SDL_SaveFile(path.ptr, src.ptr, src.len);
+}
+
+fn removeTheme(name: []const u8) void {
+    const dir = userThemes() orelse return;
+    var pb: [700]u8 = undefined;
+    const path = std.fmt.bufPrintSentinel(&pb, "{s}/{s}.kdl", .{ dir, name }, 0) catch return;
+    _ = c.SDL_RemovePath(path.ptr);
+}
+
+/// A pasta só é vigiada se existia ao abrir: aqui ela entra na lista à mão, como no
+/// próximo início, e a lista é refeita.
+fn setupUserThemes(app: *App) void {
+    const dir = userThemes() orelse return;
+    var hb: [512]u8 = undefined;
+    const cfg = sys.configHome(&hb) orelse return;
+    var pb: [600]u8 = undefined;
+    _ = c.SDL_CreateDirectory((std.fmt.bufPrintSentinel(&pb, "{s}/larpercord", .{cfg}, 0) catch return).ptr);
+    _ = c.SDL_CreateDirectory(dir.ptr);
+    writeTheme("qa-base", base_v1);
+    writeTheme("qa-herdeiro", herdeiro);
+    const known = for (app.themes.dirs.items) |d| {
+        if (std.mem.eql(u8, d, dir)) break true;
+    } else false;
+    if (!known) if (app.themes.gpa.dupeSentinel(u8, dir, 0)) |copy| {
+        app.themes.dirs.append(app.themes.gpa, copy) catch app.themes.gpa.free(copy);
+    } else |_| {};
+    app.themes.scan() catch {};
+}
+
+fn pickHeir(app: *App) void {
+    if (app.themes.indexOf("qa-herdeiro")) |i| app.handle(.{ .set_theme = i });
+}
+
+fn near(got: theme.Rgba, want: u32) bool {
+    const w = theme.Rgba.hex(want);
+    return @abs(got.r - w.r) < 0.01 and @abs(got.g - w.g) < 0.01 and @abs(got.b - w.b) < 0.01;
+}
+
+fn heirLoaded(app: *App) bool {
+    if (!themeIs(app, "qa-herdeiro")) return false;
+    const t = app.themes.theme_();
+    // A variável do herdeiro vale nas cores que a base calcula; o resto é do classico.
+    return near(t.c(.accent), 0x1fb26b) and near(t.c(.mention), 0x1fb26b) and t.has_user_panel and t.has_member_list and
+        t.warnings.len == 0 and app.themes.last_warning == null and std.mem.eql(u8, t.name, "qa-herdeiro");
+}
+
+fn heirDrawn(_: *App) bool {
+    // O layout do classico: servidores, canais, conversa e caixa de texto.
+    return qa.find("composer") != null and qa.find("guild:0") != null;
+}
+
+fn changeBase(app: *App) void {
+    writeTheme("qa-base", base_v2);
+    // O que o vigia da pasta chama quando um .kdl muda.
+    _ = app.themes.reload();
+}
+
+fn heirFollowsBase(app: *App) bool {
+    if (!themeIs(app, "qa-herdeiro")) return false;
+    const t = app.themes.theme_();
+    return near(t.c(.danger), 0xff2020) and near(t.c(.accent), 0x1fb26b);
+}
+
+fn cleanUp(app: *App) void {
+    removeTheme("qa-herdeiro");
+    removeTheme("qa-base");
+    app.themes.scan() catch {};
+    if (app.themes.indexOf("classico")) |i| app.handle(.{ .set_theme = i });
+}
+
+fn backOnClassico(app: *App) bool {
+    return themeIs(app, "classico") and app.themes.indexOf("qa-herdeiro") == null;
+}
+
+pub const ops_heranca = [_]Op{
+    .{ .section = "tema do usuário que estende o classico" },
+    .{ .run = setupUserThemes },
+    .{ .run = pickHeir },
+    .{ .wait = 300 },
+    expect("qa-herdeiro (extends qa-base, que estende o classico) carrega com a variável dele nas cores da base", heirLoaded),
+    expect("e desenha o layout do classico", heirDrawn),
+    .{ .shot = "tema-herdeiro" },
+    .{ .run = changeBase },
+    .{ .wait = 200 },
+    expect("a base mudou: o herdeiro recarrega com a cor nova dela e continua com a dele", heirFollowsBase),
+    .{ .shot = "tema-herdeiro-base-mudou" },
+    .{ .run = cleanUp },
+    .{ .wait = 200 },
+    expect("de volta ao classico, sem os arquivos do teste", backOnClassico),
 };

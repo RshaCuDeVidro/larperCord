@@ -3421,6 +3421,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "lembretes", &ops_lembretes },
     .{ "lembretes-a", &ops_lembretes_a },
     .{ "lembretes-b", &ops_lembretes_b },
+    .{ "tema-herda", &qa_temas.ops_heranca },
 };
 
 /// O nome de cada bateria (tools/qa.sh e quem quiser listar: --qa-list).

@@ -1389,6 +1389,68 @@ def check_theme_nodes(nodes):
             walk(nd)
 
 
+VAR_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+VAR_REF = re.compile(r"\$\$|\$([A-Za-z_][A-Za-z0-9_-]*)")
+
+
+def apply_vars(nodes, mode):
+    """Os nós com as variáveis de `vars` trocadas, no modo `mode` (como src/theme/heranca.zig):
+    `$nome` sozinho fica com o tipo da variável; dentro de um texto, vira o texto dela."""
+    if not any(nd.name == "vars" for nd in nodes):
+        return nodes
+    options = {"modo-claro", "modo-escuro"} | {o.args[0] for nd in nodes if nd.name == "options" for o in nd.kids if o.args and isinstance(o.args[0], str)}
+    defs = {}
+    for nd in nodes:
+        if nd.name != "vars" or nd.props.get("mode", mode) != mode:
+            continue
+        for ch in nd.kids:
+            if not VAR_NAME.fullmatch(ch.name):
+                raise ThemeProblem(f"'{ch.name}' isn't a valid variable name (letters, digits, - and _)", ch.line, ch.col)
+            if not ch.args or ch.args[0] is None:
+                raise ThemeProblem(f"variable '{ch.name}' needs a value", ch.line, ch.col)
+            if ch.name in options:
+                raise ThemeProblem(f"variable '{ch.name}' has the same name as an option ($ means both)", ch.line, ch.col)
+            defs[ch.name] = [ch.args[0], False, ch]
+
+    def text(v):
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return str(int(v)) if float(v).is_integer() else repr(float(v))
+        return v
+
+    def resolve(name, stack):
+        d = defs[name]
+        if d[1]:
+            return d[0]
+        if name in stack:
+            raise ThemeProblem("variables use each other in a loop: " + " → ".join("$" + x for x in stack + [name]), d[2].line, d[2].col)
+        d[0], d[1] = sub(d[0], stack + [name]), True
+        return d[0]
+
+    def sub(v, stack):
+        if not isinstance(v, str) or "$" not in v:
+            return v
+        whole = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_-]*)", v)
+        if whole:
+            return resolve(whole.group(1), stack) if whole.group(1) in defs else v
+        return VAR_REF.sub(lambda m: text(resolve(m.group(1), stack)) if m.group(1) in defs else m.group(0), v)
+
+    for name in list(defs):
+        resolve(name, [])
+
+    def node(nd):
+        if nd.name in ("vars", "extends", "theme-api"):
+            return nd
+        out = KNode(nd.line, nd.col, nd.start)
+        out.name, out.end = nd.name, nd.end
+        out.args = [sub(a, []) for a in nd.args]
+        out.props = {k: sub(v, []) for k, v in nd.props.items()}
+        out.kids = [node(k) for k in nd.kids]
+        return out
+    return [node(nd) for nd in nodes]
+
+
 def theme_modes(nodes):
     """As cores resolvidas nos dois modos, com as opções no padrão (como `load_themes`)."""
     top = {n.name: n for n in nodes}
@@ -1401,7 +1463,7 @@ def theme_modes(nodes):
     out = {}
     for mode in ("dark", "light"):
         toks = default_tokens(pal, mode)
-        for nd in nodes:
+        for nd in apply_vars(nodes, mode):
             if nd.name != "colors" or nd.props.get("mode", mode) != mode:
                 continue
             if "when" in nd.props and nd.props["when"] not in on:
@@ -1451,8 +1513,16 @@ def check_community_file(path, builtins, src_bytes):
         raise ThemeProblem("the file starts with a byte order mark (BOM), which the app reads as part of the first line: save it as UTF-8 without BOM", 1, 1)
     if "\x00" in src:
         raise ThemeProblem("the file has a NUL byte")
-    nodes = kdl_strict(src)
-    check_theme_nodes(nodes)
+    raw = kdl_strict(src)
+    # A galeria só leva temas inteiros: o criador de temas abre um tema com `extends` e
+    # baixa de novo com a base dentro do arquivo.
+    for nd in raw:
+        if nd.name == "extends":
+            raise ThemeProblem("extends isn't accepted in the gallery: open the theme in the theme builder and download it again "
+                               "(the builder puts the base inside the file)", nd.line, nd.col)
+    for mode in ("dark", "light"):
+        check_theme_nodes(apply_vars(raw, mode))
+    nodes = apply_vars(raw, "dark")
 
     heads = [nd for nd in nodes if nd.name == "theme"]
     if not heads:
@@ -1498,7 +1568,7 @@ def check_community_file(path, builtins, src_bytes):
         raise ThemeProblem(f"preview= must be one of: {', '.join(PREVIEWS)}", th.line, th.col)
 
     try:
-        modes = theme_modes(nodes)
+        modes = theme_modes(raw)
     except (ValueError, KeyError, IndexError, TypeError):
         raise ThemeProblem("couldn't work out the theme's colors (palette or color blocks)")
     lay = layout_key(nodes)

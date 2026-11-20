@@ -72,6 +72,8 @@ layout {
 | `window transparent=#true` | fundo da janela transparente. No Linux, o seu compositor (Hyprland, KDE…) pode desfocar o que está atrás. No Windows o app não pede desfoque ao sistema, então não tem blur |
 | `styles { style "nome" … }` | estilos nomeados para usar com `style=nome` |
 | `layout { … }` | a árvore da interface (um único filho na raiz) |
+| `extends "classico"` | parte de outro tema e muda só o que for diferente ([detalhes](#partindo-de-outro-tema)) |
+| `vars { nome valor … }` | valores usados como `$nome` ([detalhes](#variáveis)) |
 
 `palette "wal"` lê as 16 cores do pywal em `~/.cache/wal/colors` (sempre dentro de `$HOME`, mesmo com
 `XDG_CACHE_HOME` definido). No Linux o app também vigia esse arquivo, então o tema acompanha o seu wallpaper. No
@@ -461,6 +463,63 @@ options {
 
 Os testes (`zig build test`) carregam todos os temas embutidos e montam o layout de cada um.
 Para compartilhar um tema seu, mande para a galeria da comunidade (próxima seção).
+
+## Partindo de outro tema
+
+`extends` parte de outro tema e muda só o que for diferente. A base pode ser um tema que vem junto ou outro arquivo
+da sua pasta de temas, pelo nome:
+
+```kdl
+theme "classico-rosa" description="Classico com destaque rosa."
+extends "classico"
+colors { accent "#e0218a" }
+```
+
+Isso é um tema inteiro: o layout, os estilos, as fontes e as outras cores vêm do `classico`. Como os dois arquivos se
+juntam:
+
+| Nó | Regra |
+|---|---|
+| `theme` | nome, descrições, autor e licença são do tema; o `preview` da base fica se o tema não disser outro |
+| `palette`, `roles`, `layout` | os do tema trocam os da base inteiros (se o tema tiver) |
+| `colors` | token por token: os do tema vencem, os outros ficam |
+| `fonts`, `metrics`, `window` | propriedade por propriedade |
+| `styles` | estilo por estilo, e dentro de um estilo propriedade por propriedade: `style "card" radius=4` mantém o fundo e a borda da base |
+| `options` | opção por opção: uma opção com o mesmo nome troca a da base, no mesmo lugar |
+| `vars` | variável por variável (próxima seção) |
+
+`mode=` e `when=` nos blocos da base continuam valendo. Os estilos da base são lidos depois de todos os blocos `colors`,
+então um estilo da base que usa `@accent` segue o destaque que o tema escolher.
+
+Uma base pode estender outra, até 4 níveis. Um tema pode estender um tema com o próprio nome: `classico.kdl` na sua
+pasta com `extends "classico"` parte do que vem junto (um nome que já está na corrente leva ao próximo tema com esse
+nome). Uma base que não existe, ou um laço (`a` estende `b`, que estende `a`), é erro com a linha.
+
+Ao salvar a base, os temas que estendem ela recarregam também, se ela estiver numa pasta que o app vigia (a mesma
+pasta do tema, normalmente).
+
+## Variáveis
+
+`vars` dá nome a valores. Use com `$nome` em qualquer propriedade ou argumento, também dentro de uma expressão de cor:
+
+```kdl
+vars {
+    gap 8
+    card "mix(@surface, @accent, 0.06)"
+}
+styles { style "card" bg="$card" radius=12 }
+layout { row gap=$gap { … } }
+colors { hover "alpha($card, 0.5)" }
+```
+
+Uma variável é um número, um texto ou uma expressão de cor, e pode usar outra. Elas são trocadas quando o tema carrega,
+nunca ao desenhar. `vars mode=light { … }` só vale no modo claro.
+
+O uso principal é um tema base com botões: a base usa `$card` e `$gap`, e um tema que estende ela muda só
+`vars { gap 12 }`, o que muda também os lugares onde a base usa `$gap`.
+
+As variáveis e as [opções do tema](#opções-do-tema) dividem o `$`: `$nome` é a variável quando ela existe, e a opção
+quando não (`$!nome` é sempre uma opção). Uma variável com o nome de uma opção é erro.
 
 ## Conferindo o seu tema
 

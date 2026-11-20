@@ -71,6 +71,8 @@ layout {
 | `window transparent=#true` | transparent window background. On Linux your compositor (Hyprland, KDE…) can blur what's behind it. On Windows the app doesn't ask the system for blur, so there's none |
 | `styles { style "name" … }` | named styles to use with `style=name` |
 | `layout { … }` | the interface tree (a single child at the root) |
+| `extends "classico"` | starts from another theme and changes only what's different ([details](#building-on-another-theme)) |
+| `vars { name value … }` | values used as `$name` ([details](#variables)) |
 
 `palette "wal"` reads pywal's 16 colors from `~/.cache/wal/colors` (always under `$HOME`, even when
 `XDG_CACHE_HOME` is set). On Linux the app also watches that file, so the theme follows your wallpaper. On
@@ -459,6 +461,63 @@ options {
 
 The tests (`zig build test`) load every built-in theme and build the layout of each one.
 To share a theme of your own, send it to the community gallery (next section).
+
+## Building on another theme
+
+`extends` starts from another theme and changes only what's different. The base can be a bundled theme or another
+file in your themes folder, by name:
+
+```kdl
+theme "classico-rosa" description-en="Classico with a pink accent."
+extends "classico"
+colors { accent "#e0218a" }
+```
+
+That's a whole theme: the layout, the styles, the fonts and the other colors come from `classico`. How the two
+files are joined:
+
+| Node | Rule |
+|---|---|
+| `theme` | the name, descriptions, author and license are the child's; the base's `preview` stays if the child doesn't set one |
+| `palette`, `roles`, `layout` | the child's replace the base's entirely (if the child has any) |
+| `colors` | token by token: the child's win, the others stay |
+| `fonts`, `metrics`, `window` | property by property |
+| `styles` | style by style, and inside a style property by property: `style "card" radius=4` keeps the base's background and border |
+| `options` | option by option: an option with the same name replaces the base's, in the same place |
+| `vars` | variable by variable (next section) |
+
+`mode=` and `when=` on the base's blocks keep working. The base's styles are read after every `colors` block, so a
+base style that uses `@accent` follows the accent the child picks.
+
+A base can extend another one, up to 4 levels. A theme can extend a theme with its own name: `classico.kdl` in your
+folder with `extends "classico"` builds on the bundled one (a name that is already in the chain goes to the next theme
+with that name). A base that doesn't exist, or a loop (`a` extends `b`, which extends `a`), is an error with the line.
+
+When you save the base, the themes that extend it reload too, if it's in a folder the app watches (the same
+folder as the theme, usually).
+
+## Variables
+
+`vars` gives names to values. Use them with `$name` in any property or argument, also inside a color expression:
+
+```kdl
+vars {
+    gap 8
+    card "mix(@surface, @accent, 0.06)"
+}
+styles { style "card" bg="$card" radius=12 }
+layout { row gap=$gap { … } }
+colors { hover "alpha($card, 0.5)" }
+```
+
+A variable is a number, a string or a color expression, and can use another one. They're replaced when the theme
+loads, never while drawing. `vars mode=light { … }` only applies in light mode.
+
+The main use is a base theme with knobs: the base uses `$card` and `$gap`, and a theme that extends it changes only
+`vars { gap 12 }`, which also changes the places where the base uses `$gap`.
+
+Variables and [theme options](#theme-options) share `$`: `$name` is a variable when one exists, and the option
+otherwise (`$!name` is always an option). A variable with the same name as an option is an error.
 
 ## Checking your theme
 

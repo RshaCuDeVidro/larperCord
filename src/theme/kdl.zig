@@ -48,6 +48,8 @@ pub const Node = struct {
     line: u32 = 0,
     /// Coluna onde o nó começa (1 = a primeira), para erros com arquivo:linha:coluna.
     col: u32 = 0,
+    /// De qual arquivo veio, num tema com `extends` (0 = o próprio; ver heranca.zig).
+    file: u8 = 0,
 
     pub fn prop(n: *const Node, key: []const u8) ?Value {
         // A última ocorrência vence, como no KDL.
@@ -92,7 +94,12 @@ pub const Diagnostic = struct {
 pub const Error = error{ SyntaxError, OutOfMemory };
 
 pub fn parse(arena: std.mem.Allocator, src: []const u8, diag: ?*Diagnostic) Error![]const Node {
-    var p: Parser = .{ .src = src, .arena = arena, .diag = diag };
+    return parseIn(arena, src, diag, 0);
+}
+
+/// Como `parse`, marcando os nós com o arquivo `file` (a base de um `extends`).
+pub fn parseIn(arena: std.mem.Allocator, src: []const u8, diag: ?*Diagnostic, file: u8) Error![]const Node {
+    var p: Parser = .{ .src = src, .arena = arena, .diag = diag, .file = file };
     const nodes = try p.nodeList(false);
     return nodes;
 }
@@ -108,6 +115,7 @@ const Parser = struct {
     diag: ?*Diagnostic,
     /// Blocos abertos: um arquivo com `a{a{a{…` não estoura a pilha.
     depth: u16 = 0,
+    file: u8 = 0,
 
     fn fail(p: *Parser, msg: []const u8) Error {
         if (p.diag) |d| d.* = .{ .line = p.line, .column = @intCast(p.i - p.line_start + 1), .message = msg };
@@ -261,6 +269,7 @@ const Parser = struct {
             .children = children,
             .line = line,
             .col = col,
+            .file = p.file,
         };
     }
 
