@@ -23,6 +23,7 @@ const voz = @import("../core/voz.zig");
 const dm_requests = @import("dm_requests.zig");
 const devices = @import("device_menu.zig");
 const voice_timer = @import("voice_timer.zig");
+const parts = @import("parts.zig");
 const Id = types.Id;
 
 const Variant = enum { discord, tree, pills };
@@ -217,18 +218,25 @@ fn category(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, ch
     qa.mark(hr, "category:{d}", .{ch.id});
     if (hb.clicked) ctx.act(.{ .toggle_category = ch.id });
     const open = anim.to(anim.id("cat", ch.id), if (collapsed) 0 else 1, 22);
-    const col = if (hb.hovered) ctx.col(.text).mix(ctx.col(.muted), 0.2) else ctx.col(.faint).mix(ctx.col(.muted), 0.4);
+    // A parte `channel.category` do tema (theme/parts.zig), se ele tiver.
+    const pst: parts.States = .{ .hover = hb.hovered };
+    const cl = parts.look(ctx, .channel_category, pst);
+    parts.mark(hr, .channel_category, pst);
+    const radius: f32 = if (variant == .tree) 0 else ctx.th.radius;
+    _ = parts.fill(ctx, dl, cl, hr, radius);
+    parts.border(ctx, dl, cl, hr, radius);
+    const col = parts.colorOr(ctx, cl.color, if (hb.hovered) ctx.col(.text).mix(ctx.col(.muted), 0.2) else ctx.col(.faint).mix(ctx.col(.muted), 0.4));
     switch (variant) {
         .tree => {
             var buf: [96]u8 = undefined;
             const t = std.fmt.bufPrint(&buf, "{s} {s}", .{ if (collapsed) "▸" else "▾", ch.name }) catch ch.name;
-            d.text(dl, fam.get(.bold), ctx.th.font_size - 1, r.x + 10, d.centerY(hr, ctx.th.font_size - 1), col, t);
+            d.text(dl, fam.get(parts.weightOr(cl, .bold)), ctx.th.font_size - 1, r.x + 10, d.centerY(hr, ctx.th.font_size - 1), col, t);
         },
-        .pills => d.text(dl, fam.get(.semibold), 13, r.x + 18, d.centerY(hr, 13), col, ch.name),
+        .pills => d.text(dl, fam.get(parts.weightOr(cl, .semibold)), 13, r.x + 18, d.centerY(hr, 13), col, ch.name),
         .discord => {
             icons.chevron(dl, r.x + 12, hr.y + 12, col.u(), open);
             var up: [64]u8 = undefined;
-            d.text(dl, fam.get(.semibold), 12, r.x + 20, hr.y + 4, col, d.upper(&up, ch.name));
+            d.text(dl, fam.get(parts.weightOr(cl, .semibold)), 12, r.x + 20, hr.y + 4, col, d.upper(&up, ch.name));
         },
     }
     y += hr.h + 2;
@@ -297,28 +305,50 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
     // sem lugar nem para o começo do nome, ele não aparece.
     var tb: [96]u8 = undefined;
     const timer = voice_timer.measure(ctx, cs, &tb, if (variant == .tree) fs - 2 else @max(fs - 3, 10));
+    // As partes do tema (theme/parts.zig): a linha, o sinal de não lida e o selo das menções.
+    const pst: parts.States = .{ .hover = hb.hovered, .selected = selected, .unread = lit, .mention = pings > 0, .muted = muted_ch };
+    const il = parts.look(ctx, .channel_item, pst);
+    const ul = parts.look(ctx, .channel_unread, .{});
+    const bl = parts.look(ctx, .channel_badge, .{});
+    parts.mark(rr, .channel_item, pst);
+    const fade = parts.Fade.begin(dl, il);
+    const row_radius: f32 = switch (variant) {
+        .discord => ctx.th.radius,
+        .pills => rr.h / 2,
+        .tree => 0,
+    };
+    const custom_bg = parts.fill(ctx, dl, il, rr, row_radius);
+    const rad = il.radius orelse row_radius;
+    const name_ink = parts.colorOr(ctx, il.color, if (selected and variant != .discord) ctx.col(.accent_text) else name_col);
 
     switch (variant) {
         .discord => {
-            if (k > 0.01) d.rect(dl, rr, ctx.col(.selected).alpha(k), ctx.th.radius);
+            if (!custom_bg and k > 0.01) d.rect(dl, rr, ctx.col(.selected).alpha(k), rad);
+            parts.border(ctx, dl, il, rr, row_radius);
+            parts.bar(ctx, dl, il, rr, false, row_radius);
             const ic = ctx.col(.faint).mix(ctx.col(.muted), if (bright) 0.5 else 0);
             if (locked) icons.lock(dl, rr.x + 18, rr.y + rr.h / 2 - 2, ic.u()) else switch (ch.kind) {
                 .voice => icons.speaker(dl, rr.x + 18, rr.y + rr.h / 2, ic.u()),
                 .forum => (if (ch.media) &icons.media else &icons.forum)(dl, rr.x + 18, rr.y + rr.h / 2, ic.u()),
                 else => d.text(dl, fam.get(.medium), 20, rr.x + 10, rr.y + 3.5, ic, "#"),
             }
-            const nf = if (lit and !selected) fam.get(.semibold) else fam.get(.medium);
+            const nf = fam.get(parts.weightOr(il, if (lit and !selected) .semibold else .medium));
             const name_x = rr.x + 34;
             const name_w = timerBeside(ctx, dl, timer, rr, r, ch.id, name_x, rr.w - 42, rr.right() - 8 - (if (pings > 0) badgeWidth(fam, pings) + 6 else 0), 30);
-            const nw = d.textClipped(dl, nf, fs, name_x, d.centerY(rr, fs), name_col, ch.name, name_w);
+            const nw = d.textClipped(dl, nf, fs, name_x, d.centerY(rr, fs), name_ink, ch.name, name_w);
             if (timer != null) qa.mark(.{ .x = name_x, .y = rr.y + 2, .w = nw, .h = rr.h - 4 }, "vt-name:{d}", .{ch.id});
-            if (lit and !selected)
-                d.rectFlags(dl, .{ .x = r.x, .y = rr.y + 12, .w = 4, .h = 8 }, ctx.col(.text), 4, c.ImDrawFlags_RoundRight);
-            if (pings > 0) badgeAt(ctx, dl, fam, rr.right() - 6, rr.y + rr.h / 2, pings);
+            if (lit and !selected) {
+                const ur: d.Rect = .{ .x = r.x, .y = rr.y + 12, .w = 4, .h = 8 };
+                d.rectFlags(dl, ur, parts.colorOr(ctx, ul.color, ctx.col(.text)), 4, c.ImDrawFlags_RoundRight);
+                parts.mark(ur, .channel_unread, .{});
+            }
+            if (pings > 0) badge(ctx, dl, fam, rr.right() - 6, rr.y + rr.h / 2, pings, bl);
         },
         .pills => {
             const pr = rr;
-            if (k > 0.01) d.rect(dl, pr, if (selected) ctx.col(.accent) else ctx.col(.hover), pr.h / 2);
+            if (!custom_bg and k > 0.01) d.rect(dl, pr, if (selected) ctx.col(.accent) else ctx.col(.hover), rad);
+            parts.border(ctx, dl, il, pr, row_radius);
+            parts.bar(ctx, dl, il, pr, false, row_radius);
             const on = selected;
             const ic_bg = if (on) ctx.col(.accent_text).alpha(0.22) else ctx.col(.elevated);
             d.circle(dl, pr.x + 20, pr.y + pr.h / 2, 13, ic_bg);
@@ -331,33 +361,45 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
                     d.text(dl, fam.get(.bold), 14, pr.x + 20 - hw / 2, d.centerY(pr, 14), ink, "#");
                 },
             }
-            const tc = if (on) ctx.col(.accent_text) else name_col;
             const ind: f32 = if (pings > 0) badgeWidth(fam, pings) + 4 else if (lit and !on) 14 else 0;
             const name_w = timerBeside(ctx, dl, timer, pr, r, ch.id, pr.x + 42, pr.w - 60, pr.right() - 14 - ind, 30);
-            const nw = d.textClipped(dl, fam.get(if (lit or on) .semibold else .medium), fs - 1, pr.x + 42, d.centerY(pr, fs - 1), tc, ch.name, name_w);
+            const nw = d.textClipped(dl, fam.get(parts.weightOr(il, if (lit or on) .semibold else .medium)), fs - 1, pr.x + 42, d.centerY(pr, fs - 1), name_ink, ch.name, name_w);
             if (timer != null) qa.mark(.{ .x = pr.x + 42, .y = pr.y + 2, .w = nw, .h = pr.h - 4 }, "vt-name:{d}", .{ch.id});
             if (pings > 0) {
-                badgeAt(ctx, dl, fam, pr.right() - 8, pr.y + pr.h / 2, pings);
-            } else if (lit and !on) d.circle(dl, pr.right() - 14, pr.y + pr.h / 2, 4, ctx.col(.accent));
+                badge(ctx, dl, fam, pr.right() - 8, pr.y + pr.h / 2, pings, bl);
+            } else if (lit and !on) {
+                d.circle(dl, pr.right() - 14, pr.y + pr.h / 2, 4, parts.colorOr(ctx, ul.color, ctx.col(.accent)));
+                parts.mark(.{ .x = pr.right() - 18, .y = pr.y + pr.h / 2 - 4, .w = 8, .h = 8 }, .channel_unread, .{});
+            }
         },
         .tree => {
-            if (selected) d.rect(dl, rr, ctx.col(.accent), 0) else if (hb.hovered) d.rect(dl, rr, ctx.col(.hover), 0);
+            if (!custom_bg) {
+                if (selected) d.rect(dl, rr, ctx.col(.accent), rad) else if (hb.hovered) d.rect(dl, rr, ctx.col(.hover), rad);
+            }
+            parts.border(ctx, dl, il, rr, row_radius);
+            parts.bar(ctx, dl, il, rr, false, row_radius);
             var buf: [96]u8 = undefined;
             const branch = if (last) "└" else "├";
             const sigil = if (locked) "×" else if (ch.kind == .voice) "♪" else if (ch.kind == .forum) "≡" else "#";
             const t = std.fmt.bufPrint(&buf, "{s} {s} {s}", .{ branch, sigil, ch.name }) catch ch.name;
-            const tc = if (selected) ctx.col(.accent_text) else name_col;
             var pb: [12]u8 = undefined;
             const pt = std.fmt.bufPrint(&pb, "({d})", .{pings}) catch "";
             const ind: f32 = if (pings > 0) d.width(fam.get(.bold), fs - 1, pt) + 6 else if (lit and !selected) 16 else 0;
             const name_w = timerBeside(ctx, dl, timer, rr, r, ch.id, rr.x + 4, rr.w - 24, rr.right() - 6 - ind, 56);
-            const nw = d.textClipped(dl, fam.get(if (lit or selected) .bold else .regular), fs - 1, rr.x + 4, d.centerY(rr, fs - 1), tc, t, name_w);
+            const nw = d.textClipped(dl, fam.get(parts.weightOr(il, if (lit or selected) .bold else .regular)), fs - 1, rr.x + 4, d.centerY(rr, fs - 1), name_ink, t, name_w);
             if (timer != null) qa.mark(.{ .x = rr.x + 4, .y = rr.y + 2, .w = nw, .h = rr.h - 4 }, "vt-name:{d}", .{ch.id});
             if (pings > 0) {
-                d.text(dl, fam.get(.bold), fs - 1, rr.right() - 6 - d.width(fam.get(.bold), fs - 1, pt), d.centerY(rr, fs - 1), ctx.col(.danger), pt);
-            } else if (lit and !selected) d.text(dl, fam.get(.bold), fs - 1, rr.right() - 14, d.centerY(rr, fs - 1), ctx.col(.accent), "●");
+                // Sem fundo no estilo texto: a contagem vai na cor do selo.
+                const pw = d.width(fam.get(.bold), fs - 1, pt);
+                d.text(dl, fam.get(.bold), fs - 1, rr.right() - 6 - pw, d.centerY(rr, fs - 1), parts.colorOr(ctx, bl.bg, ctx.col(.danger)), pt);
+                parts.mark(.{ .x = rr.right() - 6 - pw, .y = rr.y, .w = pw, .h = rr.h }, .channel_badge, .{});
+            } else if (lit and !selected) {
+                d.text(dl, fam.get(.bold), fs - 1, rr.right() - 14, d.centerY(rr, fs - 1), parts.colorOr(ctx, ul.color, ctx.col(.accent)), "●");
+                parts.mark(.{ .x = rr.right() - 14, .y = rr.y, .w = 10, .h = rr.h }, .channel_unread, .{});
+            }
         },
     }
+    fade.end();
 
     var y2 = y + row_h;
     if (ch.kind == .voice) {
@@ -374,7 +416,13 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
             if (speaking) qa.mark(vr, "voice-speaking:{d}", .{uid});
             if (vf.muted()) qa.mark(vr, "voice-flagged:{d}", .{uid});
             if (voiceFlagsTip(vf)) |vt| d.tip(ctx, vr, vt, vh.hovered);
-            if (vh.hovered and variant != .tree) d.rect(dl, vr, ctx.col(.hover), ctx.th.radius);
+            // A parte `channel.voice-member` do tema (theme/parts.zig), se ele tiver.
+            const vst: parts.States = .{ .hover = vh.hovered, .speaking = speaking, .self = uid == ctx.store.me };
+            const vl = parts.look(ctx, .channel_voice_member, vst);
+            parts.mark(vr, .channel_voice_member, vst);
+            const v_radius: f32 = if (variant == .tree) 0 else ctx.th.radius;
+            if (!parts.fill(ctx, dl, vl, vr, v_radius) and vh.hovered and variant != .tree) d.rect(dl, vr, ctx.col(.hover), vl.radius orelse v_radius);
+            parts.border(ctx, dl, vl, vr, v_radius);
             // Segurar e arrastar move a pessoa de call (com "Mover membros"); só clicar abre o perfil.
             if (vh.hovered and c.ImGui_IsMouseClicked(0) and popup.movable(ctx, uid) != null) arrastar.press(ctx, uid, ch.guild, ch.id);
             if (vh.clicked and !arrastar.engoleClique()) ctx.popup(.{ .profile = .{ .user = uid, .x = vr.right() + 8, .y = vr.y } });
@@ -383,7 +431,7 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
                 .tree => {
                     var buf: [80]u8 = undefined;
                     const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", name, w.botSuffix(u), voiceFlagsTty(vf) }) catch name;
-                    d.text(dl, fam.get(.regular), fs - 2, rr.x + 4, y2 + 2, if (speaking) ctx.col(.online) else ctx.col(.muted), t);
+                    d.text(dl, fam.get(parts.weightOr(vl, .regular)), fs - 2, rr.x + 4, y2 + 2, parts.colorOr(ctx, vl.color, if (speaking) ctx.col(.online) else ctx.col(.muted)), t);
                     w.markName(vr, "voice", uid, name);
                     y2 += 20;
                 },
@@ -393,7 +441,7 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
                     if (speaking) c.ImDrawList_AddCircleEx(dl, d.v(ax, acy), 12.5, ctx.col(.online).u(), 0, 2, 0);
                     w.avatarIn(ctx, dl, ch.guild, ax, acy, 21, uid, .circle, null, 1);
                     const icons_w = voiceFlagIcons(ctx, dl, vf, vr.right() - 6, acy);
-                    const vn = d.textClipped(dl, fam.get(.medium), 14, ax + 18, acy - 9, if (speaking) ctx.col(.text) else ctx.col(.muted), name, vr.right() - (ax + 18) - icons_w - 6 - w.botTagSpace(ctx, u, false));
+                    const vn = d.textClipped(dl, fam.get(parts.weightOr(vl, .medium)), 14, ax + 18, acy - 9, parts.colorOr(ctx, vl.color, if (speaking) ctx.col(.text) else ctx.col(.muted)), name, vr.right() - (ax + 18) - icons_w - 6 - w.botTagSpace(ctx, u, false));
                     w.markName(vr, "voice", uid, name);
                     _ = w.botTag(ctx, dl, ax + 18 + vn, acy, u, false, 1);
                     y2 += 28;
@@ -1008,10 +1056,20 @@ pub fn groupIcon(ctx: *d.Ctx, dl: *c.ImDrawList, ch: *const types.Channel, cx: f
 }
 
 pub fn badgeAt(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, right: f32, cy: f32, count: u16) void {
+    badgeIn(dl, fam, right, cy, count, ctx.col(.danger), d.Rgba.white);
+}
+
+/// O selo de uma linha da lista de canais, nas cores da parte `channel.badge` do tema.
+fn badge(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, right: f32, cy: f32, count: u16, bl: *const parts.Look) void {
+    badgeIn(dl, fam, right, cy, count, parts.colorOr(ctx, bl.bg, ctx.col(.danger)), parts.colorOr(ctx, bl.color, d.Rgba.white));
+    parts.mark(.{ .x = right - badgeWidth(fam, count), .y = cy - 9, .w = badgeWidth(fam, count), .h = 18 }, .channel_badge, .{});
+}
+
+fn badgeIn(dl: *c.ImDrawList, fam: *d.Family, right: f32, cy: f32, count: u16, bg: d.Rgba, ink: d.Rgba) void {
     var buf: [8]u8 = undefined;
     const t = std.fmt.bufPrint(&buf, "{d}", .{count}) catch "";
     const tw = d.width(fam.get(.bold), 11, t);
     const br: d.Rect = .{ .x = right - tw - 10, .y = cy - 9, .w = tw + 10, .h = 18 };
-    d.rect(dl, br, ctx.col(.danger), 9);
-    d.text(dl, fam.get(.bold), 11, br.x + 5, d.centerY(br, 11), d.Rgba.white, t);
+    d.rect(dl, br, bg, 9);
+    d.text(dl, fam.get(.bold), 11, br.x + 5, d.centerY(br, 11), ink, t);
 }

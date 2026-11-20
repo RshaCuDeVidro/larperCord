@@ -12,6 +12,8 @@ Closed and never opened, it costs nothing: no memory and no extra work per frame
 
 - **Elements**: the current frame as a tree. First come the theme's layout pieces (`row`, `column`, each component), and inside each piece what it drew: boxes, text, images and clickable areas. Hover a row and the element lights up on screen. Pick a piece and you see:
   - the file and line of the `.kdl` node that draws it, with all its properties;
+  - the theme part it belongs to, with its states right now (`channel.item:hover:selected`), the name a theme's
+    `parts` block uses ([Parts and states](../themes/README.md#parts-and-states));
   - each color with its theme name (`accent`, `muted`, `sidebar 50%`…) and its hex;
   - the font, size and contrast of a text against the background under it (WCAG AA/AAA);
   - the Dear ImGui id, label and status of a clickable item, and the QA mark name in builds with the QA robot;

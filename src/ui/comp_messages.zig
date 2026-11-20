@@ -45,6 +45,8 @@ const reactors = @import("reactors.zig");
 const destaque = @import("destaque.zig");
 const filtros = @import("../core/filtros.zig");
 const call_grid = @import("call_grid.zig");
+const parts = @import("parts.zig");
+const bidi = @import("bidi.zig");
 const Id = types.Id;
 const StoredMessage = store_mod.StoredMessage;
 
@@ -1091,13 +1093,14 @@ fn ttyReplyLabel(buf: []u8, lb: reply_preview.Label) []const u8 {
 }
 
 /// Linha "↱ @fulano  texto da mensagem original" (clicável).
-fn replyLine(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *const StoredMessage, x: f32, y: f32, max_w: f32, spine_x: ?f32, on_accent: bool) void {
+fn replyLine(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *const StoredMessage, x: f32, y: f32, max_w: f32, spine_x: ?f32, on_accent: bool, pst: parts.States) void {
     var buf: [160]u8 = undefined;
     const fam = g.fam;
     const found = ctx.store.findNear(m.msg.channel, m.msg.reply_to);
     const rr: d.Rect = .{ .x = x, .y = y, .w = max_w, .h = reply_h };
     const hb = d.hitUnder(ctx, @truncate(m.msg.id ^ 0x5151), rr);
     qa.mark(rr, "reply-line:{d}", .{m.msg.id});
+    parts.mark(rr, .message_reply, pst);
     // Não carregada: a lista busca em volta dela.
     if (hb.clicked) ctx.act(.{ .jump_to = m.msg.reply_to });
     // Botão direito em qualquer parte da mensagem abre o menu dela.
@@ -1111,7 +1114,7 @@ fn replyLine(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *const StoredMessage, x:
         c.ImDrawList_PathLineTo(dl, d.v(x - 4, y + 8));
         c.ImDrawList_PathStroke(dl, ctx.col(.faint).alpha(0.6).u(), 2, 0);
     }
-    const muted = if (on_accent) ctx.col(.bubble_self_text).alpha(0.75) else ctx.col(.muted);
+    const muted = parts.colorOr(ctx, parts.look(ctx, .message_reply, pst).color, if (on_accent) ctx.col(.bubble_self_text).alpha(0.75) else ctx.col(.muted));
     if (found) |f| {
         const u = ctx.store.user(f.m.msg.author);
         const gid = guildOf(ctx, f.m.msg.channel);
@@ -1366,6 +1369,30 @@ fn mentionRow(ctx: *const d.Ctx, dl: *c.ImDrawList, variant: Variant, row: d.Rec
     qa.mark(row, "row-mention:{d}", .{id});
 }
 
+/// O fundo da linha da mensagem: o de sempre (o destaque da menção e, com o mouse em cima,
+/// `hover`) ou o da parte `message` do tema, propriedade por propriedade: o fundo, a
+/// faixa (do lado em que o texto começa: à direita numa mensagem em árabe ou hebraico),
+/// a borda e os cantos.
+fn rowBack(ctx: *const d.Ctx, dl: *c.ImDrawList, variant: Variant, row: d.Rect, m: *const StoredMessage, lit: bool, hover: ?d.Rgba, pst: parts.States) void {
+    parts.mark(row, .message, pst);
+    const ml = parts.look(ctx, .message, pst);
+    if (!ml.any) {
+        if (lit) mentionRow(ctx, dl, variant, row, m.msg.id);
+        if (hover) |hc| d.rect(dl, row, hc, 0);
+        return;
+    }
+    const radius = ml.radius orelse 0;
+    if (!parts.fill(ctx, dl, ml, row, 0)) {
+        if (lit) d.rect(dl, row, mentionPaint(ctx, variant).fundo, radius);
+        if (hover) |hc| d.rect(dl, row, hc, radius);
+    }
+    if (lit) qa.mark(row, "row-mention:{d}", .{m.msg.id});
+    if (ml.bar != null) {
+        parts.bar(ctx, dl, ml, row, bidi.baseRtl(m.msg.content), 0);
+    } else if (lit) d.rect(dl, .{ .x = row.x, .y = row.y, .w = 2, .h = row.h }, mentionPaint(ctx, variant).faixa, 0);
+    parts.border(ctx, dl, ml, row, 0);
+}
+
 fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags: u8, r: d.Rect, y_in: f32, under: bool, sel_from: u32, sel_to: u32, probe: ?*rich.Probe) void {
     var y = y_in;
     var buf: [96]u8 = undefined;
@@ -1379,7 +1406,16 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
     const alpha: f32 = if (m.pending) 0.5 else 1;
     const fam = g.fam;
     const self = m.msg.author == ctx.store.me;
+    // Chama a gente (menção direta ou resposta que marca, @everyone/@here que
+    // valem, cargo nosso; core/mencao.zig): faixa à esquerda e fundo claro,
+    // como no Discord. O resultado já vem guardado na mensagem. Palavra de
+    // alerta (Configurações → Alertas e filtros) destaca igual.
+    const lit = m.msg.system == .none and m.msg.id != 0 and
+        (ctx.st.filtros.flags(m) & filtros.bit_alert != 0 or ctx.store.mentionsMeCached(gid, m));
     var o = textOpts(ctx, g, self and g.variant == .bubbles);
+    // As partes do tema (theme/parts.zig) desta mensagem: a nossa, sob o mouse, que chama a gente.
+    const pst: parts.States = .{ .self = self, .hover = under, .mention = lit };
+    o.color = parts.colorOr(ctx, parts.look(ctx, .message_body, pst).color, o.color);
     o.color = o.color.alpha(alpha);
     // Apagada (registro ligado): o texto fica avermelhado.
     if (m.deleted) o.color = o.color.mix(ctx.col(.danger), 0.55);
@@ -1401,12 +1437,10 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
         anim.active = true;
         break :blk @as(f32, @floatFromInt(flash_until - ctx.now_ms)) / 1600.0;
     } else 0;
-    // Chama a gente (menção direta ou resposta que marca, @everyone/@here que
-    // valem, cargo nosso; core/mencao.zig): faixa à esquerda e fundo claro,
-    // como no Discord. O resultado já vem guardado na mensagem. Palavra de
-    // alerta (Configurações → Alertas e filtros) destaca igual.
-    const lit = m.msg.system == .none and m.msg.id != 0 and
-        (ctx.st.filtros.flags(m) & filtros.bit_alert != 0 or ctx.store.mentionsMeCached(gid, m));
+    const ml = parts.look(ctx, .message, pst);
+    const al = parts.look(ctx, .message_author, pst);
+    const tl = parts.look(ctx, .message_time, pst);
+    const faint = parts.colorOr(ctx, tl.color, ctx.col(.faint));
 
     switch (g.variant) {
         .cozy => {
@@ -1415,14 +1449,14 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 y += 46;
             }
             const row: d.Rect = .{ .x = r.x, .y = y, .w = r.w, .h = m.height - (if (day) @as(f32, 46) else 0) };
-            if (lit) mentionRow(ctx, dl, g.variant, row, m.msg.id);
-            if (under) d.rect(dl, row, d.Rgba.black.alpha(0.07), 0);
+            const fade = parts.Fade.begin(dl, ml);
+            rowBack(ctx, dl, g.variant, row, m, lit, if (under) d.Rgba.black.alpha(0.07) else null, pst);
             if (flash > 0) d.rect(dl, row, ctx.col(.accent).alpha(0.25 * flash), 0);
             const tx = r.x + g.content_x;
             if (group) {
                 y += g.spacing;
                 if (reply) {
-                    replyLine(ctx, dl, g, m, tx, y, g.wrap, if (g.avatar > 0) r.x + 16 + g.avatar / 2 else null, false);
+                    replyLine(ctx, dl, g, m, tx, y, g.wrap, if (g.avatar > 0) r.x + 16 + g.avatar / 2 else null, false, pst);
                     y += reply_h;
                 }
                 if (g.avatar > 0) {
@@ -1430,16 +1464,21 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                     w.avatarIn(ctx, dl, gid, ar.x + g.avatar / 2, ar.y + g.avatar / 2, g.avatar, m.msg.author, g.shape, null, alpha);
                     nameHit(ctx, gid, m.msg.author, m.msg.id, ar, 1);
                 }
-                const nw = d.width(fam.get(.semibold), g.size, name);
+                const nf = fam.get(parts.weightOr(al, .semibold));
+                const ncol = parts.colorOr(ctx, al.color, role_col);
+                const nw = d.width(nf, g.size, name);
                 const nr: d.Rect = .{ .x = tx, .y = y, .w = nw, .h = g.line_h };
                 nameHit(ctx, gid, m.msg.author, m.msg.id, nr, 2);
-                d.text(dl, fam.get(.semibold), g.size, tx, y + (g.line_h - g.size * 1.2) / 2, role_col.alpha(alpha), name);
+                d.text(dl, nf, g.size, tx, y + (g.line_h - g.size * 1.2) / 2, ncol.alpha(alpha), name);
                 w.markName(nr, "msg", m.msg.author, name);
-                if (ctx.hovering(nr)) d.line(dl, tx, nr.bottom() - 2, tx + nw, nr.bottom() - 2, role_col, 1);
+                parts.mark(nr, .message_author, pst);
+                if (ctx.hovering(nr)) d.line(dl, tx, nr.bottom() - 2, tx + nw, nr.bottom() - 2, ncol, 1);
                 const tag_w = w.botTag(ctx, dl, tx + nw, y + g.line_h / 2, u, false, alpha);
                 const stp = w.stamp(&buf, m.msg.timestamp, @divTrunc(ctx.now_ms, 1000));
-                d.text(dl, fam.get(.medium), 12, tx + nw + tag_w + 8, y + (g.line_h - 12 * 1.2) / 2 + 1, ctx.col(.faint), stp);
-                stampTip(ctx, under, m, .{ .x = tx + nw + tag_w + 8, .y = y, .w = d.width(fam.get(.medium), 12, stp), .h = g.line_h });
+                d.text(dl, fam.get(.medium), 12, tx + nw + tag_w + 8, y + (g.line_h - 12 * 1.2) / 2 + 1, faint, stp);
+                const sr: d.Rect = .{ .x = tx + nw + tag_w + 8, .y = y, .w = d.width(fam.get(.medium), 12, stp), .h = g.line_h };
+                parts.mark(sr, .message_time, pst);
+                stampTip(ctx, under, m, sr);
                 y += g.line_h;
             } else {
                 y += 1;
@@ -1448,14 +1487,15 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 } else if (under and g.avatar > 0) {
                     const ck = w.clock(&buf, m.msg.timestamp);
                     const sw = d.width(fam.get(.medium), 11, ck);
-                    d.text(dl, fam.get(.medium), 11, r.x + 16 + g.avatar / 2 - sw / 2, y + 5, ctx.col(.faint), ck);
+                    d.text(dl, fam.get(.medium), 11, r.x + 16 + g.avatar / 2 - sw / 2, y + 5, faint, ck);
+                    parts.mark(.{ .x = r.x + 16 + g.avatar / 2 - sw / 2, .y = y + 3, .w = sw, .h = 16 }, .message_time, pst);
                     stampTip(ctx, under, m, .{ .x = r.x + 16 + g.avatar / 2 - sw / 2, .y = y + 3, .w = sw, .h = 16 });
                 }
             }
             const t = rich.layout(dl, ctx.store, ctx.th, m.spans, tx, y, g.wrap, o, ctx.mouse);
             noteRtlText(y, t);
             const er = editedMark(ctx, dl, g, m, tx, y, t);
-            textMarks(m, tx, y, g.wrap, t);
+            textMarks(m, tx, y, g.wrap, t, pst);
             const th = textH(g, m, t);
             att.draw(ctx, dl, m, tx, y + th, g.wrap, alpha);
             var ah = att.blockHeight(m.msg.attachments, g.wrap, m.msg.content.len > 0, m.msg.id);
@@ -1472,6 +1512,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 d.text(dl, fam.get(.regular), 11, ix, row.bottom() - 16, ctx.col(.faint), idt);
                 qa.mark(.{ .x = ix, .y = row.bottom() - 16, .w = iw, .h = 13 }, "devid:{d}", .{m.msg.id});
             }
+            fade.end();
             // A barra fica no alto, à direita. Na mensagem que abre o grupo ela cai na linha do
             // nome; na que continua, em cima da primeira linha do texto. Essa linha alinhada à
             // direita (árabe, hebraico): a barra vai para o começo da coluna, o lado vazio dela,
@@ -1487,8 +1528,8 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             }
             if (group) y += 4;
             const row: d.Rect = .{ .x = r.x, .y = y, .w = r.w, .h = m.height - (y - y_in) };
-            if (lit) mentionRow(ctx, dl, g.variant, row, m.msg.id);
-            if (under) d.rect(dl, row, ctx.col(.hover), 0);
+            const fade = parts.Fade.begin(dl, ml);
+            rowBack(ctx, dl, g.variant, row, m, lit, if (under) ctx.col(.hover) else null, pst);
             if (flash > 0) d.rect(dl, row, ctx.col(.accent).alpha(0.25 * flash), 0);
             if (reply) {
                 const found = ctx.store.findNear(m.msg.channel, m.msg.reply_to);
@@ -1505,10 +1546,11 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 const lr: d.Rect = .{ .x = r.x + g.content_x, .y = y, .w = g.wrap, .h = g.line_h };
                 const hb = d.hitUnder(ctx, @truncate(m.msg.id ^ 0x5151), lr);
                 qa.mark(lr, "reply-line:{d}", .{m.msg.id});
+                parts.mark(lr, .message_reply, pst);
                 if (hb.clicked) ctx.act(.{ .jump_to = m.msg.reply_to });
                 if (hb.right and !ctx.pip) ctx.popup(.{ .menu = .{ .kind = .message, .id = m.msg.id, .x = ctx.mouse.x, .y = ctx.mouse.y } });
                 const rf = fam.get(.regular);
-                const fw = d.textClipped(dl, rf, g.size - 1, lr.x, d.centerY(lr, g.size - 1), if (hb.hovered) ctx.col(.text) else ctx.col(.faint), full, lr.w);
+                const fw = d.textClipped(dl, rf, g.size - 1, lr.x, d.centerY(lr, g.size - 1), if (hb.hovered) ctx.col(.text) else parts.colorOr(ctx, parts.look(ctx, .message_reply, pst).color, ctx.col(.faint)), full, lr.w);
                 if (tag) |lb| {
                     const hw = d.width(rf, g.size - 1, head);
                     qa.mark(.{ .x = lr.x + hw, .y = y, .w = @max(fw - hw, 4), .h = g.line_h }, "reply-kind:{d}:{s}", .{ m.msg.id, @tagName(lb.kind) });
@@ -1519,25 +1561,29 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             const ty = y + (g.line_h - g.size * 1.2) / 2;
             var x = r.x + 10;
             const ts = std.fmt.bufPrint(&buf, "[{s}] ", .{w.clock(buf[64..], m.msg.timestamp)}) catch "";
-            d.text(dl, fam.get(.regular), g.size, x, ty, ctx.col(.faint), ts);
+            d.text(dl, fam.get(.regular), g.size, x, ty, faint, ts);
+            parts.mark(.{ .x = x, .y = y, .w = d.width(fam.get(.regular), g.size, ts), .h = g.line_h }, .message_time, pst);
             stampTip(ctx, under, m, .{ .x = x, .y = y, .w = d.width(fam.get(.regular), g.size, ts), .h = g.line_h });
             x += d.width(fam.get(.regular), g.size, ts);
             const col_w = g.prefix_w - d.width(fam.get(.regular), g.size, "[00:00] ") - d.width(fam.get(.regular), g.size, " │ ");
             // A coluna do nome é justificada à direita: o sinal de bot fica antes dele.
-            const mark_w = w.botMarkSpace(fam.get(.bold), g.size, u);
+            const nf = fam.get(parts.weightOr(al, .bold));
+            const mark_w = w.botMarkSpace(nf, g.size, u);
             const name_col_w = @max(col_w - mark_w, 24);
-            const nw = @min(d.width(fam.get(.bold), g.size, name), name_col_w);
-            const nick_col = if (group) role_col else role_col.alpha(0.35);
+            const nw = @min(d.width(nf, g.size, name), name_col_w);
+            const ncol = parts.colorOr(ctx, al.color, role_col);
+            const nick_col = if (group) ncol else ncol.alpha(0.35);
             nameHit(ctx, gid, m.msg.author, m.msg.id, .{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, 3);
-            _ = d.textClipped(dl, fam.get(.bold), g.size, x + col_w - nw, ty, nick_col.alpha(alpha), name, name_col_w);
+            _ = d.textClipped(dl, nf, g.size, x + col_w - nw, ty, nick_col.alpha(alpha), name, name_col_w);
             w.markName(.{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, "msg", m.msg.author, name);
-            w.botMark(ctx, dl, fam.get(.bold), g.size, x + col_w - nw - mark_w, y, g.line_h, u, (if (group) @as(f32, 1) else 0.35) * alpha);
+            parts.mark(.{ .x = x + col_w - nw, .y = y, .w = nw, .h = g.line_h }, .message_author, pst);
+            w.botMark(ctx, dl, nf, g.size, x + col_w - nw - mark_w, y, g.line_h, u, (if (group) @as(f32, 1) else 0.35) * alpha);
             x += col_w;
             d.text(dl, fam.get(.regular), g.size, x, ty, ctx.col(.border).mix(ctx.col(.faint), 0.6), " │ ");
             const t = rich.layout(dl, ctx.store, ctx.th, m.spans, r.x + g.content_x, y, g.wrap, o, ctx.mouse);
             noteRtlText(y, t);
             _ = editedMark(ctx, dl, g, m, r.x + g.content_x, y, t);
-            textMarks(m, r.x + g.content_x, y, g.wrap, t);
+            textMarks(m, r.x + g.content_x, y, g.wrap, t, pst);
             const th = textH(g, m, t);
             att.draw(ctx, dl, m, r.x + g.content_x, y + th, g.wrap, alpha);
             var ah = att.blockHeight(m.msg.attachments, g.wrap, m.msg.content.len > 0, m.msg.id);
@@ -1546,6 +1592,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             ah += decoBlock(ctx, dl, g, m, r.x + g.content_x, y + th + ah);
             if (m.failed) failedRow(ctx, dl, g, m, r.x + g.content_x, y + th + ah);
             if (m.n_reactions > 0) reactions(ctx, dl, m, r.x + g.content_x, y + th + ah - 2, under, false, 0);
+            fade.end();
             // A barra fica em cima da primeira linha do texto. Linha alinhada à direita (árabe,
             // hebraico): vai para o começo da coluna, o lado vazio dela, e não cobre o começo
             // da frase (nem a frase inteira, se for curta).
@@ -1560,14 +1607,17 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             }
             const left_pad: f32 = 20 + (if (g.avatar > 0) g.avatar + 10 else 0);
             // A linha inteira, por trás do balão (o nosso, à direita, também).
-            if (lit) mentionRow(ctx, dl, g.variant, .{ .x = r.x, .y = y, .w = r.w, .h = m.height - (y - y_in) }, m.msg.id);
+            const fade = parts.Fade.begin(dl, ml);
+            rowBack(ctx, dl, g.variant, .{ .x = r.x, .y = y, .w = r.w, .h = m.height - (y - y_in) }, m, lit, null, pst);
             if (group) {
                 y += g.spacing;
                 if (!self) {
-                    const nw = d.width(fam.get(.semibold), 13, name);
+                    const nf = fam.get(parts.weightOr(al, .semibold));
+                    const nw = d.width(nf, 13, name);
                     nameHit(ctx, gid, m.msg.author, m.msg.id, .{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, 4);
-                    d.text(dl, fam.get(.semibold), 13, r.x + left_pad + 6, y, role_col, name);
+                    d.text(dl, nf, 13, r.x + left_pad + 6, y, parts.colorOr(ctx, al.color, role_col), name);
                     w.markName(.{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, "msg", m.msg.author, name);
+                    parts.mark(.{ .x = r.x + left_pad + 6, .y = y, .w = nw, .h = 16 }, .message_author, pst);
                     _ = w.botTag(ctx, dl, r.x + left_pad + 6 + nw, y + 8, u, false, 1);
                     y += 18;
                 }
@@ -1591,7 +1641,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 d.rect(dl, .{ .x = br.x + 10, .y = ty, .w = 3, .h = reply_h - 2 }, if (self) ctx.col(.bubble_self_text).alpha(0.6) else ctx.col(.accent), 2);
                 var gg = g;
                 gg.avatar = 0;
-                replyLine(ctx, dl, gg, m, br.x + 18, ty, bw - 30, null, self);
+                replyLine(ctx, dl, gg, m, br.x + 18, ty, bw - 30, null, self, pst);
                 ty += reply_h + 4;
             }
             // Parágrafo da direita para a esquerda termina na borda do balão, não na da quebra.
@@ -1600,7 +1650,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
             const t = rich.layout(dl, ctx.store, ctx.th, m.spans, br.x + 14, ty, g.wrap, ob, ctx.mouse);
             noteRtlText(ty, t);
             _ = editedMark(ctx, dl, g, m, br.x + 14, ty, t);
-            textMarks(m, br.x + 14, ty, ob.align_w, t);
+            textMarks(m, br.x + 14, ty, ob.align_w, t, pst);
             att.draw(ctx, dl, m, br.x + 14, ty + textH(g, m, t), g.wrap, alpha);
             const below = textH(g, m, t) + att.blockHeight(m.msg.attachments, g.wrap, m.msg.content.len > 0, m.msg.id);
             var eh = emb.block(ctx, dl, m, br.x + 14, ty + below, g.wrap, alpha, .{ .from = sel_from, .to = sel_to, .probe = probe });
@@ -1612,7 +1662,8 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 const ck = w.clock(&buf, m.msg.timestamp);
                 const sw = d.width(fam.get(.medium), 11, ck);
                 const sx = if (self) br.x - sw - 8 else br.right() + 8;
-                d.text(dl, fam.get(.medium), 11, sx, br.y + br.h / 2 - 7, ctx.col(.faint), ck);
+                d.text(dl, fam.get(.medium), 11, sx, br.y + br.h / 2 - 7, faint, ck);
+                parts.mark(.{ .x = sx, .y = br.y + br.h / 2 - 9, .w = sw, .h = 18 }, .message_time, pst);
                 stampTip(ctx, under, m, .{ .x = sx, .y = br.y + br.h / 2 - 9, .w = sw, .h = 18 });
             }
             // "Entregue ✓✓" embaixo da nossa última mensagem.
@@ -1622,6 +1673,7 @@ fn drawMessage(ctx: *d.Ctx, dl: *c.ImDrawList, g: Geo, m: *StoredMessage, flags:
                 const tick_y = br.bottom() + (if (m.n_reactions > 0) react_h else 0) + 1;
                 d.text(dl, fam.get(.medium), 11, br.right() - tw - 4, tick_y, if (m.failed) ctx.col(.danger) else if (m.pending) ctx.col(.faint) else ctx.col(.accent), tick);
             }
+            fade.end();
             if (show_bar) toolbar(ctx, dl, m, if (self) br.x - 50 else @min(br.right() + 180, r.right() - 12), br.y - 12, false);
         },
     }
@@ -1638,9 +1690,10 @@ fn stampTip(ctx: *d.Ctx, under: bool, m: *const StoredMessage, r: d.Rect) void {
 
 /// Marcações do QA do texto: onde ele ficou na tela ("msgtext") e a coluna dele ("msgcol",
 /// de `x` até a borda direita em `col_w`, onde termina um parágrafo da direita para a esquerda).
-fn textMarks(m: *const StoredMessage, x: f32, y: f32, col_w: f32, t: rich.Measure) void {
+fn textMarks(m: *const StoredMessage, x: f32, y: f32, col_w: f32, t: rich.Measure, pst: parts.States) void {
     if (m.msg.content.len == 0) return;
     const e = t.extent();
+    parts.mark(.{ .x = x + e.x, .y = y, .w = @max(e.w, 4), .h = t.h }, .message_body, pst);
     qa.mark(.{ .x = x + e.x, .y = y, .w = @max(e.w, 4), .h = t.h }, "msgtext:{d}", .{m.msg.id});
     qa.mark(.{ .x = x, .y = y, .w = col_w, .h = t.h }, "msgcol:{d}", .{m.msg.id});
 }
@@ -1841,8 +1894,13 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
 
     var input_x: f32 = r.x + 48;
     var input_r = r.right() - 96;
+    // A caixa pela parte `composer.box` do tema (theme/parts.zig), se ele tiver.
+    const cl = parts.look(ctx, .composer_box, .{});
+    parts.mark(r, .composer_box, .{});
+    qa.mark(r, "composer-box", .{});
     if (prompt) {
-        d.line(dl, r.x, r.y + 0.5, r.right(), r.y + 0.5, ctx.col(.border), 1);
+        _ = parts.fill(ctx, dl, cl, r, 0);
+        if (cl.border != null) parts.border(ctx, dl, cl, r, 0) else d.line(dl, r.x, r.y + 0.5, r.right(), r.y + 0.5, ctx.col(.border), 1);
         const me = ctx.store.user(ctx.store.me);
         var buf: [96]u8 = undefined;
         const p = std.fmt.bufPrint(&buf, "{s}@{s}{s} {s} ", .{ if (me) |x| x.name else i18n.tr("eu", "me"), sigil(&cs.info), cs.info.name, if (st.editing != 0) "✎" else if (st.reply_to != 0) "↩" else "❯" }) catch "❯ ";
@@ -1877,15 +1935,17 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
         d.text(dl, fam.get(.regular), 18, er.x + 4, er.y + 2, d.Rgba.white.alpha(if (eh.hovered) 1 else 0.6), "😊");
         if (eh.clicked) ctx.popup(.{ .emoji = .{ .target = 0, .x = er.right(), .y = r.y } });
     } else {
-        const radius = if (pill) r.h / 2 else ctx.th.radius + 4;
+        const radius = cl.radius orelse if (pill) r.h / 2 else ctx.th.radius + 4;
         const flags: c_int = if (st.reply_to != 0 or st.editing != 0) c.ImDrawFlags_RoundBottom else 0;
-        d.rectFlags(dl, r, ctx.col(.elevated), radius, flags);
+        const box_bg = parts.colorOr(ctx, cl.bg, ctx.col(.elevated));
+        d.rectFlags(dl, r, box_bg, radius, flags);
+        parts.borderFlags(ctx, dl, cl, r, radius, flags);
         const ar: d.Rect = .{ .x = r.x + 10, .y = r.y + r.h / 2 - 14, .w = 28, .h = 28 };
         const ah = d.hit(ctx, 1, ar);
         qa.mark(ar, "composer-attach", .{});
         const ak = anim.to(anim.id("attach", @intFromPtr(n)), if (ah.hovered) 1 else 0, 24);
         d.circle(dl, ar.x + 14, ar.y + 14, 11.5, ctx.col(.muted).mix(ctx.col(.text), ak));
-        icons.plus(dl, ar.x + 14, ar.y + 14, 5.5, ctx.col(.elevated).u());
+        icons.plus(dl, ar.x + 14, ar.y + 14, 5.5, box_bg.u());
         if (ah.clicked) ctx.act(.pick_files);
         d.tip(ctx, ar, i18n.tr("Anexar arquivo", "Attach File"), ah.hovered);
         const ex = r.right() - (if (pill) @as(f32, 84) else 40);
@@ -1977,7 +2037,13 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
     else
         i18n.fmtZ(&hint_buf, "Conversar em {s}{s}", "Message {s}{s}", .{ sigil(&cs.info), cs.info.name });
     // A caixa vazia mostra a dica (a multilinha do ImGui não tem).
-    if (st.input[0] == 0 and hint.len > 0) d.text(dl, fam.get(.regular), fs, input_x + c.ImGui_GetStyle().*.FramePadding.x, input_y + 4, ctx.col(.faint), hint);
+    if (st.input[0] == 0 and hint.len > 0) {
+        const pl = parts.look(ctx, .composer_placeholder, .{});
+        const hf = fam.get(parts.weightOr(pl, .regular));
+        const hx = input_x + c.ImGui_GetStyle().*.FramePadding.x;
+        d.text(dl, hf, fs, hx, input_y + 4, parts.colorOr(ctx, pl.color, ctx.col(.faint)), hint);
+        parts.mark(.{ .x = hx, .y = input_y + 2, .w = d.width(hf, fs, hint), .h = fs * 1.3 }, .composer_placeholder, .{});
+    }
     // Enter envia; Shift+Enter (ou Ctrl+Enter) abre uma linha nova.
     const flags = c.ImGuiInputTextFlags_EnterReturnsTrue | c.ImGuiInputTextFlags_CallbackAlways | c.ImGuiInputTextFlags_CtrlEnterForNewLine | c.ImGuiInputTextFlags_WordWrap;
     // Navegação vim: Esc sai da caixa e o texto fica (o ImGui desfaria).

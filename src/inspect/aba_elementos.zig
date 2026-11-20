@@ -564,6 +564,8 @@ fn details(u: *kit.Ui, f: *const cap.Frame, r: kit.Rect) void {
         if (kit.section(u, x, &y, w + 10, i18n.tr("Tema", "Theme"), &sec_theme)) {
             const si = e.scope;
             themeRows(u, f, si, s, x, &y, w);
+            // O nome para o bloco `parts` do tema (themes/README.md, "Parts and states").
+            if (f.partFor(e.rect)) |pn| kit.kv(u, x, &y, w, i18n.tr("Parte do tema", "Theme part"), pn, kit.pal.value);
         }
     }
     // Visual: cores, letra, contraste.

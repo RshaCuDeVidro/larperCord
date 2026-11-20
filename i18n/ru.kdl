@@ -2137,6 +2137,7 @@
 "Theme" "Тема"
 "Theme color" "Цвет темы"
 "Theme colors — {s} ({s})" "Цвета темы — {s} ({s})"
+"Theme part" "Theme part"
 "theme error" "ошибка темы"
 "theme reloaded: {s}" "тема перезагружена: {s}"
 "theme: {s}" "тема: {s}"

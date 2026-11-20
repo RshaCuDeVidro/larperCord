@@ -252,6 +252,10 @@ pub fn elementJson(w: *std.Io.Writer, f: *const cap.Frame, i: usize) void {
         w.writeAll(",\"qa\":") catch {};
         jstr(w, m);
     }
+    if (f.partFor(e.rect)) |pn| {
+        w.writeAll(",\"part\":") catch {};
+        jstr(w, pn);
+    }
     w.writeAll("}") catch {};
 }
 
@@ -261,6 +265,7 @@ fn elLine(w: *std.Io.Writer, f: *const cap.Frame, i: usize) void {
     const desc = @import("aba_elementos.zig").describe(f, i, &db);
     w.print("#{d}  {d:.0},{d:.0} {d:.0}×{d:.0}  {s}", .{ i, e.rect.x, e.rect.y, e.rect.w, e.rect.h, desc }) catch return;
     if (f.markFor(e.rect)) |m| if (e.kind != .item) w.print("  [qa:{s}]", .{m}) catch {};
+    if (f.partFor(e.rect)) |pn| w.print("  [part:{s}]", .{pn}) catch {};
     w.writeAll("\n") catch {};
 }
 
