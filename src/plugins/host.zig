@@ -18,6 +18,7 @@ const nowMs = @import("../net/fake_gateway.zig").nowMs;
 const fsutil = @import("../platform/fsutil.zig");
 const sys = @import("../platform/sys.zig");
 const platform = @import("../platform/window.zig");
+const plugin_confirm = @import("../ui/plugin_confirm.zig");
 
 pub const Engine = engine.Engine;
 
@@ -54,17 +55,17 @@ pub fn init(app: *App) void {
         .keep_broken_data = &keepBroken,
         .http_start = &http_curl.start,
         .http_stop = &http_curl.stop,
+        .action = &action,
+        .secret_get = &secretGet,
+        .secret_set = &secretSet,
+        .secret_delete = &secretDelete,
     });
     engine.current = &app.plugins;
     runtime.lang_en = &i18n.en;
+    // O código de cada idioma da interface, como o plugin vê (um idioma novo entra sozinho).
     runtime.lang_code = &struct {
         fn f() [*:0]const u8 {
-            return switch (i18n.current()) {
-                .pt => "pt",
-                .en => "en",
-                .ja => "ja",
-                .ru => "ru",
-            };
+            return @tagName(i18n.current());
         }
     }.f;
     // Prints da documentação: sempre iguais, sem os plugins de quem roda.
@@ -220,14 +221,234 @@ fn notify(ctx: *anyopaque, plugin: []const u8, text: []const u8, desktop: bool) 
     app.desktopNotify(title, body);
 }
 
-fn send(ctx: *anyopaque, channel: u64, text: []const u8) bool {
+fn send(ctx: *anyopaque, channel: u64, text: []const u8, reply_to: u64) bool {
     const app: *App = @ptrCast(@alignCast(ctx));
     if (!app.store.ready) return false;
-    const ch = if (channel != 0) channel else app.st.activeChannel() orelse return false;
+    var ch = channel;
+    // Respondendo: no canal da mensagem (e só nele).
+    if (reply_to != 0) {
+        const f = app.store.findAny(reply_to) orelse return false;
+        if (f.m.deleted or f.m.msg.id == 0) return false;
+        if (ch == 0) ch = f.cs.info.id;
+        if (ch != f.cs.info.id) return false;
+    }
+    if (ch == 0) ch = app.st.activeChannel() orelse return false;
     const cs = app.store.channel(ch) orelse return false;
     if (cs.info.kind != .text) return false;
-    app.sendWith(ch, text, 0, false);
+    app.sendWith(ch, text, reply_to, false);
     return true;
+}
+
+// --- Ações dos plugins na conta ------------------------------------------------------
+
+/// A mensagem que a ação pede, se ainda existe e é de verdade (nem apagada, nem de
+/// sistema, nem pendente).
+fn actionTarget(app: *App, id: types.Id) @TypeOf(Store.findAny(undefined, 0)) {
+    const f = app.store.findAny(id) orelse return null;
+    if (f.m.deleted or f.m.pending or f.m.msg.id == 0 or f.m.msg.system != .none) return null;
+    return f;
+}
+
+/// larper.react, edit, delete, pin, thread e attach, depois do gesto conferido
+/// (engine.zig): o mesmo caminho dos botões do app, com as mesmas permissões, os
+/// mesmos limites de envio e a demonstração respondendo igual. Apagar e anexar só
+/// depois de a pessoa confirmar (ui/plugin_confirm.zig).
+fn action(ctx: *anyopaque, _: []const u8, title: []const u8, a: *const engine.Action) ?[]const u8 {
+    const app: *App = @ptrCast(@alignCast(ctx));
+    if (!app.store.ready) return i18n.tr("o app ainda não conectou", "the app isn't connected yet");
+    const gone = i18n.tr("mensagem não encontrada", "message not found");
+    switch (a.*) {
+        .react => |r| {
+            const f = actionTarget(app, r.id) orelse return gone;
+            const emoji = if (runtime.customEmoji(r.emoji)) |ce| types.Reaction.initCustom(ce.name, ce.id, ce.animated) else types.Reaction.init(r.emoji);
+            // A reação do app alterna; a do plugin só põe.
+            for (f.m.reactionSlice()) |*x| if (x.same(&emoji) and x.me) return null;
+            app.handle(.{ .react = .{ .id = r.id, .emoji = emoji } });
+        },
+        .edit => |x| {
+            const f = actionTarget(app, x.id) orelse return gone;
+            if (f.m.msg.author != app.store.me) return i18n.tr("larper.edit: só dá para editar mensagens suas", "larper.edit: only your own messages can be edited");
+            app.editTo(x.id, x.text, &.{});
+        },
+        .delete => |x| {
+            const f = actionTarget(app, x.id) orelse return gone;
+            const own = f.m.msg.author == app.store.me;
+            const mod = app.store.can(f.cs.info.guild, types.perm.manage_messages);
+            if (!own and !mod) return i18n.tr("larper.delete: sem permissão para apagar essa mensagem", "larper.delete: no permission to delete that message");
+            plugin_confirm.ask(&app.st, .{ .delete = x.id }, title);
+        },
+        .pin => |x| {
+            const f = actionTarget(app, x.id) orelse return gone;
+            if (app.store.channelPermissions(&f.cs.info) & types.perm.manage_messages == 0) return i18n.tr("larper.pin: sem permissão para fixar neste canal", "larper.pin: no permission to pin in this channel");
+            if (f.m.msg.pinned == x.add) return null;
+            app.handle(.{ .pin_message = .{ .channel = f.cs.info.id, .id = x.id, .add = x.add } });
+        },
+        .thread => |x| {
+            const f = actionTarget(app, x.id) orelse return gone;
+            if (f.m.msg.thread != 0) return i18n.tr("larper.thread: essa mensagem já tem uma thread", "larper.thread: that message already has a thread");
+            if (!app.store.canCreateThread(&f.cs.info)) return i18n.tr("larper.thread: sem permissão para criar threads neste canal", "larper.thread: no permission to create threads in this channel");
+            const name = app.gpa.dupe(u8, x.name) catch return null;
+            app.handle(.{ .create_thread = .{ .message = x.id, .name = name } });
+        },
+        .attach => |x| {
+            const ch = if (x.channel != 0) x.channel else app.st.activeChannel() orelse return i18n.tr("larper.attach: nenhum canal aberto", "larper.attach: no channel open");
+            const cs = app.store.channel(ch) orelse return i18n.tr("larper.attach: canal não encontrado", "larper.attach: channel not found");
+            if (cs.info.kind != .text) return i18n.tr("larper.attach: esse canal não aceita mensagens", "larper.attach: that channel doesn't take messages");
+            if (cs.info.guild != 0 and app.store.channelPermissions(&cs.info) & types.perm.attach_files == 0) return i18n.tr("larper.attach: sem permissão para anexar arquivos neste canal", "larper.attach: no permission to attach files in this channel");
+            // O arquivo vai para a caixa desse canal: ele abre antes da pergunta.
+            if (app.st.activeChannel() != ch) app.openChannel(ch, false);
+            plugin_confirm.ask(&app.st, .{ .attach = ch }, title);
+        },
+    }
+    return null;
+}
+
+// --- Segredos dos plugins (na thread dos plugins) -------------------------------------
+//
+// No chaveiro do sistema, uma entrada por plugin e chave: no Linux pelo secret-tool
+// (`service larpercord-plugin plugin NOME key CHAVE`, o valor pela entrada padrão,
+// nunca na linha de comando), no Windows no Gerenciador de Credenciais
+// (`larperCord/plugin/NOME/CHAVE`). Sem chaveiro, como o token das contas
+// (net/accounts_store.zig): um arquivo só do dono em plugin-secrets/NOME/CHAVE. O
+// nome e a chave só têm letras, números, ".", "_" e "-" (runtime.safeName), e nenhum
+// valor vai para o registro. No QA e na demonstração do navegador, só na memória.
+
+const secrets_service = "larpercord-plugin";
+
+var qa_secrets: std.StringHashMapUnmanaged([]u8) = .empty;
+var qa_secrets_lock: ?*c.SDL_Mutex = null;
+
+fn memoryOnly(app: *const App) bool {
+    return app.opts.qa or app.opts.shot != null or sys.web;
+}
+
+fn secretSafe(plugin: []const u8, key: []const u8) bool {
+    return runtime.safeName(plugin, 120) and runtime.safeName(key, 64);
+}
+
+fn secretPath(buf: []u8, plugin: []const u8, key: []const u8) ?[:0]const u8 {
+    var nb: [220]u8 = undefined;
+    const rel = std.fmt.bufPrint(&nb, "plugin-secrets/{s}/{s}", .{ plugin, key }) catch return null;
+    return fsutil.configPath(buf, rel);
+}
+
+fn qaKey(buf: []u8, plugin: []const u8, key: []const u8) []const u8 {
+    return std.fmt.bufPrint(buf, "{s}\x00{s}", .{ plugin, key }) catch "";
+}
+
+fn qaLock() *c.SDL_Mutex {
+    if (qa_secrets_lock == null) qa_secrets_lock = c.SDL_CreateMutex();
+    return qa_secrets_lock.?;
+}
+
+fn secretGet(ctx: *anyopaque, gpa: std.mem.Allocator, plugin: []const u8, key: []const u8) ?[]u8 {
+    const app: *App = @ptrCast(@alignCast(ctx));
+    if (!secretSafe(plugin, key)) return null;
+    if (memoryOnly(app)) {
+        var kb: [200]u8 = undefined;
+        c.SDL_LockMutex(qaLock());
+        defer c.SDL_UnlockMutex(qaLock());
+        const v = qa_secrets.get(qaKey(&kb, plugin, key)) orelse return null;
+        return gpa.dupe(u8, v) catch null;
+    }
+    var buf: [2560]u8 = undefined;
+    defer std.crypto.secureZero(u8, &buf);
+    var cbuf: [320]u8 = undefined;
+    if (sys.windows) {
+        const target = std.fmt.bufPrintSentinel(&cbuf, "larperCord/plugin/{s}/{s}", .{ plugin, key }, 0) catch return null;
+        if (sys.credRead(target.ptr, &buf)) |v| if (v.len > 0) return gpa.dupe(u8, v) catch null;
+    } else {
+        const cmd = std.fmt.bufPrintSentinel(&cbuf, "secret-tool lookup service " ++ secrets_service ++ " plugin {s} key {s} 2>/dev/null", .{ plugin, key }, 0) catch return null;
+        if (c.popen(cmd.ptr, "r")) |f| {
+            const n = c.fread(&buf, 1, buf.len, f);
+            _ = c.pclose(f);
+            if (n > 0) return gpa.dupe(u8, buf[0..n]) catch null;
+        }
+    }
+    // Sem chaveiro: o arquivo só do dono.
+    var pbuf: [640]u8 = undefined;
+    const path = secretPath(&pbuf, plugin, key) orelse return null;
+    if (!sys.ownerOnly(path.ptr)) return null;
+    var size: usize = 0;
+    const data = c.SDL_LoadFile(path.ptr, &size) orelse return null;
+    defer {
+        std.crypto.secureZero(u8, @as([*]u8, @ptrCast(data))[0..size]);
+        c.SDL_free(data);
+    }
+    if (size == 0) return null;
+    return gpa.dupe(u8, @as([*]const u8, @ptrCast(data))[0..size]) catch null;
+}
+
+fn secretSet(ctx: *anyopaque, plugin: []const u8, key: []const u8, value: []const u8) bool {
+    const app: *App = @ptrCast(@alignCast(ctx));
+    if (!secretSafe(plugin, key)) return false;
+    if (memoryOnly(app)) {
+        var kb: [200]u8 = undefined;
+        const k = qaKey(&kb, plugin, key);
+        c.SDL_LockMutex(qaLock());
+        defer c.SDL_UnlockMutex(qaLock());
+        const own_v = app.gpa.dupe(u8, value) catch return false;
+        if (qa_secrets.fetchRemove(k)) |old| {
+            app.gpa.free(old.key);
+            app.gpa.free(old.value);
+        }
+        const own_k = app.gpa.dupe(u8, k) catch {
+            app.gpa.free(own_v);
+            return false;
+        };
+        qa_secrets.put(app.gpa, own_k, own_v) catch {
+            app.gpa.free(own_k);
+            app.gpa.free(own_v);
+            return false;
+        };
+        return true;
+    }
+    var cbuf: [360]u8 = undefined;
+    var pbuf: [640]u8 = undefined;
+    const path = secretPath(&pbuf, plugin, key);
+    if (sys.windows) {
+        const target = std.fmt.bufPrintSentinel(&cbuf, "larperCord/plugin/{s}/{s}", .{ plugin, key }, 0) catch return false;
+        if (sys.credWrite(target.ptr, "larperCord plugin", value)) {
+            if (path) |p| _ = c.unlink(p.ptr);
+            return true;
+        }
+    } else {
+        const cmd = std.fmt.bufPrintSentinel(&cbuf, "secret-tool store --label='larperCord ({s})' service " ++ secrets_service ++ " plugin {s} key {s} 2>/dev/null", .{ plugin, plugin, key }, 0) catch return false;
+        if (c.popen(cmd.ptr, "w")) |f| {
+            const wrote = c.fwrite(value.ptr, 1, value.len, f);
+            if (c.pclose(f) == 0 and wrote == value.len) {
+                // Não deixa cópia velha em arquivo.
+                if (path) |p| _ = c.unlink(p.ptr);
+                return true;
+            }
+        }
+    }
+    const p = path orelse return false;
+    return fsutil.writePrivate(p, value);
+}
+
+fn secretDelete(ctx: *anyopaque, plugin: []const u8, key: []const u8) void {
+    const app: *App = @ptrCast(@alignCast(ctx));
+    if (!secretSafe(plugin, key)) return;
+    if (memoryOnly(app)) {
+        var kb: [200]u8 = undefined;
+        c.SDL_LockMutex(qaLock());
+        defer c.SDL_UnlockMutex(qaLock());
+        if (qa_secrets.fetchRemove(qaKey(&kb, plugin, key))) |old| {
+            std.crypto.secureZero(u8, old.value);
+            app.gpa.free(old.key);
+            app.gpa.free(old.value);
+        }
+        return;
+    }
+    var cbuf: [320]u8 = undefined;
+    if (sys.windows) {
+        if (std.fmt.bufPrintSentinel(&cbuf, "larperCord/plugin/{s}/{s}", .{ plugin, key }, 0)) |target| sys.credDelete(target.ptr) else |_| {}
+    } else if (std.fmt.bufPrintSentinel(&cbuf, "secret-tool clear service " ++ secrets_service ++ " plugin {s} key {s} 2>/dev/null", .{ plugin, key }, 0)) |cmd| {
+        if (c.popen(cmd.ptr, "r")) |f| _ = c.pclose(f);
+    } else |_| {}
+    var pbuf: [640]u8 = undefined;
+    if (secretPath(&pbuf, plugin, key)) |p| _ = c.unlink(p.ptr);
 }
 
 fn where(ctx: *anyopaque) engine.Where {

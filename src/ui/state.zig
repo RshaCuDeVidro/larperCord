@@ -72,6 +72,9 @@ pub const Popup = union(enum) {
     tab_set_name: struct { rename: ?usize = null },
     /// "Exportar conversa…" (ui/exportar.zig).
     exportar: struct { channel: Id },
+    /// Um plugin pediu para apagar uma mensagem ou anexar um arquivo: a pessoa confirma
+    /// (o pedido fica em ui/plugin_confirm.zig).
+    plugin_confirm,
 };
 
 /// Seleção de texto entre mensagens: âncora e cabeça (mensagem + byte).

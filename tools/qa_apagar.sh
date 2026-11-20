@@ -60,7 +60,7 @@ echo "$out" | grep -q 'encerramento demorou' && bad "só saiu pelo vigia de 3 s"
 [ ! -e "$R/home/.config/larpercord" ] && ok "o token antigo em ~/.config sumiu" || bad "sobrou o token antigo em ~/.config"
 [ -f "$R/fora/importante.txt" ] && ok "o que os links apontavam continua lá" || bad "apagou o que um link apontava"
 [ -f "$R/config/outro-app/keep.txt" ] && ok "a pasta de outro programa continua lá" || bad "apagou a pasta de outro programa"
-for svc in larpercord-account larpercord; do
+for svc in larpercord-account larpercord larpercord-plugin; do
     echo "$out" | grep -q "no QA o chaveiro fica (secret-tool clear service $svc 2>" && ok "pediria ao chaveiro: secret-tool clear service $svc" || bad "não passou pelo chaveiro ($svc)"
 done
 

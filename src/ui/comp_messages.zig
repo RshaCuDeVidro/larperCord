@@ -1283,12 +1283,12 @@ fn toolbarPlugins(ctx: *d.Ctx, dl: *c.ImDrawList, m: *const StoredMessage, x_in:
             if (entry.toolbar.len == 0 or shown >= max_toolbar_plugins) continue;
             const br: d.Rect = .{ .x = x, .y = y, .w = bw, .h = 32 };
             const hb = d.hit(ctx, @truncate((m.msg.id *% 7) +% shown + 920), br);
-            qa.mark(br, "tb-plugin:{s}", .{entry.en});
+            qa.mark(br, "tb-plugin:{s}", .{entry.label.get("en")});
             if (hb.hovered) d.rect(dl, br, ctx.col(.hover).mix(ctx.col(.text), 0.05), 5);
             const font = ctx.ui.get(.regular);
             const gw = d.width(font, 18, entry.toolbar);
             d.text(dl, font, 18, br.x + bw / 2 - gw / 2, d.centerY(br, 18), d.Rgba.white, entry.toolbar);
-            d.tip(ctx, br, i18n.tr(entry.pt, entry.en), hb.hovered);
+            d.tip(ctx, br, entry.label.get(plugins.uiLang()), hb.hovered);
             if (hb.clicked) @import("popup.zig").pluginEntry(ctx, .message, index, m.msg.id, br.x, br.bottom());
             shown += 1;
             x += bw;

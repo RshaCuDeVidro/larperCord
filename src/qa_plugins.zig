@@ -210,7 +210,10 @@ fn serverMain(_: ?*anyopaque) callconv(.c) c_int {
         srv_count += 1;
         srv_last_len = @min(req.len, srv_last.len);
         @memcpy(srv_last[0..srv_last_len], req[0..srv_last_len]);
-        for ([_][]const u8{ "authorization:", "cookie:", "x-super-properties:", "x-discord", "x-fingerprint:" }) |bad| {
+        // Só /cred e /redir-ok (QA_SUITE=plugins-api) levam credencial de propósito.
+        const with_creds = std.mem.startsWith(u8, req, "GET /cred ") or std.mem.startsWith(u8, req, "GET /redir-ok ");
+        for ([_][]const u8{ "authorization:", "cookie:", "x-super-properties:", "x-discord", "x-fingerprint:", "x-api-key:" }) |bad| {
+            if (with_creds and (std.mem.eql(u8, bad, "authorization:") or std.mem.eql(u8, bad, "x-api-key:"))) continue;
             if (std.ascii.findIgnoreCase(req, bad) != null) srv_leak = true;
         }
         c.SDL_UnlockMutex(srv_lock);
@@ -227,6 +230,9 @@ fn contentLength(head: []const u8) usize {
 
 fn reply(client: sys.Socket, req: []const u8) void {
     var head: [256]u8 = undefined;
+    // Os de QA_SUITE=plugins-api (métodos, cabeçalhos, credenciais, redirecionamentos)
+    // antes: o "/redir" de baixo pegaria os "/redir-…" deles.
+    if (replyApi(client, req)) return;
     if (std.mem.startsWith(u8, req, "GET /get")) {
         sys.tcpSend(client, std.fmt.bufPrint(&head, "HTTP/1.1 200 OK\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{translated_body.len}) catch return);
         sys.tcpSend(client, translated_body);
@@ -250,6 +256,50 @@ fn reply(client: sys.Socket, req: []const u8) void {
     } else {
         sys.tcpSend(client, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     }
+}
+
+/// QA_SUITE=plugins-api: os outros métodos, os cabeçalhos da resposta, a credencial
+/// e os redirecionamentos (para um host aprovado, para fora e em laço).
+fn replyApi(client: sys.Socket, req: []const u8) bool {
+    var head: [512]u8 = undefined;
+    const at = std.mem.indexOf(u8, req, "\r\n\r\n") orelse req.len;
+    const body = if (at + 4 <= req.len) req[at + 4 ..] else "";
+    if (std.mem.startsWith(u8, req, "PUT /method")) {
+        sys.tcpSend(client, std.fmt.bufPrint(&head, "HTTP/1.1 200 OK\r\nETag: \"p1\"\r\nContent-Length: {d}\r\nConnection: close\r\n\r\nPUT:", .{body.len + 4}) catch return true);
+        sys.tcpSend(client, body);
+    } else if (std.mem.startsWith(u8, req, "HEAD /method")) {
+        sys.tcpSend(client, "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\n");
+    } else if (std.mem.startsWith(u8, req, "GET /hdr ")) {
+        sys.tcpSend(client, "HTTP/1.1 200 OK\r\nETag: \"v7\"\r\nX-RateLimit-Remaining: 41\r\nSet-Cookie: sessao=1\r\nServer: qa\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+    } else if (std.mem.startsWith(u8, req, "GET /cred ") or std.mem.startsWith(u8, req, "GET /final ")) {
+        const has = std.ascii.findIgnoreCase(req[0..at], "authorization: bearer tok-123") != null;
+        const reply_body = if (std.mem.startsWith(u8, req, "GET /cred ")) (if (has) "auth:sim" else "auth:nao") else (if (std.ascii.findIgnoreCase(req[0..at], "authorization:") != null) "final:com" else "final:sem");
+        sys.tcpSend(client, std.fmt.bufPrint(&head, "HTTP/1.1 200 OK\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}", .{ reply_body.len, reply_body }) catch return true);
+    } else if (std.mem.startsWith(u8, req, "GET /redir-ok ")) {
+        sys.tcpSend(client, "HTTP/1.1 302 Found\r\nLocation: https://img.cdn.exemplo.com/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    } else if (std.mem.startsWith(u8, req, "GET /redir-out ")) {
+        sys.tcpSend(client, "HTTP/1.1 302 Found\r\nLocation: https://outro.exemplo.org/segredo\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    } else if (std.mem.startsWith(u8, req, "GET /redir-loop ")) {
+        sys.tcpSend(client, "HTTP/1.1 307 Temporary Redirect\r\nLocation: /redir-loop\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    } else return false;
+    return true;
+}
+
+/// Para as outras baterias (qa_plugins_api.zig).
+pub fn startServerPub(app: *App) void {
+    startServer(app);
+}
+pub fn serverCountPub() u32 {
+    return serverCount();
+}
+pub fn serverLastHasPub(needle: []const u8) bool {
+    return serverLastHas(needle);
+}
+pub fn serverLeaked() bool {
+    return srv_leak;
+}
+pub fn removeAllPluginsPub(app: *App) void {
+    removeAllPlugins(app);
 }
 
 /// Respostas guardadas do serviço de verdade, e o 404 dele para o que não existe.
@@ -1217,7 +1267,7 @@ const qa_http_plugin =
     \\larper.command("/qa-big", function() larper.http.get("https://qa.exemplo.com/big", mostra("big")) end)
     \\larper.command("/qa-redir", function() larper.http.get("https://qa.exemplo.com/redir", mostra("redir")) end)
     \\larper.command("/qa-post", function()
-    \\  larper.http.post("https://qa.exemplo.com/echo", { body = "corpo-do-post", headers = { ["Content-Type"] = "text/plain", Cookie = "a=b", Authorization = "c" } }, mostra("post"))
+    \\  larper.http.post("https://qa.exemplo.com/echo", { body = "corpo-do-post", headers = { ["Content-Type"] = "text/plain", Cookie = "a=b", ["X-Super-Properties"] = "c" } }, mostra("post"))
     \\end)
     \\larper.command("/qa-plain", function()
     \\  larper.notify("plain|" .. tostring(pcall(larper.http.get, "http://qa.exemplo.com/x", mostra("x"))))
@@ -1274,8 +1324,9 @@ fn extraLoaded(app: *App) bool {
 fn bigRefused(app: *App) bool {
     return toastHas(app, "big|false|0|too_big|0");
 }
+/// O 302 leva a um endereço fora do aprovado (http://127.0.0.1:1): não segue.
 fn redirectNotFollowed(app: *App) bool {
-    return toastHas(app, "redir|false|302|");
+    return toastHas(app, "redir|false|0|redirect|");
 }
 fn postEchoed(app: *App) bool {
     return toastHas(app, "post|true|200|nil|13") and serverLastHas("corpo-do-post") and !serverLastHas("Cookie") and !serverLastHas("Authorization") and !srv_leak;
@@ -2101,7 +2152,7 @@ pub const ops = [_]Op{
     .{ .text = "/qa-redir" },
     key(c.ImGuiKey_Enter),
     key(c.ImGuiKey_Enter),
-    expectLong("redirecionamento não é seguido", redirectNotFollowed),
+    expectLong("redirecionamento para fora do aprovado não é seguido", redirectNotFollowed),
     click("composer"),
     .{ .text = "/qa-post" },
     key(c.ImGuiKey_Enter),

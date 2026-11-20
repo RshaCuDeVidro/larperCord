@@ -4,9 +4,10 @@
 //! ~/.cache/larpercord, ou as do XDG; no Windows %APPDATA%\larpercord e
 //! %LOCALAPPDATA%\larpercord), com tudo dentro: configurações, temas, mascotes, sons,
 //! plugins, rascunhos, mensagens salvas, o cache das conversas, o FFmpeg baixado e
-//! os registros. As contas salvas saem também do chaveiro (secret-tool, os serviços
-//! larpercord-account e o antigo larpercord) ou do Gerenciador de Credenciais
-//! (larperCord/account/*), e o arquivo do token antigo, ~/.config/larpercord/token.
+//! os registros. As contas salvas e os segredos dos plugins saem também do chaveiro
+//! (secret-tool, os serviços larpercord-account, larpercord-plugin e o antigo
+//! larpercord) ou do Gerenciador de Credenciais (larperCord/account/* e
+//! larperCord/plugin/*), e o arquivo do token antigo, ~/.config/larpercord/token.
 //!
 //! Para valer, nada pode gravar de novo depois. `comecar` desliga o registro de
 //! depuração e fecha a porta de quem grava (`on`, conferido em platform/fsutil.zig e
@@ -145,18 +146,23 @@ fn tokenAntigo(config: ?[:0]const u8) void {
 /// quem roda): só diz o que rodaria.
 fn chaveiro() void {
     if (windows) {
-        if (qa_mode) return std.log.info("apagar: no QA o Gerenciador de Credenciais fica (larperCord/account/*)", .{});
-        var count: c.DWORD = 0;
-        var list: [*c]c.PCREDENTIALA = null;
-        if (c.CredEnumerateA("larperCord/account/*", 0, &count, &list) == 0) return;
-        defer c.CredFree(@ptrCast(list));
-        for (0..count) |i| _ = c.CredDeleteA(list[i].*.TargetName, list[i].*.Type, 0);
+        if (qa_mode) return std.log.info("apagar: no QA o Gerenciador de Credenciais fica (larperCord/account/*, larperCord/plugin/*)", .{});
+        // As contas e os segredos dos plugins (plugins/host.zig).
+        for ([_][*:0]const u8{ "larperCord/account/*", "larperCord/plugin/*" }) |filter| {
+            var count: c.DWORD = 0;
+            var list: [*c]c.PCREDENTIALA = null;
+            if (c.CredEnumerateA(filter, 0, &count, &list) == 0) continue;
+            defer c.CredFree(@ptrCast(list));
+            for (0..count) |i| _ = c.CredDeleteA(list[i].*.TargetName, list[i].*.Type, 0);
+        }
         return;
     }
-    // Uma entrada por conta, e a de antes das várias contas (net/accounts_store.zig).
+    // Uma entrada por conta, a de antes das várias contas (net/accounts_store.zig) e
+    // os segredos dos plugins (plugins/host.zig).
     const cmds = [_][:0]const u8{
         "secret-tool clear service larpercord-account 2>/dev/null",
         "secret-tool clear service larpercord 2>/dev/null",
+        "secret-tool clear service larpercord-plugin 2>/dev/null",
     };
     for (cmds) |cmd| {
         if (qa_mode) {
