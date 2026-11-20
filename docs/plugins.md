@@ -14,7 +14,8 @@ plugin:
 The top of **Settings → Plugins** (`Ctrl+,`) shows the exact folder, and **Install bundled plugins**
 creates it if it isn't there yet. On that page you can see what each plugin is, what it asks for and
 any error it hit, turn it on or off (the choice is kept in `plugins.kdl`, next to the `plugins`
-folder), approve the hosts it wants to talk to, open its panel and **Reload** after editing a file.
+folder), approve the hosts it wants to talk to, see its last network requests, open its panel and
+**Reload** after editing a file.
 
 ## The plugins that come with the app
 
@@ -95,11 +96,17 @@ anything, so the settings page shows them even for a plugin that's off.
 
 | Line | What it's for |
 |---|---|
-| `-- @name Bookmarks` | The name (and `-- @name:pt Favoritos` in Portuguese) |
-| `-- @description …` | One or two sentences (and `-- @description:pt …`) |
+| `-- @name Bookmarks` | The name |
+| `-- @name:pt Favoritos` | The name in another language: any code, like `pt`, `ja`, `ru` or `pt-BR` (up to 12) |
+| `-- @description …` | One or two sentences (and `-- @description:<code> …` per language) |
 | `-- @version 1.0.0` | Shown next to the name |
 | `-- @capabilities menu, panel, storage` | What it asks for. Shown on its card, and the only things it can use |
-| `-- @hosts api.example.com` | The hosts for [`larper.http`](#larperhttp), just the name. No IP address, port or Discord domain |
+| `-- @hosts api.example.com, *.cdn.example.com` | The hosts for [`larper.http`](#larperhttp): a name, or `*.` and a domain for its subdomains. Up to 8 |
+| `-- @credentials api.example.com` | The hosts in `@hosts` that may receive `Authorization` or `X-API-Key`. The card warns about them |
+
+The card shows the name and description in the interface's language: the exact code, then the base
+language (`pt-BR` for `pt`), then English, then the line with no code. A Japanese or Russian
+interface with no `:ja` or `:ru` line shows English, never Portuguese.
 
 | Capability | Gives access to |
 |---|---|
@@ -118,8 +125,12 @@ anything, so the settings page shows them even for a plugin that's off.
 | `completions` | `larper.completions` |
 | `rewrite` | `larper.rewrite` (its card says "Changes what you send") |
 | `links` | `larper.open` (its card says "Opens links") |
+| `secrets` | `larper.secrets` (its card says "Keeps secrets") |
+| `actions` | `larper.react`, `larper.edit`, `larper.delete`, `larper.pin`, `larper.unpin`, `larper.thread` (its card says "Acts on messages") |
 
-Commands, keybinds, `larper.channel`, `larper.guild`, `larper.jump`, `larper.copy`, `larper.tr` and
+`send` also covers `larper.reply`, `composer` also covers `larper.attach`, and `http` covers every
+method (`get`, `post`, `put`, `patch`, `delete`, `head`, `request`). Commands, keybinds,
+`larper.channel`, `larper.guild`, `larper.jump`, `larper.copy`, `larper.lang`, `larper.tr` and
 `larper.json` don't need any capability. Calling something the manifest doesn't ask for raises an error that says
 what to add.
 
@@ -143,6 +154,10 @@ These are what make it safe to run other people's scripts next to your account.
   gesture: a background plugin can't type into your message box or move you around. The one
   exception: the answer to an HTTP request made in a gesture can call `larper.insert`. It still can't
   send.
+- The [actions](#actions) (`larper.reply`, `larper.react`, `larper.edit`, `larper.delete`,
+  `larper.pin`, `larper.unpin`, `larper.thread`, `larper.attach`) need the gesture itself too, never
+  an event, a timer or an HTTP answer, and have a ceiling per gesture and per minute. Deleting and
+  attaching a file always ask you first, on screen.
 - **No files, programs or raw sockets.** Only `string`, `table`, `math`, `utf8` and the basic
   functions, plus `os.time`, `os.date`, `os.clock` and `os.difftime`. There is no `io`,
   `os.execute`/`os.remove`/`os.getenv`, `require`, `package`, `debug`, `coroutine`, `load`,
@@ -238,11 +253,13 @@ notification goes out even with the window focused or in focus mode, for somethi
 explicitly asked for, like a reminder. At most 20 per 10 seconds and 6 system notifications a minute
 per plugin (20 a minute across all of them); the rest are dropped silently.
 
-### `larper.send(channel, text)`
+### `larper.send(channel, text, [options])`
 
 Sends a real message, as if you had typed it. `channel` can be `nil` (the open channel), a table
 with an `id` (like `larper.channel()` or `msg.channel`) or the ID as a string.
-`text` is 1 to 2000 bytes. At most 5 per gesture. See [Limits](#limits).
+`text` is 1 to 2000 bytes. With `{ reply_to = msg }` (a message or its ID) it goes as a reply to that
+message, which must be in the same channel. At most 5 per gesture, counting `larper.reply`. See
+[Limits](#limits).
 
 ### `larper.channel()` and `larper.guild()`
 
@@ -303,10 +320,23 @@ written and nothing runs while typing. Code blocks, mentions and emoji stay as t
 wouldn't fit in a message, the text goes as written. Each call replaces the plugin's rules; up to 256,
 counting each parameter. It doesn't touch what `larper.send` sends, or edits.
 
-### `larper.lang()` and `larper.tr(pt, en)`
+### `larper.lang()` and `larper.tr(…)`
 
-`larper.lang()` is `"pt"` or `"en"`, and `larper.tr("olá", "hello")` is the text in the interface's
-language. Plugins should use it for all their text, and draw again on `larper.on("lang", …)`.
+`larper.lang()` is the interface's real language code: `"pt"`, `"en"`, `"ja"`, `"ru"` (and any
+language the app gains later).
+
+`larper.tr{ pt = "olá", en = "hello", ja = "こんにちは" }` is the text in the interface's language,
+with any language codes as keys (`pt-BR`, `zh_Hant`…). It picks the exact code, then the base
+language (`pt-BR` serves `pt`, and the other way around), then English, then the first one by code.
+The old form `larper.tr("olá", "hello")` keeps working: Portuguese for a Portuguese interface,
+English for every other language. Plugins should use it for all their text, and draw again on
+`larper.on("lang", …)`.
+
+The same table works wherever a plugin shows a label: `larper.menu` and its `choices`, the panel and
+`larper.settings.set` (`title`, `text`, `label`, `hint`, `placeholder`, `subtitle`, `meta`, `empty`),
+the `hint` of `larper.completions` and the `badge`, `note` and `label` of `larper.decorate` and
+`larper.rules`. Menus are drawn in the current language on their own; for the rest, publish again on
+`"lang"`.
 
 ### `larper.after(seconds, function)`, `larper.every(seconds, function)`, `larper.cancel(id)`
 
@@ -411,11 +441,11 @@ options()
 
 An entry on the right-click menu. `where` is `"message"` (the function receives `msg`, as in
 `larper.on`, for the message you clicked) or `"user"` (it receives `{ id, name }`). `label` is a string
-or `{ pt = "…", en = "…" }`. Up to 4 per plugin. Options:
+or a table of languages, like `{ pt = "…", en = "…", ja = "…" }`. Up to 4 per plugin. Options:
 
 | Option | What it does |
 |---|---|
-| `choices` | A second list, up to 16 `{ value, pt, en }`. Clicking the entry opens it, and the `value` picked is the function's second argument |
+| `choices` | A second list, up to 16 `{ value, pt, en, ja, … }` (or `{ value, label = … }`). Clicking the entry opens it, and the `value` picked is the function's second argument |
 | `toolbar` | An emoji: the entry also becomes a button on the toolbar of the hovered message, with the label as a tooltip. Only for `"message"`, and at most 3 across all plugins |
 
 ```lua
@@ -466,20 +496,88 @@ larper.http.get("https://api.example.com/x?q=" .. larper.urlencode(text), functi
 end)
 ```
 
-`larper.http.get(url, [options], function)` and `larper.http.post(url, options, function)`. Options:
-`body` (up to 64 KB) and `headers`. The function receives `{ ok, status, body, error }`. `error` is
-`"not_approved"`, `"rate_limited"`, `"too_big"` or `"network"`.
+`larper.http.get(url, [options], function)`, `larper.http.post`, `larper.http.put`,
+`larper.http.patch` and `larper.http.delete(url, [options], function)`, `larper.http.head(url,
+[options], function)` (status and headers only) and `larper.http.request(url, { method = "PUT", … },
+function)`. Options: `body` (up to 64 KB; not with `GET` or `HEAD`) and `headers`. The function
+receives `{ ok, status, body, headers, error }`. `ok` is a 2xx status. `error` is `"not_approved"`,
+`"rate_limited"`, `"too_big"`, `"redirect"` or `"network"`.
 
 - **HTTPS only**, and only to a host in `@hosts` that **you approved on the plugin's card**, separately
   for each plugin and host. Until then nothing goes out, and the plugin gets `not_approved`.
-  `larper.http.allowed(host)` says whether it's approved.
+  `larper.http.allowed(host)` says whether it's approved (it also takes a `*.example.com` item).
+- `*.example.com` in `@hosts` covers the subdomains of `example.com` (not `example.com` itself: list
+  both if you need both), and is approved once for all of them. A wildcard on a whole top-level domain
+  (`*.com`), a public suffix (`*.co.uk`) or a shared hosting domain where each subdomain belongs to
+  someone else (`*.github.io`, `*.vercel.app`, `*.netlify.app`, `*.pages.dev`, `*.herokuapp.com`,
+  `*.web.app`, `*.azurewebsites.net`, `*.cloudfront.net`, `*.s3.amazonaws.com`…) stops the plugin
+  from starting. `*.someone.github.io` is fine.
 - A URL with a user, a port or characters that aren't encoded raises an error. So does a host that's
-  not in `@hosts`. Discord's own domains can't be declared at all.
-- Redirects aren't followed: the 3xx comes back to the plugin, so it can't lead to a host you didn't approve.
-- The app sends no cookies, no token and no Discord headers. A plugin can only set `Accept`,
-  `Accept-Language` and `Content-Type`; anything else is dropped.
-- Limits: answers up to 1 MB, 20 seconds per request, 3 at a time and 30 a minute per plugin.
+  not in `@hosts`. Discord's own domains can't be declared at all, not even through a wildcard or a
+  redirect.
+- **Redirects** are followed only to a host this plugin has approved, over HTTPS, up to 5 in a row.
+  Anything else stops there with `error = "redirect"`. A 303 (and a 301 or 302 after a `POST`) becomes
+  a `GET` without the body, as browsers do.
+- **Headers you can send**: `Accept`, `Accept-Language`, `Content-Type`, `If-None-Match` and
+  `If-Modified-Since`; anything else is dropped. `Authorization` and `X-API-Key` only go to a host in
+  `@credentials` that you approved: for any other host they're an error. A redirect to a host that
+  isn't in `@credentials` leaves them behind. The app sends no cookies, no token and no Discord
+  headers, and the Inspector never shows these two values.
+- **Headers you can read**, in `res.headers` with lowercase names: `content-type`, `content-length`,
+  `content-language`, `etag`, `last-modified`, `cache-control`, `expires`, `age`, `date`,
+  `retry-after`, `location`, `link`, `x-total-count`, `x-request-id` and the ones starting with
+  `x-ratelimit-`, `x-rate-limit-` or `ratelimit-`. Never `set-cookie`.
+- Limits: answers up to 1 MB, 20 seconds per request including the redirects, 3 at a time and 30 a
+  minute per plugin.
 - It respects your proxy, if you have one.
+
+**Network log**: the plugin's card in Settings → Plugins lists its last 32 requests: the time, the
+method, the host, the path without the query string, the status (or the error), the size and how long
+it took. Never a header value or a body.
+
+### `larper.secrets`
+
+API keys and passwords, in the system keyring instead of `larper.storage`: the Credential Manager
+on Windows, the Secret Service (`secret-tool`) on Linux. Each plugin only sees its own, and the app
+never writes them to its log. Without a keyring on Linux they go to a file only you can read, like the
+account token.
+
+```lua
+-- @capabilities secrets, http, settings
+-- @hosts api.example.com
+-- @credentials api.example.com
+local key = larper.secrets.get("api_key")
+larper.http.get("https://api.example.com/me", { headers = { Authorization = "Bearer " .. (key or "") } }, show)
+```
+
+| Function | What it does |
+|---|---|
+| `larper.secrets.get(key)` | The text, or `nil`. It asks the keyring every time: keep it in a variable |
+| `larper.secrets.set(key, value)` | Saves 1 to 2048 bytes. `nil` deletes. An error if the keyring refuses |
+| `larper.secrets.delete(key)` | Deletes |
+
+The key is 1 to 64 letters, digits, `.`, `_` or `-`, and the plugin's file name can only use those
+characters too.
+
+### Actions
+
+Changes to messages in your account, the same way the app's own buttons do them: with the same
+permissions, the same send limits, and in the demo the same answers. All of them only work directly
+from a [gesture](#limits) on that plugin, and the app checks again before acting: a message that no
+longer exists, someone else's message to edit or a missing permission is refused, and the reason
+shows up on the plugin's card. `message` is a `msg` or its ID.
+
+| Function | Capability | Per gesture | Per minute | What it does |
+|---|---|---|---|---|
+| `larper.reply(message, text)` | `send` | 5, with `larper.send` | | Replies to the message, in its channel |
+| `larper.react(message, emoji)` | `actions` | 5 | 30 | Adds a reaction: an emoji (`"👍"`) or a custom one (`"name:123"`). If it's already there, nothing changes |
+| `larper.edit(message, text)` | `actions` | 3 | 20 | Changes the text of one of your own messages (1 to 2000 bytes) |
+| `larper.delete(message)` | `actions` | 1 | 5 | Asks you on screen, showing the message, and deletes it if you confirm. Someone else's only if you can manage messages there |
+| `larper.pin(message)`, `larper.unpin(message)` | `actions` | 3 | 10 | Pins or unpins. Needs "Manage messages" in that channel |
+| `larper.thread(message, name)` | `actions` | 1 | 5 | Starts a thread from the message (name of 1 to 100 bytes) |
+| `larper.attach(channel)` | `composer` | 1 | 5 | Asks you on screen and opens the app's file picker. The file goes to that channel's message box and waits for you to send it: the plugin never learns which file it was |
+
+Going over a ceiling, or calling one of these outside a gesture, raises an error in the plugin.
 
 ### `larper.json.encode(value)`, `larper.json.decode(text)` and `larper.urlencode(text)`
 
