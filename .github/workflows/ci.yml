@@ -132,6 +132,10 @@ jobs:
         with:
           version: 0.17.0
       - run: zig build
+      # Os temas embutidos e os da comunidade com o carregador e o esquema do app, sem
+      # janela: com --strict, um aviso (propriedade que o app não conhece) também falha.
+      - name: Temas conferidos com o esquema
+        run: zig-out/bin/larpercord --theme-check --strict themes/*.kdl themes/community/*.kdl
       - name: Wayland nativo, escala e fallback X11
         run: python3 tools/qa_wayland.py zig-out/bin/larpercord
       # Debug, com as checagens de segurança, como o tools/qa.sh compila. Para o x86-64

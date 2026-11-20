@@ -18,7 +18,7 @@ pub const Preview = struct {
     name: []const u8,
     description: []const u8,
     description_en: []const u8 = "",
-    kind: enum { classic, glass, terminal, bubbles, zen, mirror, office, desktop },
+    kind: @import("schema.zig").Preview,
     bg: Rgba,
     rail: Rgba,
     sidebar: Rgba,
@@ -53,6 +53,11 @@ pub const Manager = struct {
     choices: std.StringHashMapUnmanaged(std.StringHashMapUnmanaged(bool)) = .empty,
     err_buf: [200]u8 = undefined,
     last_error: ?[]const u8 = null,
+    /// O primeiro aviso do esquema do tema carregado (`arquivo:linha:coluna: mensagem`) e
+    /// quantos são: o tema carregou, mas tem o que o app não conhece.
+    warn_buf: [200]u8 = undefined,
+    last_warning: ?[]const u8 = null,
+    warning_count: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator) !Manager {
         var m: Manager = .{ .gpa = gpa };
@@ -233,6 +238,12 @@ pub const Manager = struct {
         m.active = t;
         m.current = i;
         m.last_error = null;
+        m.warning_count = t.warnings.len;
+        m.last_warning = null;
+        for (t.warnings, 0..) |w, k| {
+            std.log.warn("tema {s}.kdl:{d}:{d}: {s}", .{ e.name, w.line, w.col, w.message });
+            if (k == 0) m.last_warning = std.fmt.bufPrint(&m.warn_buf, "{s}.kdl:{d}:{d}: {s}", .{ e.name, w.line, w.col, w.message }) catch null;
+        }
         return true;
     }
 

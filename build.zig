@@ -433,12 +433,28 @@ pub fn build(b: *std.Build) void {
         test_mod.linkSystemLibrary("crypto", .{});
     }
     addDrLibs(b, test_mod, &.{});
+    // O esquema dos temas: o teste compara o JSON guardado com as tabelas e varre o código
+    // de src/theme e src/ui atrás de propriedades que o esquema não tem.
+    test_mod.addAnonymousImport("theme_schema_json", .{ .root_source_file = b.path("docs/assets/site/theme-schema.json") });
+    const repo_paths = b.addOptions();
+    repo_paths.addOption([]const u8, "src", b.root.joinString(b.allocator, "src") catch @panic("OOM"));
+    test_mod.addOptions("repo_paths", repo_paths);
     // O stb_image (vendorizado, sem biblioteca do sistema): os testes de core/metadados.zig e
     // core/png_escrita.zig abrem de volta o que sai de lá.
     test_mod.addIncludePath(b.path("third_party/stb"));
     test_mod.addCSourceFile(.{ .file = b.path("third_party/stb/stb_image.c"), .flags = &.{"-O2"} });
     const tests = b.addTest(.{ .root_module = test_mod });
     b.step("test", "Roda os testes").dependOn(&b.addRunArtifact(tests).step);
+
+    // O esquema dos temas em JSON (src/theme/schema.zig → docs/assets/site/theme-schema.json).
+    const schema_exe = b.addExecutable(.{ .name = "theme-schema", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/theme_schema_main.zig"),
+        .target = b.graph.host,
+        .optimize = .debug,
+    }) });
+    const schema_run = b.addRunArtifact(schema_exe);
+    schema_run.addArg(b.root.joinString(b.allocator, "docs/assets/site/theme-schema.json") catch @panic("OOM"));
+    b.step("theme-schema", "Grava docs/assets/site/theme-schema.json a partir de src/theme/schema.zig").dependOn(&schema_run.step);
 
     // Custo do supressor de ruído por quadro, otimizado como o app (no debug, como
     // o padrão: medir o debug não diz nada). -Doptimize=small mede o outro modo.

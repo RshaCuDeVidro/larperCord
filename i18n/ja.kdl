@@ -2130,6 +2130,7 @@
 "Theme colors — {s} ({s})" "テーマの色 — {s}（{s}）"
 "theme error" "テーマのエラー"
 "theme reloaded: {s}" "テーマを再読み込みしました: {s}"
+"theme warnings ({d}): {s}" "テーマの警告 ({d}): {s}"
 "theme: {s}" "テーマ: {s}"
 "There are no pending friend requests." "保留中のフレンドリクエストはありません。"
 "There's already a set with that name." "その名前のセットはすでにあります。"

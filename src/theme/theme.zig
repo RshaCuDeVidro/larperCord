@@ -4,6 +4,7 @@ const std = @import("std");
 const kdl = @import("kdl.zig");
 const color = @import("color.zig");
 pub const fx = @import("fx.zig");
+pub const schema = @import("schema.zig");
 pub const Rgba = color.Rgba;
 
 pub const Token = enum {
@@ -67,6 +68,8 @@ pub const LoadOptions = struct {
     mode: Mode = .dark,
     /// Valores escolhidos pelo usuário para as opções do tema.
     overrides: ?*const std.StringHashMapUnmanaged(bool) = null,
+    /// Recebe os avisos da checagem do esquema com linha e coluna (--theme-check, LSP).
+    report: ?*schema.Report = null,
 };
 
 /// Cor sobrescrita num pedaço do layout (`c-text="#fff"` num nó).
@@ -101,6 +104,9 @@ pub const Theme = struct {
     mode: Mode = .dark,
     options: []const Option = &.{},
     option_values: std.StringHashMapUnmanaged(bool) = .empty,
+    /// O que o esquema não conhece (componente, propriedade, valor fora da faixa): o
+    /// tema carrega assim mesmo, e o app mostra o primeiro aviso (schema.zig).
+    warnings: []const schema.Issue = &.{},
 
     /// Valor de uma opção do tema (`$nome` nas propriedades, `when="nome"`).
     pub fn option(t: *const Theme, name: []const u8) ?bool {
@@ -224,6 +230,7 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
         if (diag) |d| d.* = .{ .line = kd.line, .column = kd.column, .message = kd.message };
         return err;
     };
+    t.warnings = try checkSchema(a, nodes, lo.report);
 
     // Paleta: do pywal, do próprio tema ou a padrão.
     var pal: [16]Rgba = undefined;
@@ -386,8 +393,24 @@ fn tokenIndex(name: []const u8) ?u8 {
 }
 
 fn fail(diag: ?*Diagnostic, n: ?*const kdl.Node, msg: []const u8) LoadError {
-    if (diag) |d| d.* = .{ .line = if (n) |x| x.line else 0, .message = msg };
+    if (diag) |d| d.* = .{ .line = if (n) |x| x.line else 0, .column = if (n) |x| x.col else 0, .message = msg };
     return error.InvalidTheme;
+}
+
+/// Confere o tema com o esquema (schema.zig). O que não bate vira aviso: um tema que
+/// carregava antes continua carregando.
+fn checkSchema(a: std.mem.Allocator, nodes: []const kdl.Node, report: ?*schema.Report) error{OutOfMemory}![]const schema.Issue {
+    var options: std.ArrayList([]const u8) = .empty;
+    var styles: std.ArrayList([]const u8) = .empty;
+    for (nodes) |*n| {
+        const list = if (std.mem.eql(u8, n.name, "options")) &options else if (std.mem.eql(u8, n.name, "styles")) &styles else continue;
+        for (n.children) |*ch| if (ch.arg(0)) |v| if (v.asString()) |name| try list.append(a, name);
+    }
+    var out: std.ArrayList(schema.Issue) = .empty;
+    var ck: schema.Checker = .{ .a = a, .out = &out, .options = options.items, .styles = styles.items };
+    for (nodes) |*n| try ck.topNode(n);
+    if (report) |r| for (out.items) |it| try r.add(it);
+    return out.items;
 }
 
 pub fn tokenFromName(name: []const u8) ?Token {
@@ -521,6 +544,20 @@ test "erro de tema aponta a linha" {
     var d: Diagnostic = .{};
     try std.testing.expectError(error.InvalidTheme, load(std.testing.allocator, "colors {\n  nao-existe \"#fff\"\n}\nlayout { messages }", null, &d));
     try std.testing.expectEqual(@as(u32, 2), d.line);
+}
+
+test "o que o esquema não conhece vira aviso, e o tema carrega assim mesmo" {
+    var r: schema.Report = .{ .gpa = std.testing.allocator };
+    defer r.deinit();
+    var t = try loadWith(std.testing.allocator, "layout {\n  row {\n    messages tamanho=3\n    coisa\n  }\n}", .{ .report = &r }, null);
+    defer t.deinit();
+    try std.testing.expectEqual(@as(usize, 2), t.warnings.len);
+    try std.testing.expectEqual(@as(u32, 3), t.warnings[0].line);
+    try std.testing.expectEqual(@as(u32, 14), t.warnings[0].col);
+    try std.testing.expectEqual(schema.Severity.warning, t.warnings[0].severity);
+    try std.testing.expectEqual(@as(u32, 4), t.warnings[1].line);
+    try std.testing.expectEqual(@as(u32, 5), t.warnings[1].col);
+    try std.testing.expectEqual(@as(usize, 2), r.items.items.len);
 }
 
 test "cores sobrescritas valem para os filhos" {

@@ -1431,8 +1431,17 @@ pub const App = struct {
         if (app.themes.load(i)) {
             app.applyThemeStyle();
             app.st.showToast(now(), false, "tema: {s}", "theme: {s}", .{app.themes.name()});
+            app.themeWarnings();
             app.saveSettings();
         } else app.st.showToast(now(), true, "{s}", "{s}", .{app.themes.last_error orelse i18n.tr("erro no tema", "theme error")});
+    }
+
+    /// O tema carregou com o que o esquema não conhece (theme/schema.zig): o primeiro
+    /// aviso fica na tela por mais tempo (os outros vão para o registro e o --theme-check).
+    fn themeWarnings(app: *App) void {
+        const w = app.themes.last_warning orelse return;
+        app.st.showToast(now(), false, "avisos no tema ({d}): {s}", "theme warnings ({d}): {s}", .{ app.themes.warning_count, w });
+        app.st.toast.until_ms = now() + 6000;
     }
 
     // --- Ações da interface ------------------------------------------------
@@ -3281,6 +3290,7 @@ pub const App = struct {
                         .theme => if (!app.st.settings.hot_reload) {} else if (app.themes.reload()) {
                             app.applyThemeStyle();
                             app.st.showToast(now(), false, "tema recarregado: {s}", "theme reloaded: {s}", .{app.themes.name()});
+                            app.themeWarnings();
                         } else app.st.showToast(now(), true, "{s}", "{s}", .{app.themes.last_error orelse i18n.tr("erro no tema", "theme error")}),
                         .tick => {
                             // O minuto virou e um quadro já saiu nele (o tempo das calls

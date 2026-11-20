@@ -259,8 +259,8 @@ fn parseWeight(cx: *Cx, n: *const kdl.Node) Error!?Weight {
 /// o `label` simples continua no desenho de sempre.
 fn labelWantsFx(n: *const kdl.Node) bool {
     if (n.child("span") != null) return true;
-    const keys = [_][]const u8{ "tracking", "shadow", "outline", "text-gradient", "text-en" };
-    for (keys) |k| if (n.prop(k) != null) return true;
+    const text_keys = [_][]const u8{ "tracking", "shadow", "outline", "text-gradient", "text-en" };
+    for (text_keys) |k| if (n.prop(k) != null) return true;
     return false;
 }
 

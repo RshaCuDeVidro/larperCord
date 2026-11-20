@@ -462,6 +462,38 @@ options {
 Os testes (`zig build test`) carregam todos os temas embutidos e montam o layout de cada um.
 Para compartilhar um tema seu, mande para a galeria da comunidade (próxima seção).
 
+## Conferindo o seu tema
+
+Cada componente, propriedade e valor que o app entende está listado num lugar só, o esquema dos temas
+([`src/theme/schema.zig`](../src/theme/schema.zig)). O app confere cada tema com ele ao carregar: um nome que ele
+não conhece, uma propriedade que o componente não tem, um valor que não é uma das escolhas ou um número fora da
+faixa que o app aceita. Um tema que carregava antes continua carregando: isso vira **aviso**, e o app mostra o
+primeiro por alguns segundos quando você troca para o tema ou salva o arquivo (os outros vão para o registro). Um
+erro de digitação ganha uma sugestão: `unknown property 'varient' on messages (did you mean 'variant'?)`.
+
+Para ver todos os avisos, com a linha e a coluna, confira o arquivo pelo terminal. Não abre janela:
+
+```sh
+larpercord --theme-check ~/.config/larpercord/themes/meu-tema.kdl
+```
+
+```
+meu-tema.kdl:14:18: warning: unknown property 'varient' on messages (did you mean 'variant'?)
+meu-tema.kdl:22:9: warning: 'size'=200 is out of range (6 to 72): the app uses 72
+```
+
+Ele carrega o arquivo com o próprio carregador do app, nos dois modos e com as opções ligadas e desligadas, então
+uma cor quebrada em `colors mode=light when=verde` também aparece. Sai com 1 quando há um erro; com `--strict`, um
+aviso também falha (o CI confere assim os temas embutidos e os da comunidade). As mensagens são em inglês. No
+Windows, rode pelo PowerShell na pasta do app:
+`.\larpercord.exe --theme-check $env:APPDATA\larpercord\themes\meu-tema.kdl`.
+
+O esquema também sai em JSON, para editores e ferramentas:
+[`docs/assets/site/theme-schema.json`](../docs/assets/site/theme-schema.json) (o criador de temas do site lê ele).
+`larpercord --theme-schema` mostra o mesmo JSON. Para cada componente, ele lista as propriedades com o tipo
+(`number` com `min`/`max` onde o app limita, `boolean`, `enum` com os `values`, `color`, `style`, `option`…), o
+padrão e uma descrição; `sets` guarda as propriedades que todo nó do layout, contêiner ou componente tem.
+
 ## Compartilhar seu tema
 
 Temas prontos podem entrar na [galeria da comunidade](https://rshacudevidro.github.io/larperCord/pt/community-themes.html),

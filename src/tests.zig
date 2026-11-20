@@ -3,6 +3,8 @@ const std = @import("std");
 const builtin_themes = @import("builtin_themes");
 const theme = @import("theme/theme.zig");
 const layout = @import("theme/layout.zig");
+const schema = @import("theme/schema.zig");
+const repo_paths = @import("repo_paths");
 
 test {
     _ = @import("net/retry.zig");
@@ -102,6 +104,7 @@ test {
     _ = @import("theme/color.zig");
     _ = @import("theme/theme.zig");
     _ = @import("theme/fx.zig");
+    _ = @import("theme/schema.zig");
     _ = @import("ui/procgen.zig");
     _ = @import("theme/custom.zig");
     _ = @import("theme/layout.zig");
@@ -177,21 +180,11 @@ test "exportar não tem como pedir nada ao Discord" {
     while (it.next()) |rest| try std.testing.expect(std.mem.startsWith(u8, rest, ".save_dialog)"));
 }
 
-/// Componentes que a interface sabe desenhar (manter igual a ui/root.zig).
-const known = [_][]const u8{ "row", "column", "stack", "guild-bar", "channel-list", "user-panel", "header", "tabs", "messages", "composer", "member-list", "status-bar", "label", "spacer", "logo", "topbar", "crt", "shape", "rule", "span", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "window-controls" };
-
-fn checkNames(n: anytype) !void {
-    for (n.children) |*ch| {
-        var ok = false;
-        for (known) |k| if (std.mem.eql(u8, k, ch.name)) {
-            ok = true;
-        };
-        if (!ok) {
-            std.debug.print("componente desconhecido '{s}' na linha {d}\n", .{ ch.name, ch.line });
-            return error.UnknownComponent;
-        }
-        try checkNames(ch);
-    }
+/// Componentes e propriedades que o app entende: os do esquema (theme/schema.zig).
+fn checkNames(t: *const theme.Theme) !void {
+    if (t.warnings.len == 0) return;
+    for (t.warnings) |w| std.debug.print("linha {d}:{d}: {s}\n", .{ w.line, w.col, w.message });
+    return error.ForaDoEsquema;
 }
 
 test "todos os temas embutidos carregam e montam o layout" {
@@ -202,7 +195,10 @@ test "todos os temas embutidos carregam e montam o layout" {
             return err;
         };
         defer t.deinit();
-        try checkNames(t.layout.?);
+        checkNames(&t) catch |err| {
+            std.debug.print("tema {s}\n", .{b.name});
+            return err;
+        };
         var out: std.ArrayList(layout.Placed) = .empty;
         defer out.deinit(std.testing.allocator);
         try layout.solve(std.testing.allocator, t.layout.?, .{ .x = 0, .y = 0, .w = 1280, .h = 800 }, 1280, &out);
@@ -231,6 +227,127 @@ test "destaque de menção aparece em todos os temas embutidos, no escuro e no c
             }
         }
     };
+}
+
+// O esquema em JSON (o site e os editores leem) acompanha as tabelas de theme/schema.zig.
+test "docs/assets/site/theme-schema.json está em dia com o esquema" {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(std.testing.allocator);
+    try schema.writeJson(std.testing.allocator, &out);
+    if (!std.mem.eql(u8, out.items, @embedFile("theme_schema_json"))) {
+        std.debug.print("docs/assets/site/theme-schema.json está velho: rode `zig build theme-schema` (ou `larpercord --theme-schema > docs/assets/site/theme-schema.json`)\n", .{});
+        return error.EsquemaVelho;
+    }
+}
+
+// Toda propriedade que o código lê de um nó do tema está no esquema: assim ele não fica
+// para trás em silêncio. Varre src/theme e src/ui atrás de leituras com a chave escrita
+// (`n.str("chave")`, `d.pnum(n, "chave", …)`, `nodeColor(ctx, n, "chave", …)`) e das
+// listas de chaves (`const side_keys = …`, `const text_keys = …`).
+test "toda propriedade lida em src/theme e src/ui está no esquema" {
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+    // Arquivos que leem outros KDL com os mesmos nós: o do mascote e o settings.kdl.
+    const fora = [_][]const u8{ "mascote_visual.zig", "settings_state.zig", "guild_color.zig" };
+    var faltam: usize = 0;
+    var lidas: usize = 0;
+    for ([_][]const u8{ "theme", "ui" }) |sub| {
+        const path = try std.fs.path.join(gpa, &.{ repo_paths.src, sub });
+        defer gpa.free(path);
+        var dir = try std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true });
+        defer dir.close(io);
+        var it = dir.iterate();
+        files: while (try it.next(io)) |e| {
+            if (e.kind != .file or !std.mem.endsWith(u8, e.name, ".zig")) continue;
+            for (fora) |f| if (std.mem.eql(u8, f, e.name)) continue :files;
+            const src = try dir.readFileAlloc(io, e.name, gpa, .limited(4 << 20));
+            defer gpa.free(src);
+            var keys: [512][]const u8 = undefined;
+            for (propReads(src, &keys)) |k| {
+                lidas += 1;
+                if (schema.knowsKey(k)) continue;
+                std.debug.print("src/{s}/{s}: a propriedade '{s}' não está em src/theme/schema.zig\n", .{ sub, e.name, k });
+                faltam += 1;
+            }
+        }
+    }
+    try std.testing.expect(lidas > 100);
+    try std.testing.expectEqual(@as(usize, 0), faltam);
+}
+
+/// As chaves de propriedade lidas de um nó em `src`: `R.str("k")` (e num, flag, prop),
+/// `(R, "k"` e `, R, "k"` com R um nome de nó (n, ch, nd, node, sp, p.node), e as
+/// strings das listas `…_keys = [`.
+fn propReads(src: []const u8, out: [][]const u8) []const []const u8 {
+    const nodes = [_][]const u8{ "n", "ch", "nd", "node", "sp", "p.node" };
+    const methods = [_][]const u8{ ".str(\"", ".num(\"", ".flag(\"", ".prop(\"" };
+    var n: usize = 0;
+    var lines = std.mem.splitScalar(u8, src, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t");
+        if (std.mem.startsWith(u8, line, "//")) continue;
+        if (std.mem.indexOf(u8, line, "_keys = [") != null) {
+            var rest = line;
+            while (std.mem.indexOfScalar(u8, rest, '"')) |q| {
+                const end = std.mem.indexOfScalarPos(u8, rest, q + 1, '"') orelse break;
+                if (n < out.len and isKey(rest[q + 1 .. end])) {
+                    out[n] = rest[q + 1 .. end];
+                    n += 1;
+                }
+                rest = rest[end + 1 ..];
+            }
+            continue;
+        }
+        for (nodes) |r| {
+            var i: usize = 0;
+            while (std.mem.indexOfPos(u8, line, i, r)) |at| : (i = at + r.len) {
+                // O nome inteiro: `n` não pode ser o fim de `fn` nem o começo de `nodes`.
+                if (at > 0 and (std.ascii.isAlphanumeric(line[at - 1]) or line[at - 1] == '_' or line[at - 1] == '.')) continue;
+                const after = line[at + r.len ..];
+                const before = line[0..at];
+                var key: ?[]const u8 = null;
+                for (methods) |m| if (std.mem.startsWith(u8, after, m)) {
+                    key = quoted(after[m.len - 1 ..]);
+                };
+                if (key == null and std.mem.startsWith(u8, after, ", \"") and
+                    (std.mem.endsWith(u8, before, "(") or std.mem.endsWith(u8, before, ", ")))
+                    key = quoted(after[2..]);
+                if (key) |k| if (n < out.len and isKey(k)) {
+                    out[n] = k;
+                    n += 1;
+                };
+            }
+        }
+    }
+    return out[0..n];
+}
+
+fn quoted(s: []const u8) ?[]const u8 {
+    if (s.len < 2 or s[0] != '"') return null;
+    const end = std.mem.indexOfScalarPos(u8, s, 1, '"') orelse return null;
+    return s[1..end];
+}
+
+fn isKey(s: []const u8) bool {
+    if (s.len == 0 or !std.ascii.isLower(s[0])) return false;
+    for (s) |ch| if (!(std.ascii.isLower(ch) or std.ascii.isDigit(ch) or ch == '-')) return false;
+    return true;
+}
+
+test "a varredura das propriedades acha as leituras e ignora o resto" {
+    var keys: [16][]const u8 = undefined;
+    const got = propReads(
+        \\    const t = d.pstr(n, "text", "");
+        \\    if (p.node.str("bg")) |bg| x(nodeColor(ctx, n, "color2", .idle));
+        \\    // d.pnum(n, "comentario", 1)
+        \\    const side_keys = [4][]const u8{ "border-top", "border-right" };
+        \\    return cx.fail(n, "pattern: dots, lines");
+        \\    fn(n, "nao") ; const x = run(xn, "outra");
+    , &keys);
+    // Na ordem dos nomes de nó procurados (n antes de p.node), não da posição na linha.
+    const want = [_][]const u8{ "text", "color2", "bg", "border-top", "border-right", "nao" };
+    try std.testing.expectEqual(want.len, got.len);
+    for (want, got) |w, g| try std.testing.expectEqualStrings(w, g);
 }
 
 test "os dois CHANGELOGs têm as mesmas versões, com o mesmo tanto em cada seção" {

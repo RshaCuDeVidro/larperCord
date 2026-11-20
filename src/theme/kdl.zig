@@ -35,6 +35,9 @@ pub const Value = union(enum) {
 pub const Prop = struct {
     key: []const u8,
     value: Value,
+    /// Onde a chave começa (1 = a primeira coluna): a checagem do esquema aponta a propriedade.
+    line: u32 = 0,
+    col: u32 = 0,
 };
 
 pub const Node = struct {
@@ -226,12 +229,14 @@ const Parser = struct {
             }
             // Propriedade (`chave=valor`) ou argumento.
             const start = p.i;
+            const kline = p.line;
+            const kcol: u32 = @intCast(p.i - p.line_start + 1);
             if (p.peek() != '"' and !isNumberStart(p)) {
                 const key = try p.identOrString();
                 if (p.peek() == '=') {
                     p.advance();
                     const v = try p.value();
-                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v });
+                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v, .line = kline, .col = kcol });
                     continue;
                 }
                 p.i = start;
@@ -240,7 +245,7 @@ const Parser = struct {
                 if (p.peek() == '=') {
                     p.advance();
                     const v = try p.value();
-                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v });
+                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v, .line = kline, .col = kcol });
                     continue;
                 }
                 if (!skip) try args.append(p.arena, .{ .string = key });
@@ -380,6 +385,18 @@ test "nós, argumentos, propriedades e filhos" {
     try std.testing.expectEqual(false, row.children[2].flag("show-avatars").?);
     try std.testing.expectEqualStrings("extra", row.children[2].arg(0).?.string);
     try std.testing.expectEqual(@as(f64, -2), nodes[2].num("neg").?);
+}
+
+test "propriedades guardam linha e coluna, também depois de uma continuação" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const nodes = try parse(arena.allocator(), "a x=1 \"y z\"=2 \\\n    w=3", null);
+    const ps = nodes[0].props;
+    try std.testing.expectEqual(@as(u32, 1), ps[0].line);
+    try std.testing.expectEqual(@as(u32, 3), ps[0].col);
+    try std.testing.expectEqual(@as(u32, 7), ps[1].col);
+    try std.testing.expectEqual(@as(u32, 2), ps[2].line);
+    try std.testing.expectEqual(@as(u32, 5), ps[2].col);
 }
 
 test "erro com linha" {

@@ -460,6 +460,37 @@ options {
 The tests (`zig build test`) load every built-in theme and build the layout of each one.
 To share a theme of your own, send it to the community gallery (next section).
 
+## Checking your theme
+
+Every component, property and value the app understands is listed in one place, the theme schema
+([`src/theme/schema.zig`](../src/theme/schema.zig)). The app checks each theme against it when it loads: a name it
+doesn't know, a property a component doesn't have, a value that isn't one of the choices or a number outside the
+range the app accepts. A theme that loaded before still loads: these are **warnings**, and the app shows the first
+one for a few seconds when you switch to the theme or save it (the others go to the log). A typo gets a suggestion:
+`unknown property 'varient' on messages (did you mean 'variant'?)`.
+
+To see every warning, with the line and the column, check the file from a terminal. It doesn't open a window:
+
+```sh
+larpercord --theme-check ~/.config/larpercord/themes/meu-tema.kdl
+```
+
+```
+meu-tema.kdl:14:18: warning: unknown property 'varient' on messages (did you mean 'variant'?)
+meu-tema.kdl:22:9: warning: 'size'=200 is out of range (6 to 72): the app uses 72
+```
+
+It loads the file with the app's own loader, in both modes and with the options on and off, so a broken color in
+`colors mode=light when=verde` shows up too. It exits with 1 when there's an error; with `--strict`, a warning fails
+too (CI checks the bundled and the community themes this way). On Windows, run it from PowerShell in the app's folder:
+`.\larpercord.exe --theme-check $env:APPDATA\larpercord\themes\meu-tema.kdl`.
+
+The schema is also published as JSON, for editors and tools:
+[`docs/assets/site/theme-schema.json`](../docs/assets/site/theme-schema.json) (the site's theme builder reads it).
+`larpercord --theme-schema` prints the same JSON. For each component it lists the properties with their type
+(`number` with `min`/`max` where the app clamps, `boolean`, `enum` with its `values`, `color`, `style`, `option`…),
+the default and a description; `sets` holds the properties every layout node, container or component has.
+
 ## Sharing your theme
 
 Finished themes can go in the [community gallery](https://rshacudevidro.github.io/larperCord/community-themes.html),
