@@ -100,6 +100,7 @@ test {
     _ = @import("core/conta.zig");
     _ = @import("theme/kdl.zig");
     _ = @import("theme/color.zig");
+    _ = @import("theme/parts.zig");
     _ = @import("theme/theme.zig");
     _ = @import("theme/fx.zig");
     _ = @import("ui/procgen.zig");
