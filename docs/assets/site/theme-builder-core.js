@@ -1,10 +1,13 @@
 // O núcleo do criador de temas: sem DOM, para a página e o teste (tools/theme_builder_test.js)
 // usarem o mesmo código. Leitor de KDL, cores e o carregamento do tema seguem
 // src/theme/kdl.zig, color.zig, theme.zig e fx.zig; o arquivo gerado é o que o app lê.
+// Os componentes, as propriedades e os tokens vêm do esquema que o app gera
+// (src/theme/schema.zig → theme-schema.json): na página, o gen_site.py põe o JSON num
+// <script type="application/json" id="tb-schema">; no Node, ele vem do arquivo ao lado.
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.LC_TB = factory();
-})(typeof self !== "undefined" ? self : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./theme-schema.json"));
+  else root.LC_TB = factory(JSON.parse(document.getElementById("tb-schema").textContent));
+})(typeof self !== "undefined" ? self : this, function (SCHEMA) {
   "use strict";
 
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -253,10 +256,23 @@
   }
   function arg(nd, i) { return i < nd.args.length ? nd.args[i].v : undefined; }
 
+  // ---------------------------------------------------------- Esquema ----
+  function names(list) { return list.map(function (x) { return x.name; }); }
+  // A propriedade `key` de um nó do esquema: as dele e as dos grupos (`sets`).
+  function schemaProp(spec, key) {
+    var own = (spec.props || []).filter(function (p) { return p.key === key; })[0];
+    if (own) return own;
+    for (var i = 0; i < (spec.sets || []).length; i++) {
+      var hit = SCHEMA.sets[spec.sets[i]].filter(function (p) { return p.key === key; })[0];
+      if (hit) return hit;
+    }
+    return null;
+  }
+  function schemaNode(name) { return SCHEMA.containers.concat(SCHEMA.components).filter(function (n) { return n.name === name; })[0] || null; }
+  function setValues(set, key) { return SCHEMA.sets[set].filter(function (p) { return p.key === key; })[0].values.slice(); }
+
   // ------------------------------------------------------------ Cores ----
-  var TOKENS = ["bg", "rail", "sidebar", "surface", "elevated", "overlay", "text", "muted", "faint", "accent",
-    "accent-text", "border", "hover", "selected", "online", "idle", "dnd", "danger", "mention", "link",
-    "code-bg", "bubble-self", "bubble-self-text", "bubble-other", "shadow"];
+  var TOKENS = names(SCHEMA.tokens);
   var FALLBACK = ["#15161b", "#e06c75", "#98c379", "#e5c07b", "#7aa2f7", "#c678dd", "#56b6c2", "#d7dae0",
     "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#7aa2f7", "#c678dd", "#56b6c2", "#f0f2f5"];
   var BLACK = [0, 0, 0, 1], WHITE = [1, 1, 1, 1], CLEAR = [0, 0, 0, 0];
@@ -597,8 +613,13 @@
 
   // ---------------------------------------- Primitivas (checagem, fx.zig) ----
   var SIDES = ["border-top", "border-right", "border-bottom", "border-left"];
-  var PAINTED = ["shape", "rule", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "window-controls"];
-  var PAINT_KEYS = ["color", "color2", "color3", "fill", "dot", "ornament-color"];
+  // Os componentes que guardam cores (fx.zig) e as chaves de cor deles.
+  var PAINTED = names(SCHEMA.components.filter(function (c) { return c.paints; }));
+  var PAINT_KEYS = [];
+  SCHEMA.components.forEach(function (c) {
+    if (c.paints) (c.props || []).forEach(function (p) { if (p.type === "color" && PAINT_KEYS.indexOf(p.key) < 0) PAINT_KEYS.push(p.key); });
+  });
+  var PATTERNS = setValues("box", "pattern"), CORNERS = setValues("box", "corners");
 
   function fxColor(th, e, nd, code, arg) {
     try { return evalColor(e, th.palette, function (n) { return th.tokens[n]; }, true); } catch (err) { throw new ThemeError(code, nd.line, arg); }
@@ -611,7 +632,7 @@
   function checkBox(th, nd, isStyle) {
     if (str(nd, "gradient") !== null) checkGradient(th, nd, "gradient");
     if (str(nd, "pattern") !== null) {
-      if (["dots", "lines", "grid", "diagonal"].indexOf(str(nd, "pattern")) < 0) throw new ThemeError("pattern-kind", nd.line);
+      if (PATTERNS.indexOf(str(nd, "pattern")) < 0) throw new ThemeError("pattern-kind", nd.line);
       if (str(nd, "pattern-color") === null) throw new ThemeError("pattern-color", nd.line);
       fxColor(th, str(nd, "pattern-color"), nd, "invalid", "pattern-color");
     }
@@ -622,9 +643,9 @@
     if (!isStyle && str(nd, "border") !== null) fxColor(th, str(nd, "border"), nd, "invalid", "border");
     SIDES.forEach(function (k) { if (str(nd, k) !== null) fxColor(th, str(nd, k), nd, "side"); });
     var c = str(nd, "corners");
-    if (c !== null && ["all", "left", "right", "top", "bottom"].indexOf(c) < 0) throw new ThemeError("corners", nd.line);
+    if (c !== null && CORNERS.indexOf(c) < 0) throw new ThemeError("corners", nd.line);
   }
-  var WEIGHTS = ["regular", "medium", "semibold", "bold", "italic"];
+  var WEIGHTS = schemaProp(schemaNode("label"), "weight").values.slice();
   function checkLabel(th, ch) {
     // Como `labelWantsFx` de fx.zig: o rótulo simples não passa por esta leitura.
     var col = str(ch, "color"), colExpr = col !== null && !tokenName(col);
@@ -756,7 +777,7 @@
     t = t.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
     return t || "my-theme";
   }
-  var PREVIEWS = ["classic", "glass", "terminal", "bubbles", "zen", "mirror", "office", "desktop"];
+  var PREVIEWS = SCHEMA.previews.slice();
 
   function samePalette(a, b) { return a.every(function (x, i) { return normHex(x) === normHex(b[i]); }); }
 
@@ -832,40 +853,27 @@
     return text.slice(0, nd.headEnd) + " " + key + "=" + valueText(value) + text.slice(nd.headEnd);
   }
 
-  // As propriedades de cada componente (themes/README.md), para os ajustes da página.
-  var COMPONENTS = {
-    "guild-bar": [["variant", ["bar", "dock", "list"]], ["icon-style", ["fill", "soft", "outline"]], ["orientation", ["vertical", "horizontal"]],
-      ["shape", ["circle", "squircle", "square", "text"]], ["size", "num"], ["labels", "bool"], ["home", "bool"], ["indicators", "bool"]],
-    "channel-list": [["variant", ["discord", "tree", "pills"]], ["header", "bool"], ["banner", "bool"]],
-    "user-panel": [["variant", ["discord", "tty"]]],
-    header: [["variant", ["discord", "minimal", "tty"]], ["divider", "bool"]],
-    tabs: [["variant", ["pills", "underline", "tty"]]],
-    messages: [["variant", ["cozy", "irc", "bubbles"]], ["avatar", ["circle", "squircle", "square", "none"]], ["avatar-size", "num"],
-      ["spacing", "num"], ["font-size", "num"], ["ruled", "bool"], ["margin-line", "bool"], ["ticks", "bool"], ["typing-bubble", "bool"]],
-    composer: [["variant", ["box", "pill", "prompt"]], ["typing", "bool"]],
-    "member-list": [["variant", ["discord", "tty"]]],
-    "status-bar": [["variant", ["pills", "tty", "plain"]], ["items", "text"]],
-    // Fundos procedurais e enfeites (src/ui/backdrop.zig e comp_extra.zig leem estas).
-    starfield: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
-    orbit: [["center-x", "num"], ["center-y", "num"], ["rings", "num"], ["seed", "num"], ["motion", "bool"]],
-    radar: [["center-x", "num"], ["center-y", "num"], ["rings", "num"], ["seed", "num"], ["motion", "bool"]],
-    topography: [["levels", "num"], ["seed", "num"]],
-    aurora: [["seed", "num"], ["motion", "bool"]],
-    dunes: [["seed", "num"], ["motion", "bool"]],
-    crt: [["spacing", "num"], ["strength", "num"]],
-    logo: [["variant", ["wordmark", "ascii"]], ["size", "num"]],
-    "window-controls": [["size", "num"], ["gap", "num"], ["align", ["left", "center", "right"]]],
-  };
-  var CONTAINERS = ["row", "column", "stack"];
-  // A faixa dos controles deslizantes de cada número: [mínimo, máximo, passo]. É só a régua da
-  // página; o campo ao lado aceita qualquer valor que o app aceita (ele mesmo limita alguns).
-  var RANGES = {
-    size: [16, 80, 1], "avatar-size": [16, 72, 1], spacing: [0, 48, 1], "font-size": [10, 24, 0.5],
-    width: [40, 520, 1], height: [16, 240, 1], gap: [0, 40, 1], padding: [0, 64, 1],
-    density: [0.1, 6, 0.1], "center-x": [-1, 2, 0.01], "center-y": [-1, 2, 0.01], rings: [1, 12, 1],
-    levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01],
-    "crt.spacing": [1, 10, 1], "logo.size": [8, 40, 1], "window-controls.size": [6, 24, 1], "window-controls.gap": [2, 24, 1],
-  };
+  // As propriedades de cada componente que a página oferece como ajuste (as marcadas com
+  // `tweak` no esquema), na ordem dele: [chave, valores | "num" | "bool" | "text"].
+  var COMPONENTS = {};
+  SCHEMA.components.forEach(function (c) {
+    var tw = (c.props || []).filter(function (p) { return p.tweak; });
+    if (!tw.length) return;
+    COMPONENTS[c.name] = tw.map(function (p) {
+      return [p.key, p.type === "enum" ? p.values.slice() : p.type === "number" ? "num" : p.type === "boolean" ? "bool" : "text"];
+    });
+  });
+  var CONTAINERS = names(SCHEMA.containers);
+  // A faixa dos controles deslizantes de cada número: [mínimo, máximo, passo] (o `range` do esquema).
+  // É só a régua da página; o campo ao lado aceita qualquer valor que o app aceita (ele mesmo
+  // limita alguns: o `min`/`max` do esquema).
+  var RANGES = {};
+  SCHEMA.components.forEach(function (c) {
+    (c.props || []).forEach(function (p) { if (p.range) RANGES[c.name + "." + p.key] = p.range.slice(); });
+  });
+  ["node", "container", "component"].forEach(function (set) {
+    SCHEMA.sets[set].forEach(function (p) { if (p.range && !own(RANGES, p.key)) RANGES[p.key] = p.range.slice(); });
+  });
   function range(comp, key) { return own(RANGES, comp + "." + key) ? RANGES[comp + "." + key] : own(RANGES, key) ? RANGES[key] : [0, 400, 1]; }
 
   function listTweaks(structure) {
@@ -2006,6 +2014,7 @@
   return {
     KdlError: KdlError, ThemeError: ThemeError, ColorError: ColorError, MSG: MSG, errorText: errorText, own: own,
     parseKdl: parseKdl, prop: prop, pv: pv, str: str, num: num, flag: flag, arg: arg,
+    SCHEMA: SCHEMA, schemaProp: schemaProp, schemaNode: schemaNode,
     TOKENS: TOKENS, FALLBACK: FALLBACK, BACKS: BACKS, LEGIBLE: LEGIBLE, PREVIEWS: PREVIEWS, COMPONENTS: COMPONENTS,
     tokenName: tokenName, parseHex: parseHex, hexRgba: hexRgba, toHex: toHex, normHex: normHex, cssColor: cssColor,
     mix: mix, alpha: alpha, luma: luma, luminance: luminance, contrast: contrast,

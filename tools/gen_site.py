@@ -14,6 +14,8 @@ Entradas:
   docs/plugins/*.lua        os plugins que vêm com o app (diretório de plugins)
   src/plugins/manifest.zig, src/ui/plugins_page.zig   capacidades e rótulos dos plugins
   themes/community/*.kdl    temas mandados por pull request: conferidos aqui, e o build para no primeiro erro
+  docs/assets/site/theme-schema.json  o esquema dos temas (componentes, tokens, propriedades), que o app gera
+                            (zig build theme-schema): vai dentro do criador e da galeria
   site/try.html             a demonstração no navegador, só quando docs/try/ tem o build dela
 
 Só usa a biblioteca padrão. Rode: python3 tools/gen_site.py
@@ -36,6 +38,9 @@ VERSION = re.search(r'number = "(.+?)"', (ROOT / "src/core/version.zig").read_te
 BASE_URL = "https://rshacudevidro.github.io/larperCord/"
 THEMES = ["classico", "vidro", "terminal", "subsolo", "orbital", "editorial", "bolhas", "zen", "papel", "escritorio", "cupertino"]
 LANGS = ["en", "pt"]
+# O esquema dos temas que o app gera de src/theme/schema.zig: os nomes de componentes, tokens e
+# miniaturas daqui saem dele, nada escrito à mão.
+SCHEMA = json.loads((OUT / "assets" / "site" / "theme-schema.json").read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------- KDL ----
@@ -540,7 +545,7 @@ def live_icon():
 # ------------------------------------------------------------ Layouts ----
 # Os retângulos de cada tema numa janela de 1280x800, como src/theme/layout.zig
 # calcula: é o que a interface 3D do topo da página mostra.
-CONTAINERS = ("row", "column", "stack")
+CONTAINERS = tuple(n["name"] for n in SCHEMA["containers"])
 
 
 def layout_nodes(src, top, on, pal, raw):
@@ -892,16 +897,12 @@ LICENSES = ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC-BY-3.0", "CC-BY-SA-3.0",
             "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later",
             "LGPL-3.0-only", "LGPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 LICENSE_EXAMPLES = "CC0-1.0, CC-BY-4.0, CC-BY-SA-4.0, MIT, Apache-2.0, GPL-3.0-or-later…"
-TOKENS = ["bg", "rail", "sidebar", "surface", "elevated", "overlay", "text", "muted", "faint", "accent",
-          "accent-text", "border", "hover", "selected", "online", "idle", "dnd", "danger", "mention", "link",
-          "code-bg", "bubble-self", "bubble-self-text", "bubble-other", "shadow"]
-PREVIEWS = ["classic", "glass", "terminal", "bubbles", "zen", "mirror", "office", "desktop"]
-# Os componentes que src/ui/root.zig desenha, mais os contêineres de src/theme/layout.zig.
-COMPONENTS = {"guild-bar", "channel-list", "user-panel", "header", "tabs", "messages", "composer", "member-list",
-              "status-bar", "label", "logo", "topbar", "crt", "shape", "rule", "window-controls", "starfield",
-              "orbit", "aurora", "dunes", "topography", "radar", "spacer"}
-PAINTED = {"shape", "rule", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "window-controls"}
-WEIGHTS = {"regular", "medium", "semibold", "bold", "italic"}
+TOKENS = [t["name"] for t in SCHEMA["tokens"]]
+PREVIEWS = list(SCHEMA["previews"])
+# Os componentes que src/ui/root.zig desenha (os contêineres ficam em CONTAINERS).
+COMPONENTS = {n["name"] for n in SCHEMA["components"]}
+PAINTED = {n["name"] for n in SCHEMA["components"] if n.get("paints")}
+WEIGHTS = set(next(p for n in SCHEMA["components"] if n["name"] == "label" for p in n["props"] if p["key"] == "weight")["values"])
 
 
 class ThemeProblem(Exception):
@@ -2161,7 +2162,8 @@ def build_builder(lang, themes, community):
     blob = script_json(data)
     licenses = "".join(f'<option value="{x}">' for x in LICENSES)
     src = (src.replace("%ROOT%", root).replace("%REPO%", REPO).replace("%GUIDE%", rel(path, page_url(lang, "x")).removesuffix("x.html"))
-           .replace("%COMMUNITY%", rel(path, community_url(lang))).replace("%LICENSE_OPTIONS%", licenses).replace("%BUILDER_DATA%", blob))
+           .replace("%COMMUNITY%", rel(path, community_url(lang))).replace("%LICENSE_OPTIONS%", licenses).replace("%BUILDER_DATA%", blob)
+           .replace("%THEME_SCHEMA%", script_json(SCHEMA)))
     title = t(lang, "Theme builder · larperCord", "Criador de temas · larperCord")
     desc = t(lang, "Build a larperCord theme in the browser: click any part of the live preview to change its color, generate palettes, pick a layout, and download the .kdl.",
              "Monte um tema do larperCord no navegador: clique em qualquer parte da prévia ao vivo para mudar a cor, gere paletas, escolha um layout e baixe o .kdl.")
@@ -2204,7 +2206,7 @@ def build_community(lang, community):
     src = (src.replace("%ROOT%", root).replace("%REPO%", REPO).replace("%GUIDE%", rel(path, page_url(lang, "x")).removesuffix("x.html"))
            .replace("%BUILDER%", rel(path, builder_url(lang))).replace("%CARDS%", "\n".join(community_card(lang, path, c) for c in community))
            .replace("%COUNT%", t(lang, f"{count} theme" + ("" if count == 1 else "s"), f"{count} tema" + ("" if count == 1 else "s")))
-           .replace("%DATA%", blob))
+           .replace("%DATA%", blob).replace("%THEME_SCHEMA%", script_json(SCHEMA)))
     title = t(lang, "Community themes · larperCord", "Temas da comunidade · larperCord")
     desc = t(lang, "larperCord themes made by people who use it: a live preview of each, a link to open it in the theme builder and the .kdl to download. How to send yours.",
              "Temas do larperCord feitos por quem usa: prévia ao vivo de cada um, link para abrir no criador de temas e o .kdl para baixar. Como mandar o seu.")

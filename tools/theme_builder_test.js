@@ -1248,6 +1248,64 @@ tasks.push(test("layers: outline, hide and reorder edit only the layout tree", (
     assert.strictEqual(TB.setProp(hidden, comp.start, "show", null), s.structure, t + " show again");
   }
 }));
+// Os ajustes da página saem do esquema do app (theme-schema.json, `tweak`): os mesmos de antes,
+// com as mesmas réguas.
+tasks.push(test("the tweaks come from the app's schema and match the ones the page always offered", () => {
+  const before = {
+    "guild-bar": [["variant", ["bar", "dock", "list"]], ["icon-style", ["fill", "soft", "outline"]], ["orientation", ["vertical", "horizontal"]],
+      ["shape", ["circle", "squircle", "square", "text"]], ["size", "num"], ["labels", "bool"], ["home", "bool"], ["indicators", "bool"]],
+    "channel-list": [["variant", ["discord", "tree", "pills"]], ["header", "bool"], ["banner", "bool"]],
+    "user-panel": [["variant", ["discord", "tty"]]],
+    header: [["variant", ["discord", "minimal", "tty"]], ["divider", "bool"]],
+    tabs: [["variant", ["pills", "underline", "tty"]]],
+    messages: [["variant", ["cozy", "irc", "bubbles"]], ["avatar", ["circle", "squircle", "square", "none"]], ["avatar-size", "num"],
+      ["spacing", "num"], ["font-size", "num"], ["ruled", "bool"], ["margin-line", "bool"], ["ticks", "bool"], ["typing-bubble", "bool"]],
+    composer: [["variant", ["box", "pill", "prompt"]], ["typing", "bool"]],
+    "member-list": [["variant", ["discord", "tty"]]],
+    "status-bar": [["variant", ["pills", "tty", "plain"]], ["items", "text"]],
+    starfield: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
+    orbit: [["center-x", "num"], ["center-y", "num"], ["rings", "num"], ["seed", "num"], ["motion", "bool"]],
+    radar: [["center-x", "num"], ["center-y", "num"], ["rings", "num"], ["seed", "num"], ["motion", "bool"]],
+    topography: [["levels", "num"], ["seed", "num"]],
+    aurora: [["seed", "num"], ["motion", "bool"]],
+    dunes: [["seed", "num"], ["motion", "bool"]],
+    crt: [["spacing", "num"], ["strength", "num"]],
+    logo: [["variant", ["wordmark", "ascii"]], ["size", "num"]],
+    "window-controls": [["size", "num"], ["gap", "num"], ["align", ["left", "center", "right"]]],
+  };
+  assert.deepStrictEqual(Object.keys(TB.COMPONENTS).sort(), Object.keys(before).sort());
+  for (const k of Object.keys(before)) assert.deepStrictEqual(TB.COMPONENTS[k], before[k], k);
+  const ranges = { size: [16, 80, 1], "avatar-size": [16, 72, 1], spacing: [0, 48, 1], "font-size": [10, 24, 0.5], density: [0.1, 6, 0.1],
+    "center-x": [-1, 2, 0.01], "center-y": [-1, 2, 0.01], rings: [1, 12, 1], levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01] };
+  for (const [comp, spec] of Object.entries(before)) for (const [key, kind] of spec) {
+    if (kind !== "num") continue;
+    const want = { "crt.spacing": [1, 10, 1], "logo.size": [8, 40, 1], "window-controls.size": [6, 24, 1], "window-controls.gap": [2, 24, 1] }[comp + "." + key] || ranges[key];
+    assert.deepStrictEqual(TB.range(comp, key), want, comp + "." + key);
+  }
+  for (const [key, want] of Object.entries({ width: [40, 520, 1], height: [16, 240, 1], gap: [0, 40, 1], padding: [0, 64, 1] })) assert.deepStrictEqual(TB.range("column", key), want, key);
+  // Os nomes vêm do esquema: tokens, miniaturas, contêineres e os componentes com cor.
+  const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/assets/site/theme-schema.json"), "utf8"));
+  assert.deepStrictEqual(TB.TOKENS, schema.tokens.map((t) => t.name));
+  assert.deepStrictEqual(TB.PREVIEWS, schema.previews);
+  assert.ok(TB.TOKENS.includes("bubble-self-text") && TB.PREVIEWS.includes("desktop"));
+  // As páginas publicadas levam o mesmo esquema que o núcleo lê no Node.
+  for (const file of ["docs/theme-builder.html", "docs/pt/theme-builder.html", "docs/community-themes.html", "docs/pt/community-themes.html"]) {
+    const page = fs.readFileSync(path.join(ROOT, file), "utf8");
+    assert.deepStrictEqual(blobOf(page, "tb-schema").data, schema, file);
+    assert.ok(page.indexOf('id="tb-schema"') < page.indexOf("theme-builder-core.js"), file + " schema before the core");
+  }
+}));
+// Na página não há `module`: o núcleo lê o esquema do bloco <script type="application/json" id="tb-schema">.
+tasks.push(test("in the page, the core reads the schema from the inline block", () => {
+  const vm = require("vm");
+  const page = fs.readFileSync(path.join(ROOT, "docs/theme-builder.html"), "utf8");
+  const at = page.indexOf('id="tb-schema">') + 'id="tb-schema">'.length, raw = page.slice(at, page.indexOf("</script>", at));
+  const sandbox = { document: { getElementById: (id) => (id === "tb-schema" ? { textContent: raw } : null) } };
+  sandbox.self = sandbox;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, "docs/assets/site/theme-builder-core.js"), "utf8"), sandbox);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.LC_TB.COMPONENTS)), JSON.parse(JSON.stringify(TB.COMPONENTS)));
+  assert.deepStrictEqual(Array.from(sandbox.LC_TB.TOKENS), TB.TOKENS);
+}));
 tasks.push(test("every option the builder offers is one the app reads", () => {
   // Cada propriedade de componente aparece como "nome" no código do app (src/ui, src/theme).
   const zig = [];
