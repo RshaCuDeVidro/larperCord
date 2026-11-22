@@ -12,6 +12,8 @@ const i18n = @import("ui/i18n.zig");
 const sq = @import("core/search_query.zig");
 const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
+const busca_local = @import("net/busca_local.zig");
+const Window = @import("platform/window.zig").Window;
 const Id = types.Id;
 
 const geral: Id = 500005;
@@ -89,8 +91,24 @@ fn isEmpty(_: *App) bool {
 fn localOnly(_: *App) bool {
     return search.source == .local and qa.find("search-run") != null;
 }
+/// Quantas da lista vieram só do Discord (as daqui são marcadas).
+fn serverOnlyCount() usize {
+    var n: usize = 0;
+    for (search.results.items) |r| n += @intFromBool(!r.local);
+    return n;
+}
+fn noDupes() bool {
+    for (search.results.items, 0..) |a, i| {
+        for (search.results.items[i + 1 ..]) |b| if (a.id == b.id) return false;
+    }
+    return true;
+}
+/// A primeira página do Discord junto com o que está aqui: as 25 dele, as daqui marcadas,
+/// cada mensagem uma vez, mais novas primeiro.
 fn firstPage(_: *App) bool {
-    return done() and search.total == 60 and search.results.items.len == 25 and
+    if (!done() or search.total != 60 or serverOnlyCount() != 25 or search.found == 0 or !noDupes()) return false;
+    for (search.results.items[1..], 0..) |r, i| if (r.id > search.results.items[i].id) return false;
+    return search.results.items.len == 25 + @min(search.found, 200) and qa.find("search-local:0") != null and
         sent("content=zig") and sent("sort_by=timestamp") and sent("sort_order=desc") and sent("offset=0");
 }
 fn secondPage(_: *App) bool {
@@ -152,8 +170,11 @@ fn forbiddenShown(_: *App) bool {
 fn indexingThenDone(_: *App) bool {
     return done() and search.total == 60 and gw.sent.searches.load(.monotonic) >= searches_before + 2;
 }
+/// O Discord não achou nada: fica só o que está neste computador (pode ser nada).
 fn noResults(_: *App) bool {
-    return done() and search.total == 0 and search.results.items.len == 0;
+    if (!done() or search.total != 0) return false;
+    for (search.results.items) |r| if (!r.local) return false;
+    return true;
 }
 fn recentShown(_: *App) bool {
     return search.recentCount() > 0 and qa.find("search-recent:0") != null;
@@ -164,6 +185,139 @@ fn tabCompleted(_: *App) bool {
 fn palettePanelNarrow(app: *App) bool {
     // O painel reserva lugar: a conversa fica toda à esquerda dele.
     return search.panel.x > 0 and search.panel.right() <= app.io.*.DisplaySize.x + 1 and qa.find("composer") != null and qa.find("composer").?.right() <= search.panel.x + 1;
+}
+
+// --- Neste computador ---------------------------------------------------------------
+
+/// Tudo daqui, nada perguntado ao Discord, e cada trecho com `piece` (sem acento).
+fn allLocalWith(piece: []const u8) bool {
+    if (search.source != .local or search.scanning or search.results.items.len == 0) return false;
+    if (gw.sent.searches.load(.monotonic) != searches_before) return false;
+    for (search.results.items) |r| if (!r.local or !sq.containsFold(r.snippet, piece)) return false;
+    return qa.find("search-local:0") != null;
+}
+var timing_logged = false;
+fn prefixFound(_: *App) bool {
+    if (!allLocalWith("hypr")) return false;
+    const st = busca_local.stats();
+    if (!timing_logged) {
+        timing_logged = true;
+        std.log.info("busca local: {d} mensagens no índice, {d} palavras, {d} KB na memória, consulta em {d} µs", .{ st.docs, st.words, st.mem / 1024, busca_local.last_query_ns / 1000 });
+    }
+    // O orçamento: bem menos de 10 ms (no build de depuração, só que respondeu).
+    return @import("builtin").mode == .debug or busca_local.last_query_ns < 10 * std.time.ns_per_ms;
+}
+fn accentFound(_: *App) bool {
+    return allLocalWith("nao sei");
+}
+fn wallpaperFound(_: *App) bool {
+    return allLocalWith("wallp");
+}
+
+/// Uma mensagem chegando, editada e apagada como se viesse do Discord.
+var injected: Id = 0;
+fn push(app: *App, e: @import("core/event.zig").Event) void {
+    app.events.push(e);
+    Window.wake(app.win.wake_type, .gateway);
+}
+fn injectMessage(app: *App) void {
+    injected = types.makeSnowflake(gw.nowMs(), 0x3c123);
+    const content = std.heap.c_allocator.dupe(u8, "qa: alguém tocou xilofone na call") catch return;
+    push(app, .{ .message_create = .{ .id = injected, .channel = geral, .author = 1001, .timestamp = @divTrunc(gw.nowMs(), 1000), .content = content } });
+}
+fn editInjected(app: *App) void {
+    const content = std.heap.c_allocator.dupe(u8, "qa: era um trombone, na verdade") catch return;
+    push(app, .{ .message_update = .{ .channel = geral, .id = injected, .content = content } });
+}
+fn deleteInjected(app: *App) void {
+    push(app, .{ .message_delete = .{ .channel = geral, .id = injected } });
+}
+fn topIsInjected() bool {
+    if (search.results.items.len == 0 or search.source != .local) return false;
+    return search.results.items[0].id == injected and search.results.items[0].local;
+}
+fn injectedFound(_: *App) bool {
+    return topIsInjected();
+}
+fn injectedListed() bool {
+    for (search.results.items) |r| if (r.id == injected) return true;
+    return false;
+}
+fn editedAway(_: *App) bool {
+    return search.source == .local and !injectedListed();
+}
+fn injectedEdited(_: *App) bool {
+    return topIsInjected() and sq.containsFold(search.results.items[0].snippet, "trombone");
+}
+fn deletedGone(_: *App) bool {
+    return search.source == .local and !injectedListed() and !busca_local.contains(injected);
+}
+
+/// A última mensagem do canal, apagada com o app fechado: a página mais nova não traz ela
+/// (e o servidor de mentira não guarda o que chega ao vivo, então tirar a conversa da
+/// memória e abrir de novo é o mesmo caso).
+var away: Id = 0;
+fn injectAway(app: *App) void {
+    away = types.makeSnowflake(gw.nowMs(), 0x3c124);
+    const content = std.heap.c_allocator.dupe(u8, "qa: some enquanto o app está fechado") catch return;
+    push(app, .{ .message_create = .{ .id = away, .channel = geral, .author = 1001, .timestamp = @divTrunc(gw.nowMs(), 1000), .content = content } });
+}
+fn awayIndexed(app: *App) bool {
+    return busca_local.contains(away) and app.st.activeChannel() == geral;
+}
+fn reopenGeral(app: *App) void {
+    const cs = app.store.channel(geral) orelse return;
+    app.store.unload(cs);
+    app.actions.append(app.gpa, .{ .focus_tab = app.st.tab }) catch {};
+}
+fn awayPruned(app: *App) bool {
+    const cs = app.store.channel(geral) orelse return false;
+    return cs.history == .loaded and !cs.cached and cs.messages.items.len > 0 and !busca_local.contains(away);
+}
+
+fn goOffline(app: *App) void {
+    @import("ui/root.zig").qa_banner = true;
+    app.store.connection = .offline;
+    searches_before = gw.sent.searches.load(.monotonic);
+}
+fn backOnline(app: *App) void {
+    app.store.connection = .ready;
+    @import("ui/root.zig").qa_banner = false;
+}
+fn offlineLocal(app: *App) bool {
+    return app.store.connection == .offline and wallpaperFound(app);
+}
+fn offlineNoAsk(_: *App) bool {
+    return search.offline and search.server == .failed and search.source == .local and search.results.items.len > 0 and
+        gw.sent.searches.load(.monotonic) == searches_before and qa.find("search-failed:offline") != null;
+}
+
+/// O índice vai para o disco, sai da memória e volta ao abrir a busca.
+var loads_before: u32 = 0;
+var docs_before: usize = 0;
+fn flushAndRelease(_: *App) void {
+    busca_local.flush();
+    search.close();
+    loads_before = busca_local.loads;
+    docs_before = busca_local.stats().docs;
+    _ = search.releaseIdle(true);
+}
+fn released(_: *App) bool {
+    const st = busca_local.stats();
+    // O que chega depois (uma página pedida pelo pulo acima) fica num índice pequeno, só
+    // desta sessão: o do disco não volta até a busca abrir.
+    return busca_local.isReleased() and st.docs < docs_before and st.disk > 0 and
+        @import("platform/sys.zig").fileSize("qa-out/cache/demo/" ++ @import("net/msg_cache.zig").search_index_file) == st.disk;
+}
+fn reloaded(app: *App) bool {
+    return busca_local.loads > loads_before and prefixFound(app);
+}
+fn statsShown(_: *App) bool {
+    const st = busca_local.stats();
+    return qa.find("search-index-stats") != null and st.docs > 0 and st.mem > 0 and st.disk > 0;
+}
+fn settingsOpen(app: *App) bool {
+    return app.st.settings.open;
 }
 
 pub const ops = [_]Op{
@@ -218,6 +372,53 @@ pub const ops = [_]Op{
     click("search-clear"),
     .{ .run = toPt },
 
+    s("busca: neste computador, na hora"),
+    .{ .run = noteSearches },
+    .{ .text = "hypr" },
+    expect("o começo de uma palavra já acha, na hora e sem perguntar ao Discord", prefixFound),
+    .{ .wait = 150 },
+    .{ .shot = "busca-local" },
+    click("search-clear"),
+    .{ .text = "nao sei" },
+    expect("sem acento acha com acento", accentFound),
+    click("search-clear"),
+    .{ .run = injectMessage },
+    .{ .text = "xilof" },
+    expect("a mensagem que acabou de chegar já aparece", injectedFound),
+    .{ .run = editInjected },
+    expect("editada: o texto antigo sai da busca", editedAway),
+    click("search-clear"),
+    .{ .text = "tromb" },
+    expect("e o novo entra", injectedEdited),
+    .{ .run = deleteInjected },
+    expect("apagada: sai da busca e do índice", deletedGone),
+    click("search-clear"),
+
+    s("busca: sem conexão"),
+    .{ .run = goOffline },
+    .{ .text = "wallp" },
+    expect("sem conexão, acha o que está neste computador", offlineLocal),
+    key(c.ImGuiKey_Enter),
+    expect("o Enter sem conexão não pergunta nada ao Discord e avisa", offlineNoAsk),
+    .{ .wait = 150 },
+    .{ .shot = "busca-offline" },
+    .{ .run = noteResult },
+    click("search-result:0"),
+    .{ .expect = .{ .name = "clicar num resultado daqui pula até a mensagem", .check = jumped, .timeout_ms = 8000 } },
+    .{ .run = backOnline },
+    click("search-clear"),
+
+    s("busca: o índice no disco"),
+    .{ .run = flushAndRelease },
+    expect("vai para o disco ao lado do cache e sai da memória", released),
+    // O pulo acima pode ter ido para outro servidor (uma mensagem que chegou ao vivo é a
+    // mais nova): a busca no Discord abaixo conta com o servidor do #geral.
+    .{ .run = toGeral },
+    click("header-find"),
+    .{ .text = "hypr" },
+    .{ .expect = .{ .name = "volta do disco ao abrir a busca e acha o mesmo", .check = reloaded, .timeout_ms = 8000 } },
+    click("search-clear"),
+
     s("busca: no Discord"),
     .{ .text = "zig" },
     expect("digitando, procura neste computador e oferece o Discord", localOnly),
@@ -237,6 +438,9 @@ pub const ops = [_]Op{
     .{ .expect = .{ .name = "clicar pula até a mensagem, com o painel aberto", .check = jumped, .timeout_ms = 8000 } },
 
     s("busca: filtros no Discord"),
+    // O pulo acima vai para a conversa do resultado, que pode ser de outro servidor (uma
+    // mensagem que chegou ao vivo é a mais nova): "in:memes" conta com o do #geral.
+    .{ .run = toGeral },
     click("search-clear"),
     .{ .text = "from:ana has:imagem in:memes before:2026-01-02" },
     expect("as etiquetas mostram os filtros", chipsShown),
@@ -295,4 +499,22 @@ pub const ops = [_]Op{
     .{ .wait = 100 },
     key(c.ImGuiKey_Escape),
     expect("Esc fecha o painel", isClosed),
+
+    s("busca: o tamanho do índice nas Configurações"),
+    .{ .key = .{ .key = c.ImGuiKey_Comma, .ctrl = true } },
+    expect("abre as Configurações", settingsOpen),
+    click("settings:Privacidade"),
+    expect("Privacidade mostra as mensagens da busca, o disco e a memória", statsShown),
+    .{ .wait = 150 },
+    .{ .shot = "busca-privacidade" },
+    key(c.ImGuiKey_Escape),
+
+    // No fim: abrir a conversa de novo traz pessoas novas para a lista, e os passos de
+    // "from:" acima contam com as de antes.
+    s("busca: apagada com o app fechado"),
+    .{ .run = toGeral },
+    .{ .run = injectAway },
+    expect("a última mensagem do canal entra no índice", awayIndexed),
+    .{ .run = reopenGeral },
+    .{ .expect = .{ .name = "a página mais nova não traz a última, e ela sai do índice", .check = awayPruned, .timeout_ms = 6000 } },
 };

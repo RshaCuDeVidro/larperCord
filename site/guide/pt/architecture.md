@@ -25,7 +25,7 @@ src/
               lugar que conhece o sistema de janelas do SDL
 themes/       os temas embutidos (também compilados dentro do binário)
 third_party/  código de terceiros copiado: Dear ImGui, dear_bindings, Lua, stb_image, libdave,
-              MLSpp, nlohmann/json
+              MLSpp, nlohmann/json, dr_mp3 + dr_wav
 tools/        QA, benchmark de memória, capturas de tela, geradores de logo e do site
 ```
 

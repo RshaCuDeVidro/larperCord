@@ -6,6 +6,7 @@ const c = @import("c");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
 const i18n = @import("i18n.zig");
+const inbox = @import("inbox.zig");
 const anim = @import("anim.zig");
 const S = @import("settings_state.zig");
 const L = @import("../core/lsp.zig");
@@ -93,8 +94,7 @@ fn language(p: anytype, s: *S.Settings, k: L.Known, i: usize) void {
     p.y += 38;
     if (cmd.len > 0 and !valid) {
         qa.mark(.{ .x = p.x, .y = p.y, .w = p.w, .h = 22 }, "lsp-cmd-ruim:{s}", .{k.key});
-        _ = d.textClipped(p.dl, p.font(.regular), 13, p.x, p.y, ctx.col(.danger), i18n.tr("Comando inválido: confira as aspas. O texto não passa por um shell.", "Invalid command: check the quotes. The text doesn't go through a shell."), p.w);
-        p.y += 24;
+        p.y += inbox.wrapFlow(p.dl, p.font(.regular), 13, p.x, p.y, p.w, i18n.tr("Comando inválido: confira as aspas. O texto não passa por um shell.", "Invalid command: check the quotes. The text doesn't go through a shell."), ctx.col(.danger), 24);
     }
 
     // Achado no PATH: só uma sugestão; ligar é a pessoa quem faz.

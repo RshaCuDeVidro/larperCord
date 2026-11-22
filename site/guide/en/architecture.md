@@ -25,7 +25,7 @@ src/
               place that knows about SDL's windowing
 themes/       the built-in themes (also compiled into the binary)
 third_party/  vendored code: Dear ImGui, dear_bindings, Lua, stb_image, libdave,
-              MLSpp, nlohmann/json
+              MLSpp, nlohmann/json, dr_mp3 + dr_wav
 tools/        QA, memory benchmark, screenshots, logo and site generators
 ```
 

@@ -17,7 +17,7 @@ jobs:
       - name: Ferramentas e cabeçalhos
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates curl xz-utils make gcc g++ cmake ninja-build pkg-config binutils \
+          apt-get install -y --no-install-recommends git ca-certificates curl xz-utils make gcc g++ cmake ninja-build pkg-config binutils patch \
             perl zlib1g-dev libfreetype-dev libfontconfig1-dev libwebp-dev libopus-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev \
             libwayland-dev libwayland-bin libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
@@ -60,14 +60,23 @@ jobs:
         with:
           version: 0.17.0
       - run: tools/windows_deps.sh
+      # O OpenSSL, o curl e companhia compilados para o .exe único: só mudam com o script.
+      - uses: actions/cache@v4
+        with:
+          path: .deps/windows-static
+          key: windows-static-${{ hashFiles('tools/windows_static_deps.sh', 'tools/curl-chrome-h2.patch', 'tools/brotlienc_stub.c') }}
+      - run: test -f .deps/windows-static/lib/libcurl.a || tools/windows_static_deps.sh
       - name: Compilar
-        run: zig build -Dtarget=x86_64-windows-gnu -p out/win
+        run: zig build -Dtarget=x86_64-windows-gnu -Dsingle-exe=true -p out/win
+      # O .exe é o único, sem DLL ao lado. As três DLLs continuam na release para quem
+      # atualiza de uma versão antes da 0.6.7: o atualizador dela pede as quatro, e o .exe
+      # novo não carrega as que sobram na pasta.
       - name: O .exe, as DLLs e o zip
         run: |
           mkdir -p rel/larperCord
           cp out/win/bin/larpercord.exe rel/larpercord-windows-x86_64.exe
-          cp out/win/bin/*.dll rel/
-          cp out/win/bin/larpercord.exe out/win/bin/*.dll rel/larperCord/
+          cp .deps/windows/bin/SDL3.dll .deps/windows/bin/libcurl-x64.dll .deps/windows/bin/libcrypto-3-x64.dll rel/
+          cp out/win/bin/larpercord.exe rel/larperCord/
           (cd rel && zip -qr larpercord-windows-x86_64.zip larperCord && rm -r larperCord)
           for f in larpercord-windows-x86_64.exe larpercord-windows-x86_64.zip SDL3.dll libcurl-x64.dll libcrypto-3-x64.dll; do test -s "rel/$f"; done
           ls -l rel

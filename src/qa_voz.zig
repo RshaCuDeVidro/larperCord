@@ -310,6 +310,12 @@ fn noiseOn(_: *App) void {
 fn noiseOff(_: *App) void {
     sh.qa_noise.store(0, .monotonic);
 }
+fn denoiseSetOff(app: *App) bool {
+    return app.st.settings.voice_denoise == 0;
+}
+fn denoiseSetOn(app: *App) bool {
+    return app.st.settings.voice_denoise == 1;
+}
 fn denoiseOff(app: *App) bool {
     return app.st.settings.voice_denoise == 0 and sh.denoise.load(.monotonic) == .off;
 }
@@ -782,6 +788,11 @@ pub const ops = [_]Op{
     s("voz: aperte para falar"),
     click("voz-modo:1"),
     expect("o modo aperte para falar mostra o atalho", pttOn),
+    // #35: o "Desligado" do supressor tinha o número da caixa do atalho e não respondia.
+    click("voz-ruido:1"),
+    expect("com o atalho na tela, RNNoise no supressor vale", denoiseSetOn),
+    click("voz-ruido:0"),
+    expect("com o atalho na tela, Desligado no supressor vale", denoiseSetOff),
     click("voz-atalho"),
     expect("clicar no atalho espera uma tecla", capturing),
     shot("voz-atalho-esperando"),

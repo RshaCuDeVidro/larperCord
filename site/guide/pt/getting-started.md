@@ -10,7 +10,7 @@ O larperCord é um cliente de Discord nativo para Linux e Windows, escrito em Zi
 | | Linux | Windows |
 |---|---|---|
 | Sistema | x86_64 com glibc 2.34 ou mais nova, distros de 2022 para cá (testado todo dia no Arch com Hyprland) | Windows 10 ou 11, x64 |
-| Para rodar o download | FreeType, fontconfig, libwebp, Opus e zlib do sistema; uma distro de desktop costuma já ter. SDL3, libcurl e OpenSSL vêm dentro do arquivo | Nada além dele: SDL3, libcurl e OpenSSL vêm como DLLs ao lado do `larpercord.exe` |
+| Para rodar o download | FreeType, fontconfig, libwebp, Opus e zlib do sistema; uma distro de desktop costuma já ter. SDL3, libcurl e OpenSSL vêm dentro do arquivo | Nada além dele: SDL3, libcurl e OpenSSL vêm dentro do `larpercord.exe` |
 | Fontes | Inter, JetBrains Mono e Noto Color Emoji são recomendadas. O fontconfig escolhe substitutas se faltar alguma | Nada para instalar: Segoe UI, Consolas, Georgia e Segoe UI Emoji de `C:\Windows\Fonts` ([por quê](page:themes#fontes-no-windows)) |
 | Vídeo dentro do app (opcional) | FFmpeg 7, 8 ou 9 (libavformat 61–63) da distro. Qualquer outra versão é ignorada e os vídeos abrem no navegador | Configurações → Chat → **Baixar FFmpeg**, cerca de 80 MB, conferidos com um SHA-256 fixo, ou **Escolher a pasta do FFmpeg…** para uma versão shared que você já tem |
 | Para compilar | Zig 0.17, SDL3, FreeType, fontconfig, libcurl (com suporte a WebSocket, 7.86 ou mais nova), zlib, libwebp, Opus, OpenSSL | Compilado a partir do Linux com Zig 0.17: o `tools/windows_deps.sh` baixa as bibliotecas do Windows |
@@ -51,7 +51,7 @@ No PowerShell, para o seu usuário, sem administrador. Ele instala em `%LOCALAPP
 irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1 | iex
 ```
 
-Ou baixe o [zip](https://github.com/RshaCuDeVidro/larperCord/releases/latest/download/larpercord-windows-x86_64.zip), descompacte e abra o `larpercord.exe` da pasta `larperCord`. Deixe as três DLLs ao lado dele (`SDL3.dll`, `libcurl-x64.dll`, `libcrypto-3-x64.dll`) e descompacte num lugar onde você pode gravar, fora de `C:\Program Files`, para ele conseguir se atualizar. Ele ainda não tem assinatura de código: se o SmartScreen disser "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**. Na página de versões, pegue o zip: o `.exe` e as DLLs soltos lá são para o atualizador e o script de instalação.
+Ou baixe o [zip](https://github.com/RshaCuDeVidro/larperCord/releases/latest/download/larpercord-windows-x86_64.zip), descompacte e abra o `larpercord.exe` da pasta `larperCord`. Desde a 0.6.7 ele é um arquivo só, com a SDL3, o libcurl e o OpenSSL dentro. Descompacte num lugar onde você pode gravar, fora de `C:\Program Files`, para ele conseguir se atualizar. Ele ainda não tem assinatura de código: se o SmartScreen disser "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**. Na página de versões, pegue o zip: o `.exe` solto lá é para o atualizador e o script de instalação, e as DLLs, só para versões antes da 0.6.7 se atualizarem.
 
 Os arquivos para Windows ainda não têm atestado. Para conferir o zip com o `SHA256SUMS` da mesma versão, no PowerShell, na pasta com os dois arquivos (`True` quer dizer que bate):
 
@@ -95,7 +95,7 @@ zig build -Doptimize=ReleaseFast
 ./zig-out/bin/larpercord --demo
 ```
 
-O resto já está no repositório: Dear ImGui, Lua, stb_image, libdave, MLSpp e nlohmann/json estão copiados em `third_party/`, então o build para Linux não baixa nada.
+O resto já está no repositório: Dear ImGui, Lua, stb_image, dr_mp3, dr_wav, libdave, MLSpp e nlohmann/json estão copiados em `third_party/`, então o build para Linux não baixa nada.
 
 A versão para Windows também é compilada no Linux. O `tools/windows_deps.sh` baixa as bibliotecas dela uma vez, em versões fixas e com hash conferido:
 
@@ -104,7 +104,7 @@ tools/windows_deps.sh
 zig build -Dtarget=x86_64-windows-gnu
 ```
 
-O `zig-out/bin/` fica com o `larpercord.exe` e as DLLs `SDL3.dll`, `libcurl-x64.dll` e `libcrypto-3-x64.dll`. Copie os quatro arquivos juntos para o Windows e abra o `larpercord.exe`.
+O `zig-out/bin/` fica com o `larpercord.exe` e as DLLs `SDL3.dll`, `libcurl-x64.dll` e `libcrypto-3-x64.dll`. Copie os quatro arquivos juntos para o Windows e abra o `larpercord.exe`. A release é o `.exe` único: rode o `tools/windows_static_deps.sh` depois do `tools/windows_deps.sh` e compile com `-Dsingle-exe=true`.
 
 ## Seus primeiros cinco minutos
 

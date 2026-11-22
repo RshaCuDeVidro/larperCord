@@ -535,6 +535,12 @@ fn lockedFor(ctx: *const d.Ctx, cl: Cell, guild: Id) bool {
 
 fn drawCell(ctx: *d.Ctx, dl: *c.ImDrawList, cl: Cell, er: d.Rect, sec: Section, si: usize, i: usize, guild: Id, target: Id) void {
     const hb = d.hit(ctx, si * 4096 + i + 16384, er);
+    // Arrastar o emoji até o mascote do canto: ele come (ui/mascote_pet.zig).
+    const treat = switch (cl) {
+        .uni => |u| types.Reaction.init(emoji_data.glyphOf(u)),
+        .custom => |*e| types.Reaction.initCustom(e.name, e.id, e.animated),
+    };
+    @import("mascote_pet.zig").dragTreat(ctx, &treat);
     switch (sec.kind) {
         .recent => qa.mark(er, "emoji-recent:{d}", .{i}),
         else => switch (cl) {

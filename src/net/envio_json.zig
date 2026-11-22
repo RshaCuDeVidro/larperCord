@@ -35,6 +35,14 @@ pub fn uploadName(buf: []u8, name: []const u8, spoiler: bool) []const u8 {
     return std.fmt.bufPrint(buf, "SPOILER_{s}", .{name}) catch name;
 }
 
+/// O tipo da parte de um arquivo no multipart, quando o curl não acerta sozinho:
+/// o navegador manda `audio/ogg` num .ogg (o áudio gravado na caixa, ou qualquer
+/// um da bandeja), e o curl mandaria application/octet-stream. null = o do curl.
+pub fn partType(name: []const u8) ?[:0]const u8 {
+    if (std.ascii.endsWithIgnoreCase(name, ".ogg") or std.ascii.endsWithIgnoreCase(name, ".opus")) return "audio/ogg";
+    return null;
+}
+
 /// Corpo de POST /channels/{id}/messages (ou o `payload_json`, com arquivos).
 /// Respondendo, `allowed_mentions` mantém as menções normais e decide só se
 /// quem escreveu a mensagem respondida é avisado; "não mencionar ninguém" é
@@ -242,6 +250,28 @@ test "corpo: anexos com spoiler e texto alternativo" {
     var nb: [64]u8 = undefined;
     try std.testing.expectEqualStrings("SPOILER_x.png", uploadName(&nb, "SPOILER_x.png", true));
     try std.testing.expectEqualStrings("x.png", uploadName(&nb, "x.png", false));
+}
+
+test "corpo: o áudio gravado vai como um anexo comum, sem marca de mensagem de voz" {
+    // Sozinho, sem texto: só o arquivo, sem `flags`, `duration_secs` nem `waveform`.
+    try expectBody("{\"content\":\"\",\"nonce\":\"3\",\"tts\":false,\"attachments\":[{\"id\":0,\"filename\":\"audio-2026-11-17-1432.ogg\"}]}", .{
+        .content = "",
+        .nonce = 3,
+        .names = &.{"audio-2026-11-17-1432.ogg"},
+    });
+    // Respondendo: a referência e as menções como numa mensagem de texto.
+    try expectBody("{\"content\":\"\",\"nonce\":\"4\",\"tts\":false,\"message_reference\":{\"message_id\":\"9\"},\"allowed_mentions\":{\"parse\":[\"users\",\"roles\",\"everyone\"],\"replied_user\":true},\"attachments\":[{\"id\":0,\"filename\":\"audio-2026-11-17-1432.ogg\"}]}", .{
+        .content = "",
+        .nonce = 4,
+        .reply_to = 9,
+        .names = &.{"audio-2026-11-17-1432.ogg"},
+    });
+    // A parte do arquivo vai como audio/ogg; o resto fica com o tipo do curl.
+    try std.testing.expectEqualStrings("audio/ogg", partType("audio-2026-11-17-1432.ogg").?);
+    try std.testing.expectEqualStrings("audio/ogg", partType("Nota.OGG").?);
+    try std.testing.expectEqualStrings("audio/ogg", partType("x.opus").?);
+    try std.testing.expect(partType("gato.png") == null);
+    try std.testing.expect(partType("ogg") == null);
 }
 
 test "corpo: texto alternativo longo é cortado em 1024 caracteres" {

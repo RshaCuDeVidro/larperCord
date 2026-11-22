@@ -4,6 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c");
+const build_options = @import("build_options");
 
 pub const windows = builtin.os.tag == .windows;
 /// A demonstração no navegador (src/web_main.zig): sem threads, sem rede e sem as
@@ -568,6 +569,9 @@ pub fn curlTls(h: *c.CURL) void {
     // querer (e para o `curl_easy_reset` não pegar ninguém de surpresa).
     _ = c.curl_easy_setopt(h, c.CURLOPT_SSL_VERIFYPEER, @as(c_long, 1));
     _ = c.curl_easy_setopt(h, c.CURLOPT_SSL_VERIFYHOST, @as(c_long, 2));
+    // O TLS do Chrome (platform/tls_chrome.c), onde o OpenSSL do curl é o mesmo que o
+    // app liga. O curl oficial do Windows traz o dele por dentro, escondido.
+    if (build_options.tls_chrome) _ = c.curl_easy_setopt(h, c.CURLOPT_SSL_CTX_FUNCTION, chromeTls);
     if (windows) {
         _ = c.curl_easy_setopt(h, c.CURLOPT_SSL_OPTIONS, @as(c_long, c.CURLSSLOPT_NATIVE_CA));
     } else {
@@ -583,6 +587,35 @@ pub fn curlTls(h: *c.CURL) void {
             return;
         };
     }
+}
+
+/// O mesmo numa conexão WebSocket (gateway, voz): nela o curl só oferece HTTP/1.1, e o
+/// Chrome não manda o ALPS, que é do h2.
+pub fn curlTlsWebSocket(h: *c.CURL) void {
+    curlTls(h);
+    if (build_options.tls_chrome) _ = c.curl_easy_setopt(h, c.CURLOPT_SSL_CTX_DATA, &websocket_mark);
+}
+
+var websocket_mark: u8 = 0;
+
+fn chromeTls(_: ?*c.CURL, ssl_ctx: ?*anyopaque, data: ?*anyopaque) callconv(.c) c.CURLcode {
+    // Sem HTTP/2 no curl, nenhuma conexão oferece h2, e o ALPS (que é do h2) não vai.
+    const h1_only = data == @as(?*anyopaque, &websocket_mark) or !curlHas(c.CURL_VERSION_HTTP2);
+    // Um valor que este OpenSSL não aceita fica com o dele: a conexão sai assim mesmo.
+    _ = c.larper_tls_chrome(ssl_ctx, @intFromBool(h1_only));
+    return c.CURLE_OK;
+}
+
+/// O libcurl ligado sabe isto (CURL_VERSION_HTTP2, _BROTLI, _ZSTD…)?
+pub fn curlHas(feature: c_int) bool {
+    const info = c.curl_version_info(c.CURLVERSION_NOW);
+    return info.*.features & feature != 0;
+}
+
+/// O `Accept-Encoding` do Chrome, se o curl descomprime tudo o que ele pede; senão,
+/// o que o curl souber (""), para nunca pedir o que não dá para abrir.
+pub fn acceptEncoding() [*:0]const u8 {
+    return if (curlHas(c.CURL_VERSION_BROTLI) and curlHas(c.CURL_VERSION_ZSTD)) "gzip, deflate, br, zstd" else "";
 }
 
 /// Troca um arquivo possivelmente em uso. O Windows não deixa sobrescrever o

@@ -378,6 +378,18 @@ fn updateFailed(_: *App) void {
 fn updateIdle(_: *App) void {
     updater.qaSet(.idle, "");
 }
+fn bannerHidden(_: *App) bool {
+    return qa.find("update-banner:disponivel") == null;
+}
+fn bannerShown(_: *App) bool {
+    return qa.find("update-banner:disponivel") != null and qa.find("update-banner-action") != null and qa.find("update-banner-close") != null;
+}
+fn dotPending(_: *App) bool {
+    return @import("ui/aviso_atualizacao.zig").pendente();
+}
+fn bannerClosedDotStays(_: *App) bool {
+    return qa.find("update-banner:disponivel") == null and @import("ui/aviso_atualizacao.zig").pendente();
+}
 fn updateBoth(_: *App) bool {
     const a = qa.find("button:Baixar e instalar") orelse return false;
     const b = qa.find("button:Verificar atualizações") orelse return false;
@@ -1233,7 +1245,24 @@ pub const ops_pages = [_]Op{
     .{ .run = updateFailed },
     .{ .wait = 100 },
     expect("Atualizações com erro: nada se sobrepõe", noOverlap),
+    // A faixa de versão nova (ui/aviso_atualizacao.zig): fora da página de
+    // Atualizações, até a pessoa fechar; o pontinho no botão das configurações fica.
+    .{ .run = updateAvailable },
+    .{ .wait = 100 },
+    expect("na página de Atualizações, a faixa de versão nova não aparece", bannerHidden),
+    key(c.ImGuiKey_Escape),
+    .{ .wait = 300 },
+    expect("fora das configurações, a faixa de versão nova fica no topo, com Atualizar agora", bannerShown),
+    expect("e o botão das configurações ganha o pontinho", dotPending),
+    .{ .shot = "73d-faixa-atualizacao" },
+    click("update-banner-close"),
+    .{ .wait = 200 },
+    expect("fechar tira a faixa; o pontinho fica até atualizar", bannerClosedDotStays),
     .{ .run = updateIdle },
+    .{ .key = .{ .key = c.ImGuiKey_Comma, .ctrl = true } },
+    .{ .wait = 250 },
+    click("settings:Atualizações"),
+    .{ .wait = 150 },
     .{ .run = scaleUp },
     .{ .wait = 150 },
     expect("com o texto em 130%: nada se sobrepõe", noOverlap),

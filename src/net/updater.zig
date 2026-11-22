@@ -18,7 +18,7 @@ const latest_url = "https://api.github.com/repos/RshaCuDeVidro/larperCord/releas
 pub const releases_page = "https://github.com/RshaCuDeVidro/larperCord/releases";
 
 /// Arquivos publicados desta plataforma e onde cada um fica (core/atualizacao.zig).
-const files = at.files(sys.windows);
+const files = at.files(sys.windows, build_options.single_exe);
 
 /// O executável que está rodando, num caminho que existe: depois da troca, o
 /// nome dele já é o da versão nova. null se o sistema não disser.

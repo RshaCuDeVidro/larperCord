@@ -1,7 +1,8 @@
-//! Os sons da call: os eventos que tocam alguma coisa, as variantes
-//! embutidas de cada um (geradas aqui, sem arquivo nenhum) e o toque de
-//! chamada. Nada de SDL: quem toca é net/voz_audio.zig, que também lê o
-//! arquivo escolhido pela pessoa (core/som_arquivo.zig decodifica).
+//! Os sons do app: os eventos que tocam alguma coisa (os da call e o de
+//! mensagem nova), as variantes embutidas de cada um (geradas aqui, sem
+//! arquivo nenhum) e o toque de chamada. Nada de SDL: quem toca é
+//! net/voz_audio.zig, que também lê o arquivo escolhido pela pessoa
+//! (core/som_arquivo.zig decodifica).
 const std = @import("std");
 
 pub const rate = 48000;
@@ -18,6 +19,9 @@ pub const Event = enum(u8) {
     deafen,
     undeafen,
     ring,
+    /// DM ou menção chegando sem a pessoa olhando (core/aviso.zig decide). Fora
+    /// dos sons da call: quem liga e desliga é a chave dele em Notificações.
+    message,
 
     pub const count = std.enums.values(Event).len;
 
@@ -118,6 +122,7 @@ const c6 = 1046.5;
 const d6 = 1174.66;
 const e6 = 1318.51;
 const g6 = 1567.98;
+const b6 = 1975.53;
 
 fn n(hz: f32, at_ms: u32, ms: u32) Note {
     return .{ .hz = hz, .at_ms = at_ms, .ms = ms };
@@ -146,6 +151,8 @@ fn notesTable(comptime v: Variant, comptime e: Event) []const Note {
             .user_leave => &.{ n(a5, 0, 80), n(e5, 70, 120) },
             .mute, .deafen => &.{n(g4, 0, 90)},
             .unmute, .undeafen, .ring => &.{n(e5, 0, 90)},
+            // Mais agudo e mais rápido que alguém entrando na call: um "plim".
+            .message => &.{ n(g5, 0, 60), n(d6, 50, 190) },
         },
         .soft => switch (e) {
             .join => &.{ n(a4, 0, 180), n(e5, 110, 260) },
@@ -156,6 +163,7 @@ fn notesTable(comptime v: Variant, comptime e: Event) []const Note {
             .unmute, .ring => &.{n(a4, 0, 200)},
             .deafen => &.{ n(d4, 0, 160), n(a3, 100, 240) },
             .undeafen => &.{ n(a3, 0, 160), n(d4, 100, 240) },
+            .message => &.{ n(e5, 0, 140), n(b5, 90, 260) },
         },
         .glass => switch (e) {
             .join => &.{ n(c6, 0, 260), n(g6, 90, 380) },
@@ -166,6 +174,7 @@ fn notesTable(comptime v: Variant, comptime e: Event) []const Note {
             .unmute, .ring => &.{n(d6, 0, 260)},
             .deafen => &.{ n(g5, 0, 200), n(d5, 100, 300) },
             .undeafen => &.{ n(d5, 0, 200), n(g5, 100, 300) },
+            .message => &.{ n(e6, 0, 160), n(b6, 80, 340) },
         },
         .retro => switch (e) {
             .join => &.{ n(c5, 0, 60), n(e5, 60, 60), n(g5, 120, 90) },
@@ -176,6 +185,7 @@ fn notesTable(comptime v: Variant, comptime e: Event) []const Note {
             .unmute, .ring => &.{ n(e4, 0, 60), n(a4, 60, 80) },
             .deafen => &.{ n(c5, 0, 50), n(g4, 50, 50), n(c4, 100, 90) },
             .undeafen => &.{ n(c4, 0, 50), n(g4, 50, 50), n(c5, 100, 90) },
+            .message => &.{ n(e5, 0, 40), n(b5, 40, 40), n(e6, 80, 70) },
         },
     };
 }
@@ -388,6 +398,25 @@ test "clássico igual ao bipe de antes (ensurdecer tocava o de mutar)" {
     // Quem já usava o app ouve o mesmo de antes; quem entra e sai é novo.
     try t_eq(Variant.classic, Event.join.defaultVariant());
     try t_eq(Variant.off, Event.user_join.defaultVariant());
+}
+
+test "mensagem nova: curta, ligada de começo e diferente dos sons da call" {
+    var a: [max_sound_len]i16 = undefined;
+    var b: [max_sound_len]i16 = undefined;
+    try t_eq(Variant.classic, Event.message.defaultVariant());
+    try t_eq(@as(u32, 5_000), Event.message.maxMs());
+    // Cabe nos bits de `custom_bad` (u16) de net/voz_audio.zig.
+    try t_expect(Event.count <= 16);
+    for ([_]Variant{ .classic, .soft, .glass, .retro }) |v| {
+        // Um "plim", não uma frase: menos de meio segundo.
+        try t_expect(soundLen(v, .message) <= 450 * rate / 1000 * channels);
+        const msg = synth(v, .message, &a);
+        for ([_]Event{ .join, .user_join, .unmute }) |e| {
+            const other = synth(v, e, &b);
+            const k = @min(msg.len, other.len);
+            try t_expect(!std.mem.eql(i16, msg[0..k], other[0..k]));
+        }
+    }
 }
 
 test "toque de chamada: emenda sem estalo, som no começo e silêncio no fim" {

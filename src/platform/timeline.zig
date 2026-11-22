@@ -70,6 +70,8 @@ const n_phases = std.enums.values(Phase).len;
 
 pub var enabled = false;
 var stamps: [n_phases]sys.Atomic(u64) = @splat(.init(0));
+/// O que o malloc tinha em uso em cada fase (KB; 0 = sem número): onde a RAM nasce.
+var heap_kb: [n_phases]sys.Atomic(u32) = @splat(.init(0));
 var base_ns: u64 = 0;
 /// Quanto o processo já tinha rodado ao chegar no main (carregar as bibliotecas).
 var before_main_ms: i64 = -1;
@@ -96,7 +98,9 @@ pub fn mark(p: Phase) void {
 pub fn markAt(p: Phase, t: u64) void {
     if (!enabled) return;
     // +1: zero quer dizer "ainda não aconteceu".
-    _ = stamps[@intFromEnum(p)].cmpxchgStrong(0, t -% base_ns +% 1, .acq_rel, .monotonic);
+    if (stamps[@intFromEnum(p)].cmpxchgStrong(0, t -% base_ns +% 1, .acq_rel, .monotonic) == null) {
+        if (@import("mem_tune.zig").heap()) |h| heap_kb[@intFromEnum(p)].store(h.used_kb, .release);
+    }
 }
 
 pub fn isMarked(p: Phase) bool {
@@ -114,7 +118,7 @@ pub fn report() void {
     if (!enabled or reported) return;
     reported = true;
     const off: f64 = @floatFromInt(@max(before_main_ms, 0));
-    std.log.info("linha do tempo da abertura (ms desde o início do processo):", .{});
+    std.log.info("linha do tempo da abertura (ms desde o início do processo; o malloc em uso):", .{});
     if (before_main_ms >= 0) std.log.info("  {d:8.1}  (+{d:7.1})  bibliotecas carregadas (precisão de 10 ms)", .{ off, off });
     var order: [n_phases]u8 = undefined;
     var n: usize = 0;
@@ -130,7 +134,8 @@ pub fn report() void {
     var prev: f64 = 0;
     for (order[0..n]) |i| {
         const ms = @as(f64, @floatFromInt(stamps[i].load(.acquire) - 1)) / 1e6;
-        std.log.info("  {d:8.1}  (+{d:7.1})  {s}", .{ ms + off, ms - prev, @as(Phase, @enumFromInt(i)).label() });
+        const kb = heap_kb[i].load(.acquire);
+        std.log.info("  {d:8.1}  (+{d:7.1})  {d:6.1} MB  {s}", .{ ms + off, ms - prev, @as(f64, @floatFromInt(kb)) / 1024, @as(Phase, @enumFromInt(i)).label() });
         prev = ms;
     }
     const z = ready_comprimido.load(.acquire);

@@ -13,8 +13,9 @@ const anim = @import("anim.zig");
 const icons = @import("icons.zig");
 const log = @import("../core/changelog.zig");
 
-const changelog_en = @embedFile("changelog_en");
-const changelog_pt = @embedFile("changelog_pt");
+/// Comprimidos: abrem na primeira vez que a página aparece (core/embutido.zig).
+const changelog_en = @embedFile("changelog_en_z");
+const changelog_pt = @embedFile("changelog_pt_z");
 
 pub fn draw(p: anytype) void {
     const ctx = p.ctx;
@@ -60,6 +61,7 @@ pub fn draw(p: anytype) void {
     }
     p.y += 8;
     p.toggle(i18n.tr("Verificar ao abrir", "Check when opening"), i18n.tr("Pergunta ao GitHub qual é a última versão ao abrir o app. Nenhum dado da conta vai junto.", "Asks GitHub for the latest version when the app opens. No account data is sent."), &ctx.st.settings.check_updates);
+    if (!updater.managedBySystem()) p.toggle(i18n.tr("Atualizar sozinho", "Update automatically"), i18n.tr("Achou versão nova, baixa e instala em segundo plano; ela abre na próxima vez que o app abrir. Só entra versão com a assinatura certa.", "When a new version is found, it downloads and installs in the background; it opens the next time the app starts. Only versions with the right signature go in."), &ctx.st.settings.auto_update);
     p.y += 10;
     p.heading(i18n.tr("Reiniciar", "Restart"));
     p.note(i18n.tr("Fecha e abre o larperCord de novo. Se estiver em uma call, ela cai.", "Closes and reopens larperCord. If you're in a call, you'll leave it."));
@@ -86,8 +88,10 @@ fn versions() ?[]const Version {
     return slot.*;
 }
 
-fn load(text: []const u8) ![]const Version {
+fn load(packed_text: []const u8) ![]const Version {
     const gpa = std.heap.c_allocator;
+    // Os itens apontam para dentro do texto: ele fica aberto.
+    const text = try @import("../core/embutido.zig").inflate(gpa, packed_text);
     const list = try log.parse(gpa, text);
     const out = try gpa.alloc(Version, list.len);
     for (list, out) |v, *o| {

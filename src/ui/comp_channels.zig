@@ -592,6 +592,8 @@ pub fn userPanel(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         d.rect(ctx.dl, gr, ctx.col(.hover).alpha(k * 1.5), ctx.th.radius);
         icons.gear(ctx.dl, gr.x + bs / 2, gr.y + bs / 2, ink.u());
     }
+    // Versão nova esperando: o pontinho fica até atualizar.
+    @import("aviso_atualizacao.zig").ponto(ctx, ctx.dl, gr);
 }
 
 /// "Foco · 23 min · economia" quando o modo foco ou o de economia estão

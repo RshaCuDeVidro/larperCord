@@ -23,7 +23,8 @@ jobs:
           zig build test -Dcpu=baseline
           for arch in 0 1 2; do LARPER_RNNOISE_ARCH=$arch zig build ruido-custo -Dcpu=baseline; done
 
-  # O build para Windows sai do Linux (as bibliotecas vêm de tools/windows_deps.sh).
+  # O build para Windows sai do Linux: o .exe único das releases (tools/windows_deps.sh e
+  # tools/windows_static_deps.sh), e o com DLLs, que é o padrão de quem compila.
   windows:
     runs-on: ubuntu-latest
     steps:
@@ -32,7 +33,14 @@ jobs:
         with:
           version: 0.17.0
       - run: tools/windows_deps.sh
-      - run: zig build -Dtarget=x86_64-windows-gnu -Dqa=true
+      - run: zig build -Dtarget=x86_64-windows-gnu -Dqa=true -p out/dlls
+      # O OpenSSL, o curl e companhia compilados para o .exe único: só mudam com o script.
+      - uses: actions/cache@v4
+        with:
+          path: .deps/windows-static
+          key: windows-static-${{ hashFiles('tools/windows_static_deps.sh', 'tools/curl-chrome-h2.patch', 'tools/brotlienc_stub.c') }}
+      - run: test -f .deps/windows-static/lib/libcurl.a || tools/windows_static_deps.sh
+      - run: zig build -Dtarget=x86_64-windows-gnu -Dsingle-exe=true -Dqa=true
       - uses: actions/upload-artifact@v4
         with:
           name: windows-qa-build
@@ -113,8 +121,8 @@ jobs:
 
   # O app inteiro (UI, rede, imagens) só compila com as bibliotecas do
   # sistema: roda num Arch, que tem SDL3, libwebp e companhia nos pacotes.
-  # Depois, o QA completo fora da tela, com os dados de demonstração.
-  build-and-qa:
+  # O executável do QA sai uma vez aqui e vai para as máquinas de baixo.
+  build-linux:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -126,19 +134,53 @@ jobs:
       - run: zig build
       - name: Wayland nativo, escala e fallback X11
         run: python3 tools/qa_wayland.py zig-out/bin/larpercord
+      # Debug, com as checagens de segurança, como o tools/qa.sh compila. Para o x86-64
+      # básico: os jobs do QA rodam em outras máquinas, e um binário nativo desta morre
+      # na hora (instrução inválida) onde o processador não tem as mesmas extensões.
+      - run: zig build -Doptimize=debug -Dcpu=baseline -p qa-build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-qa-bin
+          path: qa-build/bin/larpercord
+          if-no-files-found: error
+
+  # O QA completo fora da tela, com os dados de demonstração, dividido entre máquinas que
+  # rodam ao mesmo tempo (em fila, numa só, eram uns 64 minutos). A bateria por tema é
+  # 71% do tempo: vai em quatro pedaços. Cada pedaço é o tools/qa.sh com QA_PARTE.
+  qa-linux:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        parte:
+          - geral
+          - outras
+          - temas:classico,vidro,terminal
+          - temas:subsolo,orbital,editorial
+          - temas:bolhas,zen,papel
+          - temas:escritorio,cupertino
+    steps:
+      - run: pacman -Syu --noconfirm --needed git sdl3 curl zlib freetype2 fontconfig libwebp opus noto-fonts noto-fonts-emoji python weston xorg-server-xvfb
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-qa-bin
+          path: qa-build
+      # O artefato não guarda a permissão de execução.
+      - run: chmod +x qa-build/larpercord
       - run: ./tools/qa.sh
         env:
           SDL_VIDEO_DRIVER: offscreen
           QA_SLOW: "3"
+          QA_BIN: qa-build/larpercord
+          QA_PARTE: ${{ matrix.parte }}
+      # O nome do artefato não aceita ":" nem ",": vai o número do pedaço.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: linux-qa-out
-          path: qa-out/
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: qa-out
+          name: linux-qa-out-${{ strategy.job-index }}
           path: qa-out/
 
   # O site: cada tema de themes/community/ com as regras do app e da galeria (metadados,

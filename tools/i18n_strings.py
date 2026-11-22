@@ -443,13 +443,16 @@ def collect(files):
 
 
 THEMES = ROOT / "themes"
-THEME_EN = re.compile(r'\b(?:description|label)-en="((?:[^"\\]|\\.)*)"')
+# description-en e label-en (o tema e as opções), e o en= / text-en= dos textos
+# desenhados (span "TRIPULAÇÃO" en="CREW"), que src/ui/display_text.zig procura igual.
+THEME_EN = re.compile(r'(?<![\w-])(?:(?:description|label|text)-)?en="((?:[^"\\]|\\.)*)"')
 
 
 def theme_uses():
     """Os textos em inglês dos temas embutidos (themes/builtin.zig): a descrição do
-    tema e o nome e a descrição de cada opção. O app procura esse inglês nas tabelas
-    (themeText em src/ui/settings.zig). Temas da comunidade ficam só em pt/en."""
+    tema, o nome e a descrição de cada opção e os textos desenhados. O app procura esse
+    inglês nas tabelas (themeText em src/ui/settings.zig, display_text.zig). Temas da
+    comunidade ficam só em pt/en."""
     names = re.findall(r'@embedFile\("([^"]+\.kdl)"\)', (THEMES / "builtin.zig").read_text(encoding="utf-8"))
     uses = []
     for name in names:
@@ -757,6 +760,12 @@ def cmd_check(uses, dynamic, lang, strict=False):
     print(f"textos no código: {len(keys)} ({len(fmt_keys)} de formato; {len(dynamic)} chamadas com texto de variável)")
     print(f"{rel}: {len(have)} traduções, {len(keys & have)} em uso")
     print(f"aviso: {len(missing)} sem tradução (aparecem em inglês)")
+    # A tradução igual ao inglês é espaço reservado: o texto de máquina que voltou para o
+    # inglês, ou o texto novo que entra assim até alguém traduzir (nomes e siglas ficam
+    # iguais mesmo).
+    same = [l for k, v, l in entries if k == v and k in keys]
+    if same:
+        print(f"aviso: {len(same)} iguais ao inglês, para traduzir (menos nomes e siglas, que ficam assim)")
     # Inglês que vem de uma variável que este script não lê: a tradução só existe se
     # o mesmo texto aparecer escrito em outro lugar. Use um campo .en ou um texto direto.
     for file, line, _, expr in unexplained:

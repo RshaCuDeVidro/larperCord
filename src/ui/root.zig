@@ -180,7 +180,9 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     c.ImGui_End();
 
     const t1 = if (profile) c.SDL_GetTicksNS() else 0;
-    popup.draw(ctx);
+    // O popup aberto na janela flutuante é desenhado lá (app_flutuante.zig).
+    popup.claim(ctx.st, false);
+    if (!popup.in_pip) popup.draw(ctx);
     // Formulário de comando e modal de bot: por cima dos popups.
     @import("interact.zig").draw(ctx);
     settings.draw(ctx, previews);
@@ -188,16 +190,23 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     @import("attachments.zig").viewer(ctx);
     palette.draw(ctx);
     search.draw(ctx);
-    // Fechada há minutos, a busca solta o índice do disco (um teste barato por quadro).
-    _ = search.releaseIdle(false);
     toast(ctx);
+    // Exportar conversa e salvar mídia: a resposta do seletor, o andamento e o resultado.
+    @import("exportar.zig").frame(ctx);
+    @import("exportar.zig").cards(ctx);
     connectionBanner(ctx);
+    @import("aviso_atualizacao.zig").draw(ctx);
+    // Lembrete vencido: o aviso fica até alguém mexer (o mascote do canto, desenhado
+    // logo depois, vem por cima dele trazer o bilhete).
+    @import("lembretes.zig").notice(ctx);
     @import("mascote_pet.zig").draw(ctx);
     // Chamada chegando: por cima de tudo, em qualquer tema.
     @import("chamada.zig").overlay(ctx);
     shortcuts(ctx);
     // A conversão do IME num campo que não é a caixa do chat: por cima de tudo, no cursor dele.
     @import("ime.zig").floating(ctx);
+    // O que abriu depois dos popups (Configurações, paleta, atalhos) também é desta janela.
+    popup.claim(ctx.st, false);
 }
 
 /// `autohide`: o componente some (fica quase invisível) até o mouse chegar
@@ -320,6 +329,8 @@ fn shortcuts(ctx: *d.Ctx) void {
     // Mudo e ensurdecer (as dicas dos botões mostram a combinação de agora).
     if (K.on(kb, io, .mutar, false)) ctx.act(.toggle_mute);
     if (K.on(kb, io, .ensurdecer, false)) ctx.act(.toggle_deafen);
+    // Gravar áudio na caixa (ou, gravando, enviar): quem atende é o botão dela.
+    if (K.on(kb, io, .gravar_audio, false) and !ctx.st.settings.open) @import("gravar_audio.zig").shortcut();
     if (io.*.KeyAlt) {
         const keys = [_]c_int{ c.ImGuiKey_1, c.ImGuiKey_2, c.ImGuiKey_3, c.ImGuiKey_4, c.ImGuiKey_5, c.ImGuiKey_6, c.ImGuiKey_7, c.ImGuiKey_8, c.ImGuiKey_9 };
         for (keys, 0..) |k, i| if (c.ImGui_IsKeyPressed(k)) ctx.act(.{ .focus_tab = i });

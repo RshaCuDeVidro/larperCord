@@ -109,6 +109,12 @@ pub const Settings = struct {
     mascot_cursor: bool = true,
     /// Espera você com a janela sem foco, acampa quando você some e comemora a volta.
     mascot_away: bool = true,
+    /// Reage ao que você digita (ui/mascote_reacoes.zig): tudo em maiúsculas, spoiler,
+    /// bloco de código, mensagem longa, "@", "#" e "/", apagar muito e os segredos.
+    mascot_typing: bool = true,
+    /// Brincadeiras: o d20 do envio, o emoji, o link e a imagem soltos em cima dele, o
+    /// esconde-esconde e as teclas Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V e Esc.
+    mascot_games: bool = true,
     /// A plantinha do lado dele, os dias em que ela cresceu e o último dia de uso
     /// (dias desde 1970, no fuso daqui).
     mascot_plant: bool = true,
@@ -118,6 +124,13 @@ pub const Settings = struct {
     /// O visual do Terminal (Configurações → Mascote → Personalizar) em uma linha
     /// (ui/mascote_visual.zig `writeCompact`: só o que não é o padrão); vazio = o de sempre.
     mascot_look: Text = .{},
+    /// As posições, os tamanhos e o formato do Terminal (Personalizar: as alturas e os
+    /// Mais ajustes) em uma linha (ui/mascote_visual.zig `writeTweaks`); vazio = os de
+    /// sempre. À parte de `mascot_look` para os dois caberem.
+    mascot_tweaks: Text = .{},
+    /// O nome dele (Personalizar → Nome), que aparece com o mouse em cima do mascote do
+    /// canto; vazio = sem nome.
+    mascot_name: Text = .{},
     /// O arquivo de mascote escolhido (<config>/larpercord/mascots/<nome>.kdl, sem o
     /// ".kdl"); vazio = o visual de `mascot_look`.
     mascot_file: Text = .{},
@@ -143,8 +156,14 @@ pub const Settings = struct {
     data_saver: bool = false,
     /// Prévia do markdown acima da caixa de texto, quando tem formatação.
     md_preview: bool = true,
+    /// O botão do microfone na caixa de texto (e o atalho dele): grava um áudio e
+    /// manda como um anexo .ogg comum (ui/gravar_audio.zig).
+    record_audio: bool = true,
     /// Canal com não lidas abre na primeira delas, como no Discord (senão, no fim).
     open_at_unread: bool = true,
+    /// As barrinhas que acompanham o som enquanto um áudio da conversa toca
+    /// (ui/audio_player.zig). Desligado, só a barra de progresso anda (menos quadros).
+    audio_visualizer: bool = true,
     /// Pasta com as bibliotecas do FFmpeg escolhida à mão (vazia = procurar sozinho;
     /// platform/ffmpeg.zig). Só entra uma pasta conferida.
     ffmpeg_dir: Text = .{},
@@ -156,9 +175,18 @@ pub const Settings = struct {
     split_two: i16 = split_two_default,
     split_three_a: i16 = split_three_a_default,
     split_three_b: i16 = split_three_b_default,
+    /// A janela flutuante (app_flutuante.zig): onde e de que tamanho ela estava, nas
+    /// coordenadas do SDL. Largura 0 = nunca aberta; no Wayland a posição não vale.
+    pip_x: i16 = 0,
+    pip_y: i16 = 0,
+    pip_w: i16 = 0,
+    pip_h: i16 = 0,
 
     /// Pergunta ao GitHub se há versão nova ao abrir o app.
     check_updates: bool = true,
+    /// Achou versão nova: baixa e instala sozinho (ela abre na próxima vez). Desligado
+    /// de começo: tem quem prefira escolher a hora.
+    auto_update: bool = false,
 
     // Privacidade (o proxy fica na página Rede)
     send_typing: bool = true,
@@ -182,6 +210,10 @@ pub const Settings = struct {
     /// Rich Presence: jogos e apps mostram a atividade pelo discord-ipc
     /// (net/rpc_ipc.zig). Desligado, nada escuta.
     rich_presence: bool = false,
+    /// "Jogando …" pelo processo aberto: a lista de jogos (core/jogos.zig) é
+    /// conferida de tempos em tempos (app_presenca.zig). Desligado, nada olha os
+    /// processos. Começa desligado: mostra o que a pessoa tem aberto.
+    show_game: bool = false,
 
     /// Nosso status: 0 online, 1 ausente, 2 não perturbe, 3 invisível.
     /// Reaplicado ao conectar.
@@ -190,6 +222,9 @@ pub const Settings = struct {
     // Notificações (DMs e menções)
     desktop_notifs: bool = true,
     taskbar_flash: bool = true,
+    /// O som de mensagem nova (core/aviso.zig decide quando; o som em si é o
+    /// `sound_message` abaixo, com os da call).
+    message_sound: bool = true,
 
     // Voz (net/voz_audio.zig, core/voz.zig)
     /// Nome do microfone e da saída; vazio = padrão do sistema. Se o dispositivo
@@ -246,6 +281,9 @@ pub const Settings = struct {
     sound_ring: u8 = 1,
     sound_ring_vol: u8 = 100,
     sound_ring_file: Text = .{},
+    sound_message: u8 = 1,
+    sound_message_vol: u8 = 100,
+    sound_message_file: Text = .{},
 
     /// Volume dos vídeos em % (0..100; 0 = mudo).
     video_volume: u8 = 100,
@@ -657,6 +695,10 @@ test "sons por evento vão e voltam, e o arquivo antigo toca o de antes" {
     soundFile(&s, .ring).set("ring-meu \"toque\".ogg");
     soundVariant(&s, .user_leave).* = @backingInt(sons.Variant.retro);
     soundVolume(&s, .mute).* = 200;
+    // O de mensagem nova mora com os outros; a chave dele, nas notificações.
+    soundVariant(&s, .message).* = @backingInt(sons.Variant.soft);
+    soundVolume(&s, .message).* = 60;
+    s.message_sound = false;
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(std.testing.allocator);
     try write(&s, "vidro", &out, std.testing.allocator);
@@ -665,6 +707,9 @@ test "sons por evento vão e voltam, e o arquivo antigo toca o de antes" {
     const nodes = try kdl.parse(arena.allocator(), out.items, null);
     var back: Settings = .{};
     apply(&back, &nodes[0]);
+    try std.testing.expectEqual(@as(u8, 2), back.sound_message);
+    try std.testing.expectEqual(@as(u8, 60), back.sound_message_vol);
+    try std.testing.expect(!back.message_sound);
     try std.testing.expectEqual(@as(u8, 3), back.sound_join);
     try std.testing.expectEqual(@as(u8, 35), back.sound_join_vol);
     try std.testing.expectEqual(@as(u8, 5), back.sound_ring);
@@ -678,6 +723,9 @@ test "sons por evento vão e voltam, e o arquivo antigo toca o de antes" {
     apply(&older, &old[0]);
     try std.testing.expectEqual(@as(u8, 1), older.sound_join);
     try std.testing.expectEqual(@as(u8, 0), older.sound_user_join);
+    // Quem atualiza ganha o som de mensagem nova ligado, no clássico.
+    try std.testing.expect(older.message_sound);
+    try std.testing.expectEqual(@as(u8, 1), older.sound_message);
     resetSounds(&back);
     try std.testing.expectEqual(@as(u8, 1), back.sound_join);
     try std.testing.expectEqual(@as(usize, 0), back.sound_ring_file.len);
@@ -759,6 +807,27 @@ test "largura dos painéis vai e volta, e um arquivo editado à mão não estour
     apply(&older, &old[0]);
     try std.testing.expectEqual(@as(i16, 0), older.width_channels);
     try std.testing.expectEqual(split_two_default, older.split_two);
+}
+
+test "o lugar e o tamanho da janela flutuante vão e voltam (posição negativa: monitor à esquerda)" {
+    const kdl = @import("../theme/kdl.zig");
+    const fl = @import("../core/flutuante.zig");
+    var s: Settings = .{};
+    // Nunca aberta: nada guardado, abre no canto.
+    try std.testing.expectEqual(@as(?fl.Geo, null), fl.lida(s.pip_x, s.pip_y, s.pip_w, s.pip_h));
+    s.pip_x = -1500;
+    s.pip_y = 40;
+    s.pip_w = 380;
+    s.pip_h = 520;
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(std.testing.allocator);
+    try write(&s, "vidro", &out, std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const nodes = try kdl.parse(arena.allocator(), out.items, null);
+    var back: Settings = .{};
+    apply(&back, &nodes[0]);
+    try std.testing.expectEqual(fl.Geo{ .x = -1500, .y = 40, .w = 380, .h = 520 }, fl.lida(back.pip_x, back.pip_y, back.pip_w, back.pip_h).?);
 }
 
 test "ganho do vídeo: mudo em 0, cheio em 100, e um arquivo editado à mão não estoura" {

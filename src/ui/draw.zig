@@ -54,6 +54,10 @@ pub const Ctx = struct {
     win: Rect,
     /// Algum elemento clicável está sob o mouse neste quadro.
     hot: bool = false,
+    /// O quadro é o da janela flutuante (ui/flutuante.zig): outro contexto do ImGui,
+    /// outra janela, e o que é só da principal (a caixa de texto, a barra de ações da
+    /// mensagem, os painéis) fica de fora.
+    pip: bool = false,
 
     pub fn act(ctx: *Ctx, a: Action) void {
         ctx.actions.append(ctx.st.gpa, a) catch {};

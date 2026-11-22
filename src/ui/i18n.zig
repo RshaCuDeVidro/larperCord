@@ -14,6 +14,7 @@
 //! demonstração): por isso fica num valor atômico, e a tabela de traduções é
 //! montada uma vez, antes de o idioma mudar, e depois só lida (sem trava).
 const std = @import("std");
+const embutido = @import("../core/embutido.zig");
 const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
 
@@ -21,9 +22,10 @@ pub const Lang = enum(u8) { pt, en, ja, ru };
 
 var lang: std.atomic.Value(Lang) = .init(.pt);
 
-/// Os arquivos de tradução embutidos (i18n/ja.kdl, i18n/ru.kdl).
-pub const ja_source = @embedFile("i18n_ja");
-pub const ru_source = @embedFile("i18n_ru");
+/// Os arquivos de tradução embutidos (i18n/ja.kdl, i18n/ru.kdl), comprimidos: abrem
+/// quando o idioma é escolhido (core/embutido.zig).
+const ja_packed = @embedFile("i18n_ja_z");
+const ru_packed = @embedFile("i18n_ru_z");
 
 /// Lê um arquivo de tradução a mais (larpercord/i18n/<idioma>.kdl na pasta de
 /// configurações), que vale por cima do embutido: dá para testar uma tradução
@@ -330,7 +332,8 @@ const Table = struct {
     map: std.StringHashMapUnmanaged([:0]const u8) = .empty,
     built: bool = false,
     code: []const u8,
-    source: []const u8,
+    /// O arquivo embutido, comprimido.
+    packed_source: []const u8,
 
     fn get(t: *const Table, english: []const u8) ?[:0]const u8 {
         return t.map.get(english);
@@ -342,7 +345,7 @@ const Table = struct {
         if (t.built) return;
         t.built = true;
         const a = table_arena.allocator();
-        t.add(a, t.source, "embutido");
+        if (embutido.inflate(a, t.packed_source)) |src| t.add(a, src, "embutido") else |e| std.log.warn("tradução {s} embutida ilegível ({t})", .{ t.code, e });
         if (read_extra) |read| if (read(a, t.code)) |extra| t.add(a, extra, "da pasta de configurações");
     }
 
@@ -361,8 +364,8 @@ const Table = struct {
 };
 
 var table_arena: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
-var ja_table: Table = .{ .code = "ja", .source = ja_source };
-var ru_table: Table = .{ .code = "ru", .source = ru_source };
+var ja_table: Table = .{ .code = "ja", .packed_source = ja_packed };
+var ru_table: Table = .{ .code = "ru", .packed_source = ru_packed };
 
 /// A tabela de um idioma que vem de arquivo (null: português e inglês, que
 /// estão no código).
@@ -528,7 +531,9 @@ test "i18n/*.kdl embutidos: arquivo válido e marcadores certos" {
         var a: std.heap.ArenaAllocator = .init(testing.allocator);
         defer a.deinit();
         var diag: kdl.Diagnostic = .{};
-        const list = parseFile(a.allocator(), t.source, &diag) catch |e| {
+        // O comprimido abre igual ao arquivo (o que o app lê é o comprimido).
+        const source = try embutido.inflate(a.allocator(), t.packed_source);
+        const list = parseFile(a.allocator(), source, &diag) catch |e| {
             std.debug.print("i18n/{s}.kdl:{d}: {s}\n", .{ t.code, diag.line, diag.message });
             return e;
         };

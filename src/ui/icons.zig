@@ -220,6 +220,18 @@ pub fn bookmark(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32, filled: bool) voi
     c.ImDrawList_AddPolyline(dl, &pts[0], pts.len, col, 1.7, c.ImDrawFlags_Closed);
 }
 
+/// Lembrete: um despertador (o mostrador com os ponteiros e as duas campainhas).
+pub fn alarm(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32) void {
+    const th: f32 = 1.7;
+    c.ImDrawList_AddCircleEx(dl, v(cx, cy + 1), 6.5, col, 20, th, 0);
+    line(dl, cx, cy + 1, cx, cy - 2.6, col, th);
+    line(dl, cx, cy + 1, cx + 2.6, cy + 2.4, col, th);
+    line(dl, cx - 7.5, cy - 4.5, cx - 4.5, cy - 7.5, col, th + 0.3);
+    line(dl, cx + 7.5, cy - 4.5, cx + 4.5, cy - 7.5, col, th + 0.3);
+    line(dl, cx - 4.5, cy + 6.5, cx - 6, cy + 8.5, col, th);
+    line(dl, cx + 4.5, cy + 6.5, cx + 6, cy + 8.5, col, th);
+}
+
 /// Fórum: um balão com duas linhas de texto.
 pub fn forum(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32) void {
     const th: f32 = 1.7;
@@ -329,4 +341,12 @@ pub fn thread(dl: *c.ImDrawList, cx: f32, cy: f32, col: u32) void {
     c.ImDrawList_AddCircleFilled(dl, v(cx - 3, cy - 1.5), 1, col, 0);
     c.ImDrawList_AddCircleFilled(dl, v(cx, cy - 1.5), 1, col, 0);
     c.ImDrawList_AddCircleFilled(dl, v(cx + 3, cy - 1.5), 1, col, 0);
+}
+
+/// Janela flutuante (picture-in-picture): a tela com a janelinha no canto.
+pub fn pip(dl: *c.ImDrawList, cx_in: f32, cy_in: f32, col: u32) void {
+    const cx = @round(cx_in);
+    const cy = @round(cy_in);
+    c.ImDrawList_AddRectEx(dl, v(cx - 8, cy - 6.5), v(cx + 8, cy + 6.5), col, 2.5, 1.6, 0);
+    c.ImDrawList_AddRectFilledEx(dl, v(cx + 0.5, cy + 0.5), v(cx + 5.5, cy + 4), col, 1, 0);
 }

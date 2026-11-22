@@ -64,6 +64,8 @@ pub fn dmCall(ctx: *const d.Ctx, ch_id: Id) ?*ChannelState {
 const layout = @import("call_layout.zig").layout;
 
 const tile_min: f32 = 176;
+/// Na janela flutuante, quadros menores: duas colunas cabem na largura dela.
+const tile_min_pip: f32 = 120;
 const tile_max: f32 = 560;
 const tile_gap: f32 = 10;
 const pad: f32 = 16;
@@ -339,7 +341,7 @@ fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bo
     const look = lookOf(ctx, n);
     const by_self = alone(ctx, cs);
     const row_h: f32 = if (by_self) alone_row_h + 12 else 0;
-    const g = layout(list.len, r.w - pad * 2, r.h - pad * 2 - row_h, tile_gap, tile_min, if (by_self) tile_alone_max else tile_max);
+    const g = layout(list.len, r.w - pad * 2, r.h - pad * 2 - row_h, tile_gap, if (ctx.pip) tile_min_pip else tile_min, if (by_self) tile_alone_max else tile_max);
     // Área estreita demais para um quadro (a janela sendo arrastada bem pequena).
     if (g.cols == 0 or g.rows == 0) return d.endRegion(ctx, top + r.h, r.x);
     const rows_f: f32 = @floatFromInt(g.rows);
@@ -417,6 +419,16 @@ pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32
     return h;
 }
 
+/// A call na janela flutuante (ui/flutuante.zig): os quadros de quem está em `corpo` e
+/// os botões em `base`, no estilo do tema (o componente `messages`).
+pub fn compact(ctx: *d.Ctx, n: *const kdl.Node, corpo: d.Rect, base: d.Rect, cs: *ChannelState) void {
+    const tty = d.is(n, "variant", "irc", "");
+    qa.mark(corpo, "grid-view", .{});
+    people(ctx, n, corpo, cs, tty, "##pip-call");
+    d.line(ctx.dl, base.x, base.y + 0.5, base.right(), base.y + 0.5, ctx.col(.border), 1);
+    buttons(ctx, ctx.dl, ctx.familyFor(n), base, text_buttons, cs);
+}
+
 // --- Botões --------------------------------------------------------------------------
 
 /// Os botões da faixa de voz (microfone, fone, mixer, sair) e o tempo da call, no
@@ -476,6 +488,12 @@ fn buttons(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, r: d.Rect, tty: bool,
         const mix = textButton(ctx, dl, font, fs, x, y, h, i18n.tr("[mixer]", "[mixer]"), "grid-mixer", ctx.col(.muted), 8960);
         if (mix.clicked) openMixer(ctx, r);
         x += mix.w + 8;
+        // A call numa janela flutuante (na própria janela flutuante, não).
+        if (!ctx.pip) if (ctx.st.voice) |vch| {
+            const fl = textButton(ctx, dl, font, fs, x, y, h, i18n.tr("[flutuar]", "[pop out]"), "pip-call", ctx.col(.muted), 8962);
+            if (fl.clicked) ctx.act(.{ .flutuante = .{ .abrir = .{ .call = vch } } });
+            x += fl.w + 8;
+        };
         const leave = textButton(ctx, dl, font, fs, x, y, h, i18n.tr("[sair]", "[leave]"), "grid-leave", ctx.col(.danger), 8961);
         if (leave.clicked) ctx.act(.leave_voice);
         return;
@@ -490,7 +508,10 @@ fn buttons(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, r: d.Rect, tty: bool,
     const fs = ctx.th.font_size;
     const timer = callTime(ctx, cs, &tb, fs - 1);
     const timer_w = if (timer) |t| t.w + 14 + gap + 4 else 0;
-    const total = timer_w + dev_w * 2 + b + leave_w + gap * 3;
+    // "Call em janela flutuante": na janela principal, com a gente numa call.
+    const pip_ch: ?Id = if (ctx.pip) null else ctx.st.voice;
+    const pip_w: f32 = if (pip_ch != null) b + gap else 0;
+    const total = timer_w + dev_w * 2 + b + leave_w + gap * 3 + pip_w;
     const bar: d.Rect = .{ .x = @round(r.x + (r.w - total) / 2 - inset), .y = @round(r.y + (r.h - b) / 2 - inset), .w = total + inset * 2, .h = b + inset * 2 };
     const bar_r = std.math.clamp(ctx.th.radius * 2, 4, bar.h / 2);
     d.rect(dl, bar, ctx.col(.bg).mix(ctx.col(.elevated), 0.45), bar_r);
@@ -531,6 +552,17 @@ fn buttons(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, r: d.Rect, tty: bool,
         }
         d.tip(ctx, mr, i18n.tr("Mixer da call", "Call mixer"), mh.hovered);
         if (mh.clicked) openMixer(ctx, r);
+        x += b + gap;
+    }
+    if (pip_ch) |vch| {
+        const pr: d.Rect = .{ .x = x, .y = y, .w = b, .h = b };
+        const ph = d.hit(ctx, 8962, pr);
+        qa.mark(pr, "pip-call", .{});
+        const k = anim.to(anim.id("grid-pip", 0), if (ph.hovered) 1 else 0, 24);
+        d.rect(dl, pr, ctx.col(.elevated).mix(ctx.col(.hover), k), btn_r);
+        icons.pip(dl, pr.x + b / 2, pr.y + b / 2, ctx.col(.muted).mix(ctx.col(.text), k).u());
+        d.tip(ctx, pr, i18n.tr("Call em janela flutuante", "Call in floating window"), ph.hovered);
+        if (ph.clicked) ctx.act(.{ .flutuante = .{ .abrir = .{ .call = vch } } });
         x += b + gap;
     }
     // Sair: o botão vermelho.

@@ -10,7 +10,7 @@ larperCord is a native Discord client for Linux and Windows, written in Zig. You
 | | Linux | Windows |
 |---|---|---|
 | System | x86_64 with glibc 2.34 or newer, distros from about 2022 on (tested daily on Arch with Hyprland) | Windows 10 or 11, x64 |
-| To run the download | FreeType, fontconfig, libwebp, Opus and zlib from the system; a desktop distro usually has them. SDL3, libcurl and OpenSSL come inside the file | Nothing else: SDL3, libcurl and OpenSSL come as DLLs next to `larpercord.exe` |
+| To run the download | FreeType, fontconfig, libwebp, Opus and zlib from the system; a desktop distro usually has them. SDL3, libcurl and OpenSSL come inside the file | Nothing else: SDL3, libcurl and OpenSSL come inside `larpercord.exe` |
 | Fonts | Inter, JetBrains Mono and Noto Color Emoji are recommended. fontconfig picks substitutes if one is missing | Nothing to install: Segoe UI, Consolas, Georgia and Segoe UI Emoji from `C:\Windows\Fonts` ([why](page:themes#fonts-on-windows)) |
 | Video inside the app (optional) | FFmpeg 7, 8 or 9 (libavformat 61–63) from your distro. Any other version is ignored and videos open in the browser | Settings → Chat → **Download FFmpeg**, about 80 MB, checked against a fixed SHA-256, or **Choose FFmpeg folder…** for a shared build you already have |
 | To build | Zig 0.17, SDL3, FreeType, fontconfig, libcurl (with WebSocket support, 7.86 or newer), zlib, libwebp, Opus, OpenSSL | Built from Linux with Zig 0.17: `tools/windows_deps.sh` downloads the Windows libraries |
@@ -51,7 +51,7 @@ In PowerShell, for your user, no administrator. It installs into `%LOCALAPPDATA%
 irm https://raw.githubusercontent.com/RshaCuDeVidro/larperCord/main/install.ps1 | iex
 ```
 
-Or download the [zip](https://github.com/RshaCuDeVidro/larperCord/releases/latest/download/larpercord-windows-x86_64.zip), unzip it and open `larpercord.exe` in the `larperCord` folder. Keep the three DLLs next to it (`SDL3.dll`, `libcurl-x64.dll`, `libcrypto-3-x64.dll`), and unzip it somewhere you can write to, not `C:\Program Files`, so it can update itself. It isn't code-signed yet: if SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**. On the releases page, take the zip: the loose `.exe` and DLLs there are for the updater and the install script.
+Or download the [zip](https://github.com/RshaCuDeVidro/larperCord/releases/latest/download/larpercord-windows-x86_64.zip), unzip it and open `larpercord.exe` in the `larperCord` folder. Since 0.6.7 it's a single file, with SDL3, libcurl and OpenSSL inside. Unzip it somewhere you can write to, not `C:\Program Files`, so it can update itself. It isn't code-signed yet: if SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**. On the releases page, take the zip: the loose `.exe` there is for the updater and the install script, and the DLLs only for versions before 0.6.7 updating themselves.
 
 The Windows files have no attestation yet. To check the zip against `SHA256SUMS` from the same release, in PowerShell, in the folder with both files (`True` means it matches):
 
@@ -95,7 +95,7 @@ zig build -Doptimize=ReleaseFast
 ./zig-out/bin/larpercord --demo
 ```
 
-Everything else is already in the repository: Dear ImGui, Lua, stb_image, libdave, MLSpp and nlohmann/json are copied into `third_party/`, so the Linux build downloads nothing.
+Everything else is already in the repository: Dear ImGui, Lua, stb_image, dr_mp3, dr_wav, libdave, MLSpp and nlohmann/json are copied into `third_party/`, so the Linux build downloads nothing.
 
 The Windows version is built from Linux too. `tools/windows_deps.sh` downloads its libraries once, at fixed versions with checked hashes:
 
@@ -104,7 +104,7 @@ tools/windows_deps.sh
 zig build -Dtarget=x86_64-windows-gnu
 ```
 
-`zig-out/bin/` gets `larpercord.exe` with `SDL3.dll`, `libcurl-x64.dll` and `libcrypto-3-x64.dll`. Copy the four files together to the Windows machine and open `larpercord.exe`.
+`zig-out/bin/` gets `larpercord.exe` with `SDL3.dll`, `libcurl-x64.dll` and `libcrypto-3-x64.dll`. Copy the four files together to the Windows machine and open `larpercord.exe`. The release is a single `.exe` instead: run `tools/windows_static_deps.sh` after `tools/windows_deps.sh` and build with `-Dsingle-exe=true`.
 
 ## Your first five minutes
 

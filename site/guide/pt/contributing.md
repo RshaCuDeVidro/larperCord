@@ -54,7 +54,7 @@ O site fica em `docs/` e é gerado pelo `tools/gen_site.py` a partir desses arqu
 
 ## Créditos
 
-Feito com Zig, SDL3, [Dear ImGui](https://github.com/ocornut/imgui), dear_bindings, FreeType, fontconfig, libcurl, zlib, libwebp, Opus, stb_image, [Lua](https://www.lua.org), [libdave](https://github.com/discord/libdave) e [MLSpp](https://github.com/cisco/mlspp). O site usa Departure Mono, JetBrains Mono, Archivo, Fraunces e DM Mono, sob a SIL Open Font License.
+Feito com Zig, SDL3, [Dear ImGui](https://github.com/ocornut/imgui), dear_bindings, FreeType, fontconfig, libcurl, zlib, libwebp, Opus, stb_image, [dr_mp3 e dr_wav](https://github.com/mackron/dr_libs), [Lua](https://www.lua.org), [libdave](https://github.com/discord/libdave) e [MLSpp](https://github.com/cisco/mlspp). O site usa Departure Mono, JetBrains Mono, Archivo, Fraunces e DM Mono, sob a SIL Open Font License.
 
 ## Licença
 

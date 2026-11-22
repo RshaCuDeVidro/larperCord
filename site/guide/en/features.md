@@ -72,25 +72,31 @@ Buttons and select menus talk to the bot, with a loading indicator and "This int
 - **Embeds** as cards: color, author, title, description in markdown, fields, image, thumbnail and footer.
 - **Video in the chat** for attachments and direct `.mp4`/`.webm` links, through FFmpeg 7, 8 or 9, which is only loaded on the first play. On Linux it's your system's FFmpeg (older distros ship an older one, which is ignored). On Windows, Settings → Chat → **Download FFmpeg** downloads and installs it (about 80 MB, checked against a SHA-256), or the app uses FFmpeg DLLs it finds next to `larpercord.exe` or in any `PATH` folder. On both systems, **Choose FFmpeg folder…** in the same place takes a "shared" FFmpeg build you already have, and when FFmpeg isn't found the page says why: a static `ffmpeg` on `PATH` without the libraries (what winget, choco and gyan.dev install), a version the app doesn't use, or a library that didn't load and the system's reason. Play and pause, a progress bar and sound, up to 854×480 at about 30 fps. Off-screen video pauses, and 30 seconds later everything is released. Without FFmpeg, it opens in the browser.
 - **Data saver**: images, avatars and attachments only download when you click.
+- **Save to disk**: right-click an image, GIF, video or file (or use the buttons in the full-screen view) → **Save…** or **Save to Downloads**. It keeps the original file, not the reduced preview, with a new name if one already exists.
 
 ## Finding things
 
 - **Command palette** (`Ctrl+K`, or `Ctrl+Shift+P` for actions first): fuzzy search over channels, DMs, servers, themes, status, settings pages and every toggle.
-- **Search** (`Ctrl+F`): runs over memory and the local cache on every keystroke, with no internet. Results jump to the message.
+- **Search** (`Ctrl+F`): answers on every keystroke from a local index of the messages already on your computer (the ones in memory and in the message cache), with no internet. Enter also asks Discord, which has the whole history, and its results join the local ones, each message once. Results jump to the message.
 
 | Filter | Finds |
 |---|---|
 | `from:name` | messages by that person |
 | `in:channel` | messages in that channel |
+| `mentions:name` | messages that mention that person |
 | `has:link` | messages with a link |
 | `has:image` | messages with an image (`has:imagem` also works) |
 | `has:file` | messages with a file (`has:arquivo` also works) |
+| `has:video`, `has:sound` | messages with a video or a sound |
+| `before:`, `after:`, `during:` | messages from those dates (`2026-11-06` or `06/11/2026`) |
 | `"exact phrase"` | that phrase |
 
-Search ignores case and accents, so `nao` finds `não`.
+Search ignores case and accents, so `nao` finds `não`, and while you type the last word counts as the start of a word, so `hypr` finds `hyprland`. `pinned:`, `has:embed` and `has:sticker` only work in Discord's search (Enter).
 
 - **Inbox** (`Ctrl+I`): unread DMs and mentions from every server, grouped by channel, with previews, jump to message and "mark all as read". A second tab shows recent mentions from Discord.
 - **Saved messages** (`Ctrl+Shift+S`, or right-click → Save message): up to 500, with a note of up to 1,000 characters. Stored only on your computer, and nothing goes to Discord.
+- **Message reminders** (right-click → Remind Me…): in 20 minutes, 1 hour, 3 hours, tomorrow at 9:00, next week, or a date and time you pick, with an optional note. When one is due, a notice stays on screen until you jump to the message, snooze it 10 minutes or mark it done; the corner mascot brings it, and with the window unfocused or in the tray a desktop notification goes out (not on Do Not Disturb). A reminder that came due with the app closed shows up as overdue when it opens. The Reminders tab next to saved messages lists what's due, what's coming and what's done, with edit and delete. Only on your computer.
+- **Export a conversation**: right-click a channel or DM, or the conversation's name in the header → **Export Conversation…**, as HTML (one page that opens offline, in your theme's colors), Markdown or JSON, for a range of days. It only uses what's already on your computer and asks Discord for nothing; scroll up first to include older messages. Media is optional and only copies files the app already downloaded.
 
 ## Layout
 

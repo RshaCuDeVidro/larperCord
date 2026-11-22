@@ -4,6 +4,8 @@
 const std = @import("std");
 const App = @import("app.zig").App;
 const conta = @import("core/conta.zig");
+const aviso = @import("core/aviso.zig");
+const filtros = @import("core/filtros.zig");
 const types = @import("core/types.zig");
 const leitura = @import("core/leitura.zig");
 const store_mod = @import("core/store.zig");
@@ -289,17 +291,34 @@ pub fn mutedNow(app: *App, ch: Id) bool {
     return app.st.muted_channels.contains(ch);
 }
 
-/// Mensagem de outra pessoa: notifica? `important` é o que já valia (DM,
-/// menção, alerta). Sem configuração da conta para o lugar, fica como antes.
-pub fn allowsNotify(app: *App, m: types.Message, cs: *const store_mod.ChannelState, important: bool) bool {
-    if (mutedNow(app, m.channel)) return false;
+/// O que a regra dos avisos (core/aviso.zig `notifies`) precisa saber da
+/// mensagem que chegou: o que já valia (`verdict`: DM, menção, alerta,
+/// ignorada), o silêncio e o nível de notificação da conta. Sem configuração
+/// da conta para o lugar, fica como antes (DM, menção e alerta).
+pub fn arrival(app: *App, m: types.Message, cs: *const store_mod.ChannelState, verdict: filtros.Verdict) aviso.Chegada {
     const guild = cs.info.guild;
+    const important = verdict == .important;
     const gs = app.st.conta.settings(guild);
-    const level = conta.effectiveLevel(gs, m.channel, cs.info.parent orelse 0);
-    if (level == null and gs == null) return important;
-    const ping = pingOf(app, m, guild, important);
-    const s = gs orelse return conta.shouldNotify(level, false, false, ping);
-    return conta.shouldNotify(level, s.suppress_everyone, s.suppress_roles, ping);
+    return .{
+        .own = m.author == app.store.me,
+        .request = cs.info.request != .none,
+        .hidden = verdict == .hidden,
+        .important = important,
+        .muted = mutedNow(app, m.channel),
+        .ping = pingOf(app, m, guild, important),
+        .regra = if (gs) |s| .{
+            .level = conta.effectiveLevel(s, m.channel, cs.info.parent orelse 0),
+            .suppress_everyone = s.suppress_everyone,
+            .suppress_roles = s.suppress_roles,
+        } else null,
+    };
+}
+
+/// Nosso status é "Não perturbe"? (O toque de chamada e o som de mensagem nova
+/// ficam quietos; o aviso na tela continua.)
+pub fn dndNow(app: *App) bool {
+    const me = app.store.user(app.store.me) orelse return false;
+    return me.status == .dnd;
 }
 
 /// O que a mensagem chama, lido como no destaque (core/mencao.zig); as

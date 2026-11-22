@@ -9,6 +9,7 @@ const w = @import("widgets.zig");
 const anim = @import("anim.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
+const inbox = @import("inbox.zig");
 const types = @import("../core/types.zig");
 const Id = types.Id;
 const cc = @import("comp_channels.zig");
@@ -97,8 +98,7 @@ pub fn list(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, tree: bool, pills: b
     }
     const want: types.DmRequest = if (view == .spam) .spam else .pending;
     if (want == .spam and n.spam > 0) {
-        _ = d.textClipped(dl, fam.get(.regular), 12, r.x + 16, y, ctx.col(.faint), i18n.tr("O Discord separou estas conversas como spam.", "Discord filtered these conversations as spam."), r.w - 32);
-        y += 22;
+        y += inbox.wrapFlow(dl, fam.get(.regular), 12, r.x + 16, y, r.w - 32, i18n.tr("O Discord separou estas conversas como spam.", "Discord filtered these conversations as spam."), ctx.col(.faint), 22);
     }
     if ((if (want == .spam) n.spam else n.pending) == 0) {
         const t = if (want == .spam) i18n.tr("Nada no spam.", "Nothing in spam.") else i18n.tr("Nenhum pedido de mensagem.", "No message requests.");

@@ -237,10 +237,130 @@ fn utf8Cut(s: []const u8, max: usize) usize {
     return k;
 }
 
+/// Até onde vão a altura dos olhos e a da boca, em unidades do desenho (+ sobe): os
+/// olhos sobem até a testa sem chegar no chapéu, e a boca aberta (comendo) desce até
+/// perto dos pés sem sair do corpo.
+pub const eye_height_range = [2]i8{ -4, 10 };
+pub const mouth_height_range = [2]i8{ -4, 8 };
+
+/// Os ajustes de Personalizar → Mais ajustes (e as duas alturas): números inteiros,
+/// zero é o desenho de sempre. Ficam no texto curto do formato (`mascot_tweaks` no
+/// settings.kdl) e no nó `look` dos arquivos, com o mesmo nome (`tweak_ids`).
+pub const Tweak = enum(u4) { eye_height, mouth_height, eye_x, eye_spacing, eye_tilt, eye_size, mouth_x, mouth_size, ear_size, ear_tilt, roundness, body_width };
+pub const tweak_ids = [_][]const u8{ "eye-height", "mouth-height", "eye-x", "eye-spacing", "eye-tilt", "eye-size", "mouth-x", "mouth-size", "ear-size", "ear-tilt", "roundness", "body-width" };
+/// Os limites de cada um. Os olhos (par) andam 6 para cada lado e se afastam de 4 a 6
+/// cada um; desalinhados, um sobe e o outro desce até 3; a boca anda 10 para cada lado.
+/// Assim nada sai do rosto nem do corpo, em qualquer formato (os testes conferem).
+pub const tweak_range = [_][2]i8{ eye_height_range, mouth_height_range, .{ -6, 6 }, .{ -4, 6 }, .{ -6, 6 }, .{ -4, 5 }, .{ -10, 10 }, .{ -3, 4 }, .{ -4, 4 }, .{ -4, 4 }, .{ -5, 4 }, .{ -4, 4 } };
+/// A força das bochechas (o acessório "blush"): 3 é a de sempre.
+pub const blush_range = [2]i8{ 1, 6 };
+pub const blush_usual: i8 = 3;
+
+/// O meio e as metades do corpo no desenho (o formato arredonda em volta daqui).
+const body_cx: f32 = 63.57;
+const body_cy: f32 = 48;
+const body_rx: f32 = 63.6;
+const body_ry: f32 = 48;
+
+/// O contorno do corpo do Terminal (assets/mascote-terminal.svg), em curvas cúbicas
+/// (os arcos do SVG convertidos): aqui para os testes conferirem que olhos e boca
+/// nunca saem dele. ui/mascote_terminal.zig desenha a partir disto.
+pub const body_start = [2]f32{ 107.70, 8.07 };
+pub const body_curves = [_][6]f32{
+    .{ 99.35, 4.25, 90.53, 1.53, 81.47, 0.00 },
+    .{ 80.23, 2.22, 79.11, 4.50, 78.11, 6.83 },
+    .{ 68.46, 5.38, 58.65, 5.38, 49.00, 6.83 },
+    .{ 48.00, 4.50, 46.88, 2.22, 45.64, 0.00 },
+    .{ 36.58, 1.55, 27.75, 4.27, 19.39, 8.09 },
+    .{ 2.79, 32.65, -1.71, 56.60, 0.54, 80.21 },
+    .{ 10.26, 87.39, 21.14, 92.86, 32.71, 96.36 },
+    .{ 35.31, 92.86, 37.62, 89.14, 39.60, 85.25 },
+    .{ 35.84, 83.85, 32.21, 82.11, 28.75, 80.07 },
+    .{ 29.66, 79.41, 30.55, 78.73, 31.41, 78.07 },
+    .{ 51.78, 87.65, 75.36, 87.65, 95.73, 78.07 },
+    .{ 96.60, 78.78, 97.49, 79.46, 98.39, 80.07 },
+    .{ 94.93, 82.12, 91.29, 83.85, 87.52, 85.26 },
+    .{ 89.50, 89.15, 91.80, 92.86, 94.41, 96.36 },
+    .{ 105.99, 92.87, 116.88, 87.41, 126.60, 80.22 },
+    .{ 129.24, 52.84, 122.09, 29.11, 107.70, 8.07 },
+};
+
+/// Onde ficam os olhos e a boca do ">_" (o direito mais baixo: o rosto é inclinado).
+pub const eye_l = [2]f32{ 40, 50 };
+pub const eye_r = [2]f32{ 84, 55 };
+pub const mouth_ctr = [2]f32{ 63.5, 70 };
+/// O olho cresce em volta de um ponto um pouco abaixo do meio: maior, ele sobe para a
+/// testa em vez de descer até a boca.
+pub const eye_anchor_dy: f32 = 3;
+
+/// O nome dele (Personalizar → Nome; `name` nos arquivos): até 24 letras, sem quebra
+/// de linha, guardado num tamanho fixo (o visual é copiado inteiro).
+pub const PetName = struct {
+    len: u8 = 0,
+    buf: [max_bytes]u8 = @splat(0),
+
+    pub const max_chars = 24;
+    const max_bytes = max_chars * 4;
+
+    pub fn slice(n: *const PetName) []const u8 {
+        return n.buf[0..n.len];
+    }
+    /// Sem os espaços das pontas, sem caracteres de controle e com no máximo 24 letras
+    /// (nunca cortando uma no meio). UTF-8 inválido fica de fora.
+    pub fn set(n: *PetName, s: []const u8) void {
+        n.* = .{};
+        const t = std.mem.trim(u8, s, " \t\r\n");
+        if (!std.unicode.utf8ValidateSlice(t)) return;
+        var chars: usize = 0;
+        var i: usize = 0;
+        while (i < t.len and chars < max_chars) {
+            const k = std.unicode.utf8ByteSequenceLength(t[i]) catch return;
+            if (i + k > t.len) break;
+            if (!(k == 1 and (t[i] < 0x20 or t[i] == 0x7f))) {
+                @memcpy(n.buf[n.len..][0..k], t[i..][0..k]);
+                n.len += @intCast(k);
+                chars += 1;
+            }
+            i += k;
+        }
+        // Um espaço que sobrou no fim (cortado depois dele) também sai.
+        while (n.len > 0 and n.buf[n.len - 1] == ' ') {
+            n.len -= 1;
+            n.buf[n.len] = 0;
+        }
+    }
+};
+
 /// Um visual inteiro.
 pub const Look = struct {
     eyes: Eyes = .prompt,
     mouth: Mouth = .smile,
+    /// A altura dos olhos e a da boca no rosto (+ sobe, - desce; 0 é o lugar de
+    /// sempre). Os olhos nunca chegam mais perto da boca do que no desenho:
+    /// `eye_height` >= `mouth_height` (mais a folga de `eyeMouthGap`, ver `fixHeights`).
+    eye_height: i8 = 0,
+    mouth_height: i8 = 0,
+    /// Os olhos, juntos, para a esquerda (-) ou a direita (+); o espaço entre eles (+
+    /// mais longe); um mais alto que o outro (+ o direito sobe e o esquerdo desce); o
+    /// tamanho (+ maiores).
+    eye_x: i8 = 0,
+    eye_spacing: i8 = 0,
+    eye_tilt: i8 = 0,
+    eye_size: i8 = 0,
+    /// A boca para os lados e o tamanho dela.
+    mouth_x: i8 = 0,
+    mouth_size: i8 = 0,
+    /// O tamanho das orelhas (+ mais altas) e o ângulo (+ abertas para fora).
+    ear_size: i8 = 0,
+    ear_tilt: i8 = 0,
+    /// O formato do corpo: mais redondo (+) ou mais quadrado (-), e mais gordinho (+)
+    /// ou mais magrinho (-).
+    roundness: i8 = 0,
+    body_width: i8 = 0,
+    /// A força das bochechas quando o acessório está ligado (1 a 6; 3 é a de sempre).
+    blush: i8 = blush_usual,
+    /// A cor só do olho direito (null: os dois iguais, como sempre).
+    right_eye: ?Rgba = null,
     hat: Hat = .none,
     ears: Ears = .pointy,
     /// Um bit por `Acc`.
@@ -254,6 +374,9 @@ pub const Look = struct {
     /// desenhos já lidos dele (quem resolve o visual preenche; não é salvo).
     draw_from: Name = .{},
     drawing: ?*const Drawing = null,
+    /// O nome dele. Não é parte do desenho: não conta em `eql` (um visual pronto
+    /// continua ele mesmo com nome), e fica fora do texto curto (`mascot_name`).
+    name: PetName = .{},
 
     pub fn has(l: *const Look, a: Acc) bool {
         return l.acc & bit(a) != 0;
@@ -271,9 +394,197 @@ pub const Look = struct {
         l.acc |= b;
     }
 
-    /// Mesmo visual (os desenhos contam pelo arquivo de onde vêm).
+    pub fn tweak(l: *const Look, t: Tweak) i8 {
+        return switch (t) {
+            inline else => |x| @field(l, @tagName(x)),
+        };
+    }
+    fn tweakPtr(l: *Look, t: Tweak) *i8 {
+        return switch (t) {
+            inline else => |x| &@field(l, @tagName(x)),
+        };
+    }
+
+    /// Muda um ajuste (apertado nos limites). As alturas se empurram; os tamanhos e o
+    /// desalinhado mudam a folga entre olhos e boca, e podem empurrar as alturas.
+    pub fn setTweak(l: *Look, t: Tweak, v: i8) void {
+        switch (t) {
+            .eye_height => l.setEyeHeight(v),
+            .mouth_height => l.setMouthHeight(v),
+            else => {
+                const r = tweak_range[@intFromEnum(t)];
+                l.tweakPtr(t).* = std.math.clamp(v, r[0], r[1]);
+                l.fixHeights();
+            },
+        }
+    }
+
+    /// As bochechas como o controle mostra: 0 desligadas, senão a força.
+    pub fn blushLevel(l: *const Look) i8 {
+        return if (l.has(.blush)) l.blush else 0;
+    }
+    /// 0 desliga o acessório; de 1 a 6 liga com essa força.
+    pub fn setBlushLevel(l: *Look, v: i8) void {
+        if (v <= 0) {
+            l.acc &= ~bit(.blush);
+            l.blush = blush_usual;
+            return;
+        }
+        l.acc |= bit(.blush);
+        l.blush = std.math.clamp(v, blush_range[0], blush_range[1]);
+    }
+
+    /// Tudo nos limites (um texto ou arquivo escrito à mão pode trazer qualquer número).
+    pub fn fix(l: *Look) void {
+        inline for (@typeInfo(Tweak).@"enum".field_names, 0..) |f, i| {
+            if (i >= 2) @field(l, f) = std.math.clamp(@field(l, f), tweak_range[i][0], tweak_range[i][1]);
+        }
+        l.blush = std.math.clamp(l.blush, blush_range[0], blush_range[1]);
+        l.fixHeights();
+    }
+
+    /// Quanto os olhos precisam ficar acima da boca além do desenho de sempre: olhos e
+    /// boca maiores crescem um na direção do outro, e o olho mais baixo de um par
+    /// desalinhado desce. Zero com os tamanhos de sempre.
+    pub fn eyeMouthGap(l: *const Look) i8 {
+        const e: i32 = @max(0, l.eye_size);
+        const m: i32 = @max(0, l.mouth_size);
+        const t: i32 = @intCast(@abs(l.eye_tilt));
+        return @intCast(@divTrunc(e * 42 + m * 26 + 50, 100) + @divTrunc(t + 1, 2));
+    }
+    /// A boca maior não desce tanto: aberta (comendo), ela sairia por baixo do queixo.
+    pub fn mouthLow(l: *const Look) i8 {
+        return mouth_height_range[0] + @max(0, l.mouth_size - 2);
+    }
+
+    /// Põe as alturas nos limites, com os olhos nunca abaixo da boca mais a folga (os
+    /// dois juntos demais: os olhos sobem até onde precisam).
+    pub fn fixHeights(l: *Look) void {
+        const gap = l.eyeMouthGap();
+        const top = eye_height_range[1];
+        l.eye_height = std.math.clamp(l.eye_height, eye_height_range[0], top);
+        l.mouth_height = std.math.clamp(l.mouth_height, l.mouthLow(), mouth_height_range[1]);
+        if (l.eye_height < l.mouth_height + gap) l.eye_height = @min(l.mouth_height + gap, top);
+        if (l.eye_height < l.mouth_height + gap) l.mouth_height = l.eye_height - gap;
+    }
+
+    /// Muda a altura dos olhos; descendo até a boca, empurram a boca junto.
+    pub fn setEyeHeight(l: *Look, h: i8) void {
+        l.eye_height = std.math.clamp(h, eye_height_range[0], eye_height_range[1]);
+        const gap = l.eyeMouthGap();
+        if (l.mouth_height > l.eye_height - gap) l.mouth_height = @max(l.eye_height - gap, l.mouthLow());
+        l.fixHeights();
+    }
+
+    /// Muda a altura da boca; subindo até os olhos, empurra os olhos junto.
+    pub fn setMouthHeight(l: *Look, h: i8) void {
+        l.mouth_height = std.math.clamp(h, mouth_height_range[0], mouth_height_range[1]);
+        l.fixHeights();
+    }
+
+    /// Quanto os olhos e a boca andam no y do desenho (que cresce para baixo).
+    pub fn eyeDy(l: *const Look) f32 {
+        return -@as(f32, @floatFromInt(l.eye_height));
+    }
+    pub fn mouthDy(l: *const Look) f32 {
+        return -@as(f32, @floatFromInt(l.mouth_height));
+    }
+
+    /// O formato do corpo é o de sempre?
+    pub fn plainBody(l: *const Look) bool {
+        return l.roundness == 0 and l.body_width == 0;
+    }
+    /// A largura do corpo (1 a de sempre).
+    pub fn widthK(l: *const Look) f32 {
+        return 1 + 0.04 * @as(f32, @floatFromInt(l.body_width));
+    }
+
+    /// O ponto (x, y) do desenho no corpo com o formato escolhido: mais redondo puxa os
+    /// cantos para dentro, mais quadrado empurra para fora (um superelipse em volta do
+    /// meio do corpo); a largura estica para os lados. Da cintura para baixo só os
+    /// lados mudam: os pés continuam no chão. No formato de sempre, o mesmo ponto.
+    pub fn bodyAp(l: *const Look, x: f32, y: f32) [2]f32 {
+        if (l.plainBody()) return .{ x, y };
+        var px = x;
+        var py = y;
+        if (l.roundness != 0) {
+            const u = (x - body_cx) / body_rx;
+            const w = (y - body_cy) / body_ry;
+            const r = @sqrt(u * u + w * w);
+            if (r > 1e-4) {
+                // O expoente do superelipse: 2 é o desenho; menos, mais redondo.
+                const n = std.math.pow(f32, 2, 1 - 0.125 * @as(f32, @floatFromInt(l.roundness)));
+                const rho = std.math.pow(f32, std.math.pow(f32, @abs(u) / r, n) + std.math.pow(f32, @abs(w) / r, n), -1 / n);
+                px = body_cx + (x - body_cx) * rho;
+                if (w < 0) py = body_cy + (y - body_cy) * rho;
+            }
+        }
+        if (l.body_width != 0) px = body_cx + (px - body_cx) * l.widthK();
+        return .{ px, py };
+    }
+    /// Quanto o ponto (x, y) anda com o formato do corpo.
+    pub fn bodyDelta(l: *const Look, x: f32, y: f32) [2]f32 {
+        if (l.plainBody()) return .{ 0, 0 };
+        const q = l.bodyAp(x, y);
+        return .{ q[0] - x, q[1] - y };
+    }
+
+    /// O tamanho dos olhos e o da boca (1 o de sempre).
+    pub fn eyeScale(l: *const Look) f32 {
+        return 1 + 0.07 * @as(f32, @floatFromInt(l.eye_size));
+    }
+    pub fn mouthScale(l: *const Look) f32 {
+        return 1 + 0.075 * @as(f32, @floatFromInt(l.mouth_size));
+    }
+    /// Quanto anda o olho com o meio em `ctr` (`side` -1 o esquerdo, 1 o direito, 0 o
+    /// do ciclope e o visor): o par, o espaço entre eles, o desalinhado, a altura e o
+    /// formato do corpo. Sem o tamanho (que cresce em volta do olho).
+    pub fn eyeShift(l: *const Look, ctr: [2]f32, side: f32) [2]f32 {
+        const x: f32 = @floatFromInt(l.eye_x);
+        const sp: f32 = @floatFromInt(l.eye_spacing);
+        const t: f32 = @floatFromInt(l.eye_tilt);
+        const dx = x + side * sp;
+        const dy = l.eyeDy() - side * t / 2;
+        // O formato do corpo onde o olho foi parar (num corpo magrinho, o olho que foi
+        // para o canto volta junto com a borda).
+        const bd = l.bodyDelta(ctr[0] + dx, ctr[1] + dy);
+        return .{ dx + bd[0], dy + bd[1] };
+    }
+    /// O meio do olho (`side` -1 ou 1) com tudo: onde o arrastar da prévia pega.
+    pub fn eyeCenter(l: *const Look, side: f32) [2]f32 {
+        const ctr = if (side < 0) eye_l else eye_r;
+        const sh = l.eyeShift(ctr, side);
+        const s = l.eyeScale();
+        return .{ ctr[0] + sh[0], ctr[1] + eye_anchor_dy - eye_anchor_dy * s + sh[1] };
+    }
+    /// Quanto anda a boca: para os lados, a altura e o formato do corpo.
+    pub fn mouthShift(l: *const Look) [2]f32 {
+        const dx: f32 = @floatFromInt(l.mouth_x);
+        const dy = l.mouthDy();
+        const bd = l.bodyDelta(mouth_ctr[0] + dx, mouth_ctr[1] + dy);
+        return .{ dx + bd[0], dy + bd[1] };
+    }
+    /// As orelhas: a escala (mais na altura que na largura, para a base continuar
+    /// dentro da cabeça) e o giro (radianos; + abertas para fora).
+    pub fn earScale(l: *const Look) [2]f32 {
+        const s = 1 + 0.09 * @as(f32, @floatFromInt(l.ear_size));
+        return .{ 1 + (s - 1) * 0.5, s };
+    }
+    pub fn earTurn(l: *const Look) f32 {
+        return -0.08 * @as(f32, @floatFromInt(l.ear_tilt));
+    }
+    /// A força das bochechas (1 a de sempre).
+    pub fn blushK(l: *const Look) f32 {
+        return @as(f32, @floatFromInt(l.blush)) / @as(f32, @floatFromInt(blush_usual));
+    }
+
+    /// Mesmo visual (os desenhos contam pelo arquivo de onde vêm; o nome não conta).
     pub fn eql(a: *const Look, b: *const Look) bool {
         if (a.eyes != b.eyes or a.mouth != b.mouth or a.hat != b.hat or a.ears != b.ears or a.acc != b.acc or a.paint != b.paint) return false;
+        inline for (@typeInfo(Tweak).@"enum".field_names) |f| if (@field(a, f) != @field(b, f)) return false;
+        if (a.has(.blush) and a.blush != b.blush) return false;
+        if ((a.right_eye == null) != (b.right_eye == null)) return false;
+        if (a.right_eye) |x| if (x.col(1) != b.right_eye.?.col(1)) return false;
         if (!a.draw_from.eql(&b.draw_from)) return false;
         if (a.paint != .custom) return true;
         if (a.palette != b.palette) return false;
@@ -475,6 +786,37 @@ fn compactTo(l: *const Look, w: *std.Io.Writer) !void {
     }
 }
 
+/// As posições, os tamanhos e o formato numa linha (`mascot_tweaks` no settings.kdl),
+/// só o que não é o padrão:
+///
+///     eye-height=4 eye-spacing=-2 mouth-size=3 roundness=2 blush=5 right-eye=#29E6FF
+///
+/// Fica numa linha à parte do visual para as duas caberem no tamanho de cada texto do
+/// settings.kdl. Cada pedaço entra inteiro ou fica de fora (nunca um número cortado).
+pub fn writeTweaks(l: *const Look, buf: []u8) []const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    for (tweak_ids, 0..) |id, i| {
+        const v = l.tweak(@enumFromInt(i));
+        if (v != 0) piece(&w, "{s}={d}", .{ id, v });
+    }
+    if (l.has(.blush) and l.blush != blush_usual) piece(&w, "blush={d}", .{l.blush});
+    if (l.right_eye) |re| {
+        var hb: [10]u8 = undefined;
+        piece(&w, "right-eye={s}", .{hexText(&hb, re)});
+    }
+    return w.buffered();
+}
+
+/// Um pedaço do texto curto (com o espaço antes), inteiro ou nada.
+fn piece(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) void {
+    var tb: [64]u8 = undefined;
+    const t = std.fmt.bufPrint(&tb, fmt, args) catch return;
+    const need = t.len + @intFromBool(w.end > 0);
+    if (w.buffer.len - w.end < need) return;
+    if (w.end > 0) w.writeByte(' ') catch return;
+    w.writeAll(t) catch return;
+}
+
 fn colorsEql(a: Colors, b: Colors) bool {
     for (a, b) |x, y| if (x.col(1) != y.col(1)) return false;
     return true;
@@ -525,23 +867,50 @@ pub fn paletteFrom(s: []const u8) ?u8 {
 
 /// O contrário de `writeCompact`. Lê o que conhece; o resto fica no padrão.
 pub fn parseCompact(text: []const u8) Look {
+    return parseLook(text, "");
+}
+
+/// O visual dos dois textos do settings.kdl: o das peças (`writeCompact`) e o do
+/// formato (`writeTweaks`). Cada um aceita as chaves do outro (um texto de antes, com
+/// as alturas junto das peças, continua valendo).
+pub fn parseLook(look_text: []const u8, tweaks_text: []const u8) Look {
     var l: Look = .{};
+    readCompact(&l, look_text);
+    readCompact(&l, tweaks_text);
+    // Olhos e boca "do arquivo" só com o arquivo dos desenhos.
+    if (l.draw_from.len == 0) {
+        if (l.eyes == .custom) l.eyes = .prompt;
+        if (l.mouth == .custom) l.mouth = .smile;
+    }
+    l.fix();
+    return l;
+}
+
+fn readCompact(l: *Look, text: []const u8) void {
     var it = std.mem.tokenizeAny(u8, text, " \t\r\n");
-    while (it.next()) |tok| {
+    tokens: while (it.next()) |tok| {
         const eq = std.mem.indexOfScalar(u8, tok, '=') orelse continue;
         const k = tok[0..eq];
         const v = tok[eq + 1 ..];
+        for (tweak_ids, 0..) |id, i| if (std.mem.eql(u8, k, id)) {
+            if (heightFrom(v)) |h| l.tweakPtr(@enumFromInt(i)).* = h;
+            continue :tokens;
+        };
         if (std.mem.eql(u8, k, "eyes")) {
             if (eyesFrom(v)) |e| l.eyes = e;
         } else if (std.mem.eql(u8, k, "mouth")) {
             if (mouthFrom(v)) |m| l.mouth = m;
+        } else if (std.mem.eql(u8, k, "blush")) {
+            if (heightFrom(v)) |b| l.setBlushLevel(b);
+        } else if (std.mem.eql(u8, k, "right-eye")) {
+            if (parseColor(v)) |c| l.right_eye = c;
         } else if (std.mem.eql(u8, k, "hat")) {
             if (hatFrom(v)) |h| l.hat = h;
         } else if (std.mem.eql(u8, k, "ears")) {
             if (earsFrom(v)) |e| l.ears = e;
         } else if (std.mem.eql(u8, k, "acc")) {
             var acc_it = std.mem.tokenizeScalar(u8, v, ',');
-            while (acc_it.next()) |a| if (accFrom(a)) |x| toggleOn(&l, x);
+            while (acc_it.next()) |a| if (accFrom(a)) |x| toggleOn(l, x);
         } else if (std.mem.eql(u8, k, "paint")) {
             if (std.mem.eql(u8, v, "theme")) l.paint = .theme;
         } else if (std.mem.eql(u8, k, "pal")) {
@@ -583,12 +952,12 @@ pub fn parseCompact(text: []const u8) Look {
             l.draw_from.set(nb[0..n]);
         }
     }
-    // Olhos e boca "do arquivo" só com o arquivo dos desenhos.
-    if (l.draw_from.len == 0) {
-        if (l.eyes == .custom) l.eyes = .prompt;
-        if (l.mouth == .custom) l.mouth = .smile;
-    }
-    return l;
+}
+
+/// Um número escrito no texto curto (inteiro; os limites ficam com `Look.fix`).
+fn heightFrom(s: []const u8) ?i8 {
+    const x = std.fmt.parseInt(i32, s, 10) catch return null;
+    return @intCast(std.math.clamp(x, -100, 100));
 }
 
 /// Liga sem desligar (ler um texto não alterna).
@@ -809,6 +1178,7 @@ pub fn parseFile(gpa: std.mem.Allocator, arena: std.mem.Allocator, src: []const 
         if (p.dw) |d| gpa.destroy(d);
         return null;
     };
+    file.look.fix();
     file.drawing = p.dw;
     if (p.dw) |d| {
         file.look.drawing = d;
@@ -827,6 +1197,10 @@ fn readNodes(p: *Parser, nodes: []const kdl.Node, file: *File) !void {
             file.author = n.str("author") orelse "";
             file.license = n.str("license") orelse "";
             file.description = n.str("description") orelse "";
+        } else if (std.mem.eql(u8, n.name, "name")) {
+            // `name "Bitinho"`: o nome dele, que aparece ao parar o mouse em cima.
+            const a = (n.arg(0) orelse return p.fail(n, .unknown_part)).asString() orelse return p.fail(n, .unknown_part);
+            file.look.name.set(a);
         } else if (std.mem.eql(u8, n.name, "look")) {
             try readLook(p, n, &file.look);
         } else if (std.mem.eql(u8, n.name, "colors")) {
@@ -845,7 +1219,25 @@ fn readNodes(p: *Parser, nodes: []const kdl.Node, file: *File) !void {
 
 fn readLook(p: *Parser, n: *const kdl.Node, l: *Look) !void {
     for (n.props) |pr| {
+        // As alturas, posições, tamanhos e o formato são números (inteiros; fora dos
+        // limites, apertados), e a força das bochechas também (0 tira o acessório).
+        const which: ?usize = for (tweak_ids, 0..) |id, i| {
+            if (std.mem.eql(u8, pr.key, id)) break i;
+        } else null;
+        const blush = std.mem.eql(u8, pr.key, "blush");
+        if (which != null or blush) {
+            const x = pr.value.asNumber() orelse return p.fail(n, .bad_number);
+            if (!std.math.isFinite(x)) return p.fail(n, .bad_number);
+            const h: i8 = @intFromFloat(std.math.clamp(@round(x), -100, 100));
+            if (which) |i| l.tweakPtr(@enumFromInt(i)).* = h else l.setBlushLevel(h);
+            continue;
+        }
         const v = pr.value.asString() orelse return p.fail(n, .unknown_part);
+        if (std.mem.eql(u8, pr.key, "right-eye")) {
+            // A cor só do olho direito; "none" deixa os dois iguais.
+            l.right_eye = if (std.mem.eql(u8, v, "none")) null else parseColor(v) orelse return p.fail(n, .bad_color);
+            continue;
+        }
         if (std.mem.eql(u8, pr.key, "eyes")) {
             const e = eyesFrom(v) orelse return p.fail(n, .unknown_part);
             if (e == .custom) return p.fail(n, .unknown_part);
@@ -1177,7 +1569,13 @@ pub fn writeFile(l: *const Look, meta: Meta, out: *std.ArrayList(u8), gpa: std.m
         try o.writeAll(" license=");
         try kdlString(o, meta.license);
     }
-    try o.writeAll("\n\n");
+    try o.writeAll("\n");
+    if (l.name.len > 0) {
+        try o.writeAll("name ");
+        try kdlString(o, l.name.slice());
+        try o.writeByte('\n');
+    }
+    try o.writeAll("\n");
     try o.print("look eyes=\"{s}\" mouth=\"{s}\" hat=\"{s}\" ears=\"{s}\"", .{
         eyes_info[@intFromEnum(if (l.eyes == .custom) Eyes.prompt else l.eyes)].id,
         mouth_info[@intFromEnum(if (l.mouth == .custom) Mouth.smile else l.mouth)].id,
@@ -1193,6 +1591,15 @@ pub fn writeFile(l: *const Look, meta: Meta, out: *std.ArrayList(u8), gpa: std.m
             n += 1;
         };
         try o.writeByte('"');
+    }
+    for (tweak_ids, 0..) |id, i| {
+        const v = l.tweak(@enumFromInt(i));
+        if (v != 0) try o.print(" {s}={d}", .{ id, v });
+    }
+    if (l.has(.blush) and l.blush != blush_usual) try o.print(" blush={d}", .{l.blush});
+    if (l.right_eye) |re| {
+        var hb: [10]u8 = undefined;
+        try o.print(" right-eye=\"{s}\"", .{hexText(&hb, re)});
     }
     try o.writeByte('\n');
     switch (l.paint) {
@@ -1378,9 +1785,12 @@ test "texto curto: escrever e ler dá o mesmo visual (prontos, sorteados e cores
     own.colors = hexColors(.{ 0x112233, 0x445566, 0xFFEEDD, 0x778899, 0xAABBCC });
     own.colors[4].a = 0.5;
     own.draw_from.set("meu mascote=100%");
+    own.eye_height = 7;
+    own.mouth_height = -3;
     const t = writeCompact(&own, &buf);
     try testing.expect(t.len < 255);
-    const back = parseCompact(t);
+    var sbuf: [256]u8 = undefined;
+    const back = parseLook(t, writeTweaks(&own, &sbuf));
     try testing.expect(back.eql(&own));
     try testing.expectEqualStrings("meu mascote=100%", back.draw_from.slice());
     // Seguir o tema.
@@ -1418,6 +1828,453 @@ test "acessórios do mesmo grupo se excluem" {
     try testing.expect(!l.has(.scarf) and l.has(.bowtie) and l.has(.blush) and l.has(.monocle));
     l.toggle(.blush);
     try testing.expect(!l.has(.blush));
+}
+
+test "altura dos olhos e da boca: o padrão não escreve nada, e o texto curto e o arquivo voltam iguais" {
+    var buf: [256]u8 = undefined;
+    // Na altura de sempre, nada muda no que fica salvo.
+    const plain: Look = .{ .eyes = .stars };
+    try testing.expectEqualStrings("eyes=stars", writeCompact(&plain, &buf));
+    try testing.expectEqualStrings("", writeTweaks(&plain, &buf));
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    try writeFile(&plain, .{ .title = "x" }, &out, testing.allocator);
+    try testing.expect(std.mem.indexOf(u8, out.items, "height") == null);
+
+    var l: Look = .{ .eyes = .cat, .mouth = .fang };
+    l.setEyeHeight(6);
+    l.setMouthHeight(-2);
+    try testing.expectEqual(@as(i8, 6), l.eye_height);
+    try testing.expectEqual(@as(i8, -2), l.mouth_height);
+    try testing.expect(!l.eql(&.{ .eyes = .cat, .mouth = .fang }));
+    // As alturas ficam no texto do formato, não no das peças.
+    var pbuf: [256]u8 = undefined;
+    const parts = writeCompact(&l, &pbuf);
+    try testing.expect(std.mem.indexOf(u8, parts, "height") == null);
+    const t = writeTweaks(&l, &buf);
+    try testing.expectEqualStrings("eye-height=6 mouth-height=-2", t);
+    try testing.expect(parseLook(parts, t).eql(&l));
+    // Um texto de antes, com as alturas junto das peças, continua valendo.
+    try testing.expectEqual(@as(i8, 6), parseCompact("eyes=cat eye-height=6").eye_height);
+
+    // O arquivo ("Salvar como arquivo") escreve as duas chaves e lê de volta.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    out.clearRetainingCapacity();
+    try writeFile(&l, .{ .title = "Alto" }, &out, testing.allocator);
+    try testing.expect(std.mem.indexOf(u8, out.items, " eye-height=6 mouth-height=-2\n") != null);
+    var pr: Problem = .{};
+    const f = parseFile(testing.allocator, arena.allocator(), out.items, &pr) orelse {
+        std.debug.print("{s}\n{d}:{d} {s}\n", .{ out.items, pr.line, pr.col, @tagName(pr.issue) });
+        return error.Parse;
+    };
+    try testing.expect(f.look.eql(&l));
+
+    // Escrito à mão: número quebrado arredonda, fora dos limites aperta.
+    const g = parseFile(testing.allocator, arena.allocator(), "look eye-height=2.6 mouth-height=-1e9\n", &pr).?;
+    try testing.expectEqual(@as(i8, 3), g.look.eye_height);
+    try testing.expectEqual(mouth_height_range[0], g.look.mouth_height);
+    // Uma altura que não é número é erro, com a linha.
+    try testing.expect(parseFile(testing.allocator, arena.allocator(), "mascot \"x\"\nlook eye-height=\"alto\"\n", &pr) == null);
+    try testing.expectEqual(Issue.bad_number, pr.issue);
+    try testing.expectEqual(@as(u32, 2), pr.line);
+    try testing.expect(parseFile(testing.allocator, arena.allocator(), "look mouth-height=#true\n", &pr) == null);
+    try testing.expectEqual(Issue.bad_number, pr.issue);
+}
+
+test "altura: os limites, e os olhos e a boca se empurram sem nunca se cruzar" {
+    var l: Look = .{};
+    l.setEyeHeight(100);
+    try testing.expectEqual(eye_height_range[1], l.eye_height);
+    l.setMouthHeight(-100);
+    try testing.expectEqual(mouth_height_range[0], l.mouth_height);
+    // Os olhos descendo até a boca levam a boca junto.
+    l = .{};
+    l.setMouthHeight(2);
+    try testing.expectEqual(@as(i8, 2), l.eye_height);
+    l.setEyeHeight(-3);
+    try testing.expectEqual(@as(i8, -3), l.eye_height);
+    try testing.expectEqual(@as(i8, -3), l.mouth_height);
+    l.setEyeHeight(eye_height_range[0]);
+    try testing.expectEqual(l.eye_height, l.mouth_height);
+    // A boca subindo até os olhos leva os olhos junto, até o alto da boca.
+    l.setMouthHeight(100);
+    try testing.expectEqual(mouth_height_range[1], l.mouth_height);
+    try testing.expectEqual(mouth_height_range[1], l.eye_height);
+    // Texto curto com os dois cruzados (escrito à mão, ou de uma versão estranha): os
+    // olhos sobem até a boca; lixo fica no padrão.
+    const crossed = parseCompact("eye-height=-4 mouth-height=5");
+    try testing.expectEqual(@as(i8, 5), crossed.eye_height);
+    try testing.expectEqual(@as(i8, 5), crossed.mouth_height);
+    const junk = parseCompact("eye-height=x mouth-height= eye-height=99999999999");
+    try testing.expectEqual(@as(i8, 0), junk.eye_height);
+    try testing.expectEqual(@as(i8, 0), junk.mouth_height);
+    try testing.expectEqual(eye_height_range[1], parseCompact("eye-height=40").eye_height);
+    // Todo par dentro dos limites sai com os olhos na altura da boca ou acima.
+    var e: i8 = -20;
+    while (e <= 20) : (e += 1) {
+        var m: i8 = -20;
+        while (m <= 20) : (m += 1) {
+            var a: Look = .{ .eye_height = e, .mouth_height = m };
+            a.fixHeights();
+            try testing.expect(a.eye_height >= a.mouth_height);
+            try testing.expect(a.eye_height >= eye_height_range[0] and a.eye_height <= eye_height_range[1]);
+            try testing.expect(a.mouth_height >= mouth_height_range[0] and a.mouth_height <= mouth_height_range[1]);
+        }
+    }
+}
+
+/// Um visual com todo ajuste fora do padrão (dentro dos limites).
+fn tweaked() Look {
+    var l: Look = .{ .eyes = .big, .mouth = .grin, .hat = .crown };
+    l.eye_x = -3;
+    l.eye_spacing = 4;
+    l.eye_tilt = -2;
+    l.eye_size = 2;
+    l.mouth_x = 6;
+    l.mouth_size = -2;
+    l.ear_size = 3;
+    l.ear_tilt = -4;
+    l.roundness = 2;
+    l.body_width = -3;
+    l.eye_height = 5;
+    l.mouth_height = 1;
+    l.setBlushLevel(5);
+    l.right_eye = Rgba.hex(0x29E6FF);
+    l.fix();
+    return l;
+}
+
+test "mais ajustes: o padrão não escreve nada, e o texto do formato e o arquivo voltam iguais" {
+    var buf: [256]u8 = undefined;
+    const plain: Look = .{};
+    try testing.expectEqualStrings("", writeTweaks(&plain, &buf));
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    try writeFile(&plain, .{ .title = "x" }, &out, testing.allocator);
+    for (tweak_ids) |id| try testing.expect(std.mem.indexOf(u8, out.items, id) == null);
+    for ([_][]const u8{ "blush", "right-eye", "\nname" }) |k| try testing.expect(std.mem.indexOf(u8, out.items, k) == null);
+    // As bochechas de sempre (o acessório ligado) também não escrevem a força.
+    var cheeks: Look = .{};
+    cheeks.toggle(.blush);
+    try testing.expectEqualStrings("", writeTweaks(&cheeks, &buf));
+
+    var l = tweaked();
+    l.name.set("Bitinho");
+    try testing.expect(!l.isDefault());
+    var pbuf: [256]u8 = undefined;
+    const parts = writeCompact(&l, &pbuf);
+    const shape = writeTweaks(&l, &buf);
+    try testing.expectEqualStrings("eye-height=5 mouth-height=1 eye-x=-3 eye-spacing=4 eye-tilt=-2 eye-size=2 mouth-x=6 mouth-size=-2 ear-size=3 ear-tilt=-4 roundness=2 body-width=-3 blush=5 right-eye=#29E6FF", shape);
+    // O nome não vai em nenhum dos dois textos (fica em `mascot_name`).
+    try testing.expect(std.mem.indexOf(u8, parts, "Bitinho") == null and std.mem.indexOf(u8, shape, "Bitinho") == null);
+    const back = parseLook(parts, shape);
+    try testing.expect(back.eql(&l));
+    try testing.expectEqual(@as(usize, 0), back.name.len);
+
+    // O arquivo ("Salvar como arquivo") escreve tudo, e o nome num nó próprio.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    out.clearRetainingCapacity();
+    try writeFile(&l, .{ .title = "Ajustado" }, &out, testing.allocator);
+    try testing.expect(std.mem.indexOf(u8, out.items, "\nname \"Bitinho\"\n") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items, " eye-x=-3 eye-spacing=4 eye-tilt=-2 eye-size=2 mouth-x=6 mouth-size=-2 ear-size=3 ear-tilt=-4 roundness=2 body-width=-3 blush=5 right-eye=\"#29E6FF\"\n") != null);
+    var pr: Problem = .{};
+    const f = parseFile(testing.allocator, arena.allocator(), out.items, &pr) orelse {
+        std.debug.print("{s}\n{d}:{d} {s}\n", .{ out.items, pr.line, pr.col, @tagName(pr.issue) });
+        return error.Parse;
+    };
+    try testing.expect(f.look.eql(&l));
+    try testing.expectEqualStrings("Bitinho", f.look.name.slice());
+    try testing.expectEqualStrings("Ajustado", f.title);
+
+    // O nome não muda o visual: um pronto com nome continua sendo o pronto.
+    var named = presets[3].look;
+    named.name.set("Barba Ruiva");
+    try testing.expectEqual(@as(?usize, 3), presetOf(&named));
+}
+
+test "nome: até 24 letras, sem controle nem espaço nas pontas, sem cortar uma letra" {
+    var n: PetName = .{};
+    n.set("  Bitinho \n");
+    try testing.expectEqualStrings("Bitinho", n.slice());
+    n.set("abcdefghijklmnopqrstuvwxyz0123");
+    try testing.expectEqualStrings("abcdefghijklmnopqrstuvwx", n.slice());
+    // Letras de mais de um byte contam como uma.
+    n.set("ビットくんビットくんビットくんビットくんビットくんビ");
+    try testing.expectEqual(@as(usize, PetName.max_chars * 3), n.len);
+    try testing.expect(std.unicode.utf8ValidateSlice(n.slice()));
+    n.set("Бит\x07ик\tон");
+    try testing.expectEqualStrings("Битикон", n.slice());
+    // Cortado logo depois de um espaço: o espaço sai.
+    n.set("abcdefghijklmnopqrstuvw xyz");
+    try testing.expectEqualStrings("abcdefghijklmnopqrstuvw", n.slice());
+    n.set("\xff\xfeoi");
+    try testing.expectEqual(@as(usize, 0), n.len);
+    // No arquivo, com aspas e barra.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var l: Look = .{};
+    l.name.set("Zé \"Bit\" \\o/");
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    try writeFile(&l, .{ .title = "x" }, &out, testing.allocator);
+    var pr: Problem = .{};
+    const f = parseFile(testing.allocator, arena.allocator(), out.items, &pr).?;
+    try testing.expectEqualStrings("Zé \"Bit\" \\o/", f.look.name.slice());
+    try testing.expect(parseFile(testing.allocator, arena.allocator(), "mascot \"x\"\nname 5\n", &pr) == null);
+    try testing.expectEqual(@as(u32, 2), pr.line);
+}
+
+test "mais ajustes: limites, números estranhos e as bochechas" {
+    // Fora dos limites, apertado; lixo fica no padrão.
+    const big = parseCompact("eye-x=99 eye-spacing=-99 eye-tilt=40 eye-size=40 mouth-x=-99 mouth-size=99 ear-size=-50 ear-tilt=50 roundness=-77 body-width=77");
+    for ([_]Tweak{ .eye_x, .eye_spacing, .eye_tilt, .eye_size, .mouth_x, .mouth_size, .ear_size, .ear_tilt, .roundness, .body_width }, [_]u1{ 1, 0, 1, 1, 0, 1, 0, 1, 0, 1 }) |t, hi| {
+        try testing.expectEqual(tweak_range[@intFromEnum(t)][hi], big.tweak(t));
+    }
+    const junk = parseCompact("eye-x=x eye-size= mouth-x=1.5 right-eye=#zz blush=nada roundness=99999999999");
+    try testing.expect(junk.isDefault());
+    var l: Look = .{};
+    l.setTweak(.mouth_x, 100);
+    try testing.expectEqual(@as(i8, 10), l.mouth_x);
+    l.setTweak(.ear_tilt, -100);
+    try testing.expectEqual(@as(i8, -4), l.ear_tilt);
+
+    // Bochechas: 0 tira o acessório; o controle e o acessório são a mesma coisa.
+    var b: Look = .{};
+    try testing.expectEqual(@as(i8, 0), b.blushLevel());
+    b.setBlushLevel(6);
+    try testing.expect(b.has(.blush) and b.blushLevel() == 6);
+    b.setBlushLevel(0);
+    try testing.expect(!b.has(.blush) and b.isDefault());
+    b.setBlushLevel(9);
+    try testing.expectEqual(blush_range[1], b.blush);
+    // Com o acessório desligado, a força guardada não muda o visual.
+    var off: Look = .{ .blush = 5 };
+    try testing.expect(off.isDefault());
+    off.toggle(.blush);
+    try testing.expect(!off.eql(&.{ .acc = bit(.blush) }));
+    try testing.expect(parseCompact("acc=blush blush=0").isDefault());
+    try testing.expectEqual(@as(i8, 4), parseLook("acc=scarf", "blush=4").blushLevel());
+
+    // No arquivo: número quebrado arredonda, fora dos limites aperta, texto é erro com a
+    // linha; a cor do olho direito tem de ser uma cor (ou "none").
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var pr: Problem = .{};
+    const g = parseFile(testing.allocator, arena.allocator(), "look eye-size=2.6 mouth-x=-1e9 body-width=3 blush=2 right-eye=\"#fff\"\n", &pr).?;
+    try testing.expectEqual(@as(i8, 3), g.look.eye_size);
+    try testing.expectEqual(@as(i8, -10), g.look.mouth_x);
+    try testing.expectEqual(@as(i8, 3), g.look.body_width);
+    try testing.expectEqual(@as(i8, 2), g.look.blushLevel());
+    try testing.expectEqual(Rgba.white.col(1), g.look.right_eye.?.col(1));
+    try testing.expect(parseFile(testing.allocator, arena.allocator(), "look right-eye=\"none\" accessories=\"blush\" blush=0\n", &pr).?.look.isDefault());
+    const bad = [_]struct { src: []const u8, issue: Issue }{
+        .{ .src = "mascot \"x\"\nlook roundness=\"redondo\"\n", .issue = .bad_number },
+        .{ .src = "mascot \"x\"\nlook ear-tilt=#true\n", .issue = .bad_number },
+        .{ .src = "mascot \"x\"\nlook blush=\"forte\"\n", .issue = .bad_number },
+        .{ .src = "mascot \"x\"\nlook right-eye=\"azul\"\n", .issue = .bad_color },
+        .{ .src = "mascot \"x\"\nlook right-eye=3\n", .issue = .unknown_part },
+    };
+    for (bad) |cs| {
+        try testing.expect(parseFile(testing.allocator, arena.allocator(), cs.src, &pr) == null);
+        try testing.expectEqual(cs.issue, pr.issue);
+        try testing.expectEqual(@as(u32, 2), pr.line);
+    }
+}
+
+test "olhos e boca maiores ou desalinhados ganham folga, e nunca se cruzam" {
+    // Nos tamanhos de sempre, folga zero: as alturas de antes continuam iguais.
+    try testing.expectEqual(@as(i8, 0), (Look{}).eyeMouthGap());
+    try testing.expectEqual(@as(i8, 3), (Look{ .eye_size = 5, .mouth_size = 4 }).eyeMouthGap());
+    try testing.expectEqual(@as(i8, 3), (Look{ .eye_tilt = -6 }).eyeMouthGap());
+    try testing.expectEqual(@as(i8, 1), (Look{ .eye_tilt = 1 }).eyeMouthGap());
+    // Crescer os olhos com eles juntos da boca: os olhos sobem.
+    var l: Look = .{};
+    l.setTweak(.eye_size, 5);
+    try testing.expectEqual(@as(i8, 2), l.eye_height);
+    try testing.expectEqual(@as(i8, 0), l.mouth_height);
+    // A boca grande lá embaixo sobe um pouco (aberta, sairia pelo queixo).
+    l = .{};
+    l.setEyeHeight(eye_height_range[0]);
+    try testing.expectEqual(mouth_height_range[0], l.mouth_height);
+    l.setTweak(.mouth_size, 4);
+    try testing.expectEqual(@as(i8, -2), l.mouth_height);
+    try testing.expect(l.eye_height >= l.mouth_height + l.eyeMouthGap());
+    // Desalinhar com tudo junto: o olho de baixo fica onde estava, o outro sobe.
+    l = .{};
+    l.setTweak(.eye_tilt, 6);
+    try testing.expectEqual(@as(i8, 3), l.eye_height);
+    // Lá em cima, com a folga toda, a boca não sobe tanto.
+    l = .{ .eye_size = 5, .mouth_size = 4, .eye_tilt = 6 };
+    l.setMouthHeight(100);
+    try testing.expectEqual(eye_height_range[1], l.eye_height);
+    try testing.expectEqual(eye_height_range[1] - l.eyeMouthGap(), l.mouth_height);
+    // Todo par de alturas, com todo tamanho e desalinhado: dentro dos limites e com a folga.
+    var es: i8 = -4;
+    while (es <= 5) : (es += 1) {
+        var ms: i8 = -3;
+        while (ms <= 4) : (ms += 1) {
+            var t: i8 = -6;
+            while (t <= 6) : (t += 3) {
+                var e: i8 = -20;
+                while (e <= 20) : (e += 3) {
+                    var m: i8 = -20;
+                    while (m <= 20) : (m += 3) {
+                        var a: Look = .{ .eye_height = e, .mouth_height = m, .eye_size = es, .mouth_size = ms, .eye_tilt = t };
+                        a.fix();
+                        try testing.expect(a.eye_height >= a.mouth_height + a.eyeMouthGap());
+                        try testing.expect(a.eye_height >= eye_height_range[0] and a.eye_height <= eye_height_range[1]);
+                        try testing.expect(a.mouth_height >= a.mouthLow() and a.mouth_height <= mouth_height_range[1]);
+                        var b = a;
+                        b.setEyeHeight(e);
+                        try testing.expect(b.eye_height >= b.mouth_height + b.eyeMouthGap() and b.mouth_height >= b.mouthLow());
+                        b.setMouthHeight(m);
+                        try testing.expect(b.eye_height >= b.mouth_height + b.eyeMouthGap() and b.eye_height <= eye_height_range[1]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "formato do corpo: o de sempre é o mesmo ponto, os pés ficam no chão e ele continua simétrico" {
+    const plain: Look = .{};
+    for ([_][2]f32{ .{ 12.5, -3 }, .{ 40, 50 }, .{ 100.25, 90 } }) |q| {
+        const o = plain.bodyAp(q[0], q[1]);
+        try testing.expectEqual(q[0], o[0]);
+        try testing.expectEqual(q[1], o[1]);
+        try testing.expectEqual([2]f32{ 0, 0 }, plain.bodyDelta(q[0], q[1]));
+    }
+    const corner = [2]f32{ 19.39, 8.09 };
+    for ([_]i8{ -5, -2, 2, 4 }) |r| {
+        for ([_]i8{ -4, 0, 4 }) |w| {
+            const l: Look = .{ .roundness = r, .body_width = w };
+            // Simétrico em volta do meio.
+            for ([_][2]f32{ .{ 10, 20 }, .{ 30, 70 }, .{ 50, 5 }, .{ 2, 48 } }) |q| {
+                const a = l.bodyAp(q[0], q[1]);
+                const b = l.bodyAp(2 * body_cx - q[0], q[1]);
+                try testing.expectApproxEqAbs(a[0] - body_cx, body_cx - b[0], 1e-3);
+                try testing.expectApproxEqAbs(a[1], b[1], 1e-3);
+            }
+            // Os pés e tudo da cintura para baixo continuam na mesma altura.
+            try testing.expectEqual(@as(f32, 96.36), l.bodyAp(32.71, 96.36)[1]);
+            try testing.expectEqual(@as(f32, 85.25), l.bodyAp(39.6, 85.25)[1]);
+            // O alto da cabeça, no meio, não sai do lugar.
+            try testing.expectApproxEqAbs(@as(f32, 0), l.bodyAp(body_cx, 0)[1], 1e-4);
+            // Redondo puxa o canto de cima para dentro; quadrado empurra para fora.
+            const c = (Look{ .roundness = r }).bodyAp(corner[0], corner[1]);
+            if (r > 0) try testing.expect(c[0] > corner[0] and c[1] > corner[1]) else try testing.expect(c[0] < corner[0] and c[1] < corner[1]);
+        }
+    }
+    // A largura estica só para os lados.
+    const wide = (Look{ .body_width = 4 }).bodyAp(0.54, 80.21);
+    try testing.expect(wide[0] < 0.54 and wide[1] == 80.21);
+}
+
+/// O contorno do corpo com o formato de `l`, em pontos.
+fn bodyOutline(l: *const Look, out: [][2]f32) usize {
+    var n: usize = 0;
+    var cur = body_start;
+    for (body_curves) |q| {
+        const p0 = l.bodyAp(cur[0], cur[1]);
+        const p1 = l.bodyAp(q[0], q[1]);
+        const p2 = l.bodyAp(q[2], q[3]);
+        const p3 = l.bodyAp(q[4], q[5]);
+        for (0..10) |si| {
+            const t = @as(f32, @floatFromInt(si)) / 10.0;
+            const u = 1 - t;
+            out[n] = .{
+                u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+                u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1],
+            };
+            n += 1;
+        }
+        cur = .{ q[4], q[5] };
+    }
+    return n;
+}
+
+/// Dentro do contorno e a pelo menos `margin` da borda?
+fn insideBy(poly: []const [2]f32, x: f32, y: f32, margin: f32) bool {
+    var inside = false;
+    var j = poly.len - 1;
+    var near: f32 = std.math.inf(f32);
+    for (poly, 0..) |a, i| {
+        const b = poly[j];
+        if ((a[1] > y) != (b[1] > y) and x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        const t = if (l2 > 0) std.math.clamp(((x - a[0]) * dx + (y - a[1]) * dy) / l2, 0, 1) else 0;
+        near = @min(near, std.math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t)));
+        j = i;
+    }
+    return inside and near >= margin;
+}
+
+test "olhos e boca nunca saem do corpo nem encostam um no outro, em todo extremo" {
+    // Cada ajuste no mínimo, no zero e no máximo, todos combinados (as alturas por
+    // último, pelos controles, como no Personalizar).
+    const T = [_]Tweak{ .eye_x, .eye_spacing, .eye_tilt, .eye_size, .mouth_x, .mouth_size, .roundness, .body_width };
+    var poly: [body_curves.len * 10][2]f32 = undefined;
+    var combos: usize = 0;
+    var idx: [T.len + 2]u8 = @splat(0);
+    outer: while (true) {
+        var l: Look = .{};
+        for (T, 0..) |t, i| {
+            const r = tweak_range[@intFromEnum(t)];
+            l.setTweak(t, switch (idx[i]) {
+                0 => r[0],
+                1 => 0,
+                else => r[1],
+            });
+        }
+        const hs = [3]i8{ -100, 0, 100 };
+        l.setEyeHeight(hs[idx[T.len]]);
+        l.setMouthHeight(hs[idx[T.len + 1]]);
+        const n = bodyOutline(&l, &poly);
+        const se = l.eyeScale();
+        const sm = l.mouthScale();
+        const ms = l.mouthShift();
+        const mx = mouth_ctr[0] + ms[0];
+        const my = mouth_ctr[1] + ms[1];
+        // A boca: da ponta de um lado à do outro, do alto até aberta comendo.
+        const half_w = 11.5 * sm;
+        const top = my - 3.4 * sm;
+        const open_r = 9 * sm;
+        const diag = open_r * 0.7071;
+        for ([_][2]f32{ .{ mx - half_w, top }, .{ mx + half_w, top }, .{ mx, my + open_r }, .{ mx - diag, my + diag }, .{ mx + diag, my + diag } }) |q| {
+            if (!insideBy(poly[0..n], q[0], q[1], 0.5)) {
+                std.debug.print("boca fora do corpo em ({d:.1}, {d:.1}) com {any}\n", .{ q[0], q[1], idx });
+                return error.MouthOut;
+            }
+        }
+        for ([_]f32{ -1, 1 }) |side| {
+            // O maior olho de um par (o ">" do Terminal tem meia altura 9).
+            const ec = l.eyeCenter(side);
+            const r = 9 * se;
+            if (!insideBy(poly[0..n], ec[0], ec[1], r + 2)) {
+                std.debug.print("olho {d} fora do corpo em ({d:.1}, {d:.1}) r {d:.1} com {any}\n", .{ side, ec[0], ec[1], r, idx });
+                return error.EyeOut;
+            }
+            // Em cima da boca, sempre com folga.
+            if (@abs(ec[0] - mx) < r + half_w and ec[1] + r > top - 1) {
+                std.debug.print("olho {d} encosta na boca: {d:.1} > {d:.1} com {any}\n", .{ side, ec[1] + r, top, idx });
+                return error.EyeOnMouth;
+            }
+        }
+        combos += 1;
+        // A próxima combinação (contando em base 3).
+        var k: usize = 0;
+        while (k < idx.len) : (k += 1) {
+            idx[k] += 1;
+            if (idx[k] < 3) continue :outer;
+            idx[k] = 0;
+        }
+        break;
+    }
+    try testing.expectEqual(@as(usize, 59049), combos);
 }
 
 test "o sorteio respeita os grupos e nunca tira peça do arquivo nem chapéu de data" {

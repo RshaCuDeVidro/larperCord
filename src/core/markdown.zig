@@ -315,6 +315,8 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
     var out: std.ArrayList(Span) = .empty;
     errdefer out.deinit(gpa);
     var flags: Flags = .{};
+    // Quem abriu o itálico (`*` ou `_`): só o mesmo fecha.
+    var italic_ch: u8 = 0;
     var run_start: usize = 0;
     var i: usize = 0;
     // Onde o texto da linha começa (depois de uma marca de citação).
@@ -509,15 +511,19 @@ pub fn parseRaw(gpa: std.mem.Allocator, s: []const u8, raw: []const u8) ![]Span 
             run_start = i;
             continue;
         }
-        // Marcadores de estilo.
-        const marker: ?struct { len: usize, which: enum { bold, italic, strike, spoiler } } =
-            if (std.mem.startsWith(u8, rest, "**")) .{ .len = 2, .which = .bold } else if (std.mem.startsWith(u8, rest, "~~")) .{ .len = 2, .which = .strike } else if (std.mem.startsWith(u8, rest, "||")) .{ .len = 2, .which = .spoiler } else if ((rest[0] == '*' or rest[0] == '_') and italicBoundary(s, i)) .{ .len = 1, .which = .italic } else null;
-
-        if (marker) |m| {
+        // Marcadores de estilo (só os que têm par, ver `styleMarker`).
+        if (styleMarker(s, i, flags, italic_ch)) |m| {
+            const which = m.which orelse {
+                i += m.len;
+                continue;
+            };
             try Flush.run(&out, gpa, s, run_start, i, flags);
-            switch (m.which) {
+            switch (which) {
                 .bold => flags.bold = !flags.bold,
-                .italic => flags.italic = !flags.italic,
+                .italic => {
+                    flags.italic = !flags.italic;
+                    italic_ch = rest[0];
+                },
                 .strike => flags.strike = !flags.strike,
                 .spoiler => flags.spoiler = !flags.spoiler,
             }
@@ -544,6 +550,89 @@ fn escapedLen(rest: []const u8) ?usize {
         0x85, 0xA0, 0x1680, 0x2000...0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF => null,
         else => n,
     };
+}
+
+const Style = enum { bold, italic, strike, spoiler };
+
+/// O marcador de estilo em `s[i]`, se ele vale. Com o estilo ligado, fecha; desligado,
+/// só abre se houver com o que fechar mais adiante, como no Discord. Sem isso, um `*`
+/// sozinho (ou `**`, `~~`, `||` sem par) sumia e levava o resto da mensagem para o
+/// estilo: a mensagem "*" ficava invisível. Sem par, o caractere aparece como está.
+/// `which` nulo: os `len` bytes são texto, sem mudar estilo nenhum.
+fn styleMarker(s: []const u8, i: usize, flags: Flags, italic_ch: u8) ?struct { len: usize, which: ?Style } {
+    const rest = s[i..];
+    const pairs = [_]struct { tok: []const u8, which: Style, on: bool }{
+        .{ .tok = "**", .which = .bold, .on = flags.bold },
+        .{ .tok = "~~", .which = .strike, .on = flags.strike },
+        .{ .tok = "||", .which = .spoiler, .on = flags.spoiler },
+    };
+    for (pairs) |p| if (std.mem.startsWith(u8, rest, p.tok)) {
+        if (p.on or closesLater(s, i + 2, p.tok)) return .{ .len = 2, .which = p.which };
+        // Dentro de `*itálico*`, um `**` sem par fica inteiro como texto (a busca do
+        // fim do itálico também pula ele).
+        if (p.which == .bold and flags.italic and italic_ch == '*') return .{ .len = 2, .which = null };
+    };
+    const ch = rest[0];
+    if ((ch != '*' and ch != '_') or !italicBoundary(s, i)) return null;
+    if (flags.italic) return if (ch == italic_ch and italicCloses(s, i)) .{ .len = 1, .which = .italic } else null;
+    // `*` abrindo precisa de texto colado depois (`2 * 3 * 4` não é itálico); `**` que
+    // não abriu negrito também não abre itálico.
+    const next = if (i + 1 < s.len) s[i + 1] else ' ';
+    if (std.ascii.isWhitespace(next) or (ch == '*' and next == '*')) return null;
+    if (!closesLater(s, i + 1, rest[0..1])) return null;
+    return .{ .len = 1, .which = .italic };
+}
+
+/// Fecha o itálico aqui? Na borda da palavra e, para o `*`, sem espaço logo antes.
+fn italicCloses(s: []const u8, j: usize) bool {
+    return italicBoundary(s, j) and (s[j] != '*' or !std.ascii.isWhitespace(s[j - 1]));
+}
+
+/// Há um `tok` que fecha depois de `from`, com algum texto no meio? Pula o que o
+/// `parseRaw` não interpreta (escape, código, link), para não achar o par lá dentro.
+fn closesLater(s: []const u8, from: usize, tok: []const u8) bool {
+    var j = from;
+    while (j < s.len) {
+        const r = s[j..];
+        if (r[0] == '\\' and r.len > 1) if (escapedLen(r[1..])) |n| {
+            j += 1 + n;
+            continue;
+        };
+        if (r[0] == '`') {
+            if (std.mem.startsWith(u8, r, "```")) if (std.mem.indexOfPos(u8, s, j + 3, "```")) |close| {
+                j = close + 3;
+                continue;
+            };
+            if (std.mem.indexOfScalarPos(u8, s, j + 1, '`')) |close| {
+                j = close + 1;
+                continue;
+            }
+        }
+        if (r[0] == '[') if (maskedLink(r)) |ml| {
+            j += ml.len;
+            continue;
+        };
+        if (std.mem.startsWith(u8, r, "https://") or std.mem.startsWith(u8, r, "http://")) {
+            while (j < s.len and s[j] != ' ' and s[j] != '\n') j += 1;
+            continue;
+        }
+        if (tok.len == 2) {
+            if (std.mem.startsWith(u8, r, tok)) {
+                if (j > from) return true;
+                j += 2;
+                continue;
+            }
+        } else {
+            // O `**` de dentro é negrito, não o fim do itálico.
+            if (tok[0] == '*' and std.mem.startsWith(u8, r, "**")) {
+                j += 2;
+                continue;
+            }
+            if (r[0] == tok[0] and j > from and italicCloses(s, j)) return true;
+        }
+        j += 1;
+    }
+    return false;
 }
 
 /// `_` e `*` só contam como itálico na borda de uma palavra, para não
@@ -774,6 +863,34 @@ test "spoiler e riscado" {
     defer a.free(spans);
     try std.testing.expect(spans[0].flags.spoiler);
     try std.testing.expect(spans[2].flags.strike);
+}
+
+test "marcador sem par aparece como está (a mensagem \"*\" não some)" {
+    const a = std.testing.allocator;
+    var buf: [128]u8 = undefined;
+    // Sem par: o texto todo aparece e nada fica com estilo.
+    for ([_][]const u8{ "*", "**", "~~", "||", "oi *", "_", "2 * 3 * 4", "****", "*a `b*` c", "¯\\_(ツ)_/¯", "*a [x*](https://y.z)" }) |t| {
+        const sp = try parse(a, t);
+        defer a.free(sp);
+        const want = if (std.mem.eql(u8, t, "¯\\_(ツ)_/¯")) "¯_(ツ)_/¯" else if (std.mem.startsWith(u8, t, "*a `")) "*a b* c" else if (std.mem.startsWith(u8, t, "*a [")) "*a x*" else t;
+        try std.testing.expectEqualStrings(want, shown(&buf, sp));
+        for (sp) |s| try std.testing.expect(!s.flags.italic and !s.flags.bold and !s.flags.strike and !s.flags.spoiler);
+    }
+    // Com par, continua valendo, inclusive um dentro do outro e o par depois de um sem par.
+    const ok = try parse(a, "*a **b** c* e ***x*** e ~~ ||y||");
+    defer a.free(ok);
+    try std.testing.expectEqualStrings("a b c e x e ~~ y", shown(&buf, ok));
+    try std.testing.expect(ok[0].flags.italic and !ok[0].flags.bold);
+    try std.testing.expect(ok[1].flags.italic and ok[1].flags.bold);
+    try std.testing.expect(ok[2].flags.italic and !ok[2].flags.bold);
+    try std.testing.expect(ok[4].flags.italic and ok[4].flags.bold);
+    try std.testing.expectEqualStrings("y", ok[ok.len - 1].text);
+    try std.testing.expect(ok[ok.len - 1].flags.spoiler and !ok[ok.len - 2].flags.spoiler);
+    // `**` sem par dentro do itálico fica no texto, e o itálico vai até o fim certo.
+    const mid = try parse(a, "*a ** b*");
+    defer a.free(mid);
+    try std.testing.expectEqualStrings("a ** b", shown(&buf, mid));
+    for (mid) |s| try std.testing.expect(s.flags.italic);
 }
 
 test "os trechos de um link com escape no texto apontam para a mesma URL (o convite aparece uma vez)" {

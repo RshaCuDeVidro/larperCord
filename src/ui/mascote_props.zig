@@ -1,7 +1,7 @@
 //! Os objetos do mascote do canto (ui/mascote_pet.zig): caneca, livro, videogame,
 //! chiclete, notas do assobio, paninho, vara de pesca, plantinha, mosquinha, blocos,
-//! rabisco, lixeira, borracha, cartinha, barraca com fogueira e o balão de fala. Tudo
-//! desenhado com formas, sem imagem nenhuma: não pesa na memória.
+//! rabisco, lixeira, borracha, cartinha, bilhete do lembrete, barraca com fogueira e o
+//! balão de fala. Tudo desenhado com formas, sem imagem nenhuma: não pesa na memória.
 const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
@@ -286,6 +286,29 @@ pub fn letter(dl: *c.ImDrawList, p: c.ImVec2, s: f32, ang: f32) void {
     c.ImDrawList_AddCircleFilled(dl, P.at(p, 0, h * 0.12, cs, sn), s * 0.06, Rgba.hex(0xFF4A5A).u(), 0);
 }
 
+/// O bilhete do lembrete: um papelzinho amarelo com três linhas e a ponta dobrada.
+pub fn note(dl: *c.ImDrawList, p: c.ImVec2, s: f32, ang: f32) void {
+    const w = s * 0.5;
+    const h = s * 0.56;
+    quad(dl, p, w, h, ang, Rgba.hex(0xFFE8A3).u());
+    const cs = @cos(ang);
+    const sn = @sin(ang);
+    const P = struct {
+        fn at(ctr: c.ImVec2, x: f32, y: f32, ccs: f32, ssn: f32) c.ImVec2 {
+            return d.v(ctr.x + x * ccs - y * ssn, ctr.y + x * ssn + y * ccs);
+        }
+    };
+    // A ponta de cima à direita, dobrada.
+    const f = s * 0.14;
+    c.ImDrawList_AddTriangleFilled(dl, P.at(p, w / 2 - f, -h / 2, cs, sn), P.at(p, w / 2, -h / 2 + f, cs, sn), P.at(p, w / 2 - f, -h / 2 + f, cs, sn), Rgba.hex(0xE0BE5C).u());
+    const lw = @max(1, s * 0.035);
+    for (0..3) |i| {
+        const y = -h * 0.14 + @as(f32, @floatFromInt(i)) * h * 0.2;
+        const x1 = if (i == 2) w * 0.08 else w * 0.32;
+        line(dl, P.at(p, -w * 0.32, y, cs, sn), P.at(p, x1, y, cs, sn), Rgba.hex(0xB39548).u(), lw);
+    }
+}
+
 /// A barraca do acampamento (o chão em `base`, centro embaixo).
 pub fn tent(dl: *c.ImDrawList, base: c.ImVec2, s: f32, fold: f32) void {
     const w = s * 1.1 * (1 - fold * 0.8);
@@ -375,4 +398,222 @@ pub fn balloon(dl: *c.ImDrawList, font: *c.ImFont, tip: c.ImVec2, text: []const 
     c.ImDrawList_AddRectFilledEx(dl, d.v(x, y), d.v(x + w, y + h), bg.col(alpha), h / 2, 0);
     c.ImDrawList_AddTriangleFilled(dl, d.v(tip.x - 6, y + h - 1), d.v(tip.x + 6, y + h - 1), tip, bg.col(alpha));
     d.text(dl, font, fs, x + 9, y + 6, fg.alpha(alpha), text);
+}
+
+// --- O que você digita e as brincadeiras (ui/mascote_reacoes.zig) -------------------
+
+/// Uma patinha na cor do corpo (`col`), com contorno e dois dedinhos: tapando as
+/// orelhas ou os olhos, segurando o pergaminho, apontando.
+pub fn paw(dl: *c.ImDrawList, p: c.ImVec2, r: f32, col: Rgba) void {
+    const ink = Rgba.hex(0x22182E);
+    c.ImDrawList_AddEllipseFilled(dl, p, d.v(r, r * 0.86), col.u());
+    c.ImDrawList_AddEllipseEx(dl, p, d.v(r, r * 0.86), ink.col(0.55), 0, 16, @max(0.8, r * 0.16), 0);
+    const lw = @max(0.7, r * 0.12);
+    line(dl, d.v(p.x - r * 0.3, p.y - r * 0.5), d.v(p.x - r * 0.3, p.y - r * 0.1), ink.col(0.45), lw);
+    line(dl, d.v(p.x + r * 0.3, p.y - r * 0.5), d.v(p.x + r * 0.3, p.y - r * 0.1), ink.col(0.45), lw);
+}
+
+/// Os óculos de revisar código: duas lentes redondas, a ponte e as hastes.
+pub fn glasses(dl: *c.ImDrawList, l: c.ImVec2, r: c.ImVec2, radius: f32) void {
+    const ink = Rgba.hex(0x22182E).u();
+    const lw = @max(1.2, radius * 0.28);
+    for ([_]c.ImVec2{ l, r }) |e| {
+        c.ImDrawList_AddCircleFilled(dl, e, radius, Rgba.hex(0xBFEFFF).col(0.28), 0);
+        c.ImDrawList_AddCircleEx(dl, e, radius, ink, 0, lw, 0);
+    }
+    line(dl, d.v(l.x + radius, l.y), d.v(r.x - radius, r.y), ink, lw);
+    line(dl, d.v(l.x - radius, l.y), d.v(l.x - radius * 1.8, l.y - radius * 0.4), ink, lw);
+    line(dl, d.v(r.x + radius, r.y), d.v(r.x + radius * 1.8, r.y - radius * 0.4), ink, lw);
+}
+
+/// O pergaminho da mensagem longa: o rolo de baixo em `bottom` (centro), o papel subindo
+/// `len` pixels com as linhas de texto. `shake`: tremendo (perto do limite).
+pub fn scroll(dl: *c.ImDrawList, bottom: c.ImVec2, w: f32, len: f32, shake: f32) void {
+    const x0 = bottom.x - w / 2 + shake;
+    const top = bottom.y - len;
+    c.ImDrawList_AddRectFilled(dl, d.v(x0, top), d.v(x0 + w, bottom.y), Rgba.hex(0xF3E6C4).u());
+    c.ImDrawList_AddRectFilled(dl, d.v(x0 + w - w * 0.12, top), d.v(x0 + w, bottom.y), Rgba.hex(0xE2D0A4).u());
+    // As linhas de texto, só onde o papel já desenrolou.
+    var y = top + w * 0.28;
+    var i: usize = 0;
+    while (y < bottom.y - w * 0.18) : ({
+        y += w * 0.16;
+        i += 1;
+    }) {
+        const lw = w * (if (i % 3 == 2) @as(f32, 0.45) else 0.68);
+        line(dl, d.v(x0 + w * 0.14, y), d.v(x0 + w * 0.14 + lw, y), Rgba.hex(0x9A8660).u(), @max(0.8, w * 0.05));
+    }
+    // Os rolos de madeira, em cima e embaixo, um pouco mais largos que o papel.
+    for ([_]f32{ top, bottom.y }) |ry| {
+        c.ImDrawList_AddRectFilledEx(dl, d.v(x0 - w * 0.1, ry - w * 0.09), d.v(x0 + w * 1.1, ry + w * 0.09), Rgba.hex(0x8A5A2B).u(), w * 0.09, 0);
+        c.ImDrawList_AddCircleFilled(dl, d.v(x0 - w * 0.12, ry), w * 0.08, Rgba.hex(0x6A4220).u(), 0);
+        c.ImDrawList_AddCircleFilled(dl, d.v(x0 + w * 1.12, ry), w * 0.08, Rgba.hex(0x6A4220).u(), 0);
+    }
+}
+
+/// O terminalzinho do "/": a janela com a barra de título e o comando que você digita
+/// (`text`), com o cursor aceso ou não.
+pub fn miniTerminal(dl: *c.ImDrawList, font: *c.ImFont, r: d.Rect, text: []const u8, cursor_on: bool, accent: Rgba) void {
+    const rad = @max(2, r.h * 0.12);
+    c.ImDrawList_AddRectFilledEx(dl, d.v(r.x + 2, r.y + 3), d.v(r.right() + 2, r.bottom() + 3), Rgba.hex(0x000000).col(0.25), rad, 0);
+    c.ImDrawList_AddRectFilledEx(dl, d.v(r.x, r.y), d.v(r.right(), r.bottom()), Rgba.hex(0x16121E).u(), rad, 0);
+    const bar = r.h * 0.26;
+    c.ImDrawList_AddRectFilledEx(dl, d.v(r.x, r.y), d.v(r.right(), r.y + bar), Rgba.hex(0x2B2438).u(), rad, c.ImDrawFlags_RoundCornersTop);
+    for ([_]u32{ 0xFF5F57, 0xFEBC2E, 0x28C840 }, 0..) |col, i| {
+        c.ImDrawList_AddCircleFilled(dl, d.v(r.x + bar * (0.6 + @as(f32, @floatFromInt(i)) * 0.7), r.y + bar / 2), bar * 0.22, Rgba.hex(col).u(), 0);
+    }
+    const fs = (r.h - bar) * 0.5;
+    const y = r.y + bar + (r.h - bar - d.fontPx(fs)) / 2;
+    d.text(dl, font, fs, r.x + fs * 0.5, y, accent, "$");
+    const x = r.x + fs * 0.5 + d.width(font, fs, "$ ");
+    const shown = d.textClipped(dl, font, fs, x, y, Rgba.hex(0xEDE6DA), text, r.right() - x - fs);
+    if (cursor_on) c.ImDrawList_AddRectFilled(dl, d.v(x + shown + 1, y + d.fontPx(fs) * 0.15), d.v(x + shown + 1 + fs * 0.5, y + d.fontPx(fs) * 0.95), accent.u());
+}
+
+/// A xícara de chá com o pires e o vapor (`t` em segundos).
+pub fn teacup(dl: *c.ImDrawList, p: c.ImVec2, s: f32, t: f32) void {
+    c.ImDrawList_AddEllipseFilled(dl, d.v(p.x, p.y + s * 0.32), d.v(s * 0.62, s * 0.12), Rgba.hex(0xE6DED2).u());
+    c.ImDrawList_AddCircleEx(dl, d.v(p.x + s * 0.42, p.y), s * 0.15, Rgba.hex(0xF4EFE6).u(), 12, @max(1, s * 0.07), 0);
+    const pts = [_]c.ImVec2{ d.v(p.x - s * 0.42, p.y - s * 0.22), d.v(p.x + s * 0.42, p.y - s * 0.22), d.v(p.x + s * 0.3, p.y + s * 0.28), d.v(p.x - s * 0.3, p.y + s * 0.28) };
+    c.ImDrawList_AddConvexPolyFilled(dl, &pts, pts.len, Rgba.hex(0xF4EFE6).u(), 0);
+    c.ImDrawList_AddEllipseFilled(dl, d.v(p.x, p.y - s * 0.22), d.v(s * 0.4, s * 0.08), Rgba.hex(0xB5793A).u());
+    c.ImDrawList_AddRectFilled(dl, d.v(p.x - s * 0.33, p.y - s * 0.02), d.v(p.x + s * 0.33, p.y + s * 0.05), Rgba.hex(0x7ED6A0).u());
+    for (0..2) |i| {
+        const fi: f32 = @floatFromInt(i);
+        const f = @mod(t * 0.9 + fi * 0.5, 1);
+        const x = p.x + (fi - 0.5) * s * 0.3 + @sin(t * 4 + fi * 2) * s * 0.06;
+        c.ImDrawList_AddCircleFilled(dl, d.v(x, p.y - s * 0.35 - f * s * 0.5), s * (0.05 + 0.05 * f), Rgba.hex(0xFFFFFF).col(0.55 * (1 - f)), 0);
+    }
+}
+
+/// O sanduíche do "sudo" (o pão, a alface, o queijo e o tomate).
+pub fn sandwich(dl: *c.ImDrawList, p: c.ImVec2, s: f32, ang: f32) void {
+    quad(dl, d.v(p.x, p.y + s * 0.16), s, s * 0.2, ang, Rgba.hex(0xD9A35A).u());
+    quad(dl, d.v(p.x, p.y + s * 0.02), s * 1.04, s * 0.1, ang, Rgba.hex(0x6FCF5A).u());
+    quad(dl, d.v(p.x, p.y - s * 0.06), s * 0.96, s * 0.08, ang, Rgba.hex(0xF7D04A).u());
+    quad(dl, d.v(p.x, p.y - s * 0.13), s * 0.9, s * 0.07, ang, Rgba.hex(0xE8503A).u());
+    quad(dl, d.v(p.x, p.y - s * 0.26), s, s * 0.2, ang, Rgba.hex(0xE8B46A).u());
+}
+
+/// O d20: o contorno de hexágono com as faces de dentro e o número (`face`, 0 = nenhum),
+/// girando `ang`.
+pub fn die(dl: *c.ImDrawList, font: *c.ImFont, p: c.ImVec2, s: f32, face: u8, ang: f32, gold: bool) void {
+    var hex: [6]c.ImVec2 = undefined;
+    for (0..6) |i| {
+        const a = ang + @as(f32, @floatFromInt(i)) / 6.0 * tau - std.math.pi / 2.0;
+        hex[i] = d.v(p.x + @cos(a) * s * 0.5, p.y + @sin(a) * s * 0.5);
+    }
+    const body = if (gold) Rgba.hex(0xF7C84A) else Rgba.hex(0xE8E2F4);
+    c.ImDrawList_AddConvexPolyFilled(dl, &hex, hex.len, body.u(), 0);
+    const edge = Rgba.hex(0x5A3E9A).col(0.8);
+    const lw = @max(0.8, s * 0.04);
+    c.ImDrawList_AddPolyline(dl, &hex, hex.len, edge, lw, c.ImDrawFlags_Closed);
+    // O triângulo do meio, ligado aos cantos.
+    const tri = [3]c.ImVec2{ d.v((hex[0].x + p.x * 2) / 3, (hex[0].y + p.y * 2) / 3 - s * 0.1), d.v((hex[2].x * 2 + p.x) / 3, (hex[2].y * 2 + p.y) / 3), d.v((hex[4].x * 2 + p.x) / 3, (hex[4].y * 2 + p.y) / 3) };
+    c.ImDrawList_AddPolyline(dl, &tri, 3, edge, lw, c.ImDrawFlags_Closed);
+    for ([_]usize{ 0, 2, 4 }, 0..) |hi, ti| line(dl, hex[hi], tri[ti], edge, lw);
+    if (face == 0) return;
+    var nb: [4]u8 = undefined;
+    const txt = std.fmt.bufPrint(&nb, "{d}", .{face}) catch return;
+    const fs = s * 0.36;
+    const tw = d.width(font, fs, txt);
+    d.text(dl, font, fs, p.x - tw / 2, p.y - d.fontPx(fs) * 0.42, Rgba.hex(0x2B1A4A), txt);
+}
+
+/// O portal: um anel na cor de destaque que abre de 0 a 1.
+pub fn portalRing(dl: *c.ImDrawList, p: c.ImVec2, rx: f32, ry: f32, open: f32, col: Rgba, t: f32) void {
+    if (open <= 0.01) return;
+    c.ImDrawList_AddEllipseFilled(dl, p, d.v(rx * open, ry * open), Rgba.hex(0x12061F).col(0.85 * open));
+    for (0..3) |i| {
+        const fi: f32 = @floatFromInt(i);
+        const f = @mod(t * 1.5 + fi / 3.0, 1);
+        c.ImDrawList_AddEllipseEx(dl, p, d.v(rx * open * (1 - f * 0.6), ry * open * (1 - f * 0.6)), col.col(open * (0.3 + 0.7 * f)), 0, 24, @max(1, rx * 0.08), 0);
+    }
+}
+
+/// Um elo de corrente (o link arrastado até ele).
+pub fn chainLink(dl: *c.ImDrawList, p: c.ImVec2, s: f32, ang: f32) void {
+    const col = Rgba.hex(0x7EB6FF).u();
+    const lw = @max(1.2, s * 0.14);
+    const dx = @cos(ang) * s * 0.22;
+    const dy = @sin(ang) * s * 0.22;
+    c.ImDrawList_AddEllipseEx(dl, d.v(p.x - dx, p.y - dy), d.v(s * 0.3, s * 0.18), col, ang, 16, lw, 0);
+    c.ImDrawList_AddEllipseEx(dl, d.v(p.x + dx, p.y + dy), d.v(s * 0.3, s * 0.18), col, ang, 16, lw, 0);
+}
+
+/// A moldura de madeira com a imagem que você arrastou (sem ela ainda carregada, o
+/// desenho de uma paisagem).
+pub fn pictureFrame(dl: *c.ImDrawList, r: d.Rect, tex: ?c.ImTextureRef, tex_wh: [2]f32) void {
+    const b = @max(2, r.w * 0.09);
+    c.ImDrawList_AddRectFilled(dl, d.v(r.x + 2, r.y + 3), d.v(r.right() + 2, r.bottom() + 3), Rgba.hex(0x000000).col(0.22));
+    c.ImDrawList_AddRectFilled(dl, d.v(r.x, r.y), d.v(r.right(), r.bottom()), Rgba.hex(0xA0662E).u());
+    c.ImDrawList_AddRect(dl, d.v(r.x + b * 0.4, r.y + b * 0.4), d.v(r.right() - b * 0.4, r.bottom() - b * 0.4), Rgba.hex(0xD9A35A).u());
+    const in_r: d.Rect = .{ .x = r.x + b, .y = r.y + b, .w = r.w - b * 2, .h = r.h - b * 2 };
+    c.ImDrawList_AddRectFilled(dl, d.v(in_r.x, in_r.y), d.v(in_r.right(), in_r.bottom()), Rgba.hex(0xF4EFE6).u());
+    if (tex) |t| {
+        // Encaixa mantendo a proporção.
+        const sc = @min(in_r.w / @max(tex_wh[0], 1), in_r.h / @max(tex_wh[1], 1));
+        const w = tex_wh[0] * sc;
+        const h = tex_wh[1] * sc;
+        const x = in_r.x + (in_r.w - w) / 2;
+        const y = in_r.y + (in_r.h - h) / 2;
+        c.ImDrawList_AddImage(dl, t, d.v(x, y), d.v(x + w, y + h));
+        return;
+    }
+    c.ImDrawList_AddTriangleFilled(dl, d.v(in_r.x, in_r.bottom()), d.v(in_r.x + in_r.w * 0.4, in_r.y + in_r.h * 0.35), d.v(in_r.x + in_r.w * 0.8, in_r.bottom()), Rgba.hex(0x6FCF5A).u());
+    c.ImDrawList_AddCircleFilled(dl, d.v(in_r.right() - in_r.w * 0.22, in_r.y + in_r.h * 0.28), in_r.w * 0.1, Rgba.hex(0xF7D04A).u(), 0);
+}
+
+/// O disquete do Ctrl+S.
+pub fn floppy(dl: *c.ImDrawList, p: c.ImVec2, s: f32, ang: f32) void {
+    quad(dl, p, s, s, ang, Rgba.hex(0x3A4A8A).u());
+    const cs = @cos(ang);
+    const sn = @sin(ang);
+    const at = struct {
+        fn f(ctr: c.ImVec2, x: f32, y: f32, ccs: f32, ssn: f32) c.ImVec2 {
+            return d.v(ctr.x + x * ccs - y * ssn, ctr.y + x * ssn + y * ccs);
+        }
+    }.f;
+    // A chapinha de metal em cima e a etiqueta embaixo.
+    quad(dl, at(p, s * 0.04, -s * 0.3, cs, sn), s * 0.5, s * 0.34, ang, Rgba.hex(0xC8CCD8).u());
+    quad(dl, at(p, s * 0.14, -s * 0.3, cs, sn), s * 0.12, s * 0.24, ang, Rgba.hex(0x3A4A8A).u());
+    quad(dl, at(p, 0, s * 0.2, cs, sn), s * 0.74, s * 0.46, ang, Rgba.hex(0xF4EFE6).u());
+    line(dl, at(p, -s * 0.26, s * 0.12, cs, sn), at(p, s * 0.26, s * 0.12, cs, sn), Rgba.hex(0x9A9AB0).u(), @max(0.8, s * 0.05));
+    line(dl, at(p, -s * 0.26, s * 0.26, cs, sn), at(p, s * 0.16, s * 0.26, cs, sn), Rgba.hex(0x9A9AB0).u(), @max(0.8, s * 0.05));
+}
+
+/// A tesoura do Ctrl+X, abrindo e fechando (`open` de 0 a 1).
+pub fn scissors(dl: *c.ImDrawList, p: c.ImVec2, s: f32, open: f32) void {
+    const blade = Rgba.hex(0xD8DCE6).u();
+    const handle = Rgba.hex(0xFF5F57).u();
+    const a = 0.12 + open * 0.45;
+    for ([_]f32{ -1, 1 }) |side| {
+        const ang = side * a;
+        const tip = d.v(p.x - @cos(ang) * s * 0.6, p.y + @sin(ang) * s * 0.6);
+        const back = d.v(p.x + @cos(ang) * s * 0.18, p.y - @sin(ang) * s * 0.18);
+        line(dl, back, tip, blade, @max(1.2, s * 0.12));
+        const ring = d.v(p.x + @cos(ang) * s * 0.36, p.y - @sin(ang) * s * 0.36);
+        c.ImDrawList_AddCircleEx(dl, ring, s * 0.16, handle, 12, @max(1.2, s * 0.09), 0);
+    }
+    c.ImDrawList_AddCircleFilled(dl, p, @max(0.8, s * 0.05), Rgba.hex(0x6A6476).u(), 0);
+}
+
+/// O papelzinho do Ctrl+P com a marca da pata dele (`out` de 0 a 1: saindo da impressora).
+pub fn pawPrint(dl: *c.ImDrawList, slot_top: c.ImVec2, s: f32, out: f32, ink: Rgba) void {
+    const h = s * 1.2 * out;
+    if (h < 1) return;
+    const w = s * 0.9;
+    const r: d.Rect = .{ .x = slot_top.x - w / 2, .y = slot_top.y - h, .w = w, .h = h };
+    c.ImDrawList_AddRectFilled(dl, d.v(r.x, r.y), d.v(r.right(), r.bottom()), Rgba.hex(0xFAF7F0).u());
+    c.ImDrawList_AddRect(dl, d.v(r.x, r.y), d.v(r.right(), r.bottom()), Rgba.hex(0xC8C0B2).u());
+    // A pata: a almofada e quatro dedinhos, só na parte do papel que já saiu.
+    c.ImDrawList_PushClipRect(dl, d.v(r.x, r.y), d.v(r.right(), r.bottom()), true);
+    const ctr = d.v(r.x + w / 2, r.y + s * 0.66);
+    c.ImDrawList_AddEllipseFilled(dl, ctr, d.v(s * 0.2, s * 0.16), ink.u());
+    for ([_][2]f32{ .{ -0.26, -0.2 }, .{ -0.1, -0.33 }, .{ 0.1, -0.33 }, .{ 0.26, -0.2 } }) |o| {
+        c.ImDrawList_AddCircleFilled(dl, d.v(ctr.x + o[0] * s, ctr.y + o[1] * s), s * 0.075, ink.u(), 0);
+    }
+    c.ImDrawList_PopClipRect(dl);
+    // A fenda da impressora por cima, na altura em que o papel sai.
+    c.ImDrawList_AddRectFilledEx(dl, d.v(slot_top.x - w * 0.62, slot_top.y - s * 0.04), d.v(slot_top.x + w * 0.62, slot_top.y + s * 0.12), Rgba.hex(0x3A3446).u(), s * 0.05, 0);
 }

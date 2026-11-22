@@ -10,7 +10,7 @@
 //! A call e o medidor abrem cada um o seu microfone (o SDL deixa), então
 //! testar não encosta no que está indo para a call.
 //!
-//! Os sons (entrar, sair, mutar…, o toque de chamada) são os de core/sons.zig
+//! Os sons (entrar, sair, mutar…, o toque de chamada, a mensagem nova) são os de core/sons.zig
 //! ou o arquivo que a pessoa escolheu, lido e decodificado só na hora de tocar
 //! (core/som_arquivo.zig): nada fica na memória entre um som e outro, e o
 //! toque do arquivo só enquanto toca.
@@ -576,7 +576,8 @@ pub fn copyDevices(recording: *DeviceList, playback: *DeviceList) void {
 
 var state_lock: c.SDL_SpinLock = 0;
 var running = false;
-/// Um som pedido: na call (respeita "Sons da call") ou o Ouvir da página.
+/// Um som pedido: na call (respeita "Sons da call"), a mensagem nova ou o
+/// Ouvir da página.
 const Req = struct { ev: sons.Event, preview: bool };
 var pending: [8]Req = undefined;
 var n_pending: usize = 0;
@@ -638,8 +639,11 @@ fn enqueue(req: Req) void {
 
 /// Toca o som do evento, se os sons estão ligados e o dele não está
 /// desligado. Não bloqueia: a thread abre o áudio (e lê o arquivo, se é um).
+/// A mensagem nova não é da call: quem chama já olhou a chave dela
+/// (Notificações), e ela sai na mesma saída e com o mesmo volume de saída.
 pub fn play(e: sons.Event) void {
-    if (!sh.sounds.load(.monotonic) or variantOf(e) == .off) return;
+    if (variantOf(e) == .off) return;
+    if (e != .message and !sh.sounds.load(.monotonic)) return;
     enqueue(.{ .ev = e, .preview = false });
 }
 

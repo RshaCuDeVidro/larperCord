@@ -58,12 +58,13 @@ pub fn sendPresence(g: anytype) void {
 pub fn writePresence(g: anytype, status_name: []const u8) bool {
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(alloc);
-    writeOp3(&out, status_name, g.conta.custom, g.presence.current) catch return true;
+    writeOp3(&out, status_name, g.conta.custom, g.presence.activityList()) catch return true;
     return g.writeWs(out.items);
 }
 
 /// O op 3: o status escolhido mais o status personalizado (tipo 4), se vale
-/// agora, e a atividade do Rich Presence (`rich`, já em JSON), se houver.
+/// agora, e as atividades do Rich Presence e do jogo aberto (`rich`, já em
+/// JSON e separadas por vírgula: net/rpc_proto.zig `Presence.activityList`), se houver.
 /// Único lugar que monta a lista de atividades da presença (a demonstração
 /// usa o mesmo).
 pub fn writeOp3(out: *std.ArrayList(u8), status_name: []const u8, custom: conta.CustomStatus, rich: ?[]const u8) !void {
@@ -75,7 +76,7 @@ pub fn writeOp3(out: *std.ArrayList(u8), status_name: []const u8, custom: conta.
 /// `"activities":[…]` do IDENTIFY: a mesma lista do op 3.
 pub fn writeActivities(g: anytype, out: *std.ArrayList(u8)) !void {
     try out.appendSlice(alloc, "\"activities\":");
-    try conta.writeActivitiesWith(out, alloc, g.conta.custom, nowMs(), g.presence.current);
+    try conta.writeActivitiesWith(out, alloc, g.conta.custom, nowMs(), g.presence.activityList());
 }
 
 /// O status personalizado venceu: some da presença; o prazo do status

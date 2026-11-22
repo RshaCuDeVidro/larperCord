@@ -63,7 +63,7 @@
               lugar que conhece o sistema de janelas do SDL
 themes/       os temas embutidos (também compilados dentro do binário)
 third_party/  código de terceiros copiado: Dear ImGui, dear_bindings, Lua, stb_image, libdave,
-              MLSpp, nlohmann/json
+              MLSpp, nlohmann/json, dr_mp3 + dr_wav
 tools/        QA, benchmark de memória, capturas de tela, geradores de logo e do site</code></pre></div>
 <h2 id="threads"><a class="anchor" href="#threads" aria-hidden="true">#</a>Threads</h2>
 <div class="table-wrap"><table><thead><tr><th>Thread</th><th>Quando existe</th><th>O que faz</th></tr></thead><tbody><tr><td>Interface</td><td>Sempre</td><td>O laço principal, dormindo em <code>SDL_WaitEvent</code> quando nada acontece</td></tr><tr><td>Plugins</td><td>Com um plugin ligado</td><td>Todo o Lua roda aqui. Conversa com a interface por duas filas e dorme quando nada acontece</td></tr><tr><td>Gateway</td><td>Com token</td><td>WebSocket com heartbeat, RESUME, zlib-stream e reconexão, mais o REST, uma requisição por vez</td></tr><tr><td>Gateway de demonstração</td><td>Sem token</td><td>Servidores, pessoas e mensagens falsos</td></tr><tr><td>Mídia</td><td>Sempre, quase sempre dormindo</td><td>Baixa e decodifica imagens com baixa prioridade, no máximo 2 decodificações por vez</td></tr><tr><td>Vigia de temas</td><td>A menos que desligada</td><td>Espera mudanças nos arquivos de tema: inotify no Linux (também nas cores do pywal), aviso de mudança na pasta (FindFirstChangeNotification) no Windows (só as pastas de tema)</td></tr><tr><td>Vídeo</td><td>Enquanto toca</td><td>Uma thread baixa, outra decodifica num anel de 3 quadros</td></tr><tr><td>Voz</td><td>Durante uma call</td><td>Gateway de voz, UDP, Opus e DAVE</td></tr></tbody></table></div>

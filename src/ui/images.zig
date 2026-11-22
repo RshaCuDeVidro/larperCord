@@ -656,6 +656,35 @@ pub fn recentClear() void {
     }
 }
 
+/// O arquivo de `url`, se as imagens já baixaram e ele é o original (para salvar e
+/// exportar sem pedir de novo). Só endereço que vai sem redução: o do proxy de
+/// mídia guardado aqui pode ser a cópia reduzida. Qualquer thread.
+pub fn recentOriginal(url: []const u8, out: *std.ArrayList(u8)) bool {
+    var b: [2048]u8 = undefined;
+    const asked = proxiedUrl(&b, url, 64, 64) orelse return false;
+    if (!std.mem.eql(u8, asked, url)) return false;
+    return recentGet(url, out);
+}
+
+/// Uma imagem da demonstração ("demo:3", "demo:av:2") como PNG: é o "arquivo" dela
+/// para salvar e exportar. Qualquer thread (só calcula).
+pub fn demoPng(url: []const u8, side: u16, out: *std.ArrayList(u8)) bool {
+    if (!std.mem.startsWith(u8, url, "demo:")) return false;
+    var stop: std.atomic.Value(bool) = .init(false);
+    const px = demo(.{ .key = @constCast(""), .url = @constCast(url), .max_w = side, .max_h = side }, &stop);
+    defer px.deinit();
+    if (px.frames.len == 0 or px.w == 0 or px.h == 0) return false;
+    const surface = c.SDL_CreateSurfaceFrom(px.w, px.h, c.SDL_PIXELFORMAT_RGBA32, px.frames[0].data.ptr, @as(c_int, px.w) * 4) orelse return false;
+    defer c.SDL_DestroySurface(surface);
+    const io = c.SDL_IOFromDynamicMem() orelse return false;
+    defer _ = c.SDL_CloseIO(io);
+    if (!c.SDL_SavePNG_IO(surface, io, false)) return false;
+    const size: usize = @intCast(@max(c.SDL_GetIOSize(io), 0));
+    const data = c.SDL_GetPointerProperty(c.SDL_GetIOProperties(io), c.SDL_PROP_IOSTREAM_DYNAMIC_MEMORY_POINTER, null) orelse return false;
+    out.appendSlice(alloc, @as([*]const u8, @ptrCast(data))[0..size]) catch return false;
+    return true;
+}
+
 fn load(curl: *?*c.CURL, jb: Job, stop: *std.atomic.Value(bool)) Pixels {
     if (std.mem.startsWith(u8, jb.url, "demo:")) return demo(jb, stop);
     // Vídeo vira animação só no GIF antigo do Tenor. Em qualquer outro endereço
@@ -865,6 +894,10 @@ pub const FetchInfo = struct {
     }
 };
 
+/// Downloads de mídia começados no app inteiro (imagens, vídeo, voz, "Salvar"): o QA
+/// confere que exportar uma conversa não começa nenhum.
+pub var fetches: std.atomic.Value(u32) = .init(0);
+
 /// Baixa `url` como está (sem pedir tamanho ao proxy de mídia) para `sink`.
 /// Só de domínios permitidos, redirecionamentos conferidos um a um e com o
 /// proxy das configurações. `timeout_s` = 0: sem limite total (vídeo), mas
@@ -879,6 +912,7 @@ pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic
         logFail(url, "domínio não permitido", .{});
         return false;
     }
+    _ = fetches.fetchAdd(1, .monotonic);
     if (curl.* == null) {
         curlGlobalInit();
         curl.* = c.curl_easy_init();
@@ -911,7 +945,7 @@ pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic
         }
         _ = c.curl_easy_setopt(h, c.CURLOPT_FOLLOWLOCATION, @as(c_long, 0));
         _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, "https");
-        _ = c.curl_easy_setopt(h, c.CURLOPT_ACCEPT_ENCODING, "");
+        _ = c.curl_easy_setopt(h, c.CURLOPT_ACCEPT_ENCODING, @import("../platform/sys.zig").acceptEncoding());
         // Proxy das configurações (mídia de fora, ou tudo).
         var pbuf: proxy.Buf = undefined;
         if (proxy.forUrl(&pbuf, cur_url)) |p| _ = c.curl_easy_setopt(h, c.CURLOPT_PROXY, p.ptr);

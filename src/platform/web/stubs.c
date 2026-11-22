@@ -56,6 +56,10 @@ int opus_decode(OpusDecoder *st, const unsigned char *data, opus_int32 len, opus
     (void)st; (void)data; (void)len; (void)pcm; (void)frame_size; (void)decode_fec;
     return OPUS_UNIMPLEMENTED;
 }
+int opus_decode_float(OpusDecoder *st, const unsigned char *data, opus_int32 len, float *pcm, int frame_size, int decode_fec) {
+    (void)st; (void)data; (void)len; (void)pcm; (void)frame_size; (void)decode_fec;
+    return OPUS_UNIMPLEMENTED;
+}
 OpusEncoder *opus_encoder_create(opus_int32 Fs, int channels, int application, int *error) { (void)Fs; (void)channels; (void)application; if (error) *error = OPUS_UNIMPLEMENTED; return NULL; }
 void opus_encoder_destroy(OpusEncoder *st) { (void)st; }
 int opus_encoder_ctl(OpusEncoder *st, int request, ...) { (void)st; (void)request; return OPUS_UNIMPLEMENTED; }

@@ -83,8 +83,10 @@ pub const ops = [_]Op{
     run(wheelDown),
     .{ .expect = .{ .name = "saindo da página, a pergunta volta fechada", .check = cancelled, .timeout_ms = 2500 } },
     click("button:Apagar todos os dados…"),
-    expect("pergunta outra vez", asks),
+    // A pergunta abre no fim da página e pode ficar abaixo da parte visível (no CI
+    // fica): rola antes de conferir, com o mouse ainda sobre a página depois do clique.
     run(wheelDown),
+    expect("pergunta outra vez", asks),
     .{ .wait = 200 },
     click("button:Apagar tudo e fechar"),
     expect("confirmar pede para apagar e fechar o app", wipeWanted),

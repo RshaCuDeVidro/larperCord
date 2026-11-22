@@ -26,6 +26,50 @@ get() { # url sha256
     echo "$f"
 }
 
+# brotli: o certificado comprimido que o Chrome pede (o OpenSSL descomprime) e as
+# respostas em br do curl. Só o decodificador: o codificador, que o OpenSSL também cita
+# (~570 KB), vira o de tools/brotlienc_stub.c, que só falha. Este, o zstd e o nghttp2
+# com os símbolos escondidos, como o OpenSSL: o freetype do sistema também chama o
+# brotli, e deve usar o dele.
+f=$(get https://github.com/google/brotli/archive/refs/tags/v1.2.1.tar.gz 98d35d11a78dc453aebb7d10c3748f3f73ff78c8267c0dc697b8631f67bf7e8f)
+t=$(mktemp -d)
+tar -xf "$f" -C "$t"
+cmake -S "$t"/brotli-* -B "$t/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE="-Os -DNDEBUG" -DCMAKE_C_FLAGS="$secoes -fvisibility=hidden" \
+    -DCMAKE_INSTALL_PREFIX="$out" -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DBUILD_SHARED_LIBS=OFF -DBROTLI_BUILD_TOOLS=OFF -DBROTLI_BUNDLED_MODE=OFF
+cmake --build "$t/build"
+cmake --install "$t/build"
+cc -Os $secoes -fPIC -fvisibility=hidden -I"$out/include" -c tools/brotlienc_stub.c -o "$t/brotlienc_stub.o"
+rm -f "$out/lib/libbrotlienc.a"
+ar rcs "$out/lib/libbrotlienc.a" "$t/brotlienc_stub.o"
+rm -rf "$t"
+
+# zstd: as respostas em zstd do curl (o Chrome aceita "gzip, deflate, br, zstd"). Só a
+# descompressão.
+f=$(get https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3)
+t=$(mktemp -d)
+tar -xf "$f" -C "$t"
+zstd_opts="ZSTD_LIB_COMPRESSION=0 ZSTD_LIB_DICTBUILDER=0 ZSTD_LIB_DEPRECATED=0 ZSTD_LEGACY_SUPPORT=0"
+make -C "$t"/zstd-*/lib -j"$(nproc)" libzstd.a-release $zstd_opts \
+    CFLAGS="-Os $secoes -fPIC -fvisibility=hidden -DHUF_FORCE_DECOMPRESS_X1 -DZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT -DZSTD_NO_INLINE"
+make -C "$t"/zstd-*/lib install-static install-includes install-pc $zstd_opts PREFIX="$out" LIBDIR="$out/lib"
+rm -rf "$t"
+
+# nghttp2: o HTTP/2 do curl. O Chrome sempre fala h2 com o Discord; um "Chrome" que
+# só fala HTTP/1.1 chama atenção.
+f=$(get https://github.com/nghttp2/nghttp2/releases/download/v1.70.0/nghttp2-1.70.0.tar.xz e05cb1388eaca3830aded4ccf20044b6e1ac1a61411dcca11b0437c4285c8bc2)
+t=$(mktemp -d)
+tar -xf "$f" -C "$t"
+(
+    cd "$t"/nghttp2-*
+    CFLAGS="-Os $secoes -fvisibility=hidden" ./configure --prefix="$out" --libdir="$out/lib" \
+        --enable-lib-only --disable-shared --enable-static --with-pic
+    make -j"$(nproc)"
+    make install
+)
+rm -rf "$t"
+
 # OpenSSL: o TLS do curl e a criptografia do DAVE (libdave e mlspp, em third_party).
 # Com o OpenSSL do Ubuntu, o libcurl.pc pedia -lssl -lcrypto sem caminho, a libssl.so
 # do sistema entrava na ligação (o --as-needed só a tirava do NEEDED depois) e o ld.lld
@@ -34,9 +78,12 @@ get() { # url sha256
 # e o que ninguém chama o ligador joga fora.
 # Fora: SSL 3, TLS 1.0 e 1.1, DTLS e QUIC; cifras e hashes que o TLS de hoje e o DAVE
 # não usam (o scrypt fica: o DAVE usa na impressão digital do par); DSA e curvas
-# binárias; assinaturas pós-quânticas (o ML-KEM fica, é a troca de chaves híbrida do
-# TLS 1.3 e do MLS); ENGINE, módulos e o provedor legacy; OCSP, CT, CMS e companhia;
-# nomes de arquivo nas mensagens de erro. O openssl.cnf é procurado em /usr/lib/ssl,
+# binárias; o SLH-DSA; ENGINE, módulos e o provedor legacy; CMS e companhia; nomes de
+# arquivo nas mensagens de erro. Ficam o que o aperto de mão do Chrome pede
+# (src/platform/tls_chrome.c): as assinaturas ML-DSA, o OCSP (com o cliente HTTP, sem o
+# qual o OpenSSL o desliga) e o CT, pela extensão de cada um, e o certificado comprimido
+# em brotli. O ML-KEM também fica, é a troca de chaves
+# híbrida do TLS 1.3 e do MLS. O openssl.cnf é procurado em /usr/lib/ssl,
 # como no OpenSSL do Ubuntu que ia antes, e -O2, como ele: a cifra é assembly, mas o
 # C em volta dela (EVP, GCM) com -Os deixava cada quadro do DAVE uns 50% mais lento.
 f=$(get https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a)
@@ -54,8 +101,9 @@ tar -xf "$f" -C "$t"
         no-nextprotoneg no-srp no-integrity-only-ciphers no-tls-deprecated-ec no-ssl-trace no-sslkeylog \
         no-aria no-bf no-camellia no-cast no-des no-idea no-mdc2 no-md4 no-rc2 no-rc4 no-rc5 no-rmd160 \
         no-seed no-sm2 no-sm3 no-sm4 no-whirlpool no-gost no-siv no-ocb no-siphash no-blake2 no-argon2 \
-        no-dsa no-ec2m no-ml-dsa no-slh-dsa \
-        no-ocsp no-ct no-cms no-ts no-cmp no-http no-rfc3779 no-comp no-async no-ui-console \
+        no-dsa no-ec2m no-slh-dsa \
+        no-cms no-ts no-cmp no-rfc3779 no-zlib no-zstd no-async no-ui-console \
+        enable-brotli --with-brotli-include="$out/include" --with-brotli-lib="$out/lib" \
         no-thread-pool no-default-thread-pool \
         -O2 $secoes -fvisibility=hidden
     make -j"$(nproc)" build_libs
@@ -98,18 +146,23 @@ cmake --install "$t/build"
 rm -rf "$t"
 
 # curl só com HTTP(S) e WebSocket, que é o que o app pede (CURLOPT_PROTOCOLS_STR), e o
-# proxy. Fora também NTLM, cookies, HSTS, alt-svc, DoH e outras APIs que o app não chama.
+# proxy, com HTTP/2, br e zstd, como o Chrome. Fora também NTLM, cookies, HSTS, alt-svc,
+# DoH e outras APIs que o app não chama. O HTTP/2 sai com o SETTINGS, a janela e a ordem
+# dos pseudo-cabeçalhos do Chrome (tools/curl-chrome-h2.patch).
 # -Os: ele espera a rede, não a CPU.
 f=$(get https://curl.se/download/curl-8.23.0.tar.xz 8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5)
 t=$(mktemp -d)
 tar -xf "$f" -C "$t"
+patch -d "$t"/curl-* -p1 < tools/curl-chrome-h2.patch
 (
     cd "$t"/curl-*
-    CFLAGS="-Os $secoes" ./configure --prefix="$out" --libdir="$out/lib" \
+    # O libcrypto estático cita o brotli: os testes de ligação do configure precisam dele.
+    CFLAGS="-Os $secoes" LIBS="-lbrotlienc -lbrotlidec -lbrotlicommon" ./configure --prefix="$out" --libdir="$out/lib" \
         --disable-shared --enable-static --with-pic \
         --with-openssl="$out" --enable-websockets \
         --without-ca-bundle --without-ca-path --with-ca-fallback \
-        --without-libpsl --without-brotli --without-zstd --without-nghttp2 --without-libidn2 --without-librtmp \
+        --with-nghttp2="$out" --with-brotli="$out" --with-zstd="$out" \
+        --without-libpsl --without-libidn2 --without-librtmp \
         --disable-ldap --disable-ldaps --disable-rtsp --disable-dict --disable-telnet --disable-tftp \
         --disable-pop3 --disable-imap --disable-smtp --disable-gopher --disable-mqtt --disable-smb \
         --disable-ftp --disable-file --disable-ipfs --disable-ntlm --disable-aws --disable-cookies \

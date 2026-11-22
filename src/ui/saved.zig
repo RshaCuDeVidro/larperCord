@@ -1,7 +1,8 @@
 //! Tela "Salvas" (Ctrl+Shift+S ou o botão do cabeçalho): as mensagens
-//! salvas pelo menu do botão direito, cada uma com uma anotação editável.
-//! Também lê e grava o arquivo (~/.config/larpercord/saved-<conta>.json,
-//! com permissão 600: são cópias de conversas). Nada disso vai para o Discord.
+//! salvas pelo menu do botão direito, cada uma com uma anotação editável, e na
+//! outra aba os lembretes (ui/lembretes.zig). Também lê e grava o arquivo das
+//! salvas (~/.config/larpercord/saved-<conta>.json, com permissão 600: são
+//! cópias de conversas). Nada disso vai para o Discord.
 const std = @import("std");
 const c = @import("c");
 const d = @import("draw.zig");
@@ -13,6 +14,7 @@ const i18n = @import("i18n.zig");
 const popup = @import("popup.zig");
 const inbox = @import("inbox.zig");
 const saved = @import("../core/saved.zig");
+const lembretes = @import("lembretes.zig");
 const Id = @import("../core/types.zig").Id;
 const fsutil = @import("../platform/fsutil.zig");
 
@@ -20,6 +22,10 @@ const fsutil = @import("../platform/fsutil.zig");
 var editing: Id = 0;
 var note_buf: [saved.max_note + 1]u8 = @splat(0);
 var focus_note = false;
+
+/// A aba aberta: as mensagens salvas ou os lembretes.
+pub const Tab = enum { salvas, lembretes };
+pub var tab: Tab = .salvas;
 
 /// Editando uma anotação: o Esc cancela a edição em vez de fechar a tela.
 pub fn isEditing() bool {
@@ -100,22 +106,52 @@ pub fn draw(ctx: *d.Ctx) void {
     const fam = ctx.ui;
     const list = &ctx.st.saved;
 
-    icons.bookmark(dl, r.x + 26, r.y + 27, ctx.col(.text).u(), true);
-    const title = i18n.tr("Mensagens salvas", "Saved messages");
+    if (tab == .lembretes) icons.alarm(dl, r.x + 26, r.y + 27, ctx.col(.text).u()) else icons.bookmark(dl, r.x + 26, r.y + 27, ctx.col(.text).u(), true);
+    const title = if (tab == .lembretes) i18n.tr("Lembretes", "Reminders") else i18n.tr("Mensagens salvas", "Saved messages");
     d.text(dl, fam.get(.bold), 17, r.x + 44, r.y + 16, ctx.col(.text), title);
-    var cb: [32]u8 = undefined;
-    const tw = d.width(fam.get(.bold), 17, title);
-    d.text(dl, fam.get(.regular), 13, r.x + 44 + tw + 10, r.y + 20, ctx.col(.faint), std.fmt.bufPrint(&cb, "{d}", .{list.items.items.len}) catch "");
-    d.text(dl, fam.get(.regular), 12, r.x + 18, r.y + 46, ctx.col(.faint), i18n.tr("Só neste computador: nada disso vai para o Discord.", "Only on this computer: none of this goes to Discord."));
-    d.line(dl, r.x, r.y + 70, r.right(), r.y + 70, ctx.col(.border), 1);
+    const sub_x = r.x + 44 + d.width(fam.get(.bold), 17, title) + 12;
+    _ = d.textClipped(dl, fam.get(.regular), 12, sub_x, r.y + 21, ctx.col(.faint), i18n.tr("Só neste computador: nada disso vai para o Discord.", "Only on this computer: none of this goes to Discord."), r.right() - 16 - sub_x);
+
+    // Abas: as salvas e os lembretes (com o número dos que venceram).
+    const ty = r.y + 50;
+    var tx = r.x + 16;
+    const due = lembretes.dueCount(ctx);
+    for ([_]Tab{ .salvas, .lembretes }, 0..) |t, i| {
+        var nb: [64]u8 = undefined;
+        const name = if (t == .salvas) i18n.tr("Salvas", "Saved") else i18n.tr("Lembretes", "Reminders");
+        const n = if (t == .salvas) list.items.items.len else ctx.st.lembretes.items.items.len;
+        const lbl = if (n > 0) std.fmt.bufPrint(&nb, "{s}  {d}", .{ name, n }) catch name else name;
+        const sel = tab == t;
+        const lw = d.width(fam.get(.semibold), 14, lbl);
+        const tw = lw + 20 + (if (t == .lembretes and due > 0) @as(f32, 12) else 0);
+        const tr: d.Rect = .{ .x = tx, .y = ty, .w = tw, .h = 30 };
+        const hb = d.hit(ctx, 2900 + i, tr);
+        qa.mark(tr, "saved-tab:{s}", .{@tagName(t)});
+        if (sel) d.rect(dl, tr, ctx.col(.selected), @max(ctx.th.radius - 2, 4)) else if (hb.hovered) d.rect(dl, tr, ctx.col(.hover), @max(ctx.th.radius - 2, 4));
+        d.text(dl, fam.get(.semibold), 14, tr.x + 10, d.centerY(tr, 14), if (sel) ctx.col(.text) else ctx.col(.muted), lbl);
+        // Algum venceu: um pontinho vermelho na aba.
+        if (t == .lembretes and due > 0) d.circle(dl, tr.x + 10 + lw + 8, tr.y + tr.h / 2, 3.5, ctx.col(.danger));
+        if (hb.clicked and !sel) {
+            tab = t;
+            editing = 0;
+        }
+        tx += tw + 6;
+    }
+    d.line(dl, r.x, ty + 38, r.right(), ty + 38, ctx.col(.border), 1);
 
     if (editing != 0 and c.ImGui_IsKeyPressed(c.ImGuiKey_Escape)) editing = 0;
 
-    const body: d.Rect = .{ .x = r.x + 1, .y = r.y + 71, .w = r.w - 2, .h = r.h - 77 };
+    const body: d.Rect = .{ .x = r.x + 1, .y = ty + 39, .w = r.w - 2, .h = r.bottom() - ty - 45 };
     const bdl = d.beginRegion(ctx, "##saved-body", body, 0);
     ctx.dl = bdl;
     const o = c.ImGui_GetCursorScreenPos();
     var y = o.y + 10;
+    if (tab == .lembretes) {
+        const end = lembretes.list(ctx, bdl, body, y);
+        d.endRegion(ctx, end + 6, body.x);
+        ctx.dl = dl;
+        return;
+    }
     if (list.items.items.len == 0) {
         mascote.inApp(ctx, bdl, body.x + body.w / 2, y + 58, 78, .sleep, .saved, 8);
         y += 42;

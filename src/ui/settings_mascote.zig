@@ -37,8 +37,9 @@ var animating = false;
 /// A categoria aberta.
 const Tab = enum(u8) { eyes, mouth, hat, acc, ears, colors };
 var tab: Tab = .eyes;
-/// Para desfazer: o texto do visual e o arquivo de antes de cada troca.
-const Undo = struct { look: S.Text, file: S.Text };
+/// Para desfazer: os textos do visual (peças, ajustes e nome) e o arquivo de antes de
+/// cada troca.
+const Undo = struct { look: S.Text, tweaks: S.Text, name: S.Text, file: S.Text };
 var undo: [24]Undo = undefined;
 var undo_n: usize = 0;
 var seed: u64 = 0x5EED;
@@ -50,7 +51,7 @@ var hex_bad = false;
 var seen_ms: i64 = -10_000;
 
 /// O QA pede para rolar a página até um pedaço (para fotografar).
-pub const Anchor = enum { none, stage, presets, tabs, files };
+pub const Anchor = enum { none, stage, more, presets, tabs, files };
 pub var qa_scroll: Anchor = .none;
 
 fn anchor(p: anytype, a: Anchor) void {
@@ -64,6 +65,12 @@ fn anchor(p: anytype, a: Anchor) void {
 pub fn undoDepth() usize {
     return undo_n;
 }
+/// Quantas vezes algo foi guardado para desfazer, desde que o app abriu (a pilha tem
+/// tamanho fixo; o QA confere um desfazer por arraste mesmo com ela cheia).
+pub fn undoPushes() usize {
+    return undo_pushes;
+}
+var undo_pushes: usize = 0;
 pub fn currentTab() u8 {
     return @intFromEnum(tab);
 }
@@ -78,19 +85,33 @@ fn pushUndo(s: *const S.Settings) void {
         std.mem.copyForwards(Undo, undo[0 .. undo.len - 1], undo[1..]);
         undo_n -= 1;
     }
-    undo[undo_n] = .{ .look = s.mascot_look, .file = s.mascot_file };
+    undo[undo_n] = .{ .look = s.mascot_look, .tweaks = s.mascot_tweaks, .name = s.mascot_name, .file = s.mascot_file };
     undo_n += 1;
+    undo_pushes += 1;
 }
 
 /// Passa a usar `l` (o visual montado aqui): deixa de lado um arquivo escolhido (os
-/// desenhos dele continuam, pelo `draw=`) e guarda o de antes para desfazer.
+/// desenhos dele continuam, pelo `draw=`) e guarda o de antes para desfazer. O nome
+/// continua o de agora (um visual pronto ou sorteado não tira o nome dele).
 fn apply(ctx: *d.Ctx, l: visual.Look) void {
+    var nl = l;
+    nl.name = current().name;
+    applyEx(ctx, nl, true);
+}
+
+/// `undoable` falso: os passos seguintes de um mesmo arraste (um desfazer só por arraste).
+fn applyEx(ctx: *d.Ctx, l: visual.Look, undoable: bool) void {
     const s = &ctx.st.settings;
     var buf: [256]u8 = undefined;
+    var tbuf: [256]u8 = undefined;
     const text = visual.writeCompact(&l, &buf);
-    if (std.mem.eql(u8, text, s.mascot_look.slice()) and s.mascot_file.len == 0) return;
-    pushUndo(s);
+    const tweaks = visual.writeTweaks(&l, &tbuf);
+    if (std.mem.eql(u8, text, s.mascot_look.slice()) and std.mem.eql(u8, tweaks, s.mascot_tweaks.slice()) and
+        std.mem.eql(u8, l.name.slice(), s.mascot_name.slice()) and s.mascot_file.len == 0) return;
+    if (undoable) pushUndo(s);
     s.mascot_look.set(text);
+    s.mascot_tweaks.set(tweaks);
+    s.mascot_name.set(l.name.slice());
     s.mascot_file.set("");
     changed_ms = ctx.now_ms;
 }
@@ -108,6 +129,8 @@ fn undoLast(ctx: *d.Ctx) void {
     undo_n -= 1;
     const s = &ctx.st.settings;
     s.mascot_look = undo[undo_n].look;
+    s.mascot_tweaks = undo[undo_n].tweaks;
+    s.mascot_name = undo[undo_n].name;
     s.mascot_file = undo[undo_n].file;
     changed_ms = ctx.now_ms;
 }
@@ -427,7 +450,7 @@ fn summary(buf: []u8, l: *const visual.Look) []const u8 {
     return w.buffered();
 }
 
-/// A prévia grande com as informações, os botões e as caras.
+/// A prévia grande com as informações, os botões, os ajustes e as caras.
 fn stage(p: anytype) void {
     const ctx = p.ctx;
     const now = ctx.now_ms;
@@ -456,7 +479,32 @@ fn stage(p: anytype) void {
     var bf = Flow.init(ix, iy + 18 + 30 + sum_h + 14, iw, 36, 8);
     var brs: [4]d.Rect = undefined;
     for (labels, 0..) |lb, i| brs[i] = bf.next(buttonWidth(p, lb));
-    const info_bottom = bf.bottom();
+    // Embaixo dos botões: o nome, as alturas e "Mais ajustes", que abre o resto.
+    var rows_buf: [row_count]Row = undefined;
+    const rows = rowsOf(&rows_buf, &l);
+    var label_w: f32 = 0;
+    for (rows) |r| if (hasLabel(r)) {
+        label_w = @max(label_w, d.width(p.font(.medium), 14, rowLabel(r)));
+    };
+    label_w = @min(label_w, iw * 0.45);
+    var rrs: [row_count]d.Rect = undefined;
+    var swatch_rs: [eye_swatches.len]d.Rect = undefined;
+    var hex_r: d.Rect = undefined;
+    var ry = bf.bottom() + 12;
+    for (rows, 0..) |r, i| {
+        var h: f32 = tweak_h;
+        if (r == .right_eye) {
+            // As cores prontas e a caixa de hex, quebrando a linha quando não cabem.
+            const fx = ix + label_w + 18;
+            var sf = Flow.init(fx, ry + 1, ix + iw - fx, 28, 6);
+            for (&swatch_rs) |*q| q.* = sf.next(28);
+            hex_r = sf.next(hex_w);
+            h = sf.bottom() - ry + 1;
+        }
+        rrs[i] = .{ .x = ix, .y = ry, .w = iw, .h = h };
+        ry += h + 4;
+    }
+    const info_bottom = rrs[rows.len - 1].bottom();
     // As caras e o fone, embaixo de tudo, de ponta a ponta.
     const faces = [_]struct { f: visual.Face, pt: []const u8, en: []const u8 }{
         .{ .f = .prompt, .pt = "Normal", .en = "Normal" },
@@ -500,9 +548,13 @@ fn stage(p: anytype) void {
         if (ctx.st.window_focused) anim.at(now + 33);
     }
     const msize = @min(prev.w * 0.74, prev.h * 0.74);
+    const mcx = prev.x + prev.w / 2;
+    const mcy = prev.y + prev.h * 0.56;
     c.ImDrawList_PushClipRect(p.dl, d.v(prev.x, prev.y), d.v(prev.right(), prev.bottom()), true);
-    terminal.showcase(p.dl, prev.x + prev.w / 2, prev.y + prev.h * 0.56, msize, .{ .face = show_face, .t = t, .headset = show_call, .tape = show_mute, .light = light });
+    terminal.showcase(p.dl, mcx, mcy, msize, .{ .face = show_face, .t = t, .headset = show_call, .tape = show_mute, .light = light });
     c.ImDrawList_PopClipRect(p.dl);
+    nameTag(p, prev, &l);
+    previewDrag(p, ph, mcx, mcy, msize, &l);
 
     // Informações e botões.
     const lb = i18n.tr("Visual", "Look");
@@ -530,6 +582,7 @@ fn stage(p: anytype) void {
     }
     if (button(p, brs[2], 5, b_reset, false, !l.isDefault() or ctx.st.settings.mascot_file.len > 0)) apply(ctx, .{});
     if (button(p, brs[3], 6, b_save, false, true)) saveFile(ctx, &l);
+    for (rows, 0..) |r, i| drawRow(p, rrs[i], r, label_w, &l, &swatch_rs, hex_r);
 
     // As caras da prévia.
     var pb: [48]u8 = undefined;
@@ -555,6 +608,414 @@ fn stage(p: anytype) void {
         changed_ms = now;
     }
     p.y = card_r.bottom();
+}
+
+// --- Os ajustes da prévia ------------------------------------------------------------
+
+/// As linhas embaixo dos botões da prévia: o nome, as alturas, o botão "Mais ajustes"
+/// e, com ele aberto, os outros ajustes (os nomes dos de arrastar são os de
+/// `visual.Tweak`).
+const Row = enum(u8) { name, eye_height, mouth_height, more, eye_x, eye_spacing, eye_tilt, eye_size, mouth_x, mouth_size, ear_size, ear_tilt, roundness, body_width, blush, two_color, right_eye };
+const row_count = @typeInfo(Row).@"enum".field_names.len;
+/// A altura de cada linha e a largura da caixa de hex do olho direito.
+const tweak_h: f32 = 30;
+const hex_w: f32 = 108;
+/// "Mais ajustes" aberto (só enquanto o app está aberto; não vai para o settings.kdl).
+var more_open = false;
+/// O controle sendo arrastado: o primeiro passo de cada arraste guarda o visual de
+/// antes para desfazer; os outros, não.
+var slider_drag: ?Row = null;
+/// O nome sendo escrito (o ImGui escreve aqui) e se a caixa está com o foco.
+var name_buf: [visual.PetName.max_chars * 4 + 1]u8 = @splat(0);
+var name_active = false;
+/// A caixa de hex do olho direito.
+var eye_hex_buf: [12]u8 = @splat(0);
+var eye_hex_active = false;
+
+/// As cores prontas para o olho direito.
+const eye_swatches = [_]u32{ 0xFFC23D, 0x29E6FF, 0x5BE38A, 0xFF5FAE, 0x9D6BFF, 0xE5394E, 0x5B9DFF, 0xF8F0FF };
+
+fn rowsOf(buf: *[row_count]Row, l: *const visual.Look) []const Row {
+    var n: usize = 0;
+    const base_rows = [_]Row{ .name, .eye_height, .mouth_height, .more };
+    const more_rows = [_]Row{ .eye_x, .eye_spacing, .eye_tilt, .eye_size, .mouth_x, .mouth_size, .ear_size, .ear_tilt, .roundness, .body_width, .blush, .two_color };
+    for (base_rows) |r| {
+        buf[n] = r;
+        n += 1;
+    }
+    if (more_open) {
+        for (more_rows) |r| {
+            buf[n] = r;
+            n += 1;
+        }
+        if (l.right_eye != null) {
+            buf[n] = .right_eye;
+            n += 1;
+        }
+    }
+    return buf[0..n];
+}
+
+/// Linhas com o rótulo numa coluna (as outras usam a largura toda).
+fn hasLabel(r: Row) bool {
+    return r != .more and r != .two_color;
+}
+
+fn rowLabel(r: Row) []const u8 {
+    return switch (r) {
+        .name => i18n.tr("Nome", "Name"),
+        .eye_height => i18n.tr("Altura dos olhos", "Eye height"),
+        .mouth_height => i18n.tr("Altura da boca", "Mouth height"),
+        .more => i18n.tr("Mais ajustes", "More tweaks"),
+        .eye_x => i18n.tr("Posição dos olhos", "Eye position"),
+        .eye_spacing => i18n.tr("Espaço entre os olhos", "Eye spacing"),
+        .eye_tilt => i18n.tr("Desalinhar olhos", "Uneven eyes"),
+        .eye_size => i18n.tr("Tamanho dos olhos", "Eye size"),
+        .mouth_x => i18n.tr("Posição da boca", "Mouth position"),
+        .mouth_size => i18n.tr("Tamanho da boca", "Mouth size"),
+        .ear_size => i18n.tr("Tamanho das orelhas", "Ear size"),
+        .ear_tilt => i18n.tr("Ângulo das orelhas", "Ear angle"),
+        .roundness => i18n.tr("Arredondado", "Roundness"),
+        .body_width => i18n.tr("Largura do corpo", "Body width"),
+        .blush => i18n.tr("Bochechas", "Blush"),
+        .two_color => i18n.tr("Olhos de duas cores", "Two-color eyes"),
+        .right_eye => i18n.tr("Olho direito", "Right eye"),
+    };
+}
+
+/// O que cada ponta do controle quer dizer (ao passar o mouse no trilho).
+fn rowTip(r: Row) []const u8 {
+    return switch (r) {
+        .eye_height, .mouth_height => i18n.tr("− mais baixo · + mais alto", "− lower · + higher"),
+        .eye_x, .mouth_x => i18n.tr("− para a esquerda · + para a direita", "− to the left · + to the right"),
+        .eye_spacing => i18n.tr("− mais perto · + mais longe", "− closer · + farther apart"),
+        .eye_tilt => i18n.tr("− o esquerdo mais alto · + o direito mais alto", "− left one higher · + right one higher"),
+        .eye_size, .mouth_size, .ear_size => i18n.tr("− menor · + maior", "− smaller · + bigger"),
+        .ear_tilt => i18n.tr("− para dentro · + para fora", "− inward · + outward"),
+        .roundness => i18n.tr("− mais quadrado · + mais redondo", "− squarer · + rounder"),
+        .body_width => i18n.tr("− magrinho · + gordinho", "− slimmer · + chubbier"),
+        .blush => i18n.tr("0 sem bochechas · 6 bem coradas", "0 no blush · 6 strongest"),
+        else => "",
+    };
+}
+
+/// O ajuste de uma linha de arrastar (null nas outras).
+fn rowTweak(r: Row) ?visual.Tweak {
+    return switch (r) {
+        inline else => |x| if (@hasField(visual.Tweak, @tagName(x))) @field(visual.Tweak, @tagName(x)) else null,
+    };
+}
+
+/// Algum dos ajustes de dentro de "Mais ajustes" fora do de sempre?
+fn moreChanged(l: *const visual.Look) bool {
+    for (std.enums.values(visual.Tweak)) |t| {
+        if (t == .eye_height or t == .mouth_height) continue;
+        if (l.tweak(t) != 0) return true;
+    }
+    return l.right_eye != null or (l.has(.blush) and l.blush != visual.blush_usual);
+}
+
+fn drawRow(p: anytype, r: d.Rect, row: Row, label_w: f32, l: *const visual.Look, swatch_rs: []const d.Rect, hex_r: d.Rect) void {
+    const ctx = p.ctx;
+    if (hasLabel(row)) {
+        const label = rowLabel(row);
+        const fs = settings.fitSize(p.font(.medium), 14, 11, label, label_w);
+        const ly = if (row == .right_eye) r.y + (tweak_h - fs * 1.2) / 2 else d.centerY(r, fs);
+        const lw = d.textClipped(p.dl, p.font(.medium), fs, r.x, ly, ctx.col(.text), label, label_w);
+        p.markText(.{ .x = r.x, .y = ly, .w = lw, .h = fs + 4 });
+    }
+    switch (row) {
+        .name => nameField(p, r, label_w, l),
+        .more => moreHeader(p, r, l),
+        .two_color => {
+            const label = rowLabel(row);
+            const pr: d.Rect = .{ .x = r.x, .y = r.y, .w = @min(pillWidth(p, label, true), r.w), .h = r.h };
+            if (pill(p, pr, 70, label, l.right_eye != null, true, "mascot-two-color")) {
+                var nl = l.*;
+                nl.right_eye = if (l.right_eye == null) firstEyeColor(l) else null;
+                apply(ctx, nl);
+            }
+        },
+        .right_eye => rightEyeColors(p, swatch_rs, hex_r, l),
+        .blush => {
+            const cur = l.blushLevel();
+            if (slider(p, r, row, "mascot-tweak:blush", label_w, .{ .lo = 0, .hi = visual.blush_range[1], .cur = cur, .signed = false })) |v| {
+                var nl = l.*;
+                nl.setBlushLevel(v);
+                applyEx(ctx, nl, slider_drag != row);
+                slider_drag = row;
+            }
+        },
+        else => {
+            const t = rowTweak(row) orelse return;
+            const range = visual.tweak_range[@intFromEnum(t)];
+            var mb: [40]u8 = undefined;
+            const mark = switch (t) {
+                .eye_height => "mascot-height:eyes",
+                .mouth_height => "mascot-height:mouth",
+                else => std.fmt.bufPrint(&mb, "mascot-tweak:{s}", .{visual.tweak_ids[@intFromEnum(t)]}) catch "mascot-tweak",
+            };
+            if (slider(p, r, row, mark, label_w, .{ .lo = range[0], .hi = range[1], .cur = l.tweak(t) })) |v| {
+                // Os olhos e a boca se empurram (ver `visual.Look.setTweak`).
+                var nl = l.*;
+                nl.setTweak(t, v);
+                applyEx(ctx, nl, slider_drag != row);
+                slider_drag = row;
+            }
+        },
+    }
+}
+
+const Slider = struct { lo: i8, hi: i8, cur: i8, signed: bool = true };
+
+/// Um controle de arrastar: o trilho com o zero (o de sempre) marcado, a cor do zero até
+/// o valor, o pegador e o número. Devolve o valor novo enquanto é arrastado e muda.
+fn slider(p: anytype, r: d.Rect, row: Row, mark: []const u8, label_w: f32, sl: Slider) ?i8 {
+    const ctx = p.ctx;
+    const lo: f32 = @floatFromInt(sl.lo);
+    const hi: f32 = @floatFromInt(sl.hi);
+    const num_w: f32 = 30;
+    const track: d.Rect = .{ .x = r.x + label_w + 18, .y = r.y + r.h / 2 - 3, .w = @max(r.w - label_w - 18 - num_w - 14, 40), .h = 6 };
+    const hr: d.Rect = .{ .x = track.x - 8, .y = r.y, .w = track.w + 16, .h = r.h };
+    const hb = d.hit(ctx, base_id + 50 + @intFromEnum(row), hr);
+    qa.mark(hr, "{s}", .{mark});
+    var out: ?i8 = null;
+    if (hb.held) {
+        const k = std.math.clamp((ctx.mouse.x - track.x) / track.w, 0, 1);
+        const want: i8 = @intFromFloat(@round(lo + k * (hi - lo)));
+        if (want != sl.cur) out = want;
+    } else if (slider_drag == row) slider_drag = null;
+    const tip = rowTip(row);
+    if (tip.len > 0) d.tip(ctx, hr, tip, hb.hovered and !hb.held);
+    // O trilho, a cor do zero até o valor, a marquinha do zero e o pegador.
+    const k = (@as(f32, @floatFromInt(sl.cur)) - lo) / (hi - lo);
+    const k0 = -lo / (hi - lo);
+    d.rect(p.dl, track, ctx.col(.elevated).mix(ctx.col(.text), 0.08), 3);
+    const a = @min(k, k0);
+    const b = @max(k, k0);
+    if (b > a) d.rect(p.dl, .{ .x = track.x + track.w * a, .y = track.y, .w = track.w * (b - a), .h = track.h }, ctx.col(.accent), 3);
+    d.rect(p.dl, .{ .x = track.x + track.w * k0 - 1, .y = track.y - 4, .w = 2, .h = track.h + 8 }, ctx.col(.muted).alpha(0.7), 1);
+    const kx = track.x + track.w * k;
+    d.shadow(p.dl, .{ .x = kx - 6, .y = r.y + 4, .w = 12, .h = r.h - 8 }, 3, 3, ctx.col(.shadow));
+    d.rect(p.dl, .{ .x = kx - 5, .y = r.y + 5, .w = 10, .h = r.h - 10 }, Rgba.white, 3);
+    var nb: [8]u8 = undefined;
+    const num = (if (sl.signed and sl.cur > 0) std.fmt.bufPrint(&nb, "+{d}", .{sl.cur}) else std.fmt.bufPrint(&nb, "{d}", .{sl.cur})) catch "";
+    const nw = d.width(p.font(.semibold), 13, num);
+    d.text(p.dl, p.font(.semibold), 13, r.right() - nw, d.centerY(r, 13), ctx.col(.muted), num);
+    p.markText(.{ .x = r.right() - nw, .y = d.centerY(r, 13), .w = nw, .h = 17 });
+    return out;
+}
+
+/// O nome dele: uma caixa de texto (até 24 letras). Vale ao apertar Enter ou sair da
+/// caixa, com um desfazer.
+fn nameField(p: anytype, r: d.Rect, label_w: f32, l: *const visual.Look) void {
+    const ctx = p.ctx;
+    const fx = r.x + label_w + 18;
+    const field: d.Rect = .{ .x = fx, .y = r.y + 1, .w = @max(r.right() - fx, 60), .h = r.h - 2 };
+    // A caixa mostra o nome de agora quando ninguém está escrevendo nela.
+    if (!name_active) {
+        @memset(&name_buf, 0);
+        const cur = l.name.slice();
+        @memcpy(name_buf[0..cur.len], cur);
+    }
+    d.rect(p.dl, field, ctx.col(.bg), ctx.th.radius);
+    d.border(p.dl, field, if (name_active) ctx.col(.accent) else ctx.col(.border).mix(ctx.col(.text), 0.1), ctx.th.radius, 1);
+    c.ImGui_SetCursorScreenPos(d.v(field.x + 6, field.y + 1));
+    c.ImGui_SetNextItemWidth(field.w - 12);
+    const hint = i18n.trZ("Sem nome", "No name");
+    const enter = c.ImGui_InputTextWithHintEx("##mname", hint.ptr, &name_buf, name_buf.len, c.ImGuiInputTextFlags_EnterReturnsTrue | c.ImGuiInputTextFlags_CallbackEdit, nameEdit, null);
+    const done = enter or c.ImGui_IsItemDeactivatedAfterEdit();
+    name_active = c.ImGui_IsItemActive();
+    qa.mark(field, "mascot-name", .{});
+    if (done) {
+        var nl = l.*;
+        nl.name.set(std.mem.sliceTo(&name_buf, 0));
+        applyEx(ctx, nl, true);
+        name_active = false;
+    }
+}
+
+/// Escrevendo o nome: o que passa de 24 letras sai na hora (colar um texto comprido
+/// também), sem cortar uma letra no meio.
+fn nameEdit(data: [*c]c.ImGuiInputTextCallbackData) callconv(.c) c_int {
+    const len: usize = @intCast(data.*.BufTextLen);
+    const text = data.*.Buf[0..len];
+    var chars: usize = 0;
+    var i: usize = 0;
+    while (i < len) {
+        if (chars == visual.PetName.max_chars) {
+            c.ImGuiInputTextCallbackData_DeleteChars(data, @intCast(i), @intCast(len - i));
+            break;
+        }
+        i += std.unicode.utf8ByteSequenceLength(text[i]) catch 1;
+        chars += 1;
+    }
+    return 0;
+}
+
+/// O nome dele embaixo do mascote, na prévia.
+fn nameTag(p: anytype, prev: d.Rect, l: *const visual.Look) void {
+    const ctx = p.ctx;
+    const nm = l.name.slice();
+    if (nm.len == 0) return;
+    const font = p.font(.semibold);
+    const fs = settings.fitSize(font, 13, 10.5, nm, prev.w - 44);
+    const tw = @min(d.width(font, fs, nm), prev.w - 44);
+    const r: d.Rect = .{ .x = prev.x + (prev.w - tw) / 2 - 10, .y = prev.bottom() - 32, .w = tw + 20, .h = 24 };
+    d.rect(p.dl, r, ctx.col(.elevated).alpha(0.92), 12);
+    d.border(p.dl, r, ctx.col(.accent).alpha(0.5), 12, 1);
+    _ = d.textClipped(p.dl, font, fs, r.x + 10, d.centerY(r, fs), ctx.col(.text), nm, tw);
+    p.markText(r);
+    qa.mark(r, "mascot-name-tag:{s}", .{nm});
+}
+
+/// O botão que abre e fecha "Mais ajustes" (com um ponto quando algo de dentro mudou e
+/// ele está fechado).
+fn moreHeader(p: anytype, r: d.Rect, l: *const visual.Look) void {
+    const ctx = p.ctx;
+    const label = rowLabel(.more);
+    if (qa_scroll == .more) {
+        qa_scroll = .none;
+        c.ImGui_SetCursorScreenPos(d.v(r.x, r.y - 24));
+        c.ImGui_SetScrollHereY(0);
+    }
+    const hb = d.hit(ctx, base_id + 69, r);
+    qa.mark(r, "mascot-more", .{});
+    if (hb.hovered) d.rect(p.dl, r, ctx.col(.text).alpha(0.05), ctx.th.radius);
+    // A setinha: para a direita fechado, para baixo aberto.
+    const cx = r.x + 10;
+    const cy = r.y + r.h / 2;
+    const col = ctx.col(.muted);
+    if (more_open) {
+        d.line(p.dl, cx - 4, cy - 2, cx, cy + 2, col, 1.8);
+        d.line(p.dl, cx, cy + 2, cx + 4, cy - 2, col, 1.8);
+    } else {
+        d.line(p.dl, cx - 2, cy - 4, cx + 2, cy, col, 1.8);
+        d.line(p.dl, cx + 2, cy, cx - 2, cy + 4, col, 1.8);
+    }
+    const tx = r.x + 24;
+    const fs = settings.fitSize(p.font(.semibold), 14, 11, label, r.w - 44);
+    const tw = d.textClipped(p.dl, p.font(.semibold), fs, tx, d.centerY(r, fs), ctx.col(.text), label, r.w - 44);
+    p.markText(.{ .x = tx, .y = d.centerY(r, fs), .w = tw, .h = fs + 4 });
+    if (!more_open and moreChanged(l)) d.circle(p.dl, tx + tw + 10, cy, 3.5, ctx.col(.accent));
+    if (hb.clicked) more_open = !more_open;
+}
+
+/// A cor que o olho direito ganha ao ligar: a primeira pronta que não é a do outro olho.
+fn firstEyeColor(l: *const visual.Look) visual.Rgba {
+    const tones = l.colorsFor(terminal.accent, false);
+    const other = switch (l.eyes) {
+        .big, .cat, .visor => tones[@intFromEnum(visual.Role.accent)],
+        else => tones[@intFromEnum(visual.Role.ink)],
+    };
+    for (eye_swatches) |hx| {
+        const c0 = visual.Rgba.hex(hx);
+        if (@abs(c0.r - other.r) + @abs(c0.g - other.g) + @abs(c0.b - other.b) > 0.4) return c0;
+    }
+    return visual.Rgba.hex(eye_swatches[0]);
+}
+
+/// As cores prontas do olho direito e a caixa de hex.
+fn rightEyeColors(p: anytype, swatch_rs: []const d.Rect, hex_r: d.Rect, l: *const visual.Look) void {
+    const ctx = p.ctx;
+    const cur = l.right_eye orelse return;
+    for (eye_swatches, swatch_rs, 0..) |hx, sr, i| {
+        const col = visual.Rgba.hex(hx);
+        const on = col.col(1) == cur.col(1);
+        const hb = d.hit(ctx, base_id + 71 + i, sr);
+        var mb: [32]u8 = undefined;
+        qa.mark(sr, "{s}", .{std.fmt.bufPrint(&mb, "mascot-eye-color:{d}", .{i}) catch "mascot-eye-color"});
+        const cx = sr.x + sr.w / 2;
+        const cy = sr.y + sr.h / 2;
+        if (on or hb.hovered) c.ImDrawList_AddCircleEx(p.dl, d.v(cx, cy), 12.5, (if (on) ctx.col(.accent) else ctx.col(.muted)).u(), 0, 2, 0);
+        d.circle(p.dl, cx, cy, 9.5, col);
+        c.ImDrawList_AddCircleEx(p.dl, d.v(cx, cy), 9.5, ctx.col(.text).alpha(0.3).u(), 0, 1, 0);
+        if (hb.clicked and !on) {
+            var nl = l.*;
+            nl.right_eye = col;
+            apply(ctx, nl);
+        }
+    }
+    // A caixa mostra a cor de agora quando ninguém está escrevendo nela.
+    if (!eye_hex_active) {
+        @memset(&eye_hex_buf, 0);
+        var hb: [12]u8 = undefined;
+        const h = visual.hexText(&hb, cur);
+        @memcpy(eye_hex_buf[0..h.len], h);
+    }
+    d.rect(p.dl, hex_r, ctx.col(.bg), ctx.th.radius);
+    d.border(p.dl, hex_r, if (eye_hex_active) ctx.col(.accent) else ctx.col(.border).mix(ctx.col(.text), 0.1), ctx.th.radius, 1);
+    c.ImGui_SetCursorScreenPos(d.v(hex_r.x + 6, hex_r.y));
+    c.ImGui_SetNextItemWidth(hex_r.w - 12);
+    const enter = c.ImGui_InputText("##meyehex", &eye_hex_buf, eye_hex_buf.len, c.ImGuiInputTextFlags_CharsNoBlank | c.ImGuiInputTextFlags_EnterReturnsTrue);
+    const done = enter or c.ImGui_IsItemDeactivatedAfterEdit();
+    eye_hex_active = c.ImGui_IsItemActive();
+    qa.mark(hex_r, "mascot-eye-hex", .{});
+    if (done) {
+        if (visual.parseColor(std.mem.sliceTo(&eye_hex_buf, 0))) |cc| {
+            var nl = l.*;
+            nl.right_eye = cc;
+            if (!nl.eql(l)) apply(ctx, nl);
+        }
+        eye_hex_active = false;
+    }
+}
+
+/// Pegar um olho ou a boca na prévia e arrastar: os olhos (juntos) e a boca andam para
+/// os lados e para cima e para baixo, com os mesmos limites dos controles e um desfazer
+/// por arraste. Pegou fora deles, nada acontece até soltar.
+const Grab = enum { none, eyes, mouth, missed };
+var grab: Grab = .none;
+var grab_from: [2]f32 = .{ 0, 0 };
+var grab_start: [2]i8 = .{ 0, 0 };
+var grab_moved = false;
+
+fn previewDrag(p: anytype, ph: d.Hit, cx: f32, cy: f32, size: f32, l: *const visual.Look) void {
+    const ctx = p.ctx;
+    const k = size * 0.78 / terminal.body_w;
+    // Onde dá para pegar: em volta de cada olho e da boca.
+    const er = 12 * k * l.eyeScale();
+    var eyes_r: [2]d.Rect = undefined;
+    for ([_]f32{ -1, 1 }, &eyes_r) |side, *q| {
+        const e = l.eyeCenter(side);
+        const pt = terminal.petPoint(cx, cy, size, e[0], e[1]);
+        q.* = .{ .x = pt.x - er, .y = pt.y - er, .w = er * 2, .h = er * 2 };
+    }
+    const ms = l.mouthShift();
+    const sm = l.mouthScale();
+    const mp = terminal.petPoint(cx, cy, size, visual.mouth_ctr[0] + ms[0], visual.mouth_ctr[1] + ms[1]);
+    const mouth_r: d.Rect = .{ .x = mp.x - 13 * k * sm, .y = mp.y - 7 * k * sm, .w = 26 * k * sm, .h = 14 * k * sm };
+    qa.mark(eyes_r[0], "mascot-drag:eyes", .{});
+    qa.mark(mouth_r, "mascot-drag:mouth", .{});
+    const m = ctx.mouse;
+    const over: Grab = if (eyes_r[0].contains(m.x, m.y) or eyes_r[1].contains(m.x, m.y)) .eyes else if (mouth_r.contains(m.x, m.y)) .mouth else .none;
+    if ((ph.hovered and over != .none) or grab == .eyes or grab == .mouth) c.ImGui_SetMouseCursor(c.ImGuiMouseCursor_ResizeAll);
+    if (!ph.held) {
+        grab = .none;
+        return;
+    }
+    if (grab == .none) {
+        grab = if (over == .none) .missed else over;
+        grab_from = .{ m.x, m.y };
+        grab_start = if (grab == .eyes) .{ l.eye_x, l.eye_height } else .{ l.mouth_x, l.mouth_height };
+        grab_moved = false;
+    }
+    if (grab != .eyes and grab != .mouth) return;
+    const dx: i32 = @intFromFloat(@round((m.x - grab_from[0]) / k));
+    const dy: i32 = @intFromFloat(@round((m.y - grab_from[1]) / k));
+    const nx: i8 = @intCast(std.math.clamp(grab_start[0] + dx, -100, 100));
+    const nh: i8 = @intCast(std.math.clamp(grab_start[1] - dy, -100, 100));
+    var nl = l.*;
+    if (grab == .eyes) {
+        nl.setTweak(.eye_x, nx);
+        nl.setEyeHeight(nh);
+    } else {
+        nl.setTweak(.mouth_x, nx);
+        nl.setMouthHeight(nh);
+    }
+    if (nl.eql(l)) return;
+    applyEx(ctx, nl, !grab_moved);
+    grab_moved = true;
 }
 
 fn saveFile(ctx: *d.Ctx, l: *const visual.Look) void {

@@ -11,7 +11,7 @@ const terminal = @import("mascote_terminal.zig");
 const visual = @import("mascote_visual.zig");
 const arquivos = @import("mascote_arquivos.zig");
 
-pub const Sheet = enum(u8) { none, eyes0, eyes1, eyes2, mouth0, mouth1, mouth2, hats0, hats1, acc, ears, small, palettes, combos, detail, community };
+pub const Sheet = enum(u8) { none, eyes0, eyes1, eyes2, mouth0, mouth1, mouth2, hats0, hats1, acc, ears, small, palettes, combos, detail, community, tweaks_eyes, tweaks_mouths, tweaks_hats, tweaks_acc };
 
 /// A folha que o QA pediu (none: a página de sempre).
 pub var sheet: Sheet = .none;
@@ -116,6 +116,62 @@ pub fn draw(ctx: *d.Ctx) bool {
             };
             for (looks, 0..) |l, i| cell(ctx, dl, font, i, 4, 400, l, .{}, "", 1.05);
         },
+        .tweaks_eyes => {
+            // Cada olho nos dois extremos dos ajustes (com e sem óculos, uma cara de cada).
+            for (0..visual.eyes_info.len - 1) |i| {
+                for (0..2) |j| {
+                    var l = extreme(j);
+                    l.eyes = @enumFromInt(i);
+                    l.acc = if (j == 0) visual.bits(&.{ .glasses, .blush }) else visual.bits(&.{.freckles});
+                    l.fix();
+                    const faces = [_]visual.Face{ .prompt, .angry, .sad, .startled };
+                    cell(ctx, dl, font, i * 2 + j, 6, 155, l, .{ .face = faces[(i + j) % faces.len] }, visual.eyes_info[i].id, 1.0);
+                }
+            }
+        },
+        .tweaks_mouths => {
+            // Cada boca nos dois extremos, comendo e com a fita numa parte delas.
+            for (0..visual.mouth_info.len - 1) |i| {
+                for (0..2) |j| {
+                    var l = extreme(j);
+                    l.mouth = @enumFromInt(i);
+                    l.acc = if (i % 3 == 0) visual.bits(&.{.mustache}) else 0;
+                    l.fix();
+                    const sh: terminal.Show = .{ .face = if (i % 2 == 0) .laugh else .prompt, .mouth_open = if (i % 4 == 1) 0.8 else 0, .tape = i % 5 == 2, .headset = i % 5 == 2 };
+                    cell(ctx, dl, font, i * 2 + j, 8, 190, l, sh, visual.mouth_info[i].id, 1.0);
+                }
+            }
+        },
+        .tweaks_hats => {
+            // Cada chapéu e cada orelha nos dois corpos dos extremos.
+            var n: usize = 0;
+            for (1..visual.hat_info.len) |i| {
+                var l = extreme(i % 2);
+                l.hat = @enumFromInt(i);
+                l.fix();
+                cell(ctx, dl, font, n, 8, 180, l, .{}, visual.hat_info[i].id, 0.9);
+                n += 1;
+            }
+            for (0..visual.ears_info.len) |i| {
+                var l = extreme(i % 2);
+                l.ears = @enumFromInt(i);
+                l.fix();
+                cell(ctx, dl, font, n, 8, 180, l, .{ .face = .happy }, visual.ears_info[i].id, 0.9);
+                n += 1;
+            }
+        },
+        .tweaks_acc => {
+            // Cada acessório nos dois extremos, e o fone com a fita.
+            for (visual.acc_info, 0..) |a, i| {
+                for (0..2) |j| {
+                    var l = extreme(j);
+                    l.acc = 0;
+                    l.toggle(@enumFromInt(i));
+                    l.fix();
+                    cell(ctx, dl, font, i * 2 + j, 8, 190, l, .{ .headset = i % 4 == 0, .tape = i % 4 == 0 }, a.id, 1.0);
+                }
+            }
+        },
         .community => {
             // Os arquivos da pasta, um por linha, em quatro caras (as imagens da galeria
             // do site saem daqui).
@@ -128,6 +184,30 @@ pub fn draw(ctx: *d.Ctx) bool {
         .none => {},
     }
     return true;
+}
+
+/// Os dois extremos dos ajustes: redondo, gordinho, olhos grandes e afastados, um mais
+/// alto, a boca grande de lado (0), e o contrário: quadrado, magrinho, tudo pequeno e
+/// junto (1).
+fn extreme(which: usize) visual.Look {
+    var l: visual.Look = .{};
+    const a = which == 0;
+    l.roundness = if (a) 4 else -5;
+    l.body_width = if (a) 4 else -4;
+    l.eye_size = if (a) 5 else -4;
+    l.eye_spacing = if (a) 6 else -4;
+    l.eye_x = if (a) -6 else 6;
+    l.eye_tilt = if (a) -6 else 6;
+    l.mouth_size = if (a) 4 else -3;
+    l.mouth_x = if (a) 10 else -10;
+    l.ear_size = if (a) 4 else -4;
+    l.ear_tilt = if (a) 4 else -4;
+    l.eye_height = if (a) 10 else -4;
+    l.mouth_height = if (a) 0 else -4;
+    l.blush = if (a) 6 else 1;
+    if (a) l.right_eye = visual.Rgba.hex(0xFFC23D);
+    l.usePalette(@intCast(which * 5 % visual.palettes.len));
+    return l;
 }
 
 fn cell(ctx: *d.Ctx, dl: *c.ImDrawList, font: *c.ImFont, i: usize, per_row: usize, h: f32, l: visual.Look, sh: terminal.Show, name: []const u8, zoom: f32) void {

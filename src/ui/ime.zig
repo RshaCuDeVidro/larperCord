@@ -176,15 +176,18 @@ pub fn endComposer(active_now: bool) void {
 /// ImGui onde está o cursor, a cada quadro.
 pub fn floating(ctx: *d.Ctx) void {
     if (float_len == 0 or composer_active) return;
+    // Nenhum campo com o foco: a conversão morreu com ele.
+    if (!box(ctx, float_text[0..float_len])) float_len = 0;
+}
+
+/// A conversão `t` numa caixinha sobre o cursor do campo ativo do contexto do ImGui de
+/// agora (também a caixa da janela flutuante, que guarda a conversão dela: ver
+/// app_flutuante.zig). Falso: nenhum campo com o foco.
+pub fn box(ctx: *d.Ctx, t: []const u8) bool {
     var x: f32 = 0;
     var y: f32 = 0;
     var h: f32 = 0;
-    if (!larper_ime_pos(&x, &y, &h) or h <= 0) {
-        // Nenhum campo com o foco: a conversão morreu com ele.
-        float_len = 0;
-        return;
-    }
-    const t = float_text[0..float_len];
+    if (!larper_ime_pos(&x, &y, &h) or h <= 0) return false;
     const font = ctx.ui.get(.regular);
     const pad: f32 = 4;
     var r: d.Rect = .{ .x = x, .y = y - 2, .w = d.width(font, h, t) + pad * 2, .h = h + 4 };
@@ -195,6 +198,12 @@ pub fn floating(ctx: *d.Ctx) void {
     d.text(ctx.fg, font, h, r.x + pad, r.y + 2, ctx.col(.text), t);
     d.line(ctx.fg, r.x + pad, r.y + 2 + h, r.x + r.w - pad, r.y + 2 + h, ctx.col(.text), 1);
     qa.mark(r, "ime-float", .{});
+    return true;
+}
+
+/// Maior prefixo de `s` que cabe em `cap` bytes sem cortar um caractere UTF-8.
+pub fn fit(s: []const u8, cap: usize) usize {
+    return utf8Fit(s, cap);
 }
 
 /// A caixa perdeu o foco com uma conversão aberta: o ImGui acabou de copiar o

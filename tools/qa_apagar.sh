@@ -24,6 +24,7 @@ seed() {
     printf 'mascote\n' > "$cfg/mascots/meu.kdl"
     printf 'plugin\n' > "$cfg/plugins/meu/main.lua"
     printf 'som\n' > "$cfg/som.wav"
+    printf '{"version":1,"reminders":[]}\n' > "$cfg/lembretes-123.json"
     printf 'cache\n' > "$cache/messages/1/2.bin"
     printf 'dll\n' > "$cache/ffmpeg/avcodec-61.dll"
     printf 'registro\n' > "$cache/debug.log"
@@ -54,6 +55,7 @@ echo "$line" | grep -q ' 0 falharam' || { bad "a bateria falhou"; echo "$out" | 
 [ "$code" = 0 ] && ok "o app fechou sozinho (código 0)" || bad "o app saiu com código $code"
 echo "$out" | grep -q 'encerramento demorou' && bad "só saiu pelo vigia de 3 s" || ok "saiu sem precisar do vigia"
 [ ! -e "$R/config/larpercord" ] && ok "a pasta das configurações sumiu" || { bad "sobrou a pasta das configurações:"; find "$R/config/larpercord" | sed 's/^/    /'; }
+[ ! -e "$R/config/larpercord/lembretes-123.json" ] && ok "os lembretes sumiram" || bad "sobrou o arquivo dos lembretes"
 [ ! -e "$R/cache/larpercord" ] && ok "a pasta do cache sumiu (FFmpeg, registro, mensagens)" || { bad "sobrou a pasta do cache:"; find "$R/cache/larpercord" | sed 's/^/    /'; }
 [ ! -e "$R/home/.config/larpercord" ] && ok "o token antigo em ~/.config sumiu" || bad "sobrou o token antigo em ~/.config"
 [ -f "$R/fora/importante.txt" ] && ok "o que os links apontavam continua lá" || bad "apagou o que um link apontava"

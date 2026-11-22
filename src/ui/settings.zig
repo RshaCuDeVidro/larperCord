@@ -997,6 +997,10 @@ fn page(p: *Page, previews: []const Preview) void {
             p.toggleIf(i18n.tr("Brinca com a interface", "Plays with the interface"), i18n.tr("Senta no \"digitando…\", leva mensagem apagada para o lixo, passa a borracha na editada, empurra o botão de voltar ao fim, se segura quando a janela muda de tamanho e leva a cartinha da DM até o ícone.", "Sits on the \"is typing…\" line, takes deleted messages to the trash, erases edited ones, pushes the jump-to-present button, holds on when the window is resized and carries a letter to the DM icon."), &s.mascot_ui, pet_on);
             p.toggleIf(i18n.tr("Brinca com o mouse", "Plays with the mouse"), i18n.tr("Com a setinha parada perto dele, tenta pegar; parada em cima dele, senta nela (e cai quando você mexe).", "With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move)."), &s.mascot_cursor, pet_on);
             p.toggleIf(i18n.tr("Espera você voltar", "Waits for you to come back"), i18n.tr("Com a janela sem foco, fica esperando; se você some por muito tempo, monta um acampamento. Na volta, corre até o mouse (e, depois de horas, diz que sentiu saudade).", "With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you)."), &s.mascot_away, pet_on);
+            const play_on = life_on and !s.reduce_motion;
+            p.toggleIf(i18n.tr("Reage ao que você digita", "Reacts to what you type"), i18n.tr("Tapa as orelhas com tudo em MAIÚSCULAS, cobre os olhos com um ||spoiler||, põe óculos para revisar um bloco de código, segura um pergaminho numa mensagem longa (e se afasta preocupado perto do limite), aponta para a lista com @ e #, abre um terminalzinho com / no começo e oferece um chá quando você apaga muito. E tem uns segredos. Tudo olhando o texto aqui no computador.", "Covers its ears at ALL CAPS, covers its eyes at a ||spoiler||, puts on glasses to review a code block, holds a scroll for a long message (and pulls back worried near the limit), points at the lists for @ and #, opens a tiny terminal for / at the start and offers tea when you delete a lot. And it has a few secrets. All worked out from the text on your computer."), &s.mascot_typing, play_on);
+            p.toggleIf(i18n.tr("Brincadeiras", "Games"), i18n.tr("Às vezes rola um d20 quando você manda uma mensagem. Arraste um emoji do seletor ou de uma reação até ele e ele come; um link solto nele entra num portal e uma imagem vira um quadro. De vez em quando se esconde atrás de um painel: clique na pontinha das orelhas para achar. E reage a Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V e Esc, sem mudar o que as teclas fazem.", "Now and then it rolls a d20 when you send a message. Drag an emoji from the picker or a reaction onto it and it eats it; a link dropped on it goes into a portal and an image becomes a framed picture. Every so often it hides behind a panel: click the tips of its ears to find it. And it reacts to Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V and Esc, without changing what the keys do."), &s.mascot_games, play_on);
+            if (life_on and s.reduce_motion) p.note(i18n.tr("Com \"Reduzir movimento\" ligado (Acessibilidade), ele não reage ao que você digita nem brinca.", "With \"Reduce motion\" on (Accessibility), it doesn't react to what you type or play games."));
             p.heading(i18n.tr("Plantinha", "Little plant"));
             p.toggleIf(i18n.tr("Plantinha", "Little plant"), i18n.tr("Um vasinho do lado dele que ele rega e que cresce um pouco a cada dia em que você usa o app. Some por muito tempo e ela murcha, até ele regar de novo.", "A little pot next to it that it waters and that grows a bit each day you use the app. Stay away too long and it wilts, until it waters it again."), &s.mascot_plant, pet_on);
             var pb: [96]u8 = undefined;
@@ -1011,30 +1015,41 @@ fn page(p: *Page, previews: []const Preview) void {
             p.toggle(i18n.tr("Sublinhar links", "Underline links"), i18n.tr("Desligado, o sublinhado só aparece com o mouse em cima.", "When off, links are only underlined on hover."), &s.underline_links);
         },
         .chat => {
-            p.title("Chat");
+            p.title(i18n.tr("Chat", "Chat"));
             p.heading(i18n.tr("Imagens", "Images"));
             p.toggle(i18n.tr("Reproduzir GIFs automaticamente", "Automatically play GIFs"), i18n.tr("Com a janela em foco, como no Discord. Desligado, o GIF anda quando o mouse passa por cima.", "While the window is focused, like Discord. When off, a GIF plays while you hover it."), &s.autoplay_gifs);
             p.toggle(i18n.tr("Mostrar imagens de links", "Show images from links"), i18n.tr("Imagens e GIFs de links mandados na conversa.", "Images and GIFs from links posted in chat."), &s.show_embeds);
             p.toggle(i18n.tr("Modo economia", "Data saver"), i18n.tr("Imagens, fotos de perfil e anexos só baixam quando você clica. Bom em rede ruim.", "Images, profile pictures and attachments only download when you click. Good on bad networks."), &s.data_saver);
             @import("settings_video.zig").section(p);
+            p.heading(i18n.tr("Áudio", "Audio"));
+            p.toggle(i18n.tr("Visualizador de áudio", "Audio visualizer"), i18n.tr("Barrinhas que dançam com o som enquanto um áudio ou uma mensagem de voz toca, com a janela em foco. Desligado, só a barra de progresso anda, com bem menos quadros por segundo.", "Little bars that dance to the sound while audio or a voice message plays, with the window focused. When off, only the progress bar moves, with far fewer frames per second."), &s.audio_visualizer);
             p.heading(i18n.tr("Conteúdo", "Content"));
             p.toggle(i18n.tr("Sempre mostrar spoilers", "Always show spoilers"), i18n.tr("Revela o texto ||escondido|| sem precisar clicar.", "Reveals ||hidden|| text without clicking."), &s.show_spoilers);
             p.heading(i18n.tr("Leitura", "Reading"));
             p.toggle(i18n.tr("Abrir na primeira não lida", "Open at the first unread"), i18n.tr("Canal com mensagens novas abre nelas, como no Discord. Desligado, abre no fim.", "A channel with new messages opens at them, like Discord. When off, it opens at the bottom."), &s.open_at_unread);
             p.heading(i18n.tr("Caixa de texto", "Text box"));
             p.toggle(i18n.tr("Prévia do markdown", "Markdown preview"), i18n.tr("Com **negrito**, `código`, ||spoiler||…, mostra acima da caixa como vai ficar.", "With **bold**, `code`, ||spoilers||…, shows above the box how it will look."), &s.md_preview);
+            {
+                var fk: [48]u8 = undefined;
+                var cd: [400]u8 = undefined;
+                p.toggle(i18n.tr("Botão de gravar áudio", "Record audio button"), i18n.fmt(&cd, "O microfone ao lado das opções grava pelo microfone da página Voz, com a supressão de ruído de lá, e manda como um arquivo .ogg comum. {s} também começa e envia.", "The microphone next to the options records with the microphone from the Voice page, with its noise suppression, and sends it as a regular .ogg file. {s} starts and sends too.", .{teclas.first(&p.ctx.st.teclas, .gravar_audio, &fk)}), &s.record_audio);
+            }
         },
         .notificacoes => {
             p.title(i18n.tr("Notificações", "Notifications"));
             p.note(i18n.tr("Para mensagens diretas e menções, quando você não está olhando a conversa.", "For direct messages and mentions, when you're not looking at the conversation."));
             p.toggle(i18n.tr("Notificações na área de trabalho", "Desktop notifications"), i18n.tr("Só com a janela fora de foco ou escondida na bandeja.", "Only while the window is unfocused or hidden in the tray."), &s.desktop_notifs);
             p.toggle(i18n.tr("Piscar na barra de tarefas", "Flash taskbar"), i18n.tr("A janela chama atenção até você voltar para ela.", "The window asks for attention until you come back."), &s.taskbar_flash);
+            p.toggle(i18n.tr("Som de mensagem nova", "New message sound"), i18n.tr("Um aviso curto com mensagem direta e menção, também com a janela fora de foco ou na bandeja. Não toca na conversa que você está olhando nem em Não perturbe.", "A short cue for direct messages and mentions, also while the window is unfocused or in the tray. Silent for the conversation you're looking at and in Do Not Disturb."), &s.message_sound);
+            // O som em si: o mesmo da página Voz (embutido, arquivo seu, volume e Ouvir).
+            @import("settings_voz.zig").soundRow(p, s, .message);
             p.note(i18n.tr("Canais silenciados (botão direito → Silenciar) não notificam.", "Muted channels (right-click → Mute) never notify."));
         },
         .privacidade => {
             p.title(i18n.tr("Privacidade", "Privacy"));
             p.toggle(i18n.tr("Enviar indicador de digitação", "Send typing indicator"), i18n.tr("Os outros veem \"digitando…\" enquanto você escreve.", "Others see \"typing…\" while you write."), &s.send_typing);
             p.toggle(i18n.tr("Compartilhar minha atividade (Rich Presence)", "Share my activity (Rich Presence)"), i18n.tr("Jogos e apps com Rich Presence mostram o que você está fazendo, como no Discord do computador. Desligado, nada fica escutando.", "Games and apps with Rich Presence show what you're doing, like the Discord desktop app. Off: nothing listens."), &s.rich_presence);
+            @import("settings_jogos.zig").section(p);
             p.toggle(i18n.tr("Animar GIFs do Tenor e do Giphy", "Animate Tenor and Giphy GIFs"), i18n.tr("Baixa do site deles, que vê o seu IP (o app oficial faz igual). Desligado: prévia parada pelo Discord.", "Downloads from their site, which sees your IP (the official app does too). Off: still preview via Discord."), &s.gif_hosts);
             p.toggle(i18n.tr("Modo streamer", "Streamer Mode"), i18n.tr("Esconde o e-mail e o nome de usuário nas configurações.", "Hides your email and username in settings."), &s.streamer_mode);
             p.toggle(i18n.tr("Avisar antes de entrar num servidor", "Warn before joining a server"), i18n.tr("Entrar e sair de muitos servidores seguidos é o que mais bloqueia contas em clientes de terceiros.", "Joining and leaving many servers in a row is what most often gets third-party client accounts locked."), &s.join_warning);
@@ -1046,11 +1061,19 @@ fn page(p: *Page, previews: []const Preview) void {
             }
             {
                 const msg_cache = @import("../net/msg_cache.zig");
+                const busca = @import("../net/busca_local.zig").stats();
                 var sb: [24]u8 = undefined;
                 var lb: [64]u8 = undefined;
-                const size = msg_cache.formatSize(&sb, msg_cache.totalBytes(), i18n.en());
+                // O índice da busca vai junto com o cache.
+                const size = msg_cache.formatSize(&sb, msg_cache.totalBytes() + busca.disk, i18n.en());
                 if (p.button(i18n.fmt(&lb, "Apagar cache ({s})", "Clear cache ({s})", .{size}), true)) ctx.act(.clear_cache);
                 p.y += 8;
+                var db: [24]u8 = undefined;
+                var mb: [24]u8 = undefined;
+                var nb: [200]u8 = undefined;
+                const y0 = p.y;
+                p.note(i18n.fmt(&nb, "Busca neste computador: {d} mensagens, {s} no disco, {s} na memória.", "Search on this computer: {d} messages, {s} on disk, {s} in memory.", .{ busca.docs, msg_cache.formatSize(&db, busca.disk, i18n.en()), msg_cache.formatSize(&mb, busca.mem, i18n.en()) }));
+                qa.mark(.{ .x = p.x, .y = y0, .w = p.w, .h = p.y - y0 }, "search-index-stats", .{});
             }
             p.note(i18n.tr("Fora isso, imagens e avatares só vêm dos servidores do Discord.", "Everything else (images, avatars) only comes from Discord's servers."));
             p.divider();
@@ -1657,5 +1680,5 @@ fn about(p: *Page) void {
     p.heading(i18n.tr("Feito com", "Built with"));
     // O build do Windows não tem fontconfig e usa as fontes do sistema (ui/fonts.zig).
     const fonts_line = if (sys.windows) i18n.tr("Segoe UI, Consolas, Segoe UI Emoji (fontes do Windows)", "Segoe UI, Consolas, Segoe UI Emoji (Windows fonts)") else "Inter, JetBrains Mono, Noto Color Emoji";
-    for ([_][]const u8{ "Zig 0.17", "SDL 3.4", "Dear ImGui 1.93 (dear_bindings)", if (sys.windows) "FreeType" else "FreeType + fontconfig", "GNU FriBidi", "libcurl + zlib", "stb_image", "Lua 5.4 (plugins)", fonts_line }) |t| p.note(t);
+    for ([_][]const u8{ "Zig 0.17", "SDL 3.4", "Dear ImGui 1.93 (dear_bindings)", if (sys.windows) "FreeType" else "FreeType + fontconfig", "GNU FriBidi", "libcurl + zlib", "stb_image", "dr_mp3 + dr_wav", "Lua 5.4 (plugins)", fonts_line }) |t| p.note(t);
 }

@@ -53,7 +53,52 @@ pub fn pickOpening(setting: u8, seed: u64) Opening {
 }
 
 /// As reações do mascote do canto (ui/mascote_pet.zig).
-pub const Reaction = enum { none, hop, ping, laugh, gg, sad, wave, love, angry, wake, poke, trick, dizzy, eat, stretch, yawn, worried, clone, undo, search, tickle, startle };
+pub const Reaction = enum {
+    none,
+    hop,
+    ping,
+    laugh,
+    gg,
+    sad,
+    wave,
+    love,
+    angry,
+    wake,
+    poke,
+    trick,
+    dizzy,
+    eat,
+    stretch,
+    yawn,
+    worried,
+    clone,
+    undo,
+    search,
+    tickle,
+    startle,
+    // O que você digita (ui/mascote_reacoes.zig): apagou muito (o chá ou os tapinhas)
+    // e os segredos da caixa.
+    tea,
+    pat,
+    prompt,
+    meow,
+    /// O nome dele (Personalizar → Nome) escrito na caixa.
+    named,
+    sudo,
+    rm,
+    // Brincadeiras: o d20 do envio, o emoji, o link e a imagem arrastados até ele, achado
+    // no esconde-esconde, e as teclas (Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V e o Esc).
+    d20,
+    treat,
+    link,
+    picture,
+    found,
+    save,
+    print,
+    cut,
+    paste,
+    duck,
+};
 
 /// Os chapéus das datas especiais.
 pub const Hat = enum { none, santa, witch, party };

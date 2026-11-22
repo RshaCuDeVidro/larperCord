@@ -472,13 +472,53 @@ pub const Hub = struct {
     }
 };
 
-/// Do lado do gateway: nome e imagens de cada aplicação (buscados uma vez) e a
-/// atividade de agora já como JSON, que vai no op 3 e no IDENTIFY.
+/// O jogo aberto, achado pelo processo (core/jogos.zig): só o nome e desde quando.
+/// Alocado com o c_allocator pela interface, passa para o gateway (`set_game`).
+pub const Game = struct {
+    name: Text = .{},
+    /// ms Unix (0 = não diz).
+    start_ms: i64 = 0,
+};
+
+/// O jogo como o gateway espera, numa atividade "Jogando" sem aplicação (como os
+/// jogos que a pessoa acrescenta à mão no Discord do computador).
+pub fn writeGame(out: *Out, gpa: Allocator, g: *const Game) !void {
+    try out.appendSlice(gpa, "{\"type\":0,\"name\":");
+    try j.writeString(out, gpa, g.name.slice());
+    if (g.start_ms != 0) try out.print(gpa, ",\"timestamps\":{{\"start\":{d}}}", .{g.start_ms});
+    try out.append(gpa, '}');
+}
+
+/// Letras e números em minúsculas: "Dota 2" e "dota2" são o mesmo jogo.
+fn sameGameName(a: []const u8, b: []const u8) bool {
+    var i: usize = 0;
+    var k: usize = 0;
+    var same: usize = 0;
+    while (true) {
+        while (i < a.len and !std.ascii.isAlphanumeric(a[i]) and a[i] < 0x80) i += 1;
+        while (k < b.len and !std.ascii.isAlphanumeric(b[k]) and b[k] < 0x80) k += 1;
+        if (i == a.len or k == b.len) return i == a.len and k == b.len and same > 0;
+        if (std.ascii.toLower(a[i]) != std.ascii.toLower(b[k])) return false;
+        i += 1;
+        k += 1;
+        same += 1;
+    }
+}
+
+/// Do lado do gateway: nome e imagens de cada aplicação (buscados uma vez) e as
+/// atividades de agora já como JSON, que vão no op 3 e no IDENTIFY: a do Rich
+/// Presence e a do jogo aberto, lado a lado na lista (uma não toma o lugar da
+/// outra).
 pub const Presence = struct {
     apps: std.AutoHashMapUnmanaged(u64, App) = .empty,
-    /// null = nenhuma atividade.
+    /// A do Rich Presence; null = nenhuma.
     current: ?[]u8 = null,
     current_app: u64 = 0,
+    /// A do jogo aberto (core/jogos.zig); null = nenhum.
+    game: ?[]u8 = null,
+    game_name: Text = .{},
+    /// As duas juntas, separadas por vírgula, como entram em `"activities":[…]`.
+    joined: ?[]u8 = null,
 
     pub const App = struct {
         /// "" = a aplicação não existe (não manda atividade sem nome).
@@ -494,6 +534,8 @@ pub const Presence = struct {
         }
         p.apps.deinit(gpa);
         if (p.current) |cur| gpa.free(cur);
+        if (p.game) |g| gpa.free(g);
+        if (p.joined) |x| gpa.free(x);
         p.* = .{};
     }
 
@@ -542,9 +584,14 @@ pub const Presence = struct {
         gop.value_ptr.* = .{ .name = owned_name, .assets = owned_assets };
     }
 
-    /// Troca a atividade de agora (null limpa). Sem nome conhecido, fica sem
-    /// atividade: o Discord não aceita uma sem nome.
+    /// Troca a atividade do Rich Presence (null limpa). Sem nome conhecido, fica
+    /// sem atividade: o Discord não aceita uma sem nome.
     pub fn set(p: *Presence, gpa: Allocator, app: u64, act: ?*const Activity) void {
+        p.setRpc(gpa, app, act);
+        p.rejoin(gpa);
+    }
+
+    fn setRpc(p: *Presence, gpa: Allocator, app: u64, act: ?*const Activity) void {
         if (p.current) |cur| gpa.free(cur);
         p.current = null;
         p.current_app = 0;
@@ -563,57 +610,124 @@ pub const Presence = struct {
         p.current_app = app;
     }
 
-    /// `"activities":[…]` com a atividade de agora (ou vazio).
+    /// Troca o jogo aberto (null limpa). A atividade do Rich Presence fica.
+    pub fn setGame(p: *Presence, gpa: Allocator, game: ?*const Game) void {
+        if (p.game) |g| gpa.free(g);
+        p.game = null;
+        p.game_name = .{};
+        if (game) |g| if (g.name.len > 0) {
+            var out: Out = .empty;
+            if (writeGame(&out, gpa, g)) {
+                p.game = out.toOwnedSlice(gpa) catch blk: {
+                    out.deinit(gpa);
+                    break :blk null;
+                };
+                if (p.game != null) p.game_name = g.name;
+            } else |_| out.deinit(gpa);
+        };
+        p.rejoin(gpa);
+    }
+
+    /// O jogo aberto vai na lista? O mesmo jogo que já manda Rich Presence (com
+    /// detalhes e imagens) não aparece duas vezes.
+    fn gameShown(p: *const Presence) bool {
+        if (p.game == null) return false;
+        if (p.current == null) return true;
+        const info = p.apps.get(p.current_app) orelse return true;
+        return !sameGameName(info.name, p.game_name.slice());
+    }
+
+    fn rejoin(p: *Presence, gpa: Allocator) void {
+        if (p.joined) |x| gpa.free(x);
+        p.joined = null;
+        const game = if (p.gameShown()) p.game else null;
+        if (p.current) |cur| {
+            p.joined = if (game) |g| std.fmt.allocPrint(gpa, "{s},{s}", .{ cur, g }) catch null else gpa.dupe(u8, cur) catch null;
+        } else if (game) |g| p.joined = gpa.dupe(u8, g) catch null;
+    }
+
+    /// As atividades de agora, separadas por vírgula (null = nenhuma): o que vai
+    /// dentro de `"activities":[…]`, depois do status personalizado.
+    pub fn activityList(p: *const Presence) ?[]const u8 {
+        return p.joined;
+    }
+
+    /// `"activities":[…]` com as atividades de agora (ou vazio).
     pub fn writeActivities(p: *const Presence, out: *Out, gpa: Allocator) !void {
         try out.appendSlice(gpa, "\"activities\":[");
-        if (p.current) |cur| try out.appendSlice(gpa, cur);
+        if (p.joined) |x| try out.appendSlice(gpa, x);
         try out.append(gpa, ']');
     }
 
-    /// O op 3 inteiro: o status de agora com a atividade.
+    /// O op 3 inteiro: o status de agora com as atividades.
     pub fn writeOp3(p: *const Presence, out: *Out, gpa: Allocator, status: []const u8) !void {
         try out.print(gpa, "{{\"op\":3,\"d\":{{\"status\":\"{s}\",\"since\":0,", .{status});
         try p.writeActivities(out, gpa);
         try out.appendSlice(gpa, ",\"afk\":false}}");
     }
 
-    /// A nossa linha na interface (painel e perfil) com a atividade de agora.
-    /// Textos alocados com `ea` (o Store assume).
+    /// A nossa linha na interface (painel e perfil) com as atividades de agora; o
+    /// texto curto ("Jogando …") é o da primeira. Textos alocados com `ea` (o
+    /// Store assume).
     pub fn meEvent(p: *const Presence, ea: Allocator, me: types.Id, status: types.Status) ev.Event {
         const empty: ev.Event = .{ .presence_update = .{ .user = me, .status = status, .activity = "", .activities = ea.alloc(types.Activity, 0) catch null } };
-        const cur = p.current orelse return empty;
-        var arena = std.heap.ArenaAllocator.init(ea);
-        defer arena.deinit();
-        const v = std.json.parseFromSliceLeaky(Value, arena.allocator(), cur, .{}) catch return empty;
-        const name = j.str(j.get(v, "name")) orelse return empty;
-        const kind = j.int(j.get(v, "type")) orelse 0;
-        const prefix: []const u8 = switch (kind) {
+        const parts = [_]struct { json: ?[]const u8, app: u64 }{
+            .{ .json = p.current, .app = p.current_app },
+            .{ .json = if (p.gameShown()) p.game else null, .app = 0 },
+        };
+        var acts: [parts.len]types.Activity = undefined;
+        var n: usize = 0;
+        for (parts) |part| if (part.json) |json| if (activityOf(ea, json, part.app)) |a| {
+            acts[n] = a;
+            n += 1;
+        };
+        if (n == 0) return empty;
+        const prefix: []const u8 = switch (acts[0].kind) {
             2 => i18n.tr("Ouvindo ", "Listening to "),
             3 => i18n.tr("Assistindo ", "Watching "),
             5 => i18n.tr("Competindo em ", "Competing in "),
             else => i18n.tr("Jogando ", "Playing "),
         };
-        const text = std.fmt.allocPrint(ea, "{s}{s}", .{ prefix, name }) catch return empty;
-        const list = ea.alloc(types.Activity, 1) catch {
-            ea.free(text);
+        const fail = struct {
+            fn f(a: Allocator, xs: []types.Activity) void {
+                for (xs) |x| for ([_][]const u8{ x.name, x.details, x.state, x.image }) |t| if (t.len > 0) a.free(t);
+            }
+        }.f;
+        const text = std.fmt.allocPrint(ea, "{s}{s}", .{ prefix, acts[0].name }) catch {
+            fail(ea, acts[0..n]);
             return empty;
         };
-        const ts = j.get(v, "timestamps");
-        var ib: [160]u8 = undefined;
-        const img = imageUrl(&ib, p.current_app, if (j.get(v, "assets")) |as| j.str(j.get(as, "large_image")) orelse "" else "");
-        list[0] = .{
-            .kind = @intCast(std.math.clamp(kind, 0, 255)),
-            .name = dupe(ea, name),
-            .details = dupe(ea, j.str(j.get(v, "details")) orelse ""),
-            .state = dupe(ea, j.str(j.get(v, "state")) orelse ""),
-            .start_ms = if (ts) |t| j.int(j.get(t, "start")) orelse 0 else 0,
-            .end_ms = if (ts) |t| j.int(j.get(t, "end")) orelse 0 else 0,
-            .image = dupe(ea, img),
-            .app = p.current_app,
+        const out = ea.alloc(types.Activity, n) catch {
+            ea.free(text);
+            fail(ea, acts[0..n]);
+            return empty;
         };
-        return .{ .presence_update = .{ .user = me, .status = status, .activity = text, .activities = list } };
+        @memcpy(out, acts[0..n]);
+        return .{ .presence_update = .{ .user = me, .status = status, .activity = text, .activities = out } };
     }
 };
+
+/// Uma atividade já em JSON (`writeActivity`, `writeGame`) como a interface mostra.
+fn activityOf(ea: Allocator, json: []const u8, app: u64) ?types.Activity {
+    var arena = std.heap.ArenaAllocator.init(ea);
+    defer arena.deinit();
+    const v = std.json.parseFromSliceLeaky(Value, arena.allocator(), json, .{}) catch return null;
+    const name = j.str(j.get(v, "name")) orelse return null;
+    const kind = j.int(j.get(v, "type")) orelse 0;
+    const ts = j.get(v, "timestamps");
+    var ib: [160]u8 = undefined;
+    const img = imageUrl(&ib, app, if (j.get(v, "assets")) |as| j.str(j.get(as, "large_image")) orelse "" else "");
+    return .{
+        .kind = @intCast(std.math.clamp(kind, 0, 255)),
+        .name = dupe(ea, name),
+        .details = dupe(ea, j.str(j.get(v, "details")) orelse ""),
+        .state = dupe(ea, j.str(j.get(v, "state")) orelse ""),
+        .start_ms = if (ts) |t| j.int(j.get(t, "start")) orelse 0 else 0,
+        .end_ms = if (ts) |t| j.int(j.get(t, "end")) orelse 0 else 0,
+        .image = dupe(ea, img),
+        .app = app,
+    };
+}
 
 fn dupe(ea: Allocator, s: []const u8) []const u8 {
     return if (s.len == 0) "" else ea.dupe(u8, s) catch "";
@@ -907,4 +1021,75 @@ test "gateway: nome da aplicação, imagens por nome e op 3" {
     try testing.expect(p.known(88));
     p.set(ta, 88, &a);
     try testing.expect(p.current == null);
+}
+
+fn freeEvent(e: ev.Event) void {
+    const list = e.presence_update.activities.?;
+    for (list) |x| for ([_][]const u8{ x.name, x.details, x.state, x.image }) |t| if (t.len > 0) ta.free(t);
+    ta.free(list);
+    if (e.presence_update.activity) |t| if (t.len > 0) ta.free(t);
+}
+
+test "jogo aberto e Rich Presence juntos no op 3, sem um apagar o outro" {
+    var p: Presence = .{};
+    defer p.deinit(ta);
+    var g: Game = .{ .start_ms = 1_700_000_000_000 };
+    g.name.set("Dota \"2\"", max_text);
+    p.setGame(ta, &g);
+    var out: Out = .empty;
+    defer out.deinit(ta);
+    try p.writeOp3(&out, ta, "online");
+    try testing.expectEqualStrings("{\"op\":3,\"d\":{\"status\":\"online\",\"since\":0,\"activities\":[{\"type\":0,\"name\":\"Dota \\\"2\\\"\",\"timestamps\":{\"start\":1700000000000}}],\"afk\":false}}", out.items);
+    // Chega um Rich Presence de outro programa: os dois vão, o do Rich Presence primeiro.
+    p.learn(ta, 77, "{\"name\":\"Editor\"}", false, null);
+    var a: Activity = .{};
+    a.details.set("main.zig", max_text);
+    p.set(ta, 77, &a);
+    try testing.expectEqualStrings("{\"type\":0,\"name\":\"Editor\",\"application_id\":\"77\",\"details\":\"main.zig\"},{\"type\":0,\"name\":\"Dota \\\"2\\\"\",\"timestamps\":{\"start\":1700000000000}}", p.activityList().?);
+    const both = p.meEvent(ta, 42, .online);
+    try testing.expectEqualStrings("Jogando Editor", both.presence_update.activity.?);
+    try testing.expectEqual(@as(usize, 2), both.presence_update.activities.?.len);
+    try testing.expectEqualStrings("Dota \"2\"", both.presence_update.activities.?[1].name);
+    try testing.expectEqual(@as(i64, 1_700_000_000_000), both.presence_update.activities.?[1].start_ms);
+    freeEvent(both);
+    // O jogo fechou: o Rich Presence continua.
+    p.setGame(ta, null);
+    try testing.expectEqualStrings("{\"type\":0,\"name\":\"Editor\",\"application_id\":\"77\",\"details\":\"main.zig\"}", p.activityList().?);
+    // O Rich Presence limpou com o jogo de volta: fica só o jogo.
+    p.setGame(ta, &g);
+    p.set(ta, 77, null);
+    try testing.expectEqualStrings("{\"type\":0,\"name\":\"Dota \\\"2\\\"\",\"timestamps\":{\"start\":1700000000000}}", p.activityList().?);
+    const game_only = p.meEvent(ta, 42, .idle);
+    try testing.expectEqualStrings("Jogando Dota \"2\"", game_only.presence_update.activity.?);
+    freeEvent(game_only);
+    p.setGame(ta, null);
+    try testing.expect(p.activityList() == null);
+    out.clearRetainingCapacity();
+    try p.writeOp3(&out, ta, "invisible");
+    try testing.expectEqualStrings("{\"op\":3,\"d\":{\"status\":\"invisible\",\"since\":0,\"activities\":[],\"afk\":false}}", out.items);
+    // Nome vazio não vira atividade.
+    var blank: Game = .{};
+    p.setGame(ta, &blank);
+    try testing.expect(p.activityList() == null);
+}
+
+test "o mesmo jogo pelo processo e pelo Rich Presence aparece uma vez só" {
+    var p: Presence = .{};
+    defer p.deinit(ta);
+    p.learn(ta, 570, "{\"name\":\"Dota 2\"}", false, null);
+    var a: Activity = .{};
+    a.state.set("Na fila", max_text);
+    p.set(ta, 570, &a);
+    var g: Game = .{ .start_ms = 5 };
+    g.name.set("dota2", max_text);
+    p.setGame(ta, &g);
+    try testing.expect(std.mem.indexOf(u8, p.activityList().?, "\"name\":\"dota2\"") == null);
+    try testing.expect(std.mem.indexOf(u8, p.activityList().?, "Na fila") != null);
+    const e = p.meEvent(ta, 1, .online);
+    try testing.expectEqual(@as(usize, 1), e.presence_update.activities.?.len);
+    freeEvent(e);
+    // O Rich Presence saiu: o jogo volta a aparecer.
+    p.set(ta, 570, null);
+    try testing.expect(std.mem.indexOf(u8, p.activityList().?, "\"name\":\"dota2\"") != null);
+    try testing.expect(sameGameName("Dota 2", "dota2") and !sameGameName("Dota 2", "Dota") and !sameGameName("!!", "??"));
 }

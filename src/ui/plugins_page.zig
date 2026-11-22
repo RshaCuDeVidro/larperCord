@@ -47,7 +47,7 @@ var pending_update: ?*const exemplos.Exemplo = null;
 pub fn draw(p: anytype) void {
     const ctx = p.ctx;
     const e = engine.current orelse return;
-    p.title("Plugins");
+    p.title(i18n.tr("Plugins", "Plugins"));
     // No navegador não há thread dos plugins (ver runtime.inline_mode): quem segura é o limite.
     if (@import("../plugins/runtime.zig").inline_mode)
         para(p, i18n.tr("Scripts Lua que somam funções ao app, sem recompilar. Na demonstração do navegador eles rodam no mesmo ritmo da página: um plugin travado segura a tela até o limite de instruções parar ele.", "Lua scripts that add features to the app, no rebuild needed. In the browser demo they run alongside the page: a stuck plugin holds up the screen until the instruction limit stops it."), .muted)

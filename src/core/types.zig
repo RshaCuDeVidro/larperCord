@@ -111,6 +111,7 @@ pub const perm = struct {
     pub const administrator: u64 = 1 << 3;
     pub const manage_guild: u64 = 1 << 5;
     pub const manage_messages: u64 = 1 << 13;
+    pub const attach_files: u64 = 1 << 15;
     pub const mention_everyone: u64 = 1 << 17;
     pub const view_channel: u64 = 1 << 10;
     pub const send_messages: u64 = 1 << 11;
@@ -371,6 +372,9 @@ pub const Attachment = struct {
     voice: bool = false,
     voice_ms: u32 = 0,
     wave: [wave_bars]u8 = @splat(0),
+    /// Áudio pelo `content_type` (audio/*), sem ser mensagem de voz: vira o player
+    /// de ui/audio_card.zig (a extensão do nome também serve, core/audio_formato.zig).
+    audio: bool = false,
 
     pub fn isImage(a: *const Attachment) bool {
         return a.width > 0 and a.height > 0;
@@ -578,10 +582,34 @@ pub const Reaction = struct {
     }
 };
 
-/// Imagem colada: um arquivo temporário nosso, apagado depois de enviado.
+/// Imagem colada ou áudio gravado na caixa: um arquivo temporário nosso, apagado
+/// depois de enviado (ou tirado da bandeja).
 pub fn isPastedFile(path: []const u8) bool {
-    const name = path[(if (std.mem.lastIndexOfScalar(u8, path, '/')) |i| i + 1 else 0)..];
-    return std.mem.startsWith(u8, name, "larpercord-colado-") or std.mem.startsWith(u8, name, "larpercord-pasted-");
+    const cut = lastSep(path);
+    const name = path[(if (cut) |i| i + 1 else 0)..];
+    if (std.mem.startsWith(u8, name, "larpercord-colado-") or std.mem.startsWith(u8, name, "larpercord-pasted-")) return true;
+    // O áudio gravado mora numa pasta nossa: o nome do arquivo é o que vai para o
+    // Discord (ui/gravar_audio.zig).
+    const dir = path[0 .. cut orelse return false];
+    const parent = dir[(if (lastSep(dir)) |i| i + 1 else 0)..];
+    return std.mem.startsWith(u8, parent, recorded_dir_prefix);
+}
+
+/// A pasta temporária dos áudios gravados na caixa (mais o PID).
+pub const recorded_dir_prefix = "larpercord-gravacoes-";
+
+fn lastSep(path: []const u8) ?usize {
+    return std.mem.lastIndexOfAny(u8, path, "/\\");
+}
+
+test "arquivos temporários nossos: imagem colada e áudio gravado" {
+    try std.testing.expect(isPastedFile("/run/user/1000/larpercord-colado-12-1.png"));
+    try std.testing.expect(isPastedFile("C:\\Temp\\larpercord-pasted-3-2.png"));
+    try std.testing.expect(isPastedFile("/run/user/1000/larpercord-gravacoes-77/audio-2026-11-17-1432.ogg"));
+    try std.testing.expect(isPastedFile("C:\\Users\\a\\Temp/larpercord-gravacoes-77/audio-2026-11-17-1432-2.ogg"));
+    try std.testing.expect(!isPastedFile("/home/a/Música/audio-2026-11-17-1432.ogg"));
+    try std.testing.expect(!isPastedFile("/home/a/larpercord-gravacoes-77"));
+    try std.testing.expect(!isPastedFile("audio.ogg"));
 }
 
 /// Timestamp embutido num snowflake do Discord (ms desde 2015-01-01).

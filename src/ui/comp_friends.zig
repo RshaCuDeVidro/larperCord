@@ -14,6 +14,7 @@ const anim = @import("anim.zig");
 const w = @import("widgets.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
+const inbox = @import("inbox.zig");
 const types = @import("../core/types.zig");
 const conta = @import("../core/conta.zig");
 const forum = @import("forum.zig");
@@ -310,8 +311,7 @@ fn addFriend(ctx: *d.Ctx, fam: *d.Family, dl: *c.ImDrawList, x: f32, y_in: f32, 
     const st = &ctx.st.conta;
     d.text(dl, fam.get(.bold), 15, x, y, ctx.col(.text), i18n.tr("ADICIONAR AMIGO", "ADD FRIEND"));
     y += 26;
-    _ = d.textClipped(dl, fam.get(.regular), 14, x, y, ctx.col(.muted), i18n.tr("Você pode adicionar amigos pelo nome de usuário do Discord.", "You can add friends with their Discord username."), rw);
-    y += 30;
+    y += inbox.wrapFlow(dl, fam.get(.regular), 14, x, y, rw, i18n.tr("Você pode adicionar amigos pelo nome de usuário do Discord.", "You can add friends with their Discord username."), ctx.col(.muted), 30);
     const box: d.Rect = .{ .x = x, .y = y, .w = rw, .h = 52 };
     const radius = @max(ctx.th.radius, 4);
     d.rect(dl, box, ctx.col(.rail).mix(ctx.col(.surface), 0.35), radius);
@@ -378,14 +378,9 @@ pub fn activeNow(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         shown += 1;
     }
     if (shown == 0) {
-        const t = i18n.tr("Está tudo quieto por aqui…", "It's quiet for now…");
-        d.text(dl, fam.get(.semibold), 15, r.x + 16, y, ctx.col(.text), t);
-        y += 24;
-        // Duas linhas curtas (a coluna é estreita).
-        for ([_][]const u8{ i18n.tr("Quando um amigo jogar ou ouvir", "When a friend starts an activity,"), i18n.tr("alguma coisa, aparece aqui.", "it'll show up here.") }) |line| {
-            _ = d.textClipped(dl, fam.get(.regular), 13, r.x + 16, y, ctx.col(.muted), line, r.w - 32);
-            y += 18;
-        }
+        // A coluna é estreita: quebrado por palavra, e não em linhas fixas cortadas com "…".
+        y += inbox.wrapFlow(dl, fam.get(.semibold), 15, r.x + 16, y, r.w - 32, i18n.tr("Está tudo quieto por aqui…", "It's quiet for now…"), ctx.col(.text), 24);
+        y += inbox.wrapFlow(dl, fam.get(.regular), 13, r.x + 16, y, r.w - 32, i18n.tr("Quando um amigo jogar ou ouvir alguma coisa, aparece aqui.", "When a friend starts an activity, it'll show up here."), ctx.col(.muted), 18);
     }
     d.endRegion(ctx, y + 12, r.x);
 }

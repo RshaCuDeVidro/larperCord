@@ -88,26 +88,9 @@ pub const Af = contas.Affine(c.ImVec2);
 
 // --- Caminhos do SVG -------------------------------------------------------------
 
-/// O corpo, em curvas cúbicas (os arcos do SVG convertidos).
-const body_start = [2]f32{ 107.70, 8.07 };
-const body_curves = [_][6]f32{
-    .{ 99.35, 4.25, 90.53, 1.53, 81.47, 0.00 },
-    .{ 80.23, 2.22, 79.11, 4.50, 78.11, 6.83 },
-    .{ 68.46, 5.38, 58.65, 5.38, 49.00, 6.83 },
-    .{ 48.00, 4.50, 46.88, 2.22, 45.64, 0.00 },
-    .{ 36.58, 1.55, 27.75, 4.27, 19.39, 8.09 },
-    .{ 2.79, 32.65, -1.71, 56.60, 0.54, 80.21 },
-    .{ 10.26, 87.39, 21.14, 92.86, 32.71, 96.36 },
-    .{ 35.31, 92.86, 37.62, 89.14, 39.60, 85.25 },
-    .{ 35.84, 83.85, 32.21, 82.11, 28.75, 80.07 },
-    .{ 29.66, 79.41, 30.55, 78.73, 31.41, 78.07 },
-    .{ 51.78, 87.65, 75.36, 87.65, 95.73, 78.07 },
-    .{ 96.60, 78.78, 97.49, 79.46, 98.39, 80.07 },
-    .{ 94.93, 82.12, 91.29, 83.85, 87.52, 85.26 },
-    .{ 89.50, 89.15, 91.80, 92.86, 94.41, 96.36 },
-    .{ 105.99, 92.87, 116.88, 87.41, 126.60, 80.22 },
-    .{ 129.24, 52.84, 122.09, 29.11, 107.70, 8.07 },
-};
+/// O corpo, em curvas cúbicas (os arcos do SVG convertidos; ui/mascote_visual.zig).
+const body_start = visual.body_start;
+const body_curves = visual.body_curves;
 
 /// A orelha esquerda; a direita é o espelho. Gira em volta da base.
 const ear_pivot = [2]f32{ 35, 19 };
@@ -133,9 +116,42 @@ const curve_steps: c_int = 14;
 pub var lite = false;
 
 fn bodyPath(dl: *c.ImDrawList, m: Af) void {
-    c.ImDrawList_PathLineTo(dl, m.ap(body_start[0], body_start[1]));
     const steps: c_int = if (lite) curve_steps / 2 else curve_steps;
-    for (body_curves) |q| c.ImDrawList_PathBezierCubicCurveTo(dl, m.ap(q[0], q[1]), m.ap(q[2], q[3]), m.ap(q[4], q[5]), steps);
+    if (look.plainBody()) {
+        c.ImDrawList_PathLineTo(dl, m.ap(body_start[0], body_start[1]));
+        for (body_curves) |q| c.ImDrawList_PathBezierCubicCurveTo(dl, m.ap(q[0], q[1]), m.ap(q[2], q[3]), m.ap(q[4], q[5]), steps);
+        return;
+    }
+    // O formato escolhido (mais redondo, mais quadrado, mais largo): os pontos de
+    // controle das curvas vão para o lugar novo.
+    c.ImDrawList_PathLineTo(dl, shaped(m, body_start[0], body_start[1]));
+    for (body_curves) |q| c.ImDrawList_PathBezierCubicCurveTo(dl, shaped(m, q[0], q[1]), shaped(m, q[2], q[3]), shaped(m, q[4], q[5]), steps);
+}
+
+/// O ponto (x, y) do desenho no corpo com o formato do visual, já na tela.
+fn shaped(m: Af, x: f32, y: f32) c.ImVec2 {
+    const q = look.bodyAp(x, y);
+    return m.ap(q[0], q[1]);
+}
+
+/// Uma orelha (a esquerda; a direita vem do espelho) em volta da base: o giro e a mola
+/// do quadro (`turn`, `pop`), e o tamanho, o ângulo e o formato do corpo do visual (a
+/// base anda junto com a cabeça).
+fn earM(m: Af, pivot: [2]f32, turn: f32, pop: f32) Af {
+    const lk = &look;
+    if (lk.ear_size == 0 and lk.ear_tilt == 0 and lk.plainBody()) return m.around(pivot[0], pivot[1], Af.turn(turn).mul(Af.scale(pop, pop)));
+    const bd = lk.bodyDelta(pivot[0], pivot[1]);
+    const es = lk.earScale();
+    return m.mul(Af.move(bd[0], bd[1])).around(pivot[0], pivot[1], Af.turn(turn + lk.earTurn()).mul(Af.scale(pop * es[0], pop * es[1])));
+}
+
+/// A ponta de uma orelha (`side` -1 a esquerda, 1 a direita) no desenho, com o tamanho,
+/// o ângulo e o formato do corpo: de lá saem as faíscas da abertura e a fumaça da raiva.
+fn earTip(side: f32, x: f32, y: f32) [2]f32 {
+    const lk = &look;
+    if (lk.ear_size == 0 and lk.ear_tilt == 0 and lk.plainBody()) return if (side < 0) .{ x, y } else .{ body_w - x, y };
+    const q = earM(.{}, ear_pivot, 0, 1).ap(x, y);
+    return if (side < 0) .{ q.x, q.y } else .{ body_w - q.x, q.y };
 }
 
 /// Copia o caminho que está sendo montado e o limpa, sem pontos repetidos (o
@@ -275,53 +291,54 @@ const Pose = struct {
     clock: f32 = 0,
 };
 
-/// Os olhos de uma das caras de `Face` (menos a ">_"), do mascote de sempre.
-fn faceEyes(dl: *c.ImDrawList, face: Af, f: Face, eye_w: f32, fk: f32, ink_c: Rgba) void {
+/// Os olhos de uma das caras de `Face` (menos a ">_"), do mascote de sempre: o esquerdo
+/// com `ml` e `ink_l`, o direito com `mr` e `ink_r` (cada olho anda e cresce sozinho).
+fn faceEyes(dl: *c.ImDrawList, ml: Af, mr: Af, f: Face, eye_w: f32, fk: f32, ink_l: Rgba, ink_r: Rgba) void {
     switch (f) {
         .prompt => {},
         .sleep => {
-            stroke(dl, &.{ face.ap(32, 52), face.ap(47, 52) }, eye_w * 0.8, ink_c);
-            stroke(dl, &.{ face.ap(76, 56), face.ap(92, 56) }, eye_w * 0.8, ink_c);
+            stroke(dl, &.{ ml.ap(32, 52), ml.ap(47, 52) }, eye_w * 0.8, ink_l);
+            stroke(dl, &.{ mr.ap(76, 56), mr.ap(92, 56) }, eye_w * 0.8, ink_r);
         },
         .happy, .laugh => {
-            stroke(dl, &.{ face.ap(32, 54), face.ap(40, 46), face.ap(48, 54) }, eye_w * 0.85, ink_c);
-            stroke(dl, &.{ face.ap(76, 58), face.ap(84, 50), face.ap(92, 58) }, eye_w * 0.85, ink_c);
+            stroke(dl, &.{ ml.ap(32, 54), ml.ap(40, 46), ml.ap(48, 54) }, eye_w * 0.85, ink_l);
+            stroke(dl, &.{ mr.ap(76, 58), mr.ap(84, 50), mr.ap(92, 58) }, eye_w * 0.85, ink_r);
         },
         .worried => {
-            stroke(dl, &.{ face.ap(31, 42), face.ap(48, 50), face.ap(31, 58) }, eye_w, ink_c);
-            stroke(dl, &.{ face.ap(93, 48), face.ap(77, 56), face.ap(93, 64) }, eye_w, ink_c);
+            stroke(dl, &.{ ml.ap(31, 42), ml.ap(48, 50), ml.ap(31, 58) }, eye_w, ink_l);
+            stroke(dl, &.{ mr.ap(93, 48), mr.ap(77, 56), mr.ap(93, 64) }, eye_w, ink_r);
         },
         .angry => {
-            stroke(dl, &.{ face.ap(31, 43), face.ap(48, 49) }, eye_w * 0.8, ink_c);
-            stroke(dl, &.{ face.ap(93, 47), face.ap(76, 53) }, eye_w * 0.8, ink_c);
-            c.ImDrawList_AddCircleFilled(dl, face.ap(41, 54), 2.6 * fk, ink_c.u(), 0);
-            c.ImDrawList_AddCircleFilled(dl, face.ap(84, 58), 2.6 * fk, ink_c.u(), 0);
+            stroke(dl, &.{ ml.ap(31, 43), ml.ap(48, 49) }, eye_w * 0.8, ink_l);
+            stroke(dl, &.{ mr.ap(93, 47), mr.ap(76, 53) }, eye_w * 0.8, ink_r);
+            c.ImDrawList_AddCircleFilled(dl, ml.ap(41, 54), 2.6 * fk, ink_l.u(), 0);
+            c.ImDrawList_AddCircleFilled(dl, mr.ap(84, 58), 2.6 * fk, ink_r.u(), 0);
         },
         .sad => {
-            stroke(dl, &.{ face.ap(38, 45), face.ap(38, 55) }, eye_w * 0.75, ink_c);
-            stroke(dl, &.{ face.ap(84, 50), face.ap(84, 60) }, eye_w * 0.75, ink_c);
-            c.ImDrawList_PathLineTo(dl, face.ap(33, 58));
-            c.ImDrawList_PathBezierQuadraticCurveTo(dl, face.ap(30.5, 63), face.ap(33, 65.5), 8);
-            c.ImDrawList_PathBezierQuadraticCurveTo(dl, face.ap(35.5, 63), face.ap(33, 58), 8);
+            stroke(dl, &.{ ml.ap(38, 45), ml.ap(38, 55) }, eye_w * 0.75, ink_l);
+            stroke(dl, &.{ mr.ap(84, 50), mr.ap(84, 60) }, eye_w * 0.75, ink_r);
+            c.ImDrawList_PathLineTo(dl, ml.ap(33, 58));
+            c.ImDrawList_PathBezierQuadraticCurveTo(dl, ml.ap(30.5, 63), ml.ap(33, 65.5), 8);
+            c.ImDrawList_PathBezierQuadraticCurveTo(dl, ml.ap(35.5, 63), ml.ap(33, 58), 8);
             fillPath(dl, drop_col.col(1));
         },
         .dizzy => {
-            for ([_][2]f32{ .{ 40, 50 }, .{ 84, 55 } }) |e| {
+            for ([_][2]f32{ .{ 40, 50 }, .{ 84, 55 } }, [_]Af{ ml, mr }, [_]Rgba{ ink_l, ink_r }) |e, m, ic| {
                 var pts: [22]c.ImVec2 = undefined;
                 for (0..22) |i| {
                     const t = @as(f32, @floatFromInt(i)) / 21.0;
                     const a = t * std.math.tau * 1.8;
                     const r = 1 + 6 * t;
-                    pts[i] = face.ap(e[0] + @cos(a) * r, e[1] + @sin(a) * r);
+                    pts[i] = m.ap(e[0] + @cos(a) * r, e[1] + @sin(a) * r);
                 }
-                c.ImDrawList_AddPolyline(dl, &pts, pts.len, ink_c.u(), eye_w * 0.55, 0);
+                c.ImDrawList_AddPolyline(dl, &pts, pts.len, ic.u(), eye_w * 0.55, 0);
             }
         },
         .startled => {
-            c.ImDrawList_AddEllipseEx(dl, face.ap(40, 50), d.v(5 * fk, 6 * fk), ink_c.u(), 0, 20, eye_w * 0.7, 0);
-            c.ImDrawList_AddEllipseEx(dl, face.ap(84, 55), d.v(5 * fk, 6 * fk), ink_c.u(), 0, 20, eye_w * 0.7, 0);
-            c.ImDrawList_AddCircleFilled(dl, face.ap(40, 51), 1.8 * fk, ink_c.u(), 0);
-            c.ImDrawList_AddCircleFilled(dl, face.ap(84, 56), 1.8 * fk, ink_c.u(), 0);
+            c.ImDrawList_AddEllipseEx(dl, ml.ap(40, 50), d.v(5 * fk, 6 * fk), ink_l.u(), 0, 20, eye_w * 0.7, 0);
+            c.ImDrawList_AddEllipseEx(dl, mr.ap(84, 55), d.v(5 * fk, 6 * fk), ink_r.u(), 0, 20, eye_w * 0.7, 0);
+            c.ImDrawList_AddCircleFilled(dl, ml.ap(40, 51), 1.8 * fk, ink_l.u(), 0);
+            c.ImDrawList_AddCircleFilled(dl, mr.ap(84, 56), 1.8 * fk, ink_r.u(), 0);
         },
     }
 }
@@ -403,17 +420,17 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
         top = top.mix(cream, p.flash);
         bottom = bottom.mix(cream, p.flash);
     }
-    const brush: partes.Brush = .{ .dl = dl, .m = body, .alpha = alpha, .flash = p.flash, .tint = tint, .small = small, .colors = tones, .t = p.clock };
+    const brush: partes.Brush = .{ .dl = dl, .m = body, .alpha = alpha, .flash = p.flash, .tint = tint, .small = small, .colors = tones, .t = p.clock, .lk = lk };
 
-    // Desenhos próprios de trás do corpo (capa, asas, rabo).
-    if (lk.drawing) |dw| if (dw.hasLayer(.back)) partes.drawing(brush, dw, .back, layerWhen(p));
+    // Desenhos próprios de trás do corpo (capa, asas, rabo), com o formato do corpo.
+    if (lk.drawing) |dw| if (dw.hasLayer(.back)) partes.drawing(brush.warped(), dw, .back, layerWhen(p));
 
     // Orelhas, atrás do corpo (com um pouco de profundidade ao virar).
     const ears_m = body.mul(Af.move(-p.look[0] * 0.5, 0));
     const pivot = if (lk.ears == .floppy) floppy_pivot else ear_pivot;
-    const ear_l = ears_m.around(pivot[0], pivot[1], Af.turn(p.turn_l).mul(Af.scale(p.ear_l, p.ear_l)));
+    const ear_l = earM(ears_m, pivot, p.turn_l, p.ear_l);
     const mirror = ears_m.mul(Af.move(body_w, 0)).mul(Af.scale(-1, 1));
-    const ear_r = mirror.around(pivot[0], pivot[1], Af.turn(p.turn_r).mul(Af.scale(p.ear_r, p.ear_r)));
+    const ear_r = earM(mirror, pivot, p.turn_r, p.ear_r);
     if (lk.ears == .pointy) {
         for ([_]Af{ ear_l, ear_r }, [_]f32{ p.ear_l, p.ear_r }) |m, s| {
             if (s <= 0.01) continue;
@@ -472,8 +489,14 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
     const fk = face.k();
     const eye_w = (if (small) @as(f32, 7.6) else 5.4) * fk;
     const ink_c = tones[2].alpha(alpha * (1 - p.flash));
+    // O olho direito de outra cor (Personalizar), com o mesmo clarão.
+    const ink_r = if (lk.right_eye) |rc| rc.alpha(alpha * (1 - p.flash)) else ink_c;
     if (!p.no_face) {
+        // Os olhos e a boca onde o visual pede (Personalizar), andando com o rosto: cada
+        // olho com o seu lugar e tamanho, a boca com o dela.
+        const mouth_m = partes.mouthAt(face, lk);
         const fb = brush.at(face);
+        const mb = brush.at(mouth_m);
         const fin: partes.FaceIn = .{
             .face = p.face,
             .blink = p.squint,
@@ -488,14 +511,14 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
             .mouth_open = p.mouth_open,
         };
         switch (lk.eyes) {
-            .prompt => promptEyes(dl, face, p, eye_w, fk, ink_c),
+            .prompt => promptEyes(dl, face, p, eye_w, fk, ink_c, ink_r),
             .custom => if (lk.drawing) |dw| customEyes(fb, dw, p),
             else => partes.eyes(fb, lk.eyes, fin),
         }
         switch (lk.mouth) {
-            .smile => if (fin.dots) partes.mouth(fb, .smile, fin) else smileMouth(dl, face, p, fk, ink_c, alpha, small),
-            .custom => if (lk.drawing) |dw| customMouth(fb, dw, p, fin),
-            else => partes.mouth(fb, lk.mouth, fin),
+            .smile => if (fin.dots) partes.mouth(mb, .smile, fin) else smileMouth(dl, mouth_m, p, mouth_m.k(), ink_c, alpha, small),
+            .custom => if (lk.drawing) |dw| customMouth(mb, dw, p, fin),
+            else => partes.mouth(mb, lk.mouth, fin),
         }
     }
     // Gota de suor: aparece, escorre pela testa e cai.
@@ -503,7 +526,7 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
         const sx = 103 + p.drop_slide * 5;
         const sy = 28 + p.drop_slide * 12 + p.drop_fall * p.drop_fall * 60;
         const stretch = 1 + p.drop_slide * 0.25 + p.drop_fall * 0.5;
-        const dm = body.around(103, 32, Af.scale(p.drop, p.drop * stretch)).mul(Af.move(sx - 103, sy - 28));
+        const dm = partes.bodyAt(body, lk, 103, 30).around(103, 32, Af.scale(p.drop, p.drop * stretch)).mul(Af.move(sx - 103, sy - 28));
         c.ImDrawList_PathLineTo(dl, dm.ap(103, 28));
         c.ImDrawList_PathBezierQuadraticCurveTo(dl, dm.ap(99.6, 34), dm.ap(103, 36.6), 10);
         c.ImDrawList_PathBezierQuadraticCurveTo(dl, dm.ap(106.4, 34), dm.ap(103, 28), 10);
@@ -513,33 +536,39 @@ fn figure(dl: *c.ImDrawList, base: Af, p: Pose, alpha: f32, tint: ?Rgba, small: 
 }
 
 /// Os olhos do mascote de sempre: o ">_" (o ">" aperta na piscada e o "_" pisca como
-/// cursor, ou vira "..." conectando), os "x" do erro e os das outras caras.
-fn promptEyes(dl: *c.ImDrawList, face: Af, p: Pose, eye_w: f32, fk: f32, ink_c: Rgba) void {
+/// cursor, ou vira "..." conectando), os "x" do erro e os das outras caras. Cada olho
+/// anda e cresce com o visual (`partes.eyeAt`); o direito pode ter outra cor (`ink_r`).
+fn promptEyes(dl: *c.ImDrawList, face: Af, p: Pose, eye_w0: f32, fk0: f32, ink_c: Rgba, ink_r: Rgba) void {
+    const es = look.eyeScale();
+    const eye_w = eye_w0 * es;
+    const fk = fk0 * es;
+    const ml = partes.eyeAt(face, &look, partes.eye_l, -1);
+    const mr = partes.eyeAt(face, &look, partes.eye_r, 1);
     if (p.face != .prompt and !p.xeyes) {
-        faceEyes(dl, face, p.face, eye_w, fk, ink_c);
+        faceEyes(dl, ml, mr, p.face, eye_w, fk, ink_c, ink_r);
     } else if (p.xeyes) {
         // Olhos de "x" (o erro).
-        for ([_][2]f32{ .{ 40, 50 }, .{ 84, 55 } }) |e| {
+        for ([_][2]f32{ .{ 40, 50 }, .{ 84, 55 } }, [_]Af{ ml, mr }, [_]Rgba{ ink_c, ink_r }) |e, m, ic| {
             const r: f32 = 6.5;
-            stroke(dl, &.{ face.ap(e[0] - r, e[1] - r), face.ap(e[0] + r, e[1] + r) }, eye_w * 0.85, ink_c);
-            stroke(dl, &.{ face.ap(e[0] - r, e[1] + r), face.ap(e[0] + r, e[1] - r) }, eye_w * 0.85, ink_c);
+            stroke(dl, &.{ m.ap(e[0] - r, e[1] - r), m.ap(e[0] + r, e[1] + r) }, eye_w * 0.85, ic);
+            stroke(dl, &.{ m.ap(e[0] - r, e[1] + r), m.ap(e[0] + r, e[1] - r) }, eye_w * 0.85, ic);
         }
     } else {
         // ">", apertando na piscada.
         const sq = 1 - p.squint * 0.75;
         const gt = [_][2]f32{ .{ 31, 50 - 9 * sq }, .{ 49, 50 }, .{ 31, 50 + 9 * sq } };
         var pts: [3]c.ImVec2 = undefined;
-        const cnt = partial(face, &gt, p.prompt, &pts);
+        const cnt = partial(ml, &gt, p.prompt, &pts);
         if (cnt >= 2) stroke(dl, pts[0..cnt], eye_w, ink_c);
         if (p.dots) {
             // Conectando: "..." pulando no lugar do "_".
             for (0..3) |i| {
                 const fi: f32 = @floatFromInt(i);
                 const hop = @max(0, @sin((p.dots_t * 1.6 - fi * 0.17) * std.math.tau)) * 4.5;
-                c.ImDrawList_AddCircleFilled(dl, face.ap(76 + fi * 8.5, 58 - hop), 2.9 * fk, ink_c.u(), 0);
+                c.ImDrawList_AddCircleFilled(dl, mr.ap(76 + fi * 8.5, 58 - hop), 2.9 * fk, ink_r.u(), 0);
             }
         } else if (p.under > 0 and p.under_on) {
-            stroke(dl, &.{ face.ap(73, 58), face.ap(73 + 22 * p.under, 58) }, eye_w, ink_c);
+            stroke(dl, &.{ mr.ap(73, 58), mr.ap(73 + 22 * p.under, 58) }, eye_w, ink_r);
         }
     }
 }
@@ -585,7 +614,8 @@ fn customEyes(b: partes.Brush, dw: *const visual.Drawing, p: Pose) void {
         .@"error", .dizzy => {
             const ctr = partes.layerCenters(dw, .eyes, .normal);
             const ew: f32 = if (b.small) 7.6 else 5.4;
-            for (ctr) |q| {
+            for (ctr, [_]f32{ -1, 1 }) |q, side| {
+                const eb = sideEye(b, q, side);
                 if (w == .dizzy) {
                     var pts: [22][2]f32 = undefined;
                     for (0..22) |i| {
@@ -593,10 +623,10 @@ fn customEyes(b: partes.Brush, dw: *const visual.Drawing, p: Pose) void {
                         const a = t * std.math.tau * 1.8;
                         pts[i] = .{ q[0] + @cos(a) * (1 + 6 * t), q[1] + @sin(a) * (1 + 6 * t) };
                     }
-                    partes.line(b, &pts, ew * 0.55, b.ink());
+                    partes.line(eb, &pts, ew * 0.55, eb.ink());
                 } else {
-                    partes.line(b, &.{ .{ q[0] - 6.5, q[1] - 6.5 }, .{ q[0] + 6.5, q[1] + 6.5 } }, ew * 0.85, b.ink());
-                    partes.line(b, &.{ .{ q[0] - 6.5, q[1] + 6.5 }, .{ q[0] + 6.5, q[1] - 6.5 } }, ew * 0.85, b.ink());
+                    partes.line(eb, &.{ .{ q[0] - 6.5, q[1] - 6.5 }, .{ q[0] + 6.5, q[1] + 6.5 } }, ew * 0.85, eb.ink());
+                    partes.line(eb, &.{ .{ q[0] - 6.5, q[1] + 6.5 }, .{ q[0] + 6.5, q[1] - 6.5 } }, ew * 0.85, eb.ink());
                 }
             }
             return;
@@ -610,10 +640,19 @@ fn customEyes(b: partes.Brush, dw: *const visual.Drawing, p: Pose) void {
     for (dw.shapesSlice()) |*sh| {
         if (sh.layer != .eyes or !dw.shows(sh, use)) continue;
         const box_c = shapeMid(dw, sh);
-        const q = ctr[if (box_c[0] < 62) 0 else 1];
-        const m = b.m.around(q[0], q[1], Af.scale(s, s * (1 - squash)));
-        partes.drawingShape(b.at(m), dw, sh);
+        const left = box_c[0] < 62;
+        const q = ctr[if (left) 0 else 1];
+        const eb = sideEye(b, q, if (left) -1 else 1);
+        const m = eb.m.around(q[0], q[1], Af.scale(s, s * (1 - squash)));
+        partes.drawingShape(eb.at(m), dw, sh);
     }
+}
+
+/// Um lado dos olhos desenhados num arquivo, com o meio em `q`: anda e cresce com o
+/// visual, e o direito pega a cor própria no lugar do traço do rosto.
+fn sideEye(b: partes.Brush, q: [2]f32, side: f32) partes.Brush {
+    const eb = b.at(partes.eyeAt(b.m, b.lk, q, side));
+    return if (side > 0) partes.rightColored(eb, .custom) else eb;
 }
 
 fn shapeMid(dw: *const visual.Drawing, sh: *const visual.Shape) [2]f32 {
@@ -654,8 +693,15 @@ fn dress(b: partes.Brush, face: Af, p: Pose, stage: Stage) void {
     const lk = &look;
     if (stage != .top) partes.accessories(b, b.at(face), lk, !p.no_face);
     if (stage == .wear) return;
-    partes.hat(b, lk.hat);
-    if (lk.drawing) |dw| if (dw.hasLayer(.front)) partes.drawing(b, dw, .front, layerWhen(p));
+    partes.hat(b.at(hatM(b.m)), lk.hat);
+    if (lk.drawing) |dw| if (dw.hasLayer(.front)) partes.drawing(b.warped(), dw, .front, layerWhen(p));
+}
+
+/// O chapéu estica para os lados com a largura do corpo (no alto da cabeça, no meio, o
+/// formato não muda nada).
+fn hatM(m: Af) Af {
+    if (look.body_width == 0) return m;
+    return m.around(mid_x, 0, Af.scale(look.widthK(), 1));
 }
 
 /// O pivô das orelhas caídas (no alto da cabeça, do lado).
@@ -797,7 +843,7 @@ fn halo(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, k: f32, shown: f32, A: f
 
 fn shadow(dl: *c.ImDrawList, base: Af, k: f32, w: f32, shown: f32, A: f32, light: bool) void {
     if (shown <= 0.01) return;
-    c.ImDrawList_AddEllipseFilled(dl, base.ap(mid_x, 99), d.v(46 * k * w * shown, 4.5 * k * shown), (if (light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(A));
+    c.ImDrawList_AddEllipseFilled(dl, base.ap(mid_x, 99), d.v(46 * k * w * look.widthK() * shown, 4.5 * k * shown), (if (light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(A));
 }
 
 fn openingAlt(o: Opening, dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, A: f32, light: bool, small: bool) void {
@@ -1013,8 +1059,13 @@ fn openPixels(dl: *c.ImDrawList, base: Af, cx: f32, cy: f32, size: f32, t: f32, 
             const ang = hash(i, 22) * std.math.tau;
             const far = 70 + hash(i, 23) * 90;
             const e = outBack(k_in, 1.3);
-            const x = cell.x + @cos(ang) * far * (1 - e);
-            const y = cell.y + @sin(ang) * far * (1 - e);
+            // Os blocos se montam no formato do corpo do visual.
+            const home = if (look.plainBody()) [2]f32{ cell.x, cell.y } else blk: {
+                const q = look.bodyAp(cell.x + px_step / 2, cell.y + px_step / 2);
+                break :blk [2]f32{ q[0] - px_step / 2, q[1] - px_step / 2 };
+            };
+            const x = home[0] + @cos(ang) * far * (1 - e);
+            const y = home[1] + @sin(ang) * far * (1 - e);
             const spin = (1 - e) * (hash(i, 24) - 0.5) * 4;
             const shade = (hash(i, 25) - 0.5) * 0.18;
             // Com outro rosto, os blocos são só do corpo: o rosto aparece na troca.
@@ -1252,7 +1303,7 @@ pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
     logo.glow(dl, cx, cy + 4 * k, size * 0.55 * shown, size * 0.46 * shown, glowColor().alpha((0.34 + 0.06 * @sin(t * 2)) * A));
     if (shown > 0.01) {
         const foot = base.ap(mid_x, 99);
-        c.ImDrawList_AddEllipseFilled(dl, foot, d.v(46 * k * p.open_x * shown, 4.5 * k * shown), (if (in.light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(A));
+        c.ImDrawList_AddEllipseFilled(dl, foot, d.v(46 * k * look.widthK() * p.open_x * shown, 4.5 * k * shown), (if (in.light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(A));
     }
     // Partículas (na abertura; conectando, ficam subindo).
     particles(dl, base, t, 0.55, 2.4, in.connecting, A * (1 - in.leave));
@@ -1285,8 +1336,8 @@ pub fn draw(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, in: Input) void {
     for ([_]f32{ 0.95, 1.03 }, [_]f32{ 1, -1 }) |at, side| {
         const sp = seg(t, at, at + 0.42);
         if (sp <= 0 or sp >= 1) continue;
-        const tip_x: f32 = if (side > 0) 21.5 else body_w - 21.5;
-        const tip = base.ap(tip_x, -15);
+        const et = earTip(-side, 21.5, -15);
+        const tip = base.ap(et[0], et[1]);
         for (0..5) |si| {
             const fi: f32 = @floatFromInt(si);
             const ang = (-0.5 - 0.55 * side) * std.math.pi + (fi - 2) * 0.32 * side;
@@ -1485,6 +1536,14 @@ pub fn petPoint(cx: f32, cy: f32, size: f32, x: f32, y: f32) c.ImVec2 {
     return d.v(cx + (x - mid_x) * k, cy + (y - mid_y) * k);
 }
 
+/// A cor das patinhas do mascote do canto (as brincadeiras, em ui/mascote_pet.zig): a do
+/// alto do corpo, um pouco mais clara para aparecer na frente dele (a mesma conta de `pet`).
+pub fn petTone(pl: PetLook) Rgba {
+    const tones = look.colorsFor(accent, true);
+    const cols = if (look.paint == .brand) pl.colors orelse [2]Rgba{ head_top, head_bottom } else [2]Rgba{ tones[0], tones[1] };
+    return cols[0].mix(Rgba.hex(0xFFFFFF), 0.22);
+}
+
 /// O mascote do canto centrado em (cx, cy).
 pub fn pet(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, pl: PetLook) void {
     const k = size * 0.78 / body_w;
@@ -1518,15 +1577,15 @@ pub fn pet(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, pl: PetLook) void {
     if (pl.bags and !p.no_face) bags(dl, base, pl.look, tones);
     if (pl.tape and !p.no_face) tape(dl, base, pl.look);
     const body = bodyOf(base, p);
-    const brush: partes.Brush = .{ .dl = dl, .m = body, .alpha = pl.alpha, .small = small, .colors = tones, .t = p.clock };
+    const brush: partes.Brush = .{ .dl = dl, .m = body, .alpha = pl.alpha, .small = small, .colors = tones, .t = p.clock, .lk = &look };
     dress(brush, faceOf(body, p), p, .wear);
     if (pl.headset) headsetBand(dl, base, true, cup);
-    // O chapéu escolhido; sem um, o da data.
+    // O chapéu escolhido; sem um, o da data (os dois esticam com o corpo).
     if (look.hat == .none) switch (pl.hat) {
         .none => {},
-        .santa => santaHat(dl, base),
-        .witch => witchHat(dl, base),
-        .party => partyHat(dl, base),
+        .santa => santaHat(dl, hatM(base)),
+        .witch => witchHat(dl, hatM(base)),
+        .party => partyHat(dl, hatM(base)),
     };
     dress(brush, faceOf(body, p), p, .top);
     if (pl.smoke_t >= 0) smoke(dl, base, pl.smoke_t);
@@ -1545,27 +1604,30 @@ fn faceOf(body: Af, p: Pose) Af {
     return body.mul(Af.move(p.look[0] * 4, p.look[1] * 2.6)).around(mid_x, 58, Af.scale(1 + p.pop * 0.07, 1 + p.pop * 0.07));
 }
 
-/// Olheiras (madrugada), embaixo de cada olho.
+/// Olheiras (madrugada), embaixo de cada olho (andam e crescem com ele).
 fn bags(dl: *c.ImDrawList, base: Af, lk: [2]f32, tones: visual.Colors) void {
-    const face = base.mul(Af.move(lk[0] * 4, lk[1] * 2.6));
-    const fk = face.k();
+    const face0 = base.mul(Af.move(lk[0] * 4, lk[1] * 2.6));
     const col = if (look.paint == .brand) Rgba.hex(0x4A1A8A).col(0.85) else tones[2].col(0.45);
     const one = look.eyes == .cyclops;
     const spots: []const [2]f32 = if (one) &.{.{ 62, 66.5 }} else &.{ .{ 40, 60 }, .{ 84, 64 } };
-    for (spots) |e| {
+    const eyes_at: []const [2]f32 = if (one) &.{.{ 62, 51.5 }} else &.{ partes.eye_l, partes.eye_r };
+    for (spots, eyes_at, 0..) |e, ec, i| {
+        const side: f32 = if (one) 0 else if (i == 0) -1 else 1;
+        const face = partes.eyeAt(face0, &look, ec, side);
+        const fk = face.k();
         var pts: [9]c.ImVec2 = undefined;
         const rx: f32 = if (one) 10 else 7;
-        for (0..9) |i| {
-            const a = std.math.pi * (0.15 + 0.7 * @as(f32, @floatFromInt(i)) / 8.0);
-            pts[i] = face.ap(e[0] + @cos(a) * rx, e[1] + @sin(a) * 2.5);
+        for (0..9) |j| {
+            const a = std.math.pi * (0.15 + 0.7 * @as(f32, @floatFromInt(j)) / 8.0);
+            pts[j] = face.ap(e[0] + @cos(a) * rx, e[1] + @sin(a) * 2.5);
         }
         c.ImDrawList_AddPolyline(dl, &pts, pts.len, col, @max(1.6 * fk, 0.8), 0);
     }
 }
 
-/// A fita na boca (microfone mudo).
+/// A fita na boca (microfone mudo): vai com a boca (lugar e tamanho).
 fn tape(dl: *c.ImDrawList, base: Af, lk: [2]f32) void {
-    const face = base.mul(Af.move(lk[0] * 4, lk[1] * 2.6));
+    const face = partes.mouthAt(base.mul(Af.move(lk[0] * 4, lk[1] * 2.6)), &look);
     const m = face.around(mid_x, 70, Af.turn(-0.12));
     c.ImDrawList_AddQuadFilled(dl, m.ap(48, 65), m.ap(80, 65), m.ap(80, 75), m.ap(48, 75), Rgba.hex(0xD8D2C4).col(1));
     stroke(dl, &.{ m.ap(56, 67), m.ap(62, 73) }, @max(1.4 * face.k(), 0.8), Rgba.hex(0x9E978A));
@@ -1640,14 +1702,14 @@ pub fn showcase(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, s: Show) void {
     const small = size < 40;
     if (s.stage) {
         logo.glow(dl, cx, cy + 4 * k, size * 0.55, size * 0.46, glowColor().alpha(0.3));
-        c.ImDrawList_AddEllipseFilled(dl, base.ap(mid_x, 99), d.v(46 * k, 4.5 * k), (if (s.light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(1));
+        c.ImDrawList_AddEllipseFilled(dl, base.ap(mid_x, 99), d.v(46 * k * look.widthK(), 4.5 * k), (if (s.light) ink.alpha(0.12) else Rgba.black.alpha(0.32)).col(1));
     }
     const cup = if (look.paint == .brand) Rgba.hex(0x9D40FF) else colors[4];
     if (s.headset) headsetBand(dl, base, false, cup);
     figure(dl, base, p, 1, null, small);
     if (s.tape) tape(dl, base, p.look);
     const body = bodyOf(base, p);
-    const brush: partes.Brush = .{ .dl = dl, .m = body, .small = small, .colors = colors, .t = p.clock };
+    const brush: partes.Brush = .{ .dl = dl, .m = body, .small = small, .colors = colors, .t = p.clock, .lk = &look };
     dress(brush, faceOf(body, p), p, .wear);
     if (s.headset) headsetBand(dl, base, true, cup);
     dress(brush, faceOf(body, p), p, .top);
@@ -1655,7 +1717,7 @@ pub fn showcase(dl: *c.ImDrawList, cx: f32, cy: f32, size: f32, s: Show) void {
 }
 
 /// O fone de ouvido: o arco por trás da cabeça (`front` = falso) e as conchas e o
-/// microfone pela frente.
+/// microfone pela frente. Tudo vai com o formato do corpo, e o microfone, com a boca.
 fn headsetBand(dl: *c.ImDrawList, m: Af, front: bool, cup: Rgba) void {
     const k = m.k();
     const band = Rgba.hex(0x22182E);
@@ -1663,17 +1725,21 @@ fn headsetBand(dl: *c.ImDrawList, m: Af, front: bool, cup: Rgba) void {
         var pts: [21]c.ImVec2 = undefined;
         for (0..21) |i| {
             const a = std.math.pi * (1 + @as(f32, @floatFromInt(i)) / 20.0);
-            pts[i] = m.ap(mid_x + @cos(a) * 58, 30 + @sin(a) * 44);
+            pts[i] = shaped(m, mid_x + @cos(a) * 58, 30 + @sin(a) * 44);
         }
         c.ImDrawList_AddPolyline(dl, &pts, pts.len, band.u(), 6 * k, 0);
         return;
     }
     for ([_]f32{ 4, 112 }) |x| {
-        c.ImDrawList_AddRectFilledEx(dl, m.ap(x, 22), m.ap(x + 12, 46), band.u(), 4 * k, 0);
-        c.ImDrawList_AddRectFilledEx(dl, m.ap(x + 2, 25), m.ap(x + 10, 43), cup.u(), 3 * k, 0);
+        const cm = partes.bodyAt(m, &look, x + 6, 34);
+        c.ImDrawList_AddRectFilledEx(dl, cm.ap(x, 22), cm.ap(x + 12, 46), band.u(), 4 * k, 0);
+        c.ImDrawList_AddRectFilledEx(dl, cm.ap(x + 2, 25), cm.ap(x + 10, 43), cup.u(), 3 * k, 0);
     }
-    stroke(dl, &.{ m.ap(118, 44), m.ap(112, 64), m.ap(94, 70) }, 2.6 * k, band);
-    c.ImDrawList_AddCircleFilled(dl, m.ap(92, 70), 3.6 * k, band.u(), 0);
+    const ms = look.mouthShift();
+    const wide = 11.5 * (look.mouthScale() - 1);
+    const arm = partes.bodyAt(m, &look, 118, 34);
+    stroke(dl, &.{ arm.ap(118, 44), shaped(m, 112, 64), m.ap(94 + ms[0] + wide, 70 + ms[1]) }, 2.6 * k, band);
+    c.ImDrawList_AddCircleFilled(dl, m.ap(92 + ms[0] + wide, 70 + ms[1]), 3.6 * k, band.u(), 0);
 }
 
 fn santaHat(dl: *c.ImDrawList, m: Af) void {
@@ -1709,10 +1775,11 @@ fn partyHat(dl: *c.ImDrawList, m: Af) void {
 /// Fumaça saindo das orelhas (raiva), em ciclos.
 fn smoke(dl: *c.ImDrawList, m: Af, t: f32) void {
     const k = m.k();
-    for ([_]f32{ 21, body_w - 21 }) |x| {
+    for ([_]f32{ -1, 1 }) |side| {
+        const tip = earTip(side, 21, -16);
         for (0..3) |i| {
             const f = @mod(t * 1.4 + @as(f32, @floatFromInt(i)) / 3.0, 1);
-            const p = m.ap(x + (if (x < 64) @as(f32, -1) else 1) * f * 10, -16 - f * 26);
+            const p = m.ap(tip[0] + side * f * 10, tip[1] - f * 26);
             c.ImDrawList_AddCircleFilled(dl, p, (3 + 5 * f) * k, Rgba.hex(0x8A8496).col(0.7 * (1 - f)), 0);
         }
     }
@@ -1727,10 +1794,12 @@ fn flames(dl: *c.ImDrawList, m: Af, amount: f32, t: f32) void {
         const x = 14 + fi * 20;
         const flick = 0.75 + 0.25 * @sin(t * 22 + fi * 1.7);
         const h = (34 + 12 * @sin(t * 15 + fi * 2.3)) * amount * flick;
-        const base_pt = m.ap(x, 104);
-        const tip = m.ap(x + @sin(t * 18 + fi) * 4, 104 - h);
+        // Os pés andam com o formato do corpo.
+        const fx = look.bodyAp(x, 96)[0];
+        const base_pt = m.ap(fx, 104);
+        const tip = m.ap(fx + @sin(t * 18 + fi) * 4, 104 - h);
         c.ImDrawList_AddTriangleFilled(dl, d.v(base_pt.x - 10 * k, base_pt.y), d.v(base_pt.x + 10 * k, base_pt.y), tip, Rgba.hex(0xFF6A1A).col(0.92 * amount));
-        c.ImDrawList_AddTriangleFilled(dl, d.v(base_pt.x - 5 * k, base_pt.y), d.v(base_pt.x + 5 * k, base_pt.y), m.ap(x, 104 - h * 0.6), Rgba.hex(0xFFE04A).col(amount));
+        c.ImDrawList_AddTriangleFilled(dl, d.v(base_pt.x - 5 * k, base_pt.y), d.v(base_pt.x + 5 * k, base_pt.y), m.ap(fx, 104 - h * 0.6), Rgba.hex(0xFFE04A).col(amount));
     }
 }
 

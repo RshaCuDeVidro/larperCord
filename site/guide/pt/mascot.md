@@ -37,7 +37,7 @@ O mascote aparece dormindo na caixa de entrada, nas fixadas, nas mensagens salva
 - Pega fogo quando você digita rápido, fica tonto quando a conversa rola rápido demais, come o arquivo que você arrasta para a janela e fica preocupado quando a mensagem não sai.
 - De madrugada tem olheiras e boceja, de manhã se espreguiça, em algumas datas usa chapéu, e pega a cor de destaque do tema.
 - Reage ao emoji que você põe nas mensagens e mostra o seu status: uma lua no ausente, uma plaquinha no não perturbe (aí menção não assusta) e meio transparente no invisível.
-- `Ctrl+C` faz um clone, `Ctrl+Z` faz ele andar para trás, `Ctrl+F` dá uma lupa para ele, e a roda do mouse em cima dele faz cócegas.
+- `Ctrl+C` faz um clone, `Ctrl+Z` faz ele andar para trás, `Ctrl+F` dá uma lupa para ele, e a roda do mouse em cima dele faz cócegas. Com **Brincadeiras** ligada, `Ctrl+K` pula num portal, `Ctrl+S` segura um disquete, `Ctrl+P` imprime a própria pata, `Ctrl+X` pega uma tesoura, `Ctrl+V` cospe um clone, e `Esc` faz ele se enfiar na caixa de mensagem quando o Esc não tinha mais nada para fechar (no máximo uma vez a cada 20 segundos). As teclas continuam fazendo o que sempre fizeram.
 - **Botão direito** nele: **Fazer um truque**, **Dormir**, **Esconder por 1 hora** e **Trocar de mascote**.
 
 ![Alguns momentos dele: café, a fogueira, uma call com o microfone mudo, a torre de blocos, o regador e uma pescaria](shot:f-mascote-vida)
@@ -46,7 +46,7 @@ O mascote aparece dormindo na caixa de entrada, nas fixadas, nas mensagens salva
 
 Deixado à toa, o mascote do canto faz alguma coisa sozinho de vez em quando. Toma café, lê, joga no portátil, faz bola de chiclete, assobia, faz exercício, caça uma mosquinha, pesca um emoji das reações da conversa, empilha blocos que caem em cima dele quando você mexe, rabisca um coração na caixa de mensagem até você digitar e rega a plantinha. **Vida própria** escolhe com que frequência: Desligada, Calma, Normal (o padrão) ou Agitada.
 
-Quatro chaves escolhem o que mais ele faz. O passeio precisa da vida própria ligada, e as outras três só do mascote no canto:
+Seis chaves escolhem o que mais ele faz. O passeio, Reage ao que você digita e Brincadeiras precisam da vida própria ligada (e as duas últimas descansam com **Reduzir movimento** ligado); as outras três só precisam do mascote no canto:
 
 | Chave | O que faz |
 |---|---|
@@ -54,6 +54,8 @@ Quatro chaves escolhem o que mais ele faz. O passeio precisa da vida própria li
 | **Brinca com a interface** | Senta no "digitando…", leva mensagem apagada para a lixeira, passa a borracha na editada, empurra o botão de voltar ao fim, se segura (ou cai) quando você muda o tamanho da janela e leva uma cartinha até o ícone das DMs quando chega uma |
 | **Brinca com o mouse** | Com a setinha parada perto dele, tenta pegar. Parada em cima dele, senta nela, e cai quando você mexe |
 | **Espera você voltar** | Com a janela sem foco, ele espera você. Sumiu por 20 minutos, monta uma barraca com fogueira. Na volta, desmonta, corre até o mouse e, depois de horas, diz que sentiu saudade |
+| **Reage ao que você digita** | Calculado a partir do texto da caixa de mensagem, no seu computador. TUDO EM MAIÚSCULAS: tapa as orelhas. Um `\|\|spoiler\|\|`: tapa os olhos até você mandar. Um bloco de código: óculos, para revisar. Uma mensagem longa: um pergaminho que desenrola enquanto você escreve, e perto do limite (2000 caracteres, 4000 com Nitro, ou o que cabe na caixa) ele se afasta preocupado. `@` ou `#`: aponta para a lista de membros ou a de canais. `/` no começo: um terminalzinho com o seu comando. Muito Backspace: uma xícara de chá ou tapinhas no braço. E uns segredos (`>_`, `miau`, `sudo`, `rm -rf`) |
+| **Brincadeiras** | De vez em quando (uma em 50 mensagens) ele rola um d20 quando você manda: 20 é confete, 1 derruba ele. Arraste um emoji do seletor ou de uma reação até ele e ele come, com os olhos virando aquele emoji. Um link solto nele entra num portal, e uma imagem vira um quadro (o arquivo vai para os anexos do mesmo jeito). De vez em quando, parado e com a vida própria Normal ou Agitada, ele se esconde atrás da lista de canais com só as pontinhas das orelhas de fora: clique nelas para achar, ou ele volta depois de 30 segundos. E os atalhos a mais lá de cima |
 
 **Plantinha** põe um vasinho do lado dele. A planta cresce um pouco a cada dia em que você usa o app, por 30 dias, até virar uma arvorezinha. Depois de uma semana sem você, ela murcha, até o mascote regar. Configurações → Mascote mostra quantos dias ela já cresceu.
 
@@ -62,6 +64,9 @@ Quatro chaves escolhem o que mais ele faz. O passeio precisa da vida própria li
 Configurações → Mascote → **Personalizar** veste o mascote Terminal. Uma prévia grande mostra o visual, e os botões embaixo dela trocam a cara (Normal, Feliz, Rindo, Susto, Bravo, Triste, Dormindo, Tonto) e põem o fone da call e a fita do mudo, para ver como as peças combinam.
 
 - **Visuais prontos**: 16 visuais completos, do Hacker ao Anjinho. **Sortear visual** escolhe um que combina, **Padrão** volta ao mascote de sempre e **Desfazer** desfaz a última troca.
+- **Altura dos olhos** e **Altura da boca**: dois controles embaixo dos botões sobem e descem os olhos e a boca no rosto. Levar um até o outro empurra o outro junto, então nunca ficam mais perto do que no desenho de sempre. **Padrão** volta os dois ao lugar.
+- **Nome**: dê um nome ao mascote (até 24 letras). Ele aparece ao parar o mouse em cima do mascote do canto e embaixo da prévia.
+- **Mais ajustes** abre mais controles: posição, espaço, desalinhado e tamanho dos olhos, posição e tamanho da boca, tamanho e ângulo das orelhas, corpo mais redondo ou quadrado e mais magrinho ou gordinho, e a força das bochechas. **Olhos de duas cores** dá ao olho direito uma cor só dele. Dá também para pegar os olhos ou a boca na prévia e arrastar.
 - **Olhos, Boca, Chapéu, Acessórios, Orelhas, Cores**: uma grade de imagens para cada. 15 olhos, 16 bocas, 22 chapéus, 12 acessórios (óculos e o que vai no pescoço, um de cada vez), 6 orelhas, 14 paletas, ou um hex seu para cada uma das cinco cores, ou a cor de destaque do tema.
 - O visual aparece onde o mascote aparece: nas aberturas, no Sobre, nas listas vazias e no mascote do canto. Com um chapéu escolhido, o mascote do canto não troca pelo das datas; **Chapéu nas datas**, em Mascote no canto, desliga esses. O mascote Clássico continua como é.
 

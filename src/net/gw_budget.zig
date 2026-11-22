@@ -512,6 +512,35 @@ pub const Outbox = struct {
         }
     }
 
+    /// Saímos do servidor (kick, ban, ou saímos nós): nada dele sai mais. O op 14, o
+    /// op 43 e o op 4 de lá saem da fila, e o op 8 também (`forgetMembers`, que deixa a
+    /// espera). A conta não faz mais parte dele: um pedido desses atrasado iria para um
+    /// servidor estranho.
+    pub fn forgetGuild(o: *Outbox, guild: Id) void {
+        o.forgetMembers(guild);
+        var n: usize = 0;
+        for (o.lazy[0..o.lazy_n]) |l| if (l.guild != guild) {
+            o.lazy[n] = l;
+            n += 1;
+        };
+        o.lazy_n = n;
+        n = 0;
+        for (o.info[0..o.info_n]) |g| if (g != guild) {
+            o.info[n] = g;
+            n += 1;
+        };
+        o.info_n = n;
+        // O op 4 é um anel: os que ficam andam para trás, na mesma ordem.
+        n = 0;
+        for (0..o.voice_n) |k| {
+            const v = o.voice[(o.voice_head + k) % o.voice.len];
+            if (v.guild == guild) continue;
+            o.voice[(o.voice_head + n) % o.voice.len] = v;
+            n += 1;
+        }
+        o.voice_n = n;
+    }
+
     /// Conexão nova: os limites recomeçam; o que espera continua esperando.
     pub fn newConnection(o: *Outbox) void {
         o.budget.reset();
@@ -829,6 +858,31 @@ test "op 8: sair e voltar ao servidor não encurta a espera; fila cheia devolve 
     // Sessão nova: o op 8 sai da fila (quem chama devolve as pessoas ao Asker).
     o.forgetPending();
     try t.expectEqual(@as(usize, 0), o.members_n);
+}
+
+test "saímos do servidor (kick, ban): nada dele sai mais, o resto sai na ordem" {
+    var o: Outbox = .{};
+    for (0..normal_limit) |_| o.budget.note(0);
+    _ = o.push(.{ .lazy = .{ .guild = 1, .channel = 10 } });
+    _ = o.push(.{ .lazy = .{ .guild = 2, .channel = 20 } });
+    _ = o.push(.{ .channel_info = 2 });
+    _ = o.push(.{ .channel_info = 1 });
+    // O op 4 dá a volta no anel: o de fora fica no meio dos outros.
+    o.voice_head = o.voice.len - 1;
+    _ = o.push(.{ .voice = .{ .guild = 1, .channel = 11 } });
+    _ = o.push(.{ .voice = .{ .guild = 2, .channel = null } });
+    _ = o.push(.{ .voice = .{ .guild = 1, .channel = 12 } });
+    var r = page(2, 100, 2);
+    try t.expect(o.pushMembers(&r, 0));
+    o.forgetGuild(2);
+    try t.expectEqual(@as(usize, 0), o.members_n);
+    try t.expectEqual(@as(usize, 4), o.pending());
+    const later = window_ms;
+    try t.expectEqual(@as(?Id, 11), o.pop(later).?.voice.channel);
+    try t.expectEqual(@as(?Id, 12), o.pop(later).?.voice.channel);
+    try t.expectEqual(@as(Id, 10), o.pop(later).?.lazy.channel);
+    try t.expectEqual(@as(Id, 1), o.pop(later).?.channel_info);
+    try t.expectEqual(@as(?Item, null), o.pop(later));
 }
 
 test "op 8: muitas esperas ao mesmo tempo: nenhuma é despejada antes de vencer" {

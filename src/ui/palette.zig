@@ -56,6 +56,7 @@ const commands = [_]Command{
     .{ .pt = "Configurações", .en = "Settings", .run = simple(.open_settings) },
     .{ .pt = "Caixa de entrada (menções e não lidas)", .en = "Inbox (mentions and unreads)", .run = simple(.toggle_inbox) },
     .{ .pt = "Mensagens salvas", .en = "Saved messages", .run = simple(.toggle_saved) },
+    .{ .pt = "Lembretes", .en = "Reminders", .run = simple(.{ .lembrete = .toggle_list }) },
     .{ .pt = "Status: Online", .en = "Status: Online", .run = status(.online) },
     .{ .pt = "Status: Ausente", .en = "Status: Idle", .run = status(.idle) },
     .{ .pt = "Status: Não perturbe", .en = "Status: Do Not Disturb", .run = status(.dnd) },
@@ -117,6 +118,30 @@ const commands = [_]Command{
             if (ctx.st.activeChannel()) |id| ctx.act(.{ .open_pins = id });
         }
     }.f },
+    // A janela flutuante (app_flutuante.zig): a conversa aberta, a call, fechar.
+    .{ .pt = "Abrir conversa em janela flutuante", .en = "Open conversation in floating window", .when = struct {
+        fn f(ctx: *d.Ctx) bool {
+            return if (ctx.st.activeChannel()) |id| @import("popup.zig").floats(ctx, id) else false;
+        }
+    }.f, .run = struct {
+        fn f(ctx: *d.Ctx) void {
+            if (ctx.st.activeChannel()) |id| ctx.act(.{ .flutuante = .{ .abrir = .{ .conversa = id } } });
+        }
+    }.f },
+    .{ .pt = "Call em janela flutuante", .en = "Call in floating window", .when = struct {
+        fn f(ctx: *d.Ctx) bool {
+            return ctx.st.voice != null;
+        }
+    }.f, .run = struct {
+        fn f(ctx: *d.Ctx) void {
+            if (ctx.st.voice) |id| ctx.act(.{ .flutuante = .{ .abrir = .{ .call = id } } });
+        }
+    }.f },
+    .{ .pt = "Fechar a janela flutuante", .en = "Close the floating window", .when = struct {
+        fn f(_: *d.Ctx) bool {
+            return @import("flutuante.zig").aberta;
+        }
+    }.f, .run = simple(.{ .flutuante = .fechar }) },
     .{ .pt = "Anexar arquivo", .en = "Attach file", .run = simple(.pick_files) },
     .{ .pt = "Mutar / desmutar microfone", .en = "Mute / unmute microphone", .run = simple(.toggle_mute) },
     .{ .pt = "Ensurdecer / ouvir", .en = "Deafen / undeafen", .run = simple(.toggle_deafen) },
@@ -150,16 +175,19 @@ const toggle_names = [_]struct { field: []const u8, pt: []const u8, en: []const 
     .{ .field = "underline_links", .pt = "Sublinhar links", .en = "Underline links" },
     .{ .field = "autoplay_gifs", .pt = "Reproduzir GIFs automaticamente", .en = "Automatically play GIFs" },
     .{ .field = "show_embeds", .pt = "Mostrar imagens de links", .en = "Show images from links" },
+    .{ .field = "audio_visualizer", .pt = "Visualizador de áudio", .en = "Audio visualizer" },
     .{ .field = "show_spoilers", .pt = "Sempre mostrar spoilers", .en = "Always show spoilers" },
     .{ .field = "md_preview", .pt = "Prévia do markdown", .en = "Markdown preview" },
     .{ .field = "open_at_unread", .pt = "Abrir na primeira não lida", .en = "Open at the first unread" },
     .{ .field = "send_typing", .pt = "Enviar indicador de digitação", .en = "Send typing indicator" },
     .{ .field = "rich_presence", .pt = "Compartilhar minha atividade (Rich Presence)", .en = "Share my activity (Rich Presence)" },
+    .{ .field = "show_game", .pt = "Mostrar o jogo aberto", .en = "Show the game you're running" },
     .{ .field = "message_log", .pt = "Registro de mensagens", .en = "Message log" },
     .{ .field = "gif_hosts", .pt = "Animar GIFs do Tenor e do Giphy", .en = "Animate Tenor and Giphy GIFs" },
     .{ .field = "streamer_mode", .pt = "Modo streamer", .en = "Streamer Mode" },
     .{ .field = "desktop_notifs", .pt = "Notificações na área de trabalho", .en = "Desktop notifications" },
     .{ .field = "taskbar_flash", .pt = "Piscar na barra de tarefas", .en = "Flash taskbar" },
+    .{ .field = "message_sound", .pt = "Som de mensagem nova", .en = "New message sound" },
     .{ .field = "vim_keys", .pt = "Navegação estilo vim", .en = "Vim-style navigation" },
     .{ .field = "developer_mode", .pt = "Modo desenvolvedor", .en = "Developer Mode" },
     .{ .field = "hot_reload", .pt = "Recarregar temas ao salvar", .en = "Reload themes on save" },

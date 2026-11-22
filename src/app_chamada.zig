@@ -113,8 +113,7 @@ fn onCall(app: *App, cl: ev.Call) void {
     chamada.ring_channel = cl.channel;
     chamada.ring_since_ms = now();
     // Não perturbe, ou a DM/grupo silenciado na conta: o aviso aparece, sem som.
-    const dnd = if (app.store.user(app.store.me)) |u| u.status == .dnd else false;
-    voz_audio.setRinging(!dnd and !app_conta.mutedNow(app, cl.channel));
+    voz_audio.setRinging(!app_conta.dndNow(app) and !app_conta.mutedNow(app, cl.channel));
     notify(app, cl.channel);
 }
 

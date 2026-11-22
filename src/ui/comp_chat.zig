@@ -101,6 +101,7 @@ pub fn header(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
             qa.mark(gr, "header-settings", .{});
             if (gh.clicked) ctx.act(.open_settings);
             icons.gear(dl, gr.x + 14, gr.y + 14, (if (gh.hovered) ctx.col(.text) else ctx.col(.muted)).u());
+            @import("aviso_atualizacao.zig").ponto(ctx, dl, gr);
             var kb: [48]u8 = undefined;
             var tb: [160]u8 = undefined;
             d.tip(ctx, gr, i18n.fmt(&tb, "Configurações  ({s})", "User Settings  ({s})", .{teclas.label(&ctx.st.teclas, .configuracoes, &kb)}), gh.hovered);
@@ -259,6 +260,20 @@ fn inboxButtons(ctx: *d.Ctx, dl: *c.ImDrawList, right_x: f32, y: f32) void {
     if (sh.clicked) ctx.act(.toggle_saved);
     const sopen = ctx.st.popup == .saved;
     icons.bookmark(dl, sr.x + 14, sr.y + 14, (if (sopen or sh.hovered) ctx.col(.text) else ctx.col(.muted)).u(), sopen);
+    // Lembretes vencidos (ui/lembretes.zig): o número em cima, e o clique abre a aba deles.
+    const due = @import("lembretes.zig").dueCount(ctx);
+    if (due > 0) {
+        var db: [8]u8 = undefined;
+        const lbl = std.fmt.bufPrint(&db, "{d}", .{@min(due, 99)}) catch "";
+        const font = ctx.ui.get(.bold);
+        const lw = d.width(font, 10.5, lbl);
+        const bw = @max(15, lw + 8);
+        const br: d.Rect = .{ .x = sr.right() - bw + 4, .y = sr.y - 2, .w = bw, .h = 15 };
+        d.rect(dl, br.inset(-2, -2), ctx.col(.surface), 9);
+        d.rect(dl, br, ctx.col(.danger), 7.5);
+        d.text(dl, font, 10.5, br.x + (bw - lw) / 2, br.y + 0.5, d.Rgba.white, lbl);
+        qa.mark(br, "header-saved-badge:{d}", .{due});
+    }
     var skb: [48]u8 = undefined;
     var stb: [160]u8 = undefined;
     d.tip(ctx, sr, i18n.fmt(&stb, "Mensagens salvas  {s}", "Saved messages  {s}", .{teclas.label(&ctx.st.teclas, .salvas, &skb)}), sh.hovered);
@@ -278,7 +293,7 @@ pub fn tabs(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     // Botão direito em qualquer lugar da barra: o menu dos conjuntos de abas.
     qa.mark(r, "tabs-bar", .{});
     if (ctx.st.popup == .none and ctx.hovering(r) and c.ImGui_IsMouseClicked(1) and c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_RootAndChildWindows))
-        conjuntos.openMenu(ctx, ctx.mouse.x, ctx.mouse.y);
+        conjuntos.openMenu(ctx, ctx.mouse.x, ctx.mouse.y, 0);
     // O conjunto em uso, antes das abas.
     x = conjuntos.chip(ctx, fam, if (tty) .tty else if (underline) .underline else .pills, x, r);
 
@@ -302,6 +317,8 @@ pub fn tabs(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         qa.mark(tr, "tab:{d}", .{i});
         if (hb.clicked) ctx.act(.{ .focus_tab = i });
         if (hb.middle) ctx.act(.{ .close_tab = i });
+        // Numa aba, o mesmo menu leva junto a conversa dela (abrir na janela flutuante).
+        if (hb.right) conjuntos.openMenu(ctx, ctx.mouse.x, ctx.mouse.y, id);
         const k = anim.to(anim.id("tab", id), if (active) 1 else if (hb.hovered) 0.4 else 0, 20);
 
         if (tty) {

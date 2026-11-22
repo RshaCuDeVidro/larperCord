@@ -123,13 +123,14 @@ pub const Query = struct {
 
     /// Nada para procurar (nem texto nem filtro).
     pub fn empty(q: *const Query) bool {
-        return q.n_terms == 0 and q.from_len == 0 and q.in_len == 0 and !q.has_link and !q.has_image and !q.has_file and
-            q.min_id == 0 and q.max_id == 0 and !q.serverOnly();
+        return q.n_terms == 0 and q.from_len == 0 and q.in_len == 0 and q.mentions_len == 0 and !q.has_link and !q.has_image and
+            !q.has_file and !q.has_video and !q.has_sound and q.min_id == 0 and q.max_id == 0 and !q.serverOnly();
     }
 
-    /// Filtros que a busca local não tem como aplicar: só o Discord sabe.
+    /// Filtros que a busca local não tem como aplicar: só o Discord sabe. O cache não
+    /// guarda a prévia dos links nem as figurinhas, e fixar não muda a mensagem.
     pub fn serverOnly(q: *const Query) bool {
-        return q.mentions_len > 0 or q.pinned != null or q.has_video or q.has_sound or q.has_embed or q.has_sticker;
+        return q.pinned != null or q.has_embed or q.has_sticker;
     }
 
     /// O ID está dentro das datas pedidas.
@@ -331,6 +332,16 @@ pub fn apiParams(buf: []u8, q: *const Query, ids: ApiIds, sort: Sort, offset: u3
     return if (o.overflow) null else buf[0..o.n];
 }
 
+/// A última palavra ainda está sendo digitada (a busca local acha pelo começo dela): sem
+/// espaço nem aspas depois, e não é um filtro.
+pub fn typingLast(raw: []const u8) bool {
+    if (raw.len == 0) return false;
+    const last = raw[raw.len - 1];
+    if (last == ' ' or last == '\t' or last == '"') return false;
+    const t = lastToken(raw);
+    return t.end == raw.len and (t.val.len > 0 or t.key.len > 0) and filterOf(t.key) == .none;
+}
+
 /// Pontos de uma pessoa para o que foi digitado (`needle` já dobrado). 0 = não serve.
 pub fn userScore(name: []const u8, needle: []const u8) u8 {
     var b: [64]u8 = undefined;
@@ -458,6 +469,15 @@ test "datas viram faixa de IDs" {
     try std.testing.expectEqual(@as(usize, 0), Query.parseAt("before:", 0).invalid().len);
 }
 
+test "o que só o Discord resolve e o que a busca local também resolve" {
+    try std.testing.expect(!Query.parseAt("menciona:ana has:video has:som", 0).serverOnly());
+    try std.testing.expect(!Query.parseAt("menciona:ana", 0).empty());
+    try std.testing.expect(!Query.parseAt("has:audio", 0).empty());
+    try std.testing.expect(Query.parseAt("has:embed", 0).serverOnly());
+    try std.testing.expect(Query.parseAt("has:sticker", 0).serverOnly());
+    try std.testing.expect(Query.parseAt("pinned:false", 0).serverOnly());
+}
+
 test "parâmetros da busca do Discord" {
     var buf: [512]u8 = undefined;
     const q = Query.parseAt("olá mundo has:image has:video pinned:true", 0);
@@ -484,4 +504,13 @@ test "o que está sendo digitado" {
     try std.testing.expectEqual(@as(u8, 4), userScore("Ana Clara", "an"));
     try std.testing.expectEqual(@as(u8, 2), userScore("Mariana", "ana"));
     try std.testing.expectEqual(@as(u8, 0), userScore("Bia", "ana"));
+}
+
+test "a última palavra está sendo digitada" {
+    try std.testing.expect(typingLast("zig hypr"));
+    try std.testing.expect(!typingLast("zig hypr "));
+    try std.testing.expect(!typingLast("zig from:ana"));
+    try std.testing.expect(!typingLast("\"meio termo\""));
+    try std.testing.expect(typingLast("veja http:"));
+    try std.testing.expect(!typingLast(""));
 }

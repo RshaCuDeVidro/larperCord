@@ -70,16 +70,20 @@ const id_save: u8 = 1;
 const id_rename: u8 = 2;
 const id_delete: u8 = 3;
 const id_leave: u8 = 4;
+/// "Abrir em janela flutuante": a aba do botão direito (app_flutuante.zig).
+const id_pip: u8 = 5;
 /// Os conjuntos: 100 + o índice.
 const id_set: u8 = 100;
 
-pub fn openMenu(ctx: *d.Ctx, x: f32, y: f32) void {
-    ctx.popup(.{ .menu = .{ .kind = .tabs, .id = 0, .x = x, .y = y } });
+/// `ch`: a conversa da aba onde foi o clique (0 = fora das abas).
+pub fn openMenu(ctx: *d.Ctx, x: f32, y: f32, ch: Id) void {
+    ctx.popup(.{ .menu = .{ .kind = .tabs, .id = ch, .x = x, .y = y } });
 }
 
-/// As linhas do menu (ui/popup.zig desenha): salvar, os conjuntos (o em uso com o
-/// visto) e, com um em uso, renomear, excluir e sair.
-pub fn menuItems(ctx: *d.Ctx, items: []popup.Item) usize {
+/// As linhas do menu (ui/popup.zig desenha): com o clique numa aba, abrir a conversa
+/// dela na janela flutuante; salvar, os conjuntos (o em uso com o visto) e, com um em
+/// uso, renomear, excluir e sair.
+pub fn menuItems(ctx: *d.Ctx, items: []popup.Item, ch: Id) usize {
     var n: usize = 0;
     const list = &ctx.st.conjuntos;
     const add = struct {
@@ -90,7 +94,9 @@ pub fn menuItems(ctx: *d.Ctx, items: []popup.Item) usize {
             }
         }
     }.f;
-    add(items, &n, .{ .label = "Salvar abas como conjunto…", .en = "Save Tabs as Set…", .id = id_save });
+    const pip = ch != 0 and popup.floats(ctx, ch);
+    if (pip) add(items, &n, .{ .label = "Abrir em janela flutuante", .en = "Open in Floating Window", .id = id_pip });
+    add(items, &n, .{ .label = "Salvar abas como conjunto…", .en = "Save Tabs as Set…", .id = id_save, .sep = pip });
     for (list.sets.items, 0..) |s, i| {
         // O nome como a pessoa escreveu: não passa pela tradução.
         add(items, &n, .{ .label = s.name, .en = s.name, .id = id_set + @as(u8, @intCast(i)), .sep = i == 0, .on = list.active == i, .raw = true });
@@ -103,9 +109,10 @@ pub fn menuItems(ctx: *d.Ctx, items: []popup.Item) usize {
     return n;
 }
 
-pub fn menuChoose(ctx: *d.Ctx, item: u8) void {
+pub fn menuChoose(ctx: *d.Ctx, item: u8, ch: Id) void {
     const list = &ctx.st.conjuntos;
     switch (item) {
+        id_pip => if (ch != 0) ctx.act(.{ .flutuante = .{ .abrir = .{ .conversa = ch } } }),
         id_save => openName(ctx, null),
         id_rename => if (list.active) |i| openName(ctx, i),
         id_leave => ctx.act(.{ .conjunto = .leave }),
@@ -208,7 +215,7 @@ pub fn chip(ctx: *d.Ctx, fam: *d.Family, look: Look, x: f32, r: d.Rect) f32 {
         const cr: d.Rect = .{ .x = x, .y = r.y, .w = d.width(font, fs, lbl) + 8, .h = r.h };
         const hb = d.hit(ctx, 998, cr);
         qa.mark(cr, "tabset-chip", .{});
-        if (hb.clicked) openMenu(ctx, cr.x, cr.bottom() + 2);
+        if (hb.clicked) openMenu(ctx, cr.x, cr.bottom() + 2, 0);
         if (hb.hovered) d.rect(dl, cr, ctx.col(.hover), 0);
         d.text(dl, font, fs, cr.x + 4, d.centerY(cr, fs), ctx.col(.accent), lbl);
         d.tip(ctx, cr, i18n.tr("Conjunto de abas em uso: clique para trocar ou sair", "Tab set in use: click to switch or leave"), hb.hovered);
@@ -221,7 +228,7 @@ pub fn chip(ctx: *d.Ctx, fam: *d.Family, look: Look, x: f32, r: d.Rect) f32 {
     const cr: d.Rect = .{ .x = x, .y = r.y + (r.h - h) / 2, .w = 30 + name_w + 12, .h = h };
     const hb = d.hit(ctx, 998, cr);
     qa.mark(cr, "tabset-chip", .{});
-    if (hb.clicked) openMenu(ctx, cr.x, cr.bottom() + 4);
+    if (hb.clicked) openMenu(ctx, cr.x, cr.bottom() + 4, 0);
     const accent = ctx.col(.accent);
     if (look == .pills) {
         d.rect(dl, cr, accent.alpha(if (hb.hovered) 0.26 else 0.14), cr.h / 2);

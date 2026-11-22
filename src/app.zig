@@ -33,6 +33,7 @@ const widgets = @import("ui/widgets.zig");
 const settings_state = @import("ui/settings_state.zig");
 const settings_voz = @import("ui/settings_voz.zig");
 const settings_video = @import("ui/settings_video.zig");
+const settings_jogos = @import("ui/settings_jogos.zig");
 const ffmpeg = @import("platform/ffmpeg.zig");
 const proxy = @import("net/proxy.zig");
 const kdl = @import("theme/kdl.zig");
@@ -49,7 +50,9 @@ const inbox_core = @import("core/inbox.zig");
 const leitura = @import("core/leitura.zig");
 const saved_ui = @import("ui/saved.zig");
 const app_conjuntos = @import("app_conjuntos.zig");
+const app_lembretes = @import("app_lembretes.zig");
 const msg_cache = @import("net/msg_cache.zig");
+const busca_local = @import("net/busca_local.zig");
 const state_cache = @import("net/state_cache.zig");
 const state_snapshot = @import("core/state_snapshot.zig");
 const jsonx = @import("net/jsonx.zig");
@@ -59,9 +62,16 @@ const accounts_store = @import("net/accounts_store.zig");
 const app_accounts = @import("app_accounts.zig");
 const app_chamada = @import("app_chamada.zig");
 const app_presenca = @import("app_presenca.zig");
+const app_flutuante = @import("app_flutuante.zig");
 const voz_audio = @import("net/voz_audio.zig");
+const aviso = @import("core/aviso.zig");
+const sons = @import("core/sons.zig");
 const lsp_net = @import("net/lsp.zig");
 const updater = @import("net/updater.zig");
+const aviso_versao = @import("core/aviso_versao.zig");
+/// A versão que o "Atualizar sozinho" já tentou instalar nesta sessão.
+var auto_tried_buf: [32]u8 = @splat(0);
+var auto_tried_len: usize = 0;
 const lsp_ui = @import("ui/lsp_ui.zig");
 const mem_tune = @import("platform/mem_tune.zig");
 const mascote = @import("ui/mascote.zig");
@@ -117,6 +127,11 @@ fn setupLsp(qa_mode: bool) void {
         break :blk std.fmt.bufPrint(&buf, "{s}/larpercord/lsp-scratch", .{base}) catch "";
     };
     lsp_net.setup(&lspWake, dir);
+}
+
+/// A thread da busca local terminou de ler o índice do disco.
+fn buscaWake() void {
+    platform.Window.wake(wake_type_global, .tick);
 }
 
 fn wakeTheme() void {
@@ -239,11 +254,18 @@ pub const App = struct {
     viewing: types.Id = 0,
     /// QA: faz de conta que a janela perdeu o foco.
     qa_blur: bool = false,
+    /// O som de mensagem nova: o intervalo de uma rajada e quantos pediu (core/aviso.zig).
+    msg_sound: aviso.Som = .{},
     /// O QA quer o portão dos quadros valendo (não vai ler os pixels nesse trecho).
     qa_real_gate: bool = false,
+    /// O QA mede a CPU (qa_midia.zig): o laço dorme como no uso normal, só acordando
+    /// também 4 vezes por segundo para o robô conferir.
+    qa_sleep: bool = false,
     /// A lista de membros do canal aberto (op 14): sai na hora depois de uma
     /// pausa, ou espera a escolha parar numa rajada de trocas.
     sub_wait: Debounce(SubReq) = .{},
+    /// A janela flutuante (app_flutuante.zig); fechada, só esta struct parada.
+    pip: app_flutuante.Pip = .{},
 
     pub fn create(gpa: std.mem.Allocator, opts: Options) !*App {
         const started = c.SDL_GetTicksNS();
@@ -274,6 +296,7 @@ pub const App = struct {
         @import("platform/fc_warm.zig").join(fc_warm);
         app.win = try win;
         wake_type_global = app.win.wake_type;
+        busca_local.setWake(&buscaWake);
         timeline.mark(.janela);
 
         _ = c.ImGui_CreateContext(null);
@@ -362,6 +385,7 @@ pub const App = struct {
         mascote_arquivos.setup(wakeMascot);
         // Antes da rede: a thread do gateway inicia o libcurl pelo mesmo caminho.
         app.images = try images.Cache.init(app.win.renderer, app.win.wake_type);
+        @import("ui/exportar.zig").init(app.win.wake_type);
 
         // Com token salvo: conecta direto (a tela de abertura aparece enquanto
         // isso). Sem token: a tela de login. Prints e QA usam a demonstração.
@@ -412,6 +436,15 @@ pub const App = struct {
         return app;
     }
 
+    /// O áudio tocando continua? Só com a conversa dele na tela e a mensagem ainda
+    /// carregada (rolou para muito longe, ela sai da memória e o áudio para).
+    fn audioPerto(app: *App) bool {
+        const em = @import("ui/audio_player.zig").tocandoEm() orelse return true;
+        if (app.st.activeChannel() != em.canal) return false;
+        const cs = app.store.channel(em.canal) orelse return false;
+        return app.store.find(cs, em.msg) != null;
+    }
+
     /// Fechou a janela e ela deve ficar na bandeja? O app segue conectado e
     /// avisando, sem desenhar. Falso: sem bandeja, ou opção desligada; aí fechar
     /// sai de verdade, nunca fica um processo invisível sem caminho de volta.
@@ -428,6 +461,7 @@ pub const App = struct {
         app.st.window_focused = false;
         voz_audio.setPageOpen(false);
         @import("ui/video.zig").pause();
+        @import("ui/audio_player.zig").pause();
         // Aperte para falar: a tecla solta fora da janela não chegaria aqui.
         var lost = std.mem.zeroes(c.SDL_Event);
         lost.type = c.SDL_EVENT_WINDOW_FOCUS_LOST;
@@ -440,7 +474,7 @@ pub const App = struct {
 
     /// Volta da bandeja (ou traz para a frente, se a janela já estava aberta). Com
     /// "Fechar para a bandeja" ligado o ícone fica; desligado, não há ícone para tirar.
-    fn showWindow(app: *App) void {
+    pub fn showWindow(app: *App) void {
         if (!app.st.settings.close_to_tray) tray.hide();
         app.in_tray = false;
         app.tray_misses = 0;
@@ -588,6 +622,8 @@ pub const App = struct {
         // Apagando todos os dados: nada do que sai daqui vai para o disco
         // (platform/apagar.zig fecha a porta também para quem não passa por aqui).
         const keep = !apagar.on();
+        // A janela flutuante primeiro: o lugar dela vai junto com as configurações.
+        app_flutuante.fechar(app, false);
         tray.hide();
         sys.toastExpire(0, true);
         instance.stopListening();
@@ -620,7 +656,10 @@ pub const App = struct {
         if (keep) {
             msg_cache.flushDirty(&app.store);
             _ = state_cache.save(&app.store);
+            // Depois do cache: o índice gravado fica mais novo que os arquivos dele.
+            busca_local.finish();
         }
+        busca_local.deinit();
         msg_cache.deinit();
         app.login.clearToken();
         app.events.deinit();
@@ -628,13 +667,18 @@ pub const App = struct {
         app.picked.deinit();
         @import("ui/video.zig").shutdown();
         @import("ui/voice_msg.zig").shutdown();
+        @import("ui/gravar_audio.zig").shutdown();
+        // Exportação ou "Salvar" andando: cancela e espera (só fica o .part, que elas apagam).
+        @import("ui/exportar.zig").shutdown();
         // (Por último, lá dentro: as threads de mídia e de vídeo usam o libcurl.)
         app.images.deinit();
         app.st.saved.deinit(app.gpa);
+        app.st.lembretes.deinit(app.gpa);
         app.st.conjuntos.deinit(app.gpa);
         app.store.deinit();
         send_limits.reset();
         app.themes.deinit();
+        @import("ui/camada.zig").shutdown();
         c.cImGui_ImplSDLRenderer3_Shutdown();
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
@@ -795,6 +839,24 @@ pub const App = struct {
         pickedCb(data, list, filter);
     }
 
+    /// O executável de um jogo para o "Jogando …" (ui/settings_jogos.zig). No Linux
+    /// o jogo pode ser um binário sem extensão: sem filtro. Cancelar avisa, para o
+    /// próximo arquivo anexado não virar jogo.
+    fn pickGameExe(app: *App) void {
+        if (app.opts.qa) return;
+        if (sys.windows) {
+            c.SDL_ShowOpenFileDialog(pickedGameCb, app, app.win.window, &exe_filters, exe_filters.len, null, false);
+        } else c.SDL_ShowOpenFileDialog(pickedGameCb, app, app.win.window, null, 0, null, false);
+    }
+
+    /// Fora da pilha: o seletor do Windows lê os filtros na thread dele, depois daqui.
+    const exe_filters = [_]c.SDL_DialogFileFilter{.{ .name = "Programas (.exe)", .pattern = "exe" }};
+
+    fn pickedGameCb(data: ?*anyopaque, list: [*c]const [*c]const u8, filter: c_int) callconv(.c) void {
+        if (list == null or list[0] == null) settings_jogos.cancelPick();
+        pickedCb(data, list, filter);
+    }
+
     /// Só uma imagem, para o ícone ou o banner (ui/edit_place.zig).
     fn pickImage(app: *App) void {
         if (app.opts.qa) return;
@@ -829,10 +891,13 @@ pub const App = struct {
 
     /// Volta ao estado de antes do login: sem conta, sem abas, sem nada.
     pub fn resetSession(app: *App) void {
+        // A janela flutuante segue algo da conta que está saindo.
+        app_flutuante.fechar(app, true);
         // O que estava na tela vai para o cache antes de sumir, e os conjuntos de
         // abas da conta para o arquivo dela.
         msg_cache.flushDirty(&app.store);
         _ = state_cache.save(&app.store);
+        busca_local.reset();
         app.cache_opened = false;
         app.state_saved = false;
         app_conjuntos.reset(app);
@@ -846,6 +911,7 @@ pub const App = struct {
         app.st.viewer = null;
         app.st.saved.clear(app.gpa);
         app.st.saved.owner = 0;
+        app_lembretes.reset(app);
         app.plugins.setAccount(0);
         send_limits.reset();
         app.sub_wait.cancel();
@@ -1180,6 +1246,8 @@ pub const App = struct {
                 // `voice-volume "1234" 0.8` e `voice-mute "1234"` (core/volumes.zig).
             } else if (app.st.filtros.applyNode(app.gpa, n, now())) {
                 // Palavras de alerta, filtro, ignorados e foco (core/filtros.zig).
+            } else if (app.st.jogos.applyNode(n)) {
+                // `game "Dota 2" exe="dota2" …`: o "Jogando …" pelo processo (core/jogos.zig).
             } else if (std.mem.eql(u8, n.name, "guild-color")) {
                 guild_color.load(&guild_color.colors, std.heap.c_allocator, n);
             } else if (std.mem.eql(u8, n.name, "theme-colors")) {
@@ -1253,6 +1321,8 @@ pub const App = struct {
         app.st.teclas.write(&out, app.gpa) catch return;
         app.st.filtros.save = false;
         app.st.filtros.write(&out, app.gpa) catch return;
+        app.st.jogos.save = false;
+        app.st.jogos.write(&out, app.gpa) catch return;
         var it = app.themes.choices.iterator();
         while (it.next()) |e| {
             out.print(app.gpa, "theme-options \"{s}\"", .{e.key_ptr.*}) catch return;
@@ -1368,6 +1438,8 @@ pub const App = struct {
     }
 
     fn sendSubscribe(app: *App, sr: SubReq) void {
+        // A rajada acabou depois de o servidor sair da lista (kick, ban): não pede mais.
+        if (app.store.guild(sr.guild) == null) return;
         app.cmd(.{ .subscribe_guild = .{ .guild = sr.guild, .channel = sr.channel, .thread = sr.thread } });
     }
 
@@ -1528,45 +1600,70 @@ pub const App = struct {
     }
 
     /// Com as opções de envio (silenciosa, sem prévias, menções) da caixa de texto.
-    fn sendWithOpts(app: *App, ch: types.Id, text: []const u8, reply_to: types.Id, with_uploads: bool, opts: envio.SendOpts) void {
-        if (!app.sendAllowed(ch)) return;
-        const out_text = mentions.expand(app.gpa, &app.store, app.guildOfChannel(ch), text, &.{}) catch return;
+    pub fn sendWithOpts(app: *App, ch: types.Id, text: []const u8, reply_to: types.Id, with_uploads: bool, opts: envio.SendOpts) void {
+        const ups = if (with_uploads) app.st.uploads.items else &.{};
+        // Os caminhos passam para o comando; a bandeja esvazia.
+        if (app.sendFiles(ch, text, reply_to, ups, opts) and ups.len > 0) app.st.uploads.clearRetainingCapacity();
+    }
+
+    /// Manda `text` com os arquivos `ups` (da bandeja, ou o áudio gravado). true = os
+    /// caminhos passaram para o comando (quem chamou não os solta mais).
+    fn sendFiles(app: *App, ch: types.Id, text: []const u8, reply_to: types.Id, ups: []const @import("ui/state.zig").Upload, opts: envio.SendOpts) bool {
+        if (!app.sendAllowed(ch)) return false;
+        const out_text = mentions.expand(app.gpa, &app.store, app.guildOfChannel(ch), text, &.{}) catch return false;
         defer app.gpa.free(out_text);
         app.st.nonce += 1;
-        // Os arquivos da bandeja vão junto: aparecem na hora na cópia pendente.
+        // Os arquivos vão junto: aparecem na hora na cópia pendente.
         const ca = std.heap.c_allocator;
-        const ups = if (with_uploads) app.st.uploads.items else &.{};
         var atts: []types.Attachment = &.{};
         var files: [][:0]const u8 = &.{};
         var file_opts: []envio.FileOpt = &.{};
         if (ups.len > 0) {
-            atts = ca.alloc(types.Attachment, ups.len) catch return;
-            files = ca.alloc([:0]const u8, ups.len) catch return;
-            file_opts = ca.alloc(envio.FileOpt, ups.len) catch return;
+            atts = ca.alloc(types.Attachment, ups.len) catch return false;
+            files = ca.alloc([:0]const u8, ups.len) catch return false;
+            file_opts = ca.alloc(envio.FileOpt, ups.len) catch return false;
             for (ups, 0..) |u, i| {
                 // O texto alternativo passa da bandeja para o comando.
                 file_opts[i] = .{ .spoiler = u.spoiler, .alt = u.alt };
                 atts[i] = .{
-                    .url = std.fmt.allocPrint(ca, "file://{s}", .{u.path}) catch return,
-                    .filename = ca.dupe(u8, u.name()) catch return,
+                    .url = std.fmt.allocPrint(ca, "file://{s}", .{u.path}) catch return false,
+                    .filename = ca.dupe(u8, u.name()) catch return false,
                     .width = u.width,
                     .height = u.height,
                     .size = @intCast(@min(u.size, std.math.maxInt(u32))),
                 };
                 files[i] = u.path;
             }
-            // Os caminhos passam para o comando; a bandeja esvazia.
-            app.st.uploads.clearRetainingCapacity();
         }
         // Mandar de uma conversa antiga leva ao presente, como no Discord.
         if (app.store.channel(ch)) |cs| if (cs.detached) app.handle(.{ .jump_present = ch });
-        app.store.addPending(ch, out_text, app.st.nonce, reply_to, now(), atts) catch return;
+        app.store.addPending(ch, out_text, app.st.nonce, reply_to, now(), atts) catch return ups.len > 0;
         app.st.scrollOf(ch).stick_bottom = true;
         // Para o "tentar de novo" mandar igual.
         app.store.outbox.put(app.gpa, app.st.nonce, opts, file_opts) catch {};
-        const copy = ca.dupe(u8, out_text) catch return;
+        const copy = ca.dupe(u8, out_text) catch return ups.len > 0;
         app.cmd(.{ .send_message = .{ .channel = ch, .content = copy, .nonce = app.st.nonce, .reply_to = reply_to, .files = files, .opts = opts, .file_opts = file_opts } });
         send_limits.noteSent(&app.store, ch, now());
+        return true;
+    }
+
+    /// O áudio gravado na caixa (ui/gravar_audio.zig): vai sozinho, como um anexo
+    /// comum, respondendo se a caixa está respondendo e com as opções do menu dela.
+    /// O texto escrito e a bandeja ficam onde estão. Não dando para mandar agora
+    /// (modo lento, conectando), ele espera na bandeja, como um arquivo anexado.
+    fn sendRecording(app: *App, path: [:0]u8) void {
+        const st = &app.st;
+        const up: @import("ui/state.zig").Upload = .{ .path = path, .size = sys.fileSize(path.ptr) orelse 0 };
+        const ch = st.activeChannel() orelse return dropUpload(up);
+        var opts = st.send_opts;
+        opts.ping_reply = st.reply_ping or st.reply_to == 0;
+        if (app.sendFiles(ch, "", st.reply_to, &.{up}, opts)) {
+            st.send_opts = .{};
+            st.reply_to = 0;
+            return;
+        }
+        if (st.uploads.items.len >= 10) return dropUpload(up);
+        st.uploads.append(app.gpa, up) catch dropUpload(up);
     }
 
     fn guildOfChannel(app: *const App, ch: types.Id) types.Id {
@@ -1989,6 +2086,7 @@ pub const App = struct {
             .pick_image => app.pickImage(),
             .pick_sound => app.pickSound(),
             .pick_ffmpeg_dir => app.pickFolder(),
+            .pick_game_exe => app.pickGameExe(),
             .restart => if (app.opts.qa) st.showToast(now(), false, "reiniciando", "restarting", .{}) else {
                 app.restart_wanted = true;
             },
@@ -2011,6 +2109,7 @@ pub const App = struct {
                 const f = app.store.findAny(id) orelse return;
                 const ch = f.cs.info.id;
                 app.store.apply(.{ .message_delete = .{ .channel = ch, .id = id, .local = true } }, now()) catch {};
+                busca_local.remove(id);
                 app.cmd(.{ .delete_message = .{ .channel = ch, .id = id } });
                 st.showToast(now(), false, "mensagem excluída", "message deleted", .{});
             },
@@ -2045,6 +2144,8 @@ pub const App = struct {
                 if (app.store.channel(ch)) |cs| if (!cs.info.group and cs.info.recipient == dm.user) return app.sendTo(ch, dm.text, 0);
                 if (st.pending_dm == dm.user) st.showToast(now(), false, "abrindo a conversa… mande de novo quando ela abrir", "opening the conversation… send it again once it opens", .{});
             },
+            .send_to => |m| app_flutuante.send(app, m.channel, m.text),
+            .flutuante => |p| app_flutuante.pedido(app, p),
             .copy => |text| {
                 defer app.gpa.free(text);
                 const z = app.gpa.dupeSentinel(u8, text, 0) catch return;
@@ -2258,12 +2359,15 @@ pub const App = struct {
             },
             .save_settings => app.saveSettings(),
             .pick_files => app.pickFiles(),
+            // No QA nada abre: ui/exportar.zig responde com o caminho que o teste pôs.
+            .save_dialog => @import("ui/exportar.zig").showDialog(app.win.window, app.opts.qa),
             .pick_file => app.pickFile(),
             .remove_upload => |i| if (i < st.uploads.items.len) {
                 dropUpload(st.uploads.items[i]);
                 _ = st.uploads.orderedRemove(i);
             },
             .paste_image => app.pasteImage(),
+            .send_recording => |path| app.sendRecording(path),
             .toggle_inbox => {
                 st.palette.open = false;
                 if (st.popup == .inbox) {
@@ -2281,7 +2385,10 @@ pub const App = struct {
                 st.palette.open = false;
                 st.popup = if (st.popup == .saved) .none else .saved;
                 if (st.popup == .none) st.focus_input = true;
+                // Abrindo com lembrete vencido: já na aba dele (é o que o número no botão mostra).
+                if (st.popup == .saved) saved_ui.tab = if (app_lembretes.dueNow(app) > 0) .lembretes else .salvas;
             },
+            .lembrete => |la| app_lembretes.handle(app, la),
             .fetch_mentions => if (app.store.mentions_state != .loading) {
                 app.store.mentions_state = .loading;
                 app.cmd(.fetch_mentions);
@@ -2307,6 +2414,7 @@ pub const App = struct {
             .logout, .switch_account, .add_account, .remove_account => app_accounts.handle(app, a),
             .clear_cache => {
                 msg_cache.clearAll(&app.store);
+                busca_local.clear(&app.store);
                 st.showToast(now(), false, "cache apagado", "cache cleared", .{});
             },
         }
@@ -2393,7 +2501,10 @@ pub const App = struct {
             // O READY de verdade em cima do retrato do disco: os silenciados vêm de novo
             // logo atrás dele (read_states), e o que deixou de ser silenciado sai.
             if (e == .ready and !e.ready.cached and app.store.from_cache) app.st.muted_channels.clearRetainingCapacity();
+            // A busca local antes do Store: depois dele, o texto do evento já é dele (ou saiu).
+            busca_local.beforeEvent(&app.store, e);
             app.store.apply(e, now()) catch {};
+            busca_local.afterEvent(&app.store, e);
             if (fetch_dm != 0) app.cmd(.{ .fetch_channel = fetch_dm });
             if (edited != 0) plugin_host.onEdit(app, edited);
             if (quiet) |ch| app.st.filtros.quiet(app.gpa, &app.store, ch);
@@ -2405,6 +2516,9 @@ pub const App = struct {
             // O Discord aceitou: agora sim guarda a conta (e o token, se pediram).
             // Antes do resto: abrir um canal já lê o cache desta conta.
             app_accounts.ready(app);
+            // O índice da busca local vem do disco já (numa thread, sem pressa): o que
+            // chega daqui em diante entra nele.
+            busca_local.startLoad(false);
             app.ready_ms = now();
             app.onReady();
             app.plugins.fireReady();
@@ -2564,13 +2678,16 @@ pub const App = struct {
         // Menção pela regra do Discord (core/mencao.zig): a mesma do destaque.
         const verdict = f.judge(m.author, m.content, cs.info.guild == 0, app.store.mentionsMe(cs.info.guild, &m));
         if (verdict == .important) f.bump(app.gpa, &app.store, m.channel);
-        // Silêncio e nível de notificação vêm da conta (app_conta.zig).
-        if (verdict != .hidden and @import("app_conta.zig").allowsNotify(app, m, cs, verdict == .important)) {
+        // Silêncio e nível de notificação vêm da conta (app_conta.zig); a regra,
+        // a mesma da notificação e do som, de core/aviso.zig.
+        const alert = aviso.notifies(@import("app_conta.zig").arrival(app, m, cs, verdict));
+        if (alert) {
             f.notified +%= 1;
             @import("ui/mascote_pet.zig").onPing(now());
             if (cs.info.guild == 0 and app.st.activeChannel() != m.channel) @import("ui/mascote_pet.zig").onDm();
             app.notify(m, cs);
         }
+        app.messageSound(m.channel, alert);
         if (verdict != .important and f.focusOn(now()) and !cs.info.unread and app.st.activeChannel() != m.channel) return m.channel;
         return null;
     }
@@ -2582,8 +2699,8 @@ pub const App = struct {
         const set = &app.st.settings;
         const flags = c.SDL_GetWindowFlags(app.win.window);
         const hidden = flags & c.SDL_WINDOW_HIDDEN != 0;
-        const focused = !hidden and flags & c.SDL_WINDOW_INPUT_FOCUS != 0;
-        if (focused and app.st.activeChannel() == m.channel) return;
+        const focused = app.windowFocused();
+        if (aviso.seen(focused, app.st.activeChannel() == m.channel)) return;
         if (set.taskbar_flash and !focused and !hidden) _ = c.SDL_FlashWindow(app.win.window, c.SDL_FLASH_UNTIL_FOCUSED);
         if (!set.desktop_notifs or focused or app.notifiers.items.len >= 8) return;
 
@@ -2601,6 +2718,58 @@ pub const App = struct {
         var bb: [208]u8 = undefined;
         const body = std.fmt.bufPrintSentinel(&bb, "{s}{s}", .{ body_src[0..cut], if (cut < body_src.len) "…" else "" }, 0) catch return;
         app.desktopNotify(title, body);
+    }
+
+    /// Achou versão nova. A faixa no topo aparece sozinha (ui/aviso_atualizacao.zig); com
+    /// a janela escondida ou sem foco vai também um aviso do sistema, e com "Atualizar
+    /// sozinho" a instalação começa já (uma vez por versão).
+    fn updateFound(app: *App) void {
+        const s = updater.snapshot();
+        const v = s.latest();
+        const auto = aviso_versao.instalarSozinho(app.st.settings.auto_update, updater.managedBySystem(), .disponivel, v, auto_tried_buf[0..auto_tried_len]);
+        if (auto) {
+            auto_tried_len = @min(v.len, auto_tried_buf.len);
+            @memcpy(auto_tried_buf[0..auto_tried_len], v[0..auto_tried_len]);
+            updater.install();
+        }
+        const flags = c.SDL_GetWindowFlags(app.win.window);
+        const focused = flags & c.SDL_WINDOW_HIDDEN == 0 and flags & c.SDL_WINDOW_INPUT_FOCUS != 0;
+        if (focused or !app.st.settings.desktop_notifs or app.opts.qa) return;
+        var bb: [160]u8 = undefined;
+        const body = (if (auto)
+            i18n.fmtZ(&bb, "Instalando a versão {s}; ela abre na próxima vez.", "Installing version {s}; it opens next time.", .{v})
+        else
+            i18n.fmtZ(&bb, "Versão {s} disponível. Abra o app para atualizar.", "Version {s} is available. Open the app to update.", .{v}));
+        if (body.len > 0) app.desktopNotify("larperCord", body);
+    }
+
+    /// A janela está à frente, com o foco? Escondida na bandeja não conta. O QA
+    /// e os prints rodam fora da tela, sem foco de verdade: lá vale `qa_blur`.
+    fn windowFocused(app: *App) bool {
+        const flags = c.SDL_GetWindowFlags(app.win.window);
+        if (flags & c.SDL_WINDOW_HIDDEN != 0) return false;
+        if (app.opts.qa or app.opts.shot != null) return !app.qa_blur;
+        return flags & c.SDL_WINDOW_INPUT_FOCUS != 0;
+    }
+
+    /// O som de mensagem nova, com a mesma regra da notificação (`alert`), fora
+    /// da conversa que a pessoa está olhando e do "Não perturbe", no máximo um
+    /// a cada `aviso.Som.gap_ms`. Toca pela saída e no volume dos sons da call
+    /// (net/voz_audio.zig). Vale com a janela fora de foco e na bandeja: a fila
+    /// de eventos anda sem quadro nenhum. Na demonstração e no QA também (o QA
+    /// conta pelo `msg_sound.played`, no driver mudo).
+    fn messageSound(app: *App, ch: types.Id, alert: bool) void {
+        const set = &app.st.settings;
+        const on = set.message_sound and settings_state.soundVariantC(set, .message) != @backingInt(sons.Variant.off);
+        if (!app.msg_sound.want(.{
+            .on = on,
+            .alert = alert,
+            .dnd = @import("app_conta.zig").dndNow(app),
+            .focused = app.windowFocused(),
+            .active = app.st.activeChannel() == ch,
+            .now_ms = @intCast(c.SDL_GetTicks()),
+        })) return;
+        voz_audio.play(.message);
     }
 
     /// Uma notificação do sistema: notify-send no Linux, o aviso da bandeja no Windows.
@@ -2687,6 +2856,8 @@ pub const App = struct {
     fn onReady(app: *App) void {
         // As salvas desta conta (o QA e os prints começam sem nenhuma).
         saved_ui.load(&app.st.saved, app.gpa, app.store.me, !app.opts.qa and app.opts.shot == null);
+        // E os lembretes (o que venceu com o app fechado avisa logo, atrasado).
+        app_lembretes.load(app);
         app.plugins.setAccount(app.store.me);
         // O status escolhido já foi no IDENTIFY; falta a nossa própria linha, que veio online.
         if (app.st.settings.my_status != 0) if (app.store.users.getPtr(app.store.me)) |me| {
@@ -2743,6 +2914,8 @@ pub const App = struct {
         // A nossa linha com o status escolhido (o retrato não guarda presença).
         if (app.store.users.getPtr(app.store.me)) |me| me.status = @fromBackingInt(@intCast(@min(app.st.settings.my_status, 3)));
         app.cache_opened = true;
+        // Os lembretes já da abertura: o que venceu com o app fechado não espera o READY.
+        app_lembretes.load(app);
         app.firstView();
         return true;
     }
@@ -2971,6 +3144,7 @@ pub const App = struct {
             // pela bandeja.
             if (app.restart_wanted or (app.wipe_wanted and !app.opts.qa)) {
                 _ = c.SDL_HideWindow(app.win.window);
+                app_flutuante.esconder(app);
                 break;
             }
             var e: c.SDL_Event = undefined;
@@ -2989,19 +3163,27 @@ pub const App = struct {
             }
             // Com o mouse andando, a animação de destaque também espera o limite dele:
             // é o que mais pede quadro, e só volta ao ritmo da tela quando o mouse para.
-            const busy = pending > 0 or (anim.active and !mouse.wanted()) or app.opts.shot != null or app.opts.qa or bench or
-                (login_anim and !app.st.settings.reduce_motion);
+            const busy = pending > 0 or (anim.active and !mouse.wanted()) or app.opts.shot != null or (app.opts.qa and !app.qa_sleep) or bench or
+                (login_anim and !app.st.settings.reduce_motion) or app_flutuante.ocupada(app);
             // Dorme até o próximo quadro de um GIF, de uma animação lenta ou
             // do redesenho adiado da rede (o que vier primeiro).
             var due = @min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due());
+            if (app.qa_sleep) due = @min(due, last_frame_ms + 250);
             if (bg_dirty) due = @min(due, last_frame_ms + bg_frame_ms);
             if (mouse.wanted()) due = @min(due, last_frame_ms + ritmo.MousePace.interval_ms);
             // O tempo das calls (ui/voice_timer.zig) marca a virada do segundo ou do
             // minuto no relógio: até lá, um sono só.
             const t_wait = now();
-            const nap = anim.napFor(if (due == std.math.maxInt(i64)) null else due -| t_wait, if (anim.clock_wake_ms == std.math.maxInt(i64)) null else anim.clock_wake_ms -| t_wait);
-            due = @min(due, anim.clock_wake_ms);
-            const wait = due -| t_wait;
+            // A janela flutuante tem os prazos dela (o laço acorda para ela sem um quadro
+            // da principal; `due` continua sendo só o da principal). O próximo lembrete é
+            // hora marcada no relógio: dorme direto até lá, sem acordar para conferir
+            // (app_lembretes.zig).
+            const pip_due = app_flutuante.proximo(app, t_wait);
+            const sleep_due = @min(due, pip_due);
+            const clock_due = @min(anim.clock_wake_ms, app_lembretes.wakeAt());
+            const nap = anim.napFor(if (sleep_due == std.math.maxInt(i64)) null else sleep_due -| t_wait, if (clock_due == std.math.maxInt(i64)) null else clock_due -| t_wait);
+            due = @min(due, clock_due);
+            const wait = @min(due, pip_due) -| t_wait;
             var got = if (busy or wait <= 0)
                 c.SDL_PollEvent(&e)
             else if (nap) |ms|
@@ -3021,6 +3203,7 @@ pub const App = struct {
                             app.gw_signaled.store(false, .release);
                             app.drainEvents();
                             bg_dirty = true;
+                            app_flutuante.marcar(app);
                         },
                         .theme => if (!app.st.settings.hot_reload) {} else if (app.themes.reload()) {
                             app.applyThemeStyle();
@@ -3031,6 +3214,8 @@ pub const App = struct {
                             // acorda no minuto cheio): o que muda de minuto em minuto já
                             // está na tela. Outro aviso no mesmo tique ainda redesenha.
                             const minute_only = app.minute_tick.swap(false, .acq_rel);
+                            // A janela flutuante mostra horários e o tempo da call: o minuto que virou.
+                            if (@divFloor(now(), 60_000) != @divFloor(app.pip.ultimo_ms, 60_000)) app_flutuante.marcar(app);
                             if (!minute_only or @divFloor(last_frame_ms, 60_000) != @divFloor(now(), 60_000)) pending = @max(pending, 1) else tick_seen = true;
                             // O relógio já acorda o app: aproveita para gravar o cache
                             // (umas poucas por vez; sobrando, volta no próximo tique).
@@ -3038,6 +3223,9 @@ pub const App = struct {
                                 app.cache_flush_ms = now();
                                 if (msg_cache.flushSome(&app.store, 4)) app.cache_flush_ms -= 50_000;
                             }
+                            // O índice da busca local: lê o disco se ainda não leu ("Guardar
+                            // mensagens no disco" religado) e grava com mudanças a cada 5 minutos.
+                            busca_local.tick(app.store.ready);
                             // O retrato da conta, uma vez por sessão, com o READY assentado.
                             if (!app.state_saved and app.store.ready and now() - app.ready_ms >= state_cache.settle_ms) {
                                 app.state_saved = true;
@@ -3059,7 +3247,10 @@ pub const App = struct {
                                 if (app.tray_misses >= janela.tray_misses_max) app.showWindow();
                             }
                         },
-                        .media => bg_dirty = true,
+                        .media => {
+                            bg_dirty = true;
+                            app_flutuante.marcar(app);
+                        },
                         .token => {
                             timeline.mark(.token_fim);
                             app_accounts.finishStartupLookup(app);
@@ -3089,6 +3280,7 @@ pub const App = struct {
                         .quit => {
                             running = false;
                             _ = c.SDL_HideWindow(app.win.window);
+                            app_flutuante.esconder(app);
                         },
                         .plugins => {
                             app.plugins.drain();
@@ -3098,7 +3290,17 @@ pub const App = struct {
                             app.mascotReloaded();
                             pending = @max(pending, 2);
                         },
+                        // O jogo aberto: olhar os processos não pede quadro (se o jogo
+                        // mudou, a nossa linha nova chega pelo gateway e desenha).
+                        .jogo => {
+                            app_presenca.gameWake(app);
+                            tick_seen = true;
+                        },
                     }
+                } else if (app_flutuante.owns(app, &e)) {
+                    // Da janela flutuante: vai para o contexto dela (nunca fecha o app nem
+                    // vai para a bandeja, e não pede quadro da principal).
+                    app_flutuante.onEvent(app, &e);
                 } else {
                     // Sem botão apertado, passar por cima das coisas pode esperar o
                     // próximo quadro (o ImGui guarda onde o mouse está).
@@ -3130,23 +3332,42 @@ pub const App = struct {
                         running = false;
                         // Some da tela na hora; o resto do encerramento é por trás.
                         _ = c.SDL_HideWindow(app.win.window);
+                        app_flutuante.esconder(app);
                     }
                     // Arquivo arrastado para a janela: vai para a bandeja (e o mascote do canto come).
                     if (e.type == c.SDL_EVENT_DROP_POSITION) @import("ui/mascote_pet.zig").onDragOver(now());
                     if (e.type == c.SDL_EVENT_WINDOW_RESIZED) @import("ui/mascote_pet.zig").onResize();
                     if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
-                        if (e.drop.data) |p| app.attachFile(std.mem.span(p));
-                        @import("ui/mascote_pet.zig").onDrop(now());
+                        // Solta em cima do mascote, uma imagem vira um quadro na mão dele (e vai
+                        // para a bandeja do mesmo jeito). O ponto vem em pixels da janela.
+                        const before = app.st.uploads.items.len;
+                        const path: []const u8 = if (e.drop.data) |p| std.mem.span(p) else "";
+                        if (path.len > 0) app.attachFile(path);
+                        const ups = app.st.uploads.items;
+                        const image = ups.len > before and ups[ups.len - 1].width > 0;
+                        const sc = app.uiScale();
+                        @import("ui/mascote_pet.zig").onDropFile(path, image, e.drop.x / sc, e.drop.y / sc, now());
                     }
+                    // Texto solto na janela: um link em cima do mascote entra num portalzinho.
+                    if (e.type == c.SDL_EVENT_DROP_TEXT) if (e.drop.data) |p| {
+                        const sc = app.uiScale();
+                        @import("ui/mascote_pet.zig").onDropText(std.mem.span(p), e.drop.x / sc, e.drop.y / sc, now());
+                    };
                 }
                 got = c.SDL_PollEvent(&e);
             }
             if (input) pending = 3;
+            // Venceu um lembrete: o aviso (e, sem ninguém olhando, a notificação). Antes de
+            // olhar se a janela está escondida: na bandeja, a notificação sai assim mesmo.
+            if (app_lembretes.check(app)) pending = @max(pending, 2);
             // "Digitando" vence em segundos: conferir 4 vezes por segundo basta
             // (são todos os canais).
             if (now() - typing_check_ms >= 250) {
                 typing_check_ms = now();
-                if (app.store.expireTyping(typing_check_ms)) pending = 2;
+                if (app.store.expireTyping(typing_check_ms)) {
+                    pending = 2;
+                    app_flutuante.marcar(app);
+                }
             }
             if (app.notifiers.items.len > 0) app.reapNotifiers();
             app.flushSubscribe();
@@ -3155,7 +3376,10 @@ pub const App = struct {
             if (running) app.syncTray();
 
             app.images.now_ms = now();
-            if (app.images.pump()) bg_dirty = true;
+            if (app.images.pump()) {
+                bg_dirty = true;
+                app_flutuante.marcar(app);
+            }
             if (app.images.takeCopied()) |ok| {
                 if (ok) app.st.showToast(now(), false, "imagem copiada", "image copied", .{}) else app.st.showToast(now(), true, "não deu para copiar a imagem", "couldn't copy the image", .{});
             }
@@ -3169,6 +3393,7 @@ pub const App = struct {
                 defer picked.deinit(std.heap.c_allocator);
                 settings_voz.pollCancel();
                 settings_video.pollCancel();
+                settings_jogos.pollCancel();
                 app.picked.drain(&picked);
                 for (picked.items) |p| {
                     defer std.heap.c_allocator.free(p);
@@ -3180,17 +3405,24 @@ pub const App = struct {
                         app.saveSettings();
                         continue;
                     }
+                    // (Grava pelo `jogos.save`, no fim do quadro.)
+                    if (settings_jogos.takePicked(&app.st, now(), p)) continue;
                     if (@import("ui/edit_place.zig").takePicked(&app.st, now(), p)) continue;
                     if (interact.takePicked(&app.st, now(), p)) continue;
                     if (app.store.ready) app.attachFile(p);
                 }
                 if (picked.items.len > 0) pending = 3;
             }
-            if (updater.takeNotice()) app.st.showToast(now(), false, "atualização disponível: veja em Configurações → Atualizações", "update available: see Settings → Updates", .{});
+            if (updater.takeNotice()) app.updateFound();
             const now_ms = now();
             // Nada venceu ainda: não há por que redesenhar.
             // Nem o tique do minuto com um quadro já desenhado neste minuto.
-            if ((timed_out or (tick_seen and !busy)) and pending == 0 and !bg_dirty and !mouse.wanted() and !was_active and now_ms < due) continue;
+            if ((timed_out or (tick_seen and !busy)) and pending == 0 and !bg_dirty and !mouse.wanted() and !was_active and now_ms < due) {
+                // Nada da principal venceu: a janela flutuante pode ter o dela. Se ela
+                // mexeu no app (mudo, mandou), a principal redesenha.
+                if (!app_flutuante.talvez(app, now_ms)) continue;
+                pending = 2;
+            }
             const win_flags = c.SDL_GetWindowFlags(app.win.window);
             if (win_flags & hidden_flags != 0 and running and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null) {
                 bg_dirty = false;
@@ -3202,7 +3434,8 @@ pub const App = struct {
                 anim.next_wake_ms = std.math.maxInt(i64);
                 anim.clock_wake_ms = std.math.maxInt(i64);
                 app.images.next_frame_ms = std.math.maxInt(i64);
-                if (win_flags & (c.SDL_WINDOW_MINIMIZED | c.SDL_WINDOW_HIDDEN) == 0) {
+                // A janela flutuante continua com a principal escondida, e usa as imagens dela.
+                if (win_flags & (c.SDL_WINDOW_MINIMIZED | c.SDL_WINDOW_HIDDEN) == 0 or app_flutuante.aberta(app)) {
                     hidden_since_ms = 0;
                 } else if (hidden_since_ms == 0) {
                     hidden_since_ms = now_ms;
@@ -3215,13 +3448,18 @@ pub const App = struct {
                         if (app.opts.stats) std.log.info("janela escondida: soltou {d} KB, ficaram {d} imagens, {d} KB", .{ (before - app.images.bytes) / 1024, app.images.readyCount(), app.images.bytes / 1024 });
                     }
                 }
+                _ = app_flutuante.talvez(app, now_ms);
                 continue;
             }
             hidden_since_ms = 0;
             // Só coisa da rede ou o mouse passando, e o último quadro foi agora há pouco: espera.
             const soft_ms = if (mouse.wanted()) ritmo.MousePace.interval_ms else bg_frame_ms;
             if ((bg_dirty or mouse.wanted()) and pending == 0 and (!was_active or mouse.wanted()) and app.opts.shot == null and !app.opts.qa and
-                !app.login.visible() and now_ms - last_frame_ms < soft_ms and now_ms < @min(@min(app.images.next_frame_ms, anim.next_wake_ms), anim.clock_wake_ms)) continue;
+                !app.login.visible() and now_ms - last_frame_ms < soft_ms and now_ms < @min(@min(app.images.next_frame_ms, anim.next_wake_ms), anim.clock_wake_ms))
+            {
+                if (!app_flutuante.talvez(app, now_ms)) continue;
+                pending = 2;
+            }
             if (app.opts.stats) {
                 const why: usize = if (pending > 0) 0 else if (was_active) 1 else if (now_ms >= app.images.next_frame_ms) 2 else if (now_ms >= anim.next_wake_ms or now_ms >= anim.clock_wake_ms) 3 else if (mouse.wanted()) 4 else if (bg_dirty) 5 else 6;
                 prof_why[why] += 1;
@@ -3306,7 +3544,7 @@ pub const App = struct {
             ffmpeg.setDir(set.ffmpeg_dir.slice());
             voz_audio.apply(set);
             lsp_ui.apply(set);
-            mascote.sync(set.mascot_look.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
+            mascote.sync(set.mascot_look.slice(), set.mascot_tweaks.slice(), set.mascot_name.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
             app_presenca.frame(app);
             app.askChannelInfo();
             voz_audio.setPageOpen(set.open and set.page == .voz and app.store.ready);
@@ -3318,8 +3556,9 @@ pub const App = struct {
             app.images.data_saver = set.data_saver;
             // Modo foco venceu: o que chegou nos outros canais volta como não lido.
             if (app.st.filtros.focus_until != 0 and !app.st.filtros.focusOn(now_ms)) app.st.filtros.endFocus(&app.store);
-            if (app.st.filtros.save) {
+            if (app.st.filtros.save or app.st.jogos.save) {
                 app.st.filtros.save = false;
+                app.st.jogos.save = false;
                 app.saveSettings();
             }
             // (Aberta pelo retrato em disco, a tela já está em uso: o rascunho de cada
@@ -3396,6 +3635,8 @@ pub const App = struct {
             }
             // Vídeo que não foi desenhado neste quadro pausa.
             @import("ui/video.zig").endFrame(now());
+            // Áudio cuja conversa saiu da tela também.
+            @import("ui/audio_player.zig").endFrame(now(), app.audioPerto());
             const tr0 = c.SDL_GetTicksNS();
             c.ImGui_Render();
             if (app.opts.stats) prof_render += (c.SDL_GetTicksNS() - tr0) / 1000;
@@ -3405,6 +3646,8 @@ pub const App = struct {
             const clear = [4]f32{ bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a };
             const draw_data = c.ImGui_GetDrawData();
             if (@import("ui/video.zig").takeChanged()) app.gate.redraw();
+            // O mascote invisível vai numa textura que o resumo do quadro não vê.
+            if (@import("ui/camada.zig").takeChanged()) app.gate.redraw();
             // GIF que toca aos poucos: quadro novo na mesma textura, com o desenho igual.
             const gif_changed = app.images.takeChanged();
             // Igual ao que já está na tela: sem GPU nem present. Prints e QA leem os pixels.
@@ -3451,7 +3694,10 @@ pub const App = struct {
                 prof_actions.getPtr(std.meta.activeTag(a)).* += 1;
             };
             for (app.actions.items) |a| app.handle(a);
-            if (app.actions.items.len > 0) pending = 3;
+            if (app.actions.items.len > 0) {
+                pending = 3;
+                app_flutuante.marcar(app);
+            }
             app.actions.clearRetainingCapacity();
 
             frames += 1;
@@ -3533,6 +3779,8 @@ pub const App = struct {
             // (A tela aberta pelo retrato em disco já está em uso antes do READY.)
             if (app.opts.qa and (app.store.ready or app.store.from_cache or app.login.visible()) and !runner.tick(app)) running = false;
             if (show) _ = c.SDL_RenderPresent(r);
+            // A janela flutuante depois do quadro da principal (o renderizador já está livre).
+            if (app_flutuante.talvez(app, now_ms)) pending = @max(pending, 2);
             if (pending > 0) pending -= 1;
             if (fonts_mod.scriptsWanted()) pending = @max(pending, 1);
             was_active = anim.active;
@@ -3611,6 +3859,7 @@ pub const App = struct {
             if (e.type == c.SDL_EVENT_QUIT) return false;
         }
         if (input) wl.pending = 3;
+        if (app_lembretes.check(app)) wl.pending = @max(wl.pending, 2);
         const now_ms = now();
         if (now_ms - wl.typing_check_ms >= 250) {
             wl.typing_check_ms = now_ms;
@@ -3673,15 +3922,16 @@ pub const App = struct {
             app.st.theme_gen +%= 1;
         }
         anim.instant = set.reduce_motion;
-        mascote.sync(set.mascot_look.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
+        mascote.sync(set.mascot_look.slice(), set.mascot_tweaks.slice(), set.mascot_name.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
         plugin_host.frame(app);
         @import("ui/attachments.zig").hide_embeds = !set.show_embeds;
         app.store.keep_log = set.message_log;
         widgets.hour12 = !set.clock_24h;
         app.images.data_saver = set.data_saver;
         if (app.st.filtros.focus_until != 0 and !app.st.filtros.focusOn(now_ms)) app.st.filtros.endFocus(&app.store);
-        if (app.st.filtros.save) {
+        if (app.st.filtros.save or app.st.jogos.save) {
             app.st.filtros.save = false;
+            app.st.jogos.save = false;
             app.saveSettings();
         }
         const usable = app.store.ready or app.store.from_cache;
@@ -3737,6 +3987,7 @@ pub const App = struct {
             })) |r| wl.login_result = r;
         }
         @import("ui/video.zig").endFrame(now());
+        @import("ui/audio_player.zig").endFrame(now(), app.audioPerto());
         c.ImGui_Render();
 
         const r = app.win.renderer;
@@ -3744,6 +3995,7 @@ pub const App = struct {
         const clear = [4]f32{ bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a };
         const draw_data = c.ImGui_GetDrawData();
         if (@import("ui/video.zig").takeChanged()) app.gate.redraw();
+        if (@import("ui/camada.zig").takeChanged()) app.gate.redraw();
         const gif_changed = app.images.takeChanged();
         const show = app.gate.check(quadro.sum(draw_data, clear), gif_changed or wl.shot != null or quadro.texturesDirty(draw_data));
         if (show) {

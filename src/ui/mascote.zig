@@ -19,31 +19,43 @@ pub const Kind = @import("mascote_contas.zig").Kind;
 /// O que o último `sync` viu (para não refazer o visual a cada quadro).
 var seen_text: [255]u8 = undefined;
 var seen_text_len: usize = std.math.maxInt(usize);
+var seen_tweaks: [255]u8 = undefined;
+var seen_tweaks_len: usize = 0;
+var seen_name: [255]u8 = undefined;
+var seen_name_len: usize = 0;
 var seen_file: [visual.Name.max_name]u8 = undefined;
 var seen_file_len: usize = 0;
 var seen_gen: u32 = 0;
 var seen_accent: u32 = 0;
 
-/// O visual deste quadro, a partir das configurações (`mascot_look`, o texto curto, e
-/// `mascot_file`, o arquivo escolhido) e da cor de destaque do tema. Chamado pelo app
-/// uma vez por quadro; só refaz quando algo mudou. Um arquivo com erro deixa o visual
-/// que estava (como um tema com erro deixa o tema de antes).
-pub fn sync(look_text: []const u8, file: []const u8, accent: d.Rgba) void {
+/// Guarda `s` em `buf` e diz se era igual ao que estava.
+fn same(buf: []u8, len: *usize, s: []const u8) bool {
+    const n = @min(s.len, buf.len);
+    const eq = len.* == n and std.mem.eql(u8, buf[0..n], s[0..n]);
+    @memcpy(buf[0..n], s[0..n]);
+    len.* = n;
+    return eq;
+}
+
+/// O visual deste quadro, a partir das configurações (`mascot_look`, o texto curto das
+/// peças, `mascot_tweaks`, o das posições, tamanhos e formato, `mascot_name`, o nome
+/// dele, e `mascot_file`, o arquivo escolhido) e da cor de destaque do tema. Chamado
+/// pelo app uma vez por quadro; só refaz quando algo mudou. Um arquivo com erro deixa
+/// o visual que estava (como um tema com erro deixa o tema de antes).
+pub fn sync(look_text: []const u8, tweaks_text: []const u8, name_text: []const u8, file: []const u8, accent: d.Rgba) void {
     arquivos.frame();
     if (file.len > 0 or std.mem.indexOf(u8, look_text, "draw=") != null) arquivos.ensure();
     const acc = accent.col(1);
-    if (seen_text_len == look_text.len and std.mem.eql(u8, seen_text[0..look_text.len], look_text) and
-        std.mem.eql(u8, seen_file[0..seen_file_len], file) and seen_gen == arquivos.generation and seen_accent == acc) return;
-    const n = @min(look_text.len, seen_text.len);
-    @memcpy(seen_text[0..n], look_text[0..n]);
-    seen_text_len = n;
-    const fl = @min(file.len, seen_file.len);
-    @memcpy(seen_file[0..fl], file[0..fl]);
-    seen_file_len = fl;
+    // Todos comparados e guardados (sem parar no primeiro diferente).
+    var unchanged = same(&seen_text, &seen_text_len, look_text);
+    unchanged = same(&seen_tweaks, &seen_tweaks_len, tweaks_text) and unchanged;
+    unchanged = same(&seen_name, &seen_name_len, name_text) and unchanged;
+    unchanged = same(&seen_file, &seen_file_len, file) and unchanged;
+    if (unchanged and seen_gen == arquivos.generation and seen_accent == acc) return;
     seen_gen = arquivos.generation;
     seen_accent = acc;
     terminal.accent = accent;
-    terminal.look = resolve(look_text, file, terminal.look);
+    terminal.look = resolve(look_text, tweaks_text, name_text, file, terminal.look);
     // O visual em uso fica com a própria cópia dos desenhos: reler a pasta solta os das
     // entradas, e um arquivo que passou a ter erro mantém o visual de antes (com os
     // desenhos de antes), que não podem sumir junto.
@@ -57,17 +69,23 @@ pub fn sync(look_text: []const u8, file: []const u8, accent: d.Rgba) void {
 /// Os desenhos do visual em uso (ver `sync`).
 var own_drawing: visual.Drawing = .{};
 
-/// O visual pedido: o do arquivo, se houver um escolhido (e sem erro), ou o do texto
-/// curto, com os desenhos do arquivo de onde vierem.
-fn resolve(look_text: []const u8, file: []const u8, before: visual.Look) visual.Look {
+/// O visual pedido: o do arquivo, se houver um escolhido (e sem erro), ou o dos textos
+/// curtos, com os desenhos do arquivo de onde vierem. O nome é o do arquivo, se ele
+/// tiver um; senão, o das configurações.
+fn resolve(look_text: []const u8, tweaks_text: []const u8, name_text: []const u8, file: []const u8, before: visual.Look) visual.Look {
     if (file.len > 0) {
         if (arquivos.find(file)) |e| {
-            if (e.problem == null) return e.look;
+            if (e.problem == null) {
+                var fl = e.look;
+                if (fl.name.len == 0) fl.name.set(name_text);
+                return fl;
+            }
             // Com erro: fica o que estava, se era deste arquivo.
             if (std.mem.eql(u8, before.draw_from.slice(), file) or before.drawing == null) return before;
         }
     }
-    var l = visual.parseCompact(look_text);
+    var l = visual.parseLook(look_text, tweaks_text);
+    l.name.set(name_text);
     if (l.draw_from.len > 0) {
         if (arquivos.find(l.draw_from.slice())) |e| l.drawing = e.drawing;
     }
@@ -81,6 +99,12 @@ fn resolve(look_text: []const u8, file: []const u8, before: visual.Look) visual.
 /// O visual de agora.
 pub fn current() *const visual.Look {
     return &terminal.look;
+}
+
+/// O nome do mascote (Personalizar → Nome, ou o `name` do arquivo em uso); vazio se
+/// ele não tem um.
+pub fn name() []const u8 {
+    return terminal.look.name.slice();
 }
 
 /// Desenhar com outro visual por um instante (as prévias e as miniaturas): troca e

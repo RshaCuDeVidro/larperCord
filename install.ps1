@@ -55,11 +55,10 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     Write-Host 'Downloading the latest version...'
     Invoke-WebRequest "$base/SHA256SUMS" -OutFile "$tmp\SHA256SUMS" -UseBasicParsing
+    # Since 0.6.7 the .exe has SDL3, curl and OpenSSL inside. The DLLs are still in the
+    # release for older versions updating themselves, and they're removed below.
     $files = @{
         'larpercord-windows-x86_64.exe' = 'larpercord.exe'
-        'SDL3.dll' = 'SDL3.dll'
-        'libcurl-x64.dll' = 'libcurl-x64.dll'
-        'libcrypto-3-x64.dll' = 'libcrypto-3-x64.dll'
     }
     $sums = @{}
     foreach ($line in Get-Content "$tmp\SHA256SUMS") {
@@ -77,6 +76,9 @@ try {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     foreach ($asset in $files.Keys) {
         Copy-Item "$tmp\$asset" (Join-Path $dir $files[$asset]) -Force
+    }
+    foreach ($old in 'SDL3.dll', 'libcurl-x64.dll', 'libcrypto-3-x64.dll') {
+        Remove-Item (Join-Path $dir $old) -Force -ErrorAction SilentlyContinue
     }
     $wsh = New-Object -ComObject WScript.Shell
     $link = $wsh.CreateShortcut($shortcut)

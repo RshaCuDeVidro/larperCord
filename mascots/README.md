@@ -38,7 +38,8 @@ That's a whole mascot: three lines, no drawing. Everything below is optional.
 | Node | What it does |
 |---|---|
 | `mascot "name" author=… license=… description=…` | metadata. The name shows in the list of files |
-| `look eyes=… mouth=… hat=… ears=… accessories="…"` | parts from the library (lists below). Leave one out and it stays the default |
+| `name "…"` | the mascot's own name (below) |
+| `look eyes=… mouth=… hat=… ears=… accessories="…" eye-height=… mouth-height=… eye-size=… roundness=…` | parts from the library (lists below), where the eyes and the mouth sit, their sizes and the body shape. Leave one out and it stays the default |
 | `colors palette="…"` or `colors body-top="#…" …` or `colors theme=#true` | the five colors (below) |
 | `eyes { … }` | your own eyes, drawn with shapes. Replaces `look eyes=` |
 | `mouth { … }` | your own mouth, drawn with shapes. Replaces `look mouth=` |
@@ -66,6 +67,52 @@ switch to the holiday hat.
 last one wins.
 
 **Ears** (`look ears=`): `pointy` (default), `round`, `floppy`, `bunny`, `tiny`, `none`.
+
+**Eye and mouth height** (`look eye-height=` and `look mouth-height=`, whole numbers in drawing units): move the
+eyes or the mouth up (positive) or down (negative) on the face, like the **Eye height** and **Mouth height**
+sliders in Customize. `0` (the default) is the usual place. The eyes go from −4 to 10 and the mouth from −4 to
+8; a number outside that is kept at the limit. The eyes never sit closer to the mouth than in the default
+drawing: `eye-height` is at least `mouth-height`, and when it isn't, the eyes go up to the mouth's height.
+Bigger eyes or a bigger mouth, and uneven eyes, need a little more room (up to 6), so the eyes go up a bit more;
+a mouth 3 or 4 steps bigger doesn't go all the way down (open, eating, it would poke out under the chin).
+Glasses, eye bags and the magnifier follow the eyes; the mustache, the mute tape and the gum follow the mouth;
+your own `eyes { … }` and `mouth { … }` drawings move too.
+
+```kdl
+look eyes="dots" mouth="cat" eye-height=4 mouth-height=-2
+```
+
+**More tweaks** (whole numbers in `look`, like the sliders under Customize → **More tweaks**). `0` (the
+default) is the usual drawing, and a number outside the range is kept at the limit:
+
+| Key | Range | What it does |
+|---|---|---|
+| `eye-x` | −6 to 6 | both eyes to the left (−) or to the right (+) |
+| `eye-spacing` | −4 to 6 | the eyes closer together (−) or farther apart (+), each one moving that much |
+| `eye-tilt` | −6 to 6 | one eye higher than the other: + raises the right eye and lowers the left one by half each, − the other way round |
+| `eye-size` | −4 to 5 | smaller or bigger eyes, 7% per step (they grow toward the forehead) |
+| `mouth-x` | −10 to 10 | the mouth to the left or to the right |
+| `mouth-size` | −3 to 4 | a smaller or bigger mouth, 7.5% per step |
+| `ear-size` | −4 to 4 | shorter or taller ears (a little wider too) |
+| `ear-tilt` | −4 to 4 | ears turned inward (−) or outward (+) |
+| `roundness` | −5 to 4 | a squarer (−) or rounder (+) body: the corners go out or in; the sides, the top of the head and the feet stay where they are |
+| `body-width` | −4 to 4 | a slimmer (−) or chubbier (+) body, 4% per step |
+| `blush` | 0 to 6 | how strong the cheeks are. Any number turns the `blush` accessory on (3 is the usual), and `0` takes it off |
+| `right-eye` | `"#RRGGBB"` | a color just for the right eye (two-color eyes): the stroke of ink eyes, the iris of `big`, `cat` and `visor`, the filling of `stars` and `hearts`. `"none"` keeps both eyes the same |
+
+Everything follows: glasses, eye bags, cheeks, freckles and the magnifier go with the eyes; the mustache, the
+mute tape, the gum and the call microphone go with the mouth; the ears, hats, the headset, the band-aid, the
+neckwear, the earring and your own `layer` shapes go with the body. Your own `eyes { … }` and `mouth { … }`
+move and grow like the library ones. The numbers stay inside the face: the tests check every extreme together.
+In Customize you can also drag the eyes or the mouth in the big preview.
+
+```kdl
+look eyes="big" mouth="cat" eye-spacing=3 eye-size=2 mouth-size=-1 roundness=2 body-width=1 right-eye="#FFC23D"
+```
+
+**Name** (`name "Bitinho"`, its own line): the mascot's name, up to 24 letters. It shows when you rest the
+mouse on the corner mascot and under the preview in Customize. With a file in use, its name wins over the one
+typed in Customize.
 
 Every eye and every mouth has a version for each expression (happy, laughing, startled, angry, sad, asleep,
 dizzy, worried), plus blinking, looking around, eating and the error face.

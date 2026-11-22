@@ -22,7 +22,7 @@ const Combinacao = comb.Combinacao;
 pub const Grupo = enum { geral, janela, abas, voz, caixa, vim };
 
 /// Os atalhos que dá para trocar.
-pub const Acao = enum { paleta, paleta_acoes, buscar, configuracoes, caixa_entrada, salvas, proximo_tema, tema_anterior, tela_cheia, proxima_aba, aba_anterior, fechar_aba, proximo_conjunto, mutar, ensurdecer, reiniciar };
+pub const Acao = enum { paleta, paleta_acoes, buscar, configuracoes, caixa_entrada, salvas, proximo_tema, tema_anterior, tela_cheia, proxima_aba, aba_anterior, fechar_aba, proximo_conjunto, mutar, ensurdecer, reiniciar, gravar_audio };
 const n_acoes = @typeInfo(Acao).@"enum".field_names.len;
 
 pub const Atalho = struct {
@@ -55,6 +55,8 @@ pub const lista = [_]Atalho{
     .{ .grupo = .geral, .pt = "Caixa de entrada", .en = "Inbox", .teclas = "Ctrl+I", .acao = .caixa_entrada },
     .{ .grupo = .geral, .pt = "Mensagens salvas", .en = "Saved messages", .teclas = "Ctrl+Shift+S", .acao = .salvas },
     .{ .grupo = .geral, .pt = "Copiar o texto selecionado nas mensagens", .en = "Copy the text selected in messages", .teclas = "Ctrl+C" },
+    .{ .grupo = .geral, .pt = "Tocar ou pausar o áudio sob o mouse", .en = "Play or pause the audio under the mouse", .teclas = "Space", .teclas_pt = "Espaço" },
+    .{ .grupo = .geral, .pt = "Voltar ou avançar 5 s no áudio sob o mouse", .en = "Skip back or forward 5 s in the audio under the mouse", .teclas = "← / →" },
     .{ .grupo = .janela, .pt = "Próximo tema", .en = "Next theme", .teclas = "F2 / Ctrl+T", .acao = .proximo_tema },
     .{ .grupo = .janela, .pt = "Tema anterior", .en = "Previous theme", .teclas = "Shift+F2 / Ctrl+Shift+T", .acao = .tema_anterior },
     .{ .grupo = .janela, .pt = "Aumentar ou diminuir a interface", .en = "Make the interface bigger or smaller", .teclas = "Ctrl + / Ctrl -" },
@@ -75,6 +77,7 @@ pub const lista = [_]Atalho{
     .{ .grupo = .caixa, .pt = "Cancelar resposta ou edição", .en = "Cancel a reply or edit", .teclas = "Esc" },
     .{ .grupo = .caixa, .pt = "Escolher na lista de @, #, :ab ou /", .en = "Pick from the @, #, :ab or / list", .teclas = "Tab / Enter" },
     .{ .grupo = .caixa, .pt = "Colar uma imagem copiada", .en = "Paste a copied image", .teclas = "Ctrl+V" },
+    .{ .grupo = .caixa, .pt = "Gravar áudio (de novo: enviar)", .en = "Record audio (again: send)", .teclas = "Ctrl+Shift+R", .acao = .gravar_audio },
     .{ .grupo = .vim, .pt = "Rolar para baixo / para cima", .en = "Scroll down / up", .teclas = "j / k" },
     .{ .grupo = .vim, .pt = "Topo / fim da conversa", .en = "Top / bottom of the conversation", .teclas = "gg / G" },
     .{ .grupo = .vim, .pt = "Meia página para baixo / para cima", .en = "Half page down / up", .teclas = "Ctrl+d / Ctrl+u" },

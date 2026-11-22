@@ -7,7 +7,7 @@ pub const Entry = struct {
 };
 
 pub fn get(i: usize) Entry {
-    const line = blob[offsets[i] .. offsets[i + 1] - 1];
+    const line = texto.get()[offsets[i] .. offsets[i + 1] - 1];
     var it = std.mem.splitScalar(u8, line, '|');
     const glyph = it.next() orelse "";
     const code = it.next() orelse "";
@@ -18,7 +18,7 @@ pub fn get(i: usize) Entry {
 
 /// Só o emoji da linha i (o desenho da grade não precisa do resto).
 pub fn glyphOf(i: usize) []const u8 {
-    const line = blob[offsets[i]..offsets[i + 1]];
+    const line = texto.get()[offsets[i]..offsets[i + 1]];
     return line[0 .. std.mem.indexOfScalar(u8, line, '|') orelse 0];
 }
 
@@ -36,7 +36,7 @@ pub fn byCode(code: []const u8) ?u16 {
     if (code.len == 0) return null;
     var i: u16 = 0;
     while (i < count) : (i += 1) {
-        const line = blob[offsets[i]..offsets[i + 1]];
+        const line = texto.get()[offsets[i]..offsets[i + 1]];
         const bar = std.mem.indexOfScalar(u8, line, '|') orelse continue;
         const rest = line[bar + 1..];
         if (rest.len > code.len and rest[code.len] == '|' and std.mem.eql(u8, rest[0..code.len], code)) return i;

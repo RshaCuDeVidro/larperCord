@@ -61,6 +61,7 @@ const att_video: u8 = 4;
 const att_spoiler: u8 = 8;
 const att_sensitive: u8 = 16;
 const att_voice: u8 = 32;
+const att_audio: u8 = 64;
 
 // --- Escrita ------------------------------------------------------------------
 
@@ -132,6 +133,7 @@ pub const Writer = struct {
             if (a.spoiler) f |= att_spoiler;
             if (a.sensitive) f |= att_sensitive;
             if (a.voice) f |= att_voice;
+            if (a.audio) f |= att_audio;
             try w.out.append(w.gpa, f);
             try w.str(a.still);
             try w.str(a.link);
@@ -245,6 +247,7 @@ pub fn decode(arena: std.mem.Allocator, bytes: []const u8) !Decoded {
                 a.spoiler = f & att_spoiler != 0;
                 a.sensitive = f & att_sensitive != 0;
                 a.voice = f & att_voice != 0;
+                a.audio = f & att_audio != 0;
                 a.still = try r.str(arena);
                 a.link = try r.str(arena);
                 if (a.voice) {
@@ -318,6 +321,7 @@ test "cache de mensagens vai e volta pelo formato" {
         .{ .url = "https://cdn/x.png", .filename = "x.png", .width = 10, .height = 20, .size = 99, .embed = true },
         .{ .url = "https://cdn/SPOILER_y.png", .filename = "SPOILER_y.png", .width = 5, .height = 5, .spoiler = true, .sensitive = true },
         .{ .url = "https://cdn/voice-message.ogg", .filename = "voice-message.ogg", .voice = true, .voice_ms = 4321, .wave = wave },
+        .{ .url = "https://cdn/gravacao", .filename = "gravacao", .size = 4_000_000, .audio = true },
     };
     const m1: types.Message = .{ .id = 100, .channel = 77, .author = 5, .timestamp = 1700000000, .content = "oi **tudo** bem?", .edited = true, .attachments = &att };
     var r = types.Reaction.init("👍");
@@ -345,6 +349,8 @@ test "cache de mensagens vai e volta pelo formato" {
     try std.testing.expect(e1.msg.attachments[2].voice);
     try std.testing.expectEqual(@as(u32, 4321), e1.msg.attachments[2].voice_ms);
     try std.testing.expectEqual(@as(u8, 200), e1.msg.attachments[2].wave[3]);
+    // Áudio pelo tipo (sem extensão): o player continua sabendo depois de reabrir.
+    try std.testing.expect(e1.msg.attachments[3].audio and !e1.msg.attachments[2].audio);
     try std.testing.expectEqual(@as(u8, 1), e1.n_reactions);
     try std.testing.expectEqualStrings("👍", e1.reactions[0].text());
     try std.testing.expect(e1.reactions[0].me);

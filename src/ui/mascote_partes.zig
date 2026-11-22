@@ -25,8 +25,60 @@ const gold = Rgba.hex(0xF6C344);
 const gold_dark = Rgba.hex(0xC98A17);
 
 /// Onde ficam os olhos e a boca do ">_".
-pub const eye_l = [2]f32{ 40, 50 };
-pub const eye_r = [2]f32{ 84, 55 };
+pub const eye_l = v.eye_l;
+pub const eye_r = v.eye_r;
+
+/// O visual de quem não diz qual (os ajustes de sempre).
+const plain_look: v.Look = .{};
+
+/// Onde um olho anda no espaço do desenho (de SVG para SVG), com o meio em `ctr`
+/// (`side` -1 o esquerdo, 1 o direito, 0 o do ciclope e o visor): o par para os lados,
+/// o espaço entre eles, o desalinhado, a altura, o formato do corpo e o tamanho (em
+/// volta de um ponto um pouco abaixo do meio). Com os ajustes de sempre, a identidade
+/// exata: o visual padrão sai igual, bit a bit.
+pub fn eyeLocal(l: *const v.Look, ctr: [2]f32, side: f32) Af {
+    const sh = l.eyeShift(ctr, side);
+    const s = l.eyeScale();
+    var t: Af = .{};
+    if (sh[0] != 0 or sh[1] != 0) t = Af.move(sh[0], sh[1]);
+    if (s != 1) t = t.around(ctr[0], ctr[1] + v.eye_anchor_dy, Af.scale(s, s));
+    return t;
+}
+
+/// A boca no espaço do desenho: para os lados, a altura, o formato e o tamanho (em
+/// volta do meio dela). Com os ajustes de sempre, a identidade exata.
+pub fn mouthLocal(l: *const v.Look) Af {
+    const sh = l.mouthShift();
+    const s = l.mouthScale();
+    var t: Af = .{};
+    if (sh[0] != 0 or sh[1] != 0) t = Af.move(sh[0], sh[1]);
+    if (s != 1) t = t.around(v.mouth_ctr[0], v.mouth_ctr[1], Af.scale(s, s));
+    return t;
+}
+
+/// `m` com o olho de `eyeLocal` (o mesmo `m`, sem nada mudado).
+pub fn eyeAt(m: Af, l: *const v.Look, ctr: [2]f32, side: f32) Af {
+    const t = eyeLocal(l, ctr, side);
+    return if (isIdentity(t)) m else m.mul(t);
+}
+pub fn mouthAt(m: Af, l: *const v.Look) Af {
+    const t = mouthLocal(l);
+    return if (isIdentity(t)) m else m.mul(t);
+}
+/// `m` com o que está preso ao corpo num ponto (o curativo, a gota, as conchas do fone):
+/// anda com o formato dele.
+pub fn bodyAt(m: Af, l: *const v.Look, x: f32, y: f32) Af {
+    const bd = l.bodyDelta(x, y);
+    return if (bd[0] == 0 and bd[1] == 0) m else m.mul(Af.move(bd[0], bd[1]));
+}
+fn isIdentity(t: Af) bool {
+    return t.a == 1 and t.b == 0 and t.c == 0 and t.d == 1 and t.e == 0 and t.f == 0;
+}
+/// Um ponto do desenho levado por `t` (de SVG para SVG).
+fn apSvg(t: Af, q: [2]f32) [2]f32 {
+    const o = t.ap(q[0], q[1]);
+    return .{ o.x, o.y };
+}
 /// A inclinação do rosto (o olho direito fica mais baixo).
 const tilt: f32 = 0.1131;
 
@@ -45,6 +97,13 @@ pub const Brush = struct {
     colors: v.Colors = v.brand_colors,
     /// Relógio (a hélice gira, a auréola flutua).
     t: f32 = 0,
+    /// O visual (os ajustes de Personalizar: onde ficam olhos e boca, o formato do corpo).
+    lk: *const v.Look = &plain_look,
+    /// Os pontos seguem o formato do corpo um a um (o que veste o corpo: cachecol,
+    /// bandana, gravatinha, brinco, as camadas de um arquivo).
+    warp: bool = false,
+    /// O olho direito de outra cor: o recheio das estrelas e dos corações.
+    eye_fill: ?Rgba = null,
 
     pub fn at(b: Brush, m: Af) Brush {
         var o = b;
@@ -53,6 +112,12 @@ pub const Brush = struct {
     }
     pub fn k(b: Brush) f32 {
         return b.m.k();
+    }
+    /// O mesmo pincel, seguindo o formato do corpo ponto a ponto.
+    pub fn warped(b: Brush) Brush {
+        var o = b;
+        o.warp = true;
+        return o;
     }
     pub fn pt(b: Brush, x: f32, y: f32) c.ImVec2 {
         return b.m.ap(x, y);
@@ -90,6 +155,13 @@ const max_pts = 160;
 
 fn screen(b: Brush, src: []const [2]f32, out: []c.ImVec2) usize {
     const n = @min(src.len, out.len);
+    if (b.warp and !b.lk.plainBody()) {
+        for (src[0..n], 0..) |q, i| {
+            const w = b.lk.bodyAp(q[0], q[1]);
+            out[i] = b.m.ap(w[0], w[1]);
+        }
+        return n;
+    }
     for (src[0..n], 0..) |q, i| out[i] = b.m.ap(q[0], q[1]);
     return n;
 }
@@ -286,7 +358,8 @@ fn eyeHalf(style: v.Eyes) f32 {
 
 // --- Olhos -------------------------------------------------------------------------------
 
-/// Os olhos de um estilo (menos o ">_", que é o de mascote_terminal).
+/// Os olhos de um estilo (menos o ">_", que é o de mascote_terminal). Cada olho anda
+/// e cresce com os ajustes do visual (`eyeLocal`); o direito pode ter outra cor.
 pub fn eyes(b: Brush, style: v.Eyes, in: FaceIn) void {
     const e = v.exprOf(in.face);
     const open = e.open * (1 - std.math.clamp(in.blink * 1.15, 0, 1));
@@ -294,13 +367,17 @@ pub fn eyes(b: Brush, style: v.Eyes, in: FaceIn) void {
     if (reveal <= 0.01) return;
     switch (style) {
         .visor => return visor(b, e, open, in),
-        .cyclops => return cyclops(b, e, open, in),
+        .cyclops => return cyclops(b.at(eyeAt(b.m, b.lk, cyclops_ctr, 0)), e, open, in),
         else => {},
     }
     const ew: f32 = if (b.small) 7.6 else 5.4;
-    for ([_][2]f32{ eye_l, eye_r }, [_]f32{ -1, 1 }) |ctr, side| {
+    // O pincel de cada olho, sem a cor própria (as sobrancelhas e a lágrima usam).
+    var sides: [2]Brush = undefined;
+    for ([_][2]f32{ eye_l, eye_r }, [_]f32{ -1, 1 }, 0..) |ctr, side, i| {
+        sides[i] = b.at(eyeAt(b.m, b.lk, ctr, side));
+        const ob = if (side > 0) rightColored(sides[i], style) else sides[i];
         const s = contas.outBack(std.math.clamp(reveal, 0, 1), 2);
-        const eb = if (reveal < 1) b.at(b.m.around(ctr[0], ctr[1], Af.scale(s, s))) else b;
+        const eb = if (reveal < 1) ob.at(ob.m.around(ctr[0], ctr[1], Af.scale(s, s))) else ob;
         if (in.xeyes) {
             xEye(eb, ctr, 6.5, ew * 0.85, eb.ink());
             continue;
@@ -329,8 +406,30 @@ pub fn eyes(b: Brush, style: v.Eyes, in: FaceIn) void {
         if (o < 0.2) closed(eb, st, ctr, side, arc, ew) else openEye(eb, st, ctr, side, o, e.wide, in.look);
     }
     if (in.xeyes or e.spiral) return;
-    if (e.brow != 0) brows(b, style, e.brow, ew);
-    if (e.tear) tear(b, eye_l[0] - 6.5, eye_l[1] + eyeHalf(style) * 0.5 + 3.5);
+    if (e.brow != 0) brows(sides, style, e.brow, ew);
+    if (e.tear) tear(sides[0], eye_l[0] - 6.5, eye_l[1] + eyeHalf(style) * 0.5 + 3.5);
+}
+
+/// O meio do olho do ciclope.
+const cyclops_ctr = [2]f32{ 62, 51.5 };
+
+/// O olho direito de outra cor (Personalizar → Olhos de duas cores): o traço dos olhos
+/// de tinta, a íris dos que têm íris e o recheio das estrelas e dos corações. Sem a cor
+/// própria, o mesmo pincel.
+pub fn rightColored(b: Brush, style: v.Eyes) Brush {
+    const col = b.lk.right_eye orelse return b;
+    var o = b;
+    switch (style) {
+        .big, .cat, .visor => o.colors[@intFromEnum(v.Role.accent)] = col,
+        .stars, .hearts => o.eye_fill = col,
+        else => o.colors[@intFromEnum(v.Role.ink)] = col,
+    }
+    return o;
+}
+
+/// `b` com `t` (de `eyeLocal`) por cima, ou o mesmo `b`.
+fn withLocal(b: Brush, t: Af) Brush {
+    return if (isIdentity(t)) b else b.at(b.m.mul(t));
 }
 
 fn xEye(b: Brush, ctr: [2]f32, r: f32, wd: f32, col: u32) void {
@@ -483,7 +582,7 @@ fn openEye(b: Brush, style: v.Eyes, ctr: [2]f32, side: f32, o: f32, wide: f32, l
                 const rr = if (i % 2 == 0) r_out else r_in;
                 st[i] = .{ x + lx * 0.6 + @cos(a) * rr, y + ly * 0.5 + @sin(a) * rr * o };
             }
-            fill(b, &st, b.paint(Rgba.hex(0xFFD84A)));
+            fill(b, &st, b.paint(b.eye_fill orelse Rgba.hex(0xFFD84A)));
             outline(b, &st, if (b.small) 1.8 else 1.2, col);
             if (!b.small and o > 0.6) circle(b, x + lx * 0.6 - 1.6, y + ly * 0.5 - 1.8 * o, 1.05, glint);
         },
@@ -497,7 +596,7 @@ fn openEye(b: Brush, style: v.Eyes, ctr: [2]f32, side: f32, o: f32, wide: f32, l
                 const hy = -(13 * @cos(t) - 5 * @cos(2 * t) - 2 * @cos(3 * t) - @cos(4 * t));
                 hp[i] = .{ x + lx * 0.6 + hx * s, y + 0.6 + ly * 0.5 + hy * s * o };
             }
-            fill(b, &hp, b.paint(Rgba.hex(0xFF4D8D)));
+            fill(b, &hp, b.paint(b.eye_fill orelse Rgba.hex(0xFF4D8D)));
             outline(b, &hp, if (b.small) 1.8 else 1.1, col);
             if (!b.small and o > 0.6) circle(b, x + lx * 0.6 - 2.6, y + ly * 0.5 - 2.4 * o, 1.15, glint);
         },
@@ -536,10 +635,11 @@ fn openEye(b: Brush, style: v.Eyes, ctr: [2]f32, side: f32, o: f32, wide: f32, l
     }
 }
 
-fn brows(b: Brush, style: v.Eyes, brow: f32, ew: f32) void {
-    const col = b.ink();
+/// As sobrancelhas, cada uma com o seu olho.
+fn brows(sides: [2]Brush, style: v.Eyes, brow: f32, ew: f32) void {
     const lift = eyeHalf(style) + 4;
-    for ([_][2]f32{ eye_l, eye_r }, [_]f32{ -1, 1 }) |ctr, side| {
+    for ([_][2]f32{ eye_l, eye_r }, [_]f32{ -1, 1 }, sides) |ctr, side, b| {
+        const col = b.ink();
         const top = ctr[1] - lift;
         // Bravas: a ponta de dentro desce; tristes: a de dentro sobe.
         const inner_dy: f32 = if (brow < 0) 2.6 else -2.6;
@@ -565,19 +665,27 @@ fn tear(b: Brush, x: f32, y: f32) void {
 
 /// O visor de robô: uma faixa escura atravessando os dois olhos, com as luzes dentro.
 fn visor(b: Brush, e: v.Expr, open: f32, in: FaceIn) void {
-    const ctr: [2]f32 = .{ 62, 52.5 };
-    const half_len: f32 = 37;
-    const half_h: f32 = if (b.small) 8.6 else 7.4;
+    // As luzes ficam onde os olhos foram (lugar e tamanho); a faixa vai de uma à outra.
+    const tl = eyeLocal(b.lk, eye_l, -1);
+    const tr = eyeLocal(b.lk, eye_r, 1);
+    const plain = isIdentity(tl) and isIdentity(tr);
+    const pl = apSvg(tl, eye_l);
+    const pr = apSvg(tr, eye_r);
+    const es = b.lk.eyeScale();
+    const ctr: [2]f32 = if (plain) .{ 62, 52.5 } else .{ (pl[0] + pr[0]) / 2, (pl[1] + pr[1]) / 2 };
+    const ang: f32 = if (plain) tilt else tilt + std.math.atan2(pr[1] - pl[1], pr[0] - pl[0]) - std.math.atan2(eye_r[1] - eye_l[1], eye_r[0] - eye_l[0]);
+    const half_len: f32 = if (plain) 37 else 37 + (std.math.hypot(pr[0] - pl[0], pr[1] - pl[1]) - std.math.hypot(eye_r[0] - eye_l[0], eye_r[1] - eye_l[1])) / 2;
+    const half_h: f32 = (if (b.small) @as(f32, 8.6) else 7.4) * es;
     var pts: [30][2]f32 = undefined;
     var n: usize = 0;
     for (0..15) |i| {
         const a = -pi / 2.0 + pi * @as(f32, @floatFromInt(i)) / 14.0;
-        pts[n] = rot2(.{ ctr[0] + half_len - half_h + @cos(a) * half_h, ctr[1] + @sin(a) * half_h }, ctr, tilt);
+        pts[n] = rot2(.{ ctr[0] + half_len - half_h + @cos(a) * half_h, ctr[1] + @sin(a) * half_h }, ctr, ang);
         n += 1;
     }
     for (0..15) |i| {
         const a = pi / 2.0 + pi * @as(f32, @floatFromInt(i)) / 14.0;
-        pts[n] = rot2(.{ ctr[0] - half_len + half_h + @cos(a) * half_h, ctr[1] + @sin(a) * half_h }, ctr, tilt);
+        pts[n] = rot2(.{ ctr[0] - half_len + half_h + @cos(a) * half_h, ctr[1] + @sin(a) * half_h }, ctr, ang);
         n += 1;
     }
     const s = contas.outBack(std.math.clamp(in.reveal_eyes, 0, 1), 1.6);
@@ -585,22 +693,26 @@ fn visor(b: Brush, e: v.Expr, open: f32, in: FaceIn) void {
     fill(vb, &pts, vb.paint(Rgba.hex(0x140F1E).alpha(0.97)));
     outline(vb, &pts, 1.2, vb.inkA(0.55));
     // O brilho do vidro em cima.
-    line(vb, &.{ rot2(.{ ctr[0] - half_len + 8, ctr[1] - half_h + 2.2 }, ctr, tilt), rot2(.{ ctr[0] + 4, ctr[1] - half_h + 2.2 }, ctr, tilt) }, 1.2, vb.paint(white.alpha(0.18)));
+    line(vb, &.{ rot2(.{ ctr[0] - half_len + 8, ctr[1] - half_h + 2.2 }, ctr, ang), rot2(.{ ctr[0] + 4, ctr[1] - half_h + 2.2 }, ctr, ang) }, 1.2, vb.paint(white.alpha(0.18)));
     const angry = e.brow < 0;
-    const glow = if (angry) mixRgb(vb.role(.accent), Rgba.hex(0xFF4A5A), 0.7) else vb.role(.accent);
-    const gc = vb.paint(glow);
-    const halo_c = vb.paint(glow.alpha(0.28));
     const lx = in.look[0] * 3;
     const ly = in.look[1] * 1.2;
-    for ([_][2]f32{ eye_l, eye_r }, [_]f32{ -1, 1 }) |ec, side| {
+    for ([_][2]f32{ pl, pr }, [_]f32{ -1, 1 }) |ec, side| {
+        // A luz da direita com a cor própria, se tiver.
+        const own = if (side > 0) rightColored(vb, .visor) else vb;
+        const glow = if (angry) mixRgb(own.role(.accent), Rgba.hex(0xFF4A5A), 0.7) else own.role(.accent);
+        const gc = vb.paint(glow);
+        const halo_c = vb.paint(glow.alpha(0.28));
         const p: [2]f32 = .{ ec[0] + lx, ec[1] - 0.3 + ly };
+        // Olhos maiores, luzes maiores (em volta de cada uma).
+        const lb = if (es != 1) vb.at(vb.m.around(p[0], p[1], Af.scale(es, es))) else vb;
         if (in.xeyes) {
-            xEye(vb, p, 3.6, 1.9, gc);
+            xEye(lb, p, 3.6, 1.9, gc);
         } else if (e.spiral) {
-            spiral(vb, p, 4.2, 1.5, gc);
+            spiral(lb, p, 4.2, 1.5, gc);
         } else if (e.squeeze) {
             const q = if (side < 0) [3][2]f32{ .{ p[0] - 4, p[1] - 3.6 }, .{ p[0] + 3.6, p[1] }, .{ p[0] - 4, p[1] + 3.6 } } else [3][2]f32{ .{ p[0] + 4, p[1] - 3.6 }, .{ p[0] - 3.6, p[1] }, .{ p[0] + 4, p[1] + 3.6 } };
-            line(vb, &q, 1.9, gc);
+            line(lb, &q, 1.9, gc);
         } else if (open < 0.2 or (e.arc != 0 and open < 0.5)) {
             const arc = e.arc;
             var cp: [11][2]f32 = undefined;
@@ -610,17 +722,17 @@ fn visor(b: Brush, e: v.Expr, open: f32, in: FaceIn) void {
                 quad(.{ p[0] - 4.2, p[1] - 1 }, .{ p[0], p[1] + 3.6 }, .{ p[0] + 4.2, p[1] - 1 }, 10, &cp)
             else
                 quad(.{ p[0] - 4.6, p[1] + 0.6 }, .{ p[0], p[1] + 0.6 }, .{ p[0] + 4.6, p[1] + 0.6 }, 10, &cp);
-            line(vb, cp[0..m], 1.8, if (arc == 0) vb.paint(glow.alpha(0.55)) else gc);
+            line(lb, cp[0..m], 1.8, if (arc == 0) vb.paint(glow.alpha(0.55)) else gc);
         } else {
             const rx = 4.8 * (1 + 0.25 * e.wide);
             const ry = (2.3 + 1.6 * e.wide) * open;
-            const rot: f32 = tilt + (if (e.brow < 0) side * -0.32 else if (e.brow > 0) side * 0.3 else 0);
-            ellipse(vb, p[0], p[1], rx + 2.2, ry + 2, rot, halo_c);
-            ellipse(vb, p[0], p[1], rx, ry, rot, gc);
-            ellipse(vb, p[0] - rx * 0.3, p[1] - ry * 0.3, rx * 0.35, ry * 0.3, rot, vb.paint(white.alpha(0.55)));
+            const rot: f32 = ang + (if (e.brow < 0) side * -0.32 else if (e.brow > 0) side * 0.3 else 0);
+            ellipse(lb, p[0], p[1], rx + 2.2, ry + 2, rot, halo_c);
+            ellipse(lb, p[0], p[1], rx, ry, rot, gc);
+            ellipse(lb, p[0] - rx * 0.3, p[1] - ry * 0.3, rx * 0.35, ry * 0.3, rot, vb.paint(white.alpha(0.55)));
         }
     }
-    if (e.tear and !in.xeyes) tear(b, 27, 60);
+    if (e.tear and !in.xeyes) tear(withLocal(b, tl), 27, 60);
 }
 
 /// Um olho só, grande, no meio do rosto.
@@ -991,34 +1103,63 @@ fn note(b: Brush, x: f32, y: f32) void {
 // --- Acessórios -------------------------------------------------------------------------
 
 /// Os acessórios do rosto (bochechas, sardas, bigode, curativo e os óculos) em `face`,
-/// e os do corpo (pescoço e brinco) em `body`.
+/// e os do corpo (pescoço e brinco) em `body`, que seguem o formato dele ponto a ponto.
+/// Os óculos acompanham cada olho (lugar e tamanho), as bochechas e as sardas ficam
+/// embaixo dos olhos, e o bigode vai com a boca.
 pub fn accessories(body: Brush, face: Brush, l: *const v.Look, show_face: bool) void {
     if (l.acc == 0) return;
     if (show_face) {
+        const cheeks = [2][2]f32{ .{ 28.5, 63.5 }, .{ 98, 68 } };
         if (l.has(.blush)) {
             const bc = Rgba.hex(0xFF6FAE);
-            for ([_][2]f32{ .{ 28.5, 63.5 }, .{ 98, 68 } }) |q| {
-                ellipse(face, q[0], q[1], 8.6, 5, 0, face.paint(bc.alpha(0.16)));
-                ellipse(face, q[0], q[1], 6.6, 3.6, 0, face.paint(bc.alpha(0.4)));
+            const k = l.blushK();
+            for (cheeks, [_]f32{ -1, 1 }) |q, side| {
+                const cb = face.at(cheekAt(face.m, l, q, side));
+                ellipse(cb, q[0], q[1], 8.6, 5, 0, cb.paint(bc.alpha(0.16 * k)));
+                ellipse(cb, q[0], q[1], 6.6, 3.6, 0, cb.paint(bc.alpha(@min(0.4 * k, 0.95))));
             }
         }
         if (l.has(.freckles)) {
             const fr: f32 = if (face.small) 1.9 else 1.3;
-            for ([_][2]f32{ .{ 25, 61.4 }, .{ 29.4, 64.2 }, .{ 33.4, 61 }, .{ 27.8, 58.6 }, .{ 94, 65.8 }, .{ 98, 68.6 }, .{ 102, 65.4 }, .{ 99.4, 62.6 } }) |q| circle(face, q[0], q[1], fr, face.inkA(0.5));
+            for ([_][2]f32{ .{ 25, 61.4 }, .{ 29.4, 64.2 }, .{ 33.4, 61 }, .{ 27.8, 58.6 }, .{ 94, 65.8 }, .{ 98, 68.6 }, .{ 102, 65.4 }, .{ 99.4, 62.6 } }, 0..) |q, i| {
+                const side: f32 = if (i < 4) -1 else 1;
+                circle(face.at(cheekAt(face.m, l, cheeks[i / 4], side)), q[0], q[1], fr, face.inkA(0.5));
+            }
         }
-        if (l.has(.bandaid)) bandaid(face, 101, 37.5);
-        if (l.has(.mustache)) mustache(face);
+        if (l.has(.bandaid)) bandaid(face.at(bodyAt(face.m, l, 101, 37.5)), 101, 37.5);
+        if (l.has(.mustache)) mustache(face.at(mouthAt(face.m, l)));
         var spots: [2][2]f32 = undefined;
         const ns = eyeSpots(l.eyes, &spots);
-        if (l.has(.glasses)) glasses(face, spots[0..ns]);
-        if (l.has(.shades)) shades(face, spots[0..ns]);
-        if (l.has(.monocle)) monocle(face, spots[ns - 1]);
-        if (l.has(.eyepatch)) eyepatch(face, spots[0]);
+        var lt: [2]Af = undefined;
+        for (0..ns) |i| lt[i] = eyeLocal(l, spots[i], if (ns == 1) 0 else if (i == 0) -1 else 1);
+        if (l.has(.glasses)) glasses(face, spots[0..ns], lt[0..ns]);
+        if (l.has(.shades)) shades(face, spots[0..ns], lt[0..ns]);
+        if (l.has(.monocle)) monocle(withLocal(face, lt[ns - 1]), spots[ns - 1]);
+        if (l.has(.eyepatch)) eyepatch(face, spots[0], lt[0]);
     }
-    if (l.has(.earring)) earring(body);
-    if (l.has(.scarf)) scarf(body);
-    if (l.has(.bowtie)) bowtie(body);
-    if (l.has(.bandana)) bandana(body);
+    const wb = body.warped();
+    if (l.has(.earring)) earring(wb);
+    if (l.has(.scarf)) scarf(wb);
+    if (l.has(.bowtie)) bowtie(wb);
+    if (l.has(.bandana)) bandana(wb);
+}
+
+/// As bochechas (e as sardas) embaixo de cada olho: andam com ele (sem crescer) e com o
+/// formato do corpo.
+fn cheekAt(m: Af, l: *const v.Look, q: [2]f32, side: f32) Af {
+    const sh = l.eyeShift(q, side);
+    return if (sh[0] == 0 and sh[1] == 0) m else m.mul(Af.move(sh[0], sh[1]));
+}
+
+/// Uma haste (dos óculos, do tapa-olho): da lente, levada pelo olho (`t`), até o lado
+/// da cabeça (`end`, com o formato do corpo), na altura que o olho levou e nunca para
+/// dentro da lente.
+fn temple(l: *const v.Look, t: Af, start: [2]f32, end: [2]f32, side: f32) [2][2]f32 {
+    const a = apSvg(t, start);
+    const ey = apSvg(t, .{ start[0], end[1] })[1];
+    const ex0 = l.bodyAp(end[0], end[1])[0];
+    const ex = if (side < 0) @min(ex0, a[0] - 2) else @max(ex0, a[0] + 2);
+    return .{ a, .{ ex, ey } };
 }
 
 fn bandaid(b: Brush, x: f32, y: f32) void {
@@ -1049,49 +1190,63 @@ fn mustache(b: Brush) void {
     circle(b, 63.5, 64.2, 2.6, col);
 }
 
-fn glasses(b: Brush, spots: []const [2]f32) void {
+fn glasses(b: Brush, spots: []const [2]f32, lt: []const Af) void {
     const frame = b.ink();
     const wd: f32 = if (b.small) 3 else 2.1;
     const glare = b.paint(white.alpha(0.42));
     const lens = b.paint(white.alpha(0.1));
     if (spots.len == 1) {
         const p = spots[0];
-        circle(b, p[0], p[1], 15, lens);
-        ring(b, p[0], p[1], 15, 15, 0, wd, frame);
-        line(b, &.{ .{ p[0] - 15, p[1] - 1 }, .{ 12, p[1] - 5 } }, wd, frame);
-        line(b, &.{ .{ p[0] + 15, p[1] + 1 }, .{ 114, p[1] - 3 } }, wd, frame);
-        line(b, &.{ .{ p[0] - 8, p[1] - 7 }, .{ p[0] - 3, p[1] - 11 } }, 1.4, glare);
+        const lb = withLocal(b, lt[0]);
+        circle(lb, p[0], p[1], 15, lens);
+        ring(lb, p[0], p[1], 15, 15, 0, wd, frame);
+        const t1 = temple(b.lk, lt[0], .{ p[0] - 15, p[1] - 1 }, .{ 12, p[1] - 5 }, -1);
+        const t2 = temple(b.lk, lt[0], .{ p[0] + 15, p[1] + 1 }, .{ 114, p[1] - 3 }, 1);
+        line(b, &t1, wd, frame);
+        line(b, &t2, wd, frame);
+        line(lb, &.{ .{ p[0] - 8, p[1] - 7 }, .{ p[0] - 3, p[1] - 11 } }, 1.4, glare);
         return;
     }
     const l = spots[0];
     const r = spots[1];
-    for ([_][2]f32{ .{ l[0], l[1] + 1 }, .{ r[0], r[1] + 1 } }) |p| {
-        circle(b, p[0], p[1], 10.6, lens);
-        ring(b, p[0], p[1], 10.6, 10.6, 0, wd, frame);
-        line(b, &.{ .{ p[0] - 6.2, p[1] - 4.4 }, .{ p[0] - 2.6, p[1] - 7.4 } }, 1.3, glare);
+    for ([_][2]f32{ .{ l[0], l[1] + 1 }, .{ r[0], r[1] + 1 } }, 0..) |p, i| {
+        const lb = withLocal(b, lt[i]);
+        circle(lb, p[0], p[1], 10.6, lens);
+        ring(lb, p[0], p[1], 10.6, 10.6, 0, wd, frame);
+        line(lb, &.{ .{ p[0] - 6.2, p[1] - 4.4 }, .{ p[0] - 2.6, p[1] - 7.4 } }, 1.3, glare);
     }
+    // A ponte, de uma lente à outra (o meio anda junto com elas).
+    const a0 = [2]f32{ l[0] + 10.4, l[1] + 0.6 };
+    const z0 = [2]f32{ r[0] - 10.4, r[1] - 0.2 };
+    const a1 = apSvg(lt[0], a0);
+    const z1 = apSvg(lt[1], z0);
+    const mid: [2]f32 = .{ 62 + ((a1[0] - a0[0]) + (z1[0] - z0[0])) / 2, l[1] - 3 + ((a1[1] - a0[1]) + (z1[1] - z0[1])) / 2 };
     var br: [9][2]f32 = undefined;
-    const n = quad(.{ l[0] + 10.4, l[1] + 0.6 }, .{ 62, l[1] - 3 }, .{ r[0] - 10.4, r[1] - 0.2 }, 8, &br);
+    const n = quad(a1, mid, z1, 8, &br);
     line(b, br[0..n], wd, frame);
-    line(b, &.{ .{ l[0] - 10.6, l[1] }, .{ 16, l[1] - 3.4 } }, wd, frame);
-    line(b, &.{ .{ r[0] + 10.6, r[1] }, .{ 112, r[1] - 3.4 } }, wd, frame);
+    const t1 = temple(b.lk, lt[0], .{ l[0] - 10.6, l[1] }, .{ 16, l[1] - 3.4 }, -1);
+    const t2 = temple(b.lk, lt[1], .{ r[0] + 10.6, r[1] }, .{ 112, r[1] - 3.4 }, 1);
+    line(b, &t1, wd, frame);
+    line(b, &t2, wd, frame);
 }
 
-fn shades(b: Brush, spots: []const [2]f32) void {
+fn shades(b: Brush, spots: []const [2]f32, lt: []const Af) void {
     const frame = b.ink();
     const lens_c = b.paint(Rgba.hex(0x140F1E).alpha(0.95));
     const glare = b.paint(white.alpha(0.3));
     const wd: f32 = if (b.small) 2.4 else 1.6;
     if (spots.len == 1) {
         const p = spots[0];
+        const lb = withLocal(b, lt[0]);
         var pts: [24][2]f32 = undefined;
         const n = roundRect(p[0] - 30, p[1] - 8, 60, 16, 7, tilt * 0.6, &pts);
-        fill(b, pts[0..n], lens_c);
-        outline(b, pts[0..n], wd, frame);
-        line(b, &.{ .{ p[0] - 20, p[1] + 4 }, .{ p[0] - 13, p[1] - 5 } }, 1.6, glare);
+        fill(lb, pts[0..n], lens_c);
+        outline(lb, pts[0..n], wd, frame);
+        line(lb, &.{ .{ p[0] - 20, p[1] + 4 }, .{ p[0] - 13, p[1] - 5 } }, 1.6, glare);
         return;
     }
-    for (spots, [_]f32{ -1, 1 }) |p, side| {
+    for (spots, 0..) |p, i| {
+        const lb = withLocal(b, lt[i]);
         // Lente de cima reta e de baixo redonda, inclinada com o rosto.
         var pts: [20][2]f32 = undefined;
         var n: usize = 0;
@@ -1099,22 +1254,23 @@ fn shades(b: Brush, spots: []const [2]f32) void {
         n += 1;
         pts[n] = rot2(.{ p[0] + 12, p[1] - 6.5 }, p, tilt);
         n += 1;
-        for (0..12) |i| {
-            const a = @as(f32, @floatFromInt(i)) / 11.0 * pi;
+        for (0..12) |k| {
+            const a = @as(f32, @floatFromInt(k)) / 11.0 * pi;
             pts[n] = rot2(.{ p[0] + @cos(a) * 11.5, p[1] - 1 + @sin(a) * 8.6 }, p, tilt);
             n += 1;
         }
-        fill(b, pts[0..n], lens_c);
-        outline(b, pts[0..n], wd, frame);
-        line(b, &.{ rot2(.{ p[0] - 6.5, p[1] + 3.5 }, p, tilt), rot2(.{ p[0] - 1.5, p[1] - 4.5 }, p, tilt) }, 1.5, glare);
-        line(b, &.{ rot2(.{ p[0] - 2, p[1] + 4.5 }, p, tilt), rot2(.{ p[0] + 1, p[1] - 0.5 }, p, tilt) }, 1, glare);
-        _ = side;
+        fill(lb, pts[0..n], lens_c);
+        outline(lb, pts[0..n], wd, frame);
+        line(lb, &.{ rot2(.{ p[0] - 6.5, p[1] + 3.5 }, p, tilt), rot2(.{ p[0] - 1.5, p[1] - 4.5 }, p, tilt) }, 1.5, glare);
+        line(lb, &.{ rot2(.{ p[0] - 2, p[1] + 4.5 }, p, tilt), rot2(.{ p[0] + 1, p[1] - 0.5 }, p, tilt) }, 1, glare);
     }
     const l = spots[0];
     const r = spots[1];
-    line(b, &.{ rot2(.{ l[0] + 12, l[1] - 5.5 }, l, tilt), rot2(.{ r[0] - 12, r[1] - 5.5 }, r, tilt) }, wd * 1.3, frame);
-    line(b, &.{ rot2(.{ l[0] - 12, l[1] - 6 }, l, tilt), .{ 15, l[1] - 8 } }, wd, frame);
-    line(b, &.{ rot2(.{ r[0] + 12, r[1] - 6 }, r, tilt), .{ 113, r[1] - 6 } }, wd, frame);
+    line(b, &.{ apSvg(lt[0], rot2(.{ l[0] + 12, l[1] - 5.5 }, l, tilt)), apSvg(lt[1], rot2(.{ r[0] - 12, r[1] - 5.5 }, r, tilt)) }, wd * 1.3, frame);
+    const t1 = temple(b.lk, lt[0], rot2(.{ l[0] - 12, l[1] - 6 }, l, tilt), .{ 15, l[1] - 8 }, -1);
+    const t2 = temple(b.lk, lt[1], rot2(.{ r[0] + 12, r[1] - 6 }, r, tilt), .{ 113, r[1] - 6 }, 1);
+    line(b, &t1, wd, frame);
+    line(b, &t2, wd, frame);
 }
 
 fn monocle(b: Brush, p: [2]f32) void {
@@ -1128,12 +1284,15 @@ fn monocle(b: Brush, p: [2]f32) void {
     line(b, ch[0..n], if (b.small) 1.6 else 0.9, g);
 }
 
-fn eyepatch(b: Brush, p: [2]f32) void {
+fn eyepatch(face: Brush, p: [2]f32, t: Af) void {
+    const b = withLocal(face, t);
     const dark = b.paint(Rgba.hex(0x17121F));
     const strap = b.inkA(0.9);
     const wd: f32 = if (b.small) 3 else 2.2;
-    line(b, &.{ .{ p[0] + 4, p[1] - 6 }, .{ 70, 22 }, .{ 106, 11 } }, wd, strap);
-    line(b, &.{ .{ p[0] - 8, p[1] - 1 }, .{ 6, p[1] - 6 } }, wd, strap);
+    // As tiras vão do tapa-olho (com o olho) pela testa até os lados da cabeça.
+    line(face, &.{ apSvg(t, .{ p[0] + 4, p[1] - 6 }), face.lk.bodyAp(70, 22), face.lk.bodyAp(106, 11) }, wd, strap);
+    const t2 = temple(face.lk, t, .{ p[0] - 8, p[1] - 1 }, .{ 6, p[1] - 6 }, -1);
+    line(face, &t2, wd, strap);
     var pts: [24][2]f32 = undefined;
     for (0..24) |i| {
         const a = @as(f32, @floatFromInt(i)) / 24.0 * tau;

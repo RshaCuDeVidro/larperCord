@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # QA completo: a bateria geral no tema classico, a tela de login e a bateria
 # por tema em todos os temas, no escuro e no claro. Não abre janela. Prints em qa-out/.
+#
+# QA_PARTE: só um pedaço, para a CI dividir o QA entre várias máquinas ao mesmo tempo:
+# "geral", "outras" (o resto das baterias, o login e os scripts) ou "temas:classico,vidro"
+# (a bateria por tema só nesses). Sem ela, tudo. QA_BIN: um executável já compilado
+# (com o robô), no lugar de compilar aqui.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-# Debug (com as checagens de segurança), instalado à parte para não trocar
-# o executável de zig-out/ (que é ReleaseFast).
-zig build -Doptimize=debug -p .zig-cache/qa || exit 1
+parte="${QA_PARTE:-}"
+if [ -n "${QA_BIN:-}" ]; then
+    bin="$QA_BIN"
+else
+    # Debug (com as checagens de segurança), instalado à parte para não trocar
+    # o executável de zig-out/ (que é ReleaseFast).
+    zig build -Doptimize=debug -p .zig-cache/qa || exit 1
+    bin=./.zig-cache/qa/bin/larpercord
+fi
 rm -rf qa-out && mkdir -p qa-out
-bin=./.zig-cache/qa/bin/larpercord
 total_fail=0
 run() {
     local label="$1"; shift
@@ -28,7 +38,16 @@ run() {
         fi
     fi
 }
+temas="classico vidro terminal subsolo orbital editorial bolhas zen papel escritorio cupertino"
+case "$parte" in
+    "" | geral | outras) ;;
+    temas:*) temas="${parte#temas:}"; temas="${temas//,/ }" ;;
+    *) echo "QA_PARTE desconhecida: $parte (geral, outras ou temas:<tema>,<tema>)"; exit 1 ;;
+esac
+if [ -z "$parte" ] || [ "$parte" = geral ]; then
 run "geral (classico)" $bin --qa --theme classico
+fi
+if [ -z "$parte" ] || [ "$parte" = outras ]; then
 QA_SUITE=extras LARPER_NO_FFMPEG=1 run "extras" $bin --qa --theme classico
 QA_SUITE=envio run "envio" $bin --qa --theme classico
 QA_SUITE=limites run "limites" $bin --qa --theme classico
@@ -47,6 +66,7 @@ QA_SUITE=cronometro run "tempo da call" $bin --qa --theme classico
 QA_SUITE=perfil run "perfil do servidor" $bin --qa --theme classico
 # Tela da call: a grade com cada um, os botões, ir e voltar, muita gente e a DM.
 QA_SUITE=call run "tela da call" $bin --qa --theme classico
+QA_SUITE=flutuante run "janela flutuante" $bin --qa --theme classico
 # Op 8: os membros dos autores das páginas (DM nunca, no máximo um por servidor a cada
 # 30 s, as páginas se juntando, sem repetir), e o apelido e a cor do cargo numa
 # mensagem antiga depois da resposta.
@@ -58,6 +78,13 @@ epoch=$(( $(date +%s) * 1000 ))
 QA_TABSETS_READ=1 LARPER_DEMO_EPOCH_MS=$epoch QA_SUITE=cache-a run "retrato (grava)" $bin --qa --theme classico
 QA_KEEP_CACHE=1 QA_TABSETS_READ=1 LARPER_DEMO_EPOCH_MS=$epoch LARPER_DEMO_READY_MS=2500 QA_SUITE=cache-b run "retrato (abre)" $bin --qa --theme classico
 QA_SUITE=mascote run "mascote" $bin --qa --theme classico
+# Lembretes: o relógio adiantado pelo QA, o aviso, o mascote e a notificação; depois dois
+# processos: o que fica gravado volta, e o que venceu com o app fechado avisa atrasado.
+QA_SUITE=lembretes run "lembretes" $bin --qa --theme classico
+# (O mesmo começo da demonstração nos dois: as mensagens têm os mesmos IDs.)
+epoch=$(( $(date +%s) * 1000 ))
+LARPER_DEMO_EPOCH_MS=$epoch QA_SUITE=lembretes-a run "lembretes (antes)" $bin --qa --theme classico
+LARPER_DEMO_EPOCH_MS=$epoch QA_LEMBRETES_READ=1 QA_SUITE=lembretes-b run "lembretes (depois)" $bin --qa --theme classico
 # Apagar todos os dados: pastas de mentira em qa-out/apagar, conferidas de fora depois que
 # o app fecha, e nada apagado fora delas.
 bash tools/qa_apagar.sh "$bin" || total_fail=1
@@ -85,9 +112,12 @@ QA_SUITE=plugins-b run "plugins (depois)" $bin --qa
 for m in escuro claro; do
     QA_SUITE=login QA_PREFIX="$m-" run "login ($m)" $bin --qa --mode "$m"
 done
-for t in classico vidro terminal subsolo orbital editorial bolhas zen papel escritorio cupertino; do
+fi
+if [ -z "$parte" ] || [[ "$parte" == temas:* ]]; then
+for t in $temas; do
     for m in escuro claro; do
         QA_SUITE=tema QA_PREFIX="$t-$m-" run "$t ($m)" $bin --qa --theme "$t" --mode "$m"
     done
 done
+fi
 [ "$total_fail" = 0 ] && echo "tudo passou ✓" || { echo "houve falhas"; exit 1; }

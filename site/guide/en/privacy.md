@@ -22,6 +22,7 @@ Like the official client, the app tells Discord what you've read, at most once p
 | What | Where | Control |
 |---|---|---|
 | Message cache | `messages/` in the cache folder: `~/.cache/larpercord/` on Linux (folders 700, files 600), `%LOCALAPPDATA%\larpercord\` on Windows | 200 messages per channel, 50 MB cap. Turn it off and erase it in Settings → Privacy |
+| Search index | `busca.lci` next to each account's message cache | The messages search finds on this computer, up to 100,000. Follows the message cache switch and goes away with Clear cache; Settings → Privacy shows its size |
 | Drafts | `drafts.kdl` in the settings folder: `~/.config/larpercord/` on Linux (`chmod 600`), `%APPDATA%\larpercord\` on Windows | Sending a message clears its draft |
 | Saved messages and notes | `saved-<account>.json` | Up to 500. Nothing goes to Discord |
 | Alert words, filters, ignored people | `settings.kdl` | Nobody is told |

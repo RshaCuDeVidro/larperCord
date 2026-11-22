@@ -10,6 +10,7 @@ const qa = @import("qa.zig");
 const anim = @import("anim.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
+const inbox = @import("inbox.zig");
 const S = @import("settings_state.zig");
 const voz = @import("../core/voz.zig");
 const sons = @import("../core/sons.zig");
@@ -92,6 +93,7 @@ fn eventLabel(e: sons.Event) []const u8 {
         .deafen => i18n.tr("Ensurdecer", "Deafen"),
         .undeafen => i18n.tr("Desensurdecer", "Undeafen"),
         .ring => i18n.tr("Chamada recebida (toque)", "Incoming call (ringtone)"),
+        .message => i18n.tr("Mensagem nova (DM ou menção)", "New message (DM or mention)"),
     };
 }
 
@@ -109,12 +111,16 @@ fn variantLabel(v: sons.Variant) []const u8 {
 fn soundList(p: anytype, s: *S.Settings) void {
     p.note(i18n.tr("Cada som pode ser desligado, trocado por outro embutido ou por um arquivo seu: WAV (PCM) ou Ogg Opus, até 2 MB e 5 s (o toque, até 15 s). O arquivo é copiado para a pasta do larperCord.", "Each sound can be turned off, swapped for another built-in one or for a file of yours: WAV (PCM) or Ogg Opus, up to 2 MB and 5 s (the ringtone, up to 15 s). The file is copied into larperCord's folder."));
     p.y += 6;
-    for (std.enums.values(sons.Event)) |e| soundRow(p, s, e);
+    for (std.enums.values(sons.Event)) |e| if (e != .message) soundRow(p, s, e);
+    // Não é da call: a chave dele fica em Notificações (que também mostra esta linha).
+    p.note(i18n.tr("O som de mensagem nova liga e desliga em Notificações, à parte dos sons da call.", "The new message sound is turned on and off in Notifications, apart from the call sounds."));
+    p.y += 6;
+    soundRow(p, s, .message);
 }
 
 /// Uma linha por evento: o nome (e o arquivo, se é um), a escolha, o Ouvir e,
-/// embaixo, o volume.
-fn soundRow(p: anytype, s: *S.Settings, e: sons.Event) void {
+/// embaixo, o volume. Também em Notificações, para a mensagem nova.
+pub fn soundRow(p: anytype, s: *S.Settings, e: sons.Event) void {
     const ctx = p.ctx;
     const i = @backingInt(e);
     const key = @tagName(e);
@@ -297,8 +303,7 @@ fn picker(p: anytype, x: f32, wd: f32, y0: f32, which: u8, label: []const u8, co
     // O escolhido não está ligado agora: o nome fica guardado para quando voltar.
     if (fallback and saved.len > 0) {
         qa.mark(.{ .x = x, .y = y, .w = wd, .h = 22 }, tag ++ "-sumiu", .{});
-        _ = d.textClipped(p.dl, p.font(.regular), 13, x, y, ctx.col(.idle), i18n.tr("Não encontrado: usando o padrão até ele voltar.", "Not found: using the default until it comes back."), wd);
-        y += 22;
+        y += inbox.wrapFlow(p.dl, p.font(.regular), 13, x, y, wd, i18n.tr("Não encontrado: usando o padrão até ele voltar.", "Not found: using the default until it comes back."), ctx.col(.idle), 22);
     }
     y += 6;
     const row_h: f32 = 34;
@@ -418,7 +423,9 @@ fn pushToTalk(p: anytype, key: *S.Text) void {
     d.text(p.dl, p.font(.bold), 12, p.x, p.y, ctx.col(.muted), i18n.tr("ATALHO", "SHORTCUT"));
     p.y += 20;
     const r: d.Rect = .{ .x = p.x, .y = p.y, .w = p.w, .h = 42 };
-    const hb = d.hit(ctx, base_id + 30, r);
+    // 30 e 31 são os botões do supressor de ruído, logo abaixo: com o mesmo número, o
+    // "Desligado" não respondia enquanto o atalho estava na tela (#35).
+    const hb = d.hit(ctx, base_id + 50, r);
     qa.mark(r, "voz-atalho", .{});
     if (hb.clicked) {
         if (capturing) voz_audio.cancelCapture() else voz_audio.startCapture();
@@ -510,6 +517,5 @@ fn micTest(p: anytype) void {
     // O rótulo em português é a marca do QA.
     if (p.button(if (on) i18n.tr("Parar teste", "Stop test") else i18n.tr("Testar microfone", "Test microphone"), on)) sh.test_on.store(!on, .release);
     p.y += 2;
-    _ = d.textClipped(p.dl, p.font(.regular), 13, p.x, p.y, ctx.col(.faint), i18n.tr("Toca de volta o que você fala, com os filtros. Use fones para não dar microfonia.", "Plays back what you say, with the filters. Use headphones to avoid feedback."), p.w);
-    p.y += 26;
+    p.y += inbox.wrapFlow(p.dl, p.font(.regular), 13, p.x, p.y, p.w, i18n.tr("Toca de volta o que você fala, com os filtros. Use fones para não dar microfonia.", "Plays back what you say, with the filters. Use headphones to avoid feedback."), ctx.col(.faint), 26);
 }

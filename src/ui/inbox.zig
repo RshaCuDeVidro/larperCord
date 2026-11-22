@@ -67,6 +67,14 @@ pub fn buttonWidth(ctx: *const d.Ctx, label: []const u8) f32 {
     return d.width(ctx.ui.get(.semibold), 13, label) + 24;
 }
 
+/// Uma frase quebrada por palavra no lugar de uma linha cortada com "…" (#20): `gap`
+/// é o que a linha única ocupava, com o espaço abaixo. Numa linha só fica igual, e
+/// cada linha a mais soma a altura dela. Retorna quanto descer.
+pub fn wrapFlow(dl: ?*c.ImDrawList, font: *c.ImFont, size: f32, x: f32, y: f32, max_w: f32, text: []const u8, color: d.Rgba, gap: f32) f32 {
+    const h = wrapText(dl, font, size, x, y, max_w, text, 6, color);
+    return gap + h - d.fontPx(size) * 1.38;
+}
+
 /// Texto quebrado por palavra em até `max_lines` linhas (a última corta com
 /// "…"). Com `dl` null só mede. Retorna a altura usada.
 pub fn wrapText(dl: ?*c.ImDrawList, font: *c.ImFont, size: f32, x: f32, y: f32, max_w: f32, text: []const u8, max_lines: usize, color: d.Rgba) f32 {

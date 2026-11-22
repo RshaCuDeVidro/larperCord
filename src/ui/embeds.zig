@@ -2,6 +2,8 @@
 //! cor à esquerda, autor, título, descrição em markdown, campos, imagem,
 //! miniatura e rodapé. Mede e desenha com a mesma função (dl = null mede).
 const std = @import("std");
+const salvar = @import("../core/salvar.zig");
+const exportar_ui = @import("exportar.zig");
 const c = @import("c");
 const d = @import("draw.zig");
 const qa = @import("qa.zig");
@@ -444,7 +446,7 @@ fn spoilerCover(ctx: *d.Ctx, dl: *c.ImDrawList, r: d.Rect, radius: f32, alpha: f
 }
 
 /// Miniatura ao lado de um texto; o clique abre em tamanho grande.
-fn blockThumb(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const types.EmbedMedia, tr: d.Rect, alpha: f32) void {
+fn blockThumb(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const types.EmbedMedia, tr: d.Rect, alpha: f32, msg_id: types.Id) void {
     const scale = ctx.io.*.DisplayFramebufferScale.x;
     const hb = d.hit(ctx, @truncate(@intFromPtr(it)), tr);
     qa.mark(tr, "embed-thumb", .{});
@@ -453,7 +455,21 @@ fn blockThumb(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const types.EmbedMedia, tr: d
         else => d.rect(dl, tr, ctx.col(.text).alpha(0.05 * alpha), 6),
     }
     if (it.spoiler) spoilerCover(ctx, dl, tr, 6, alpha);
-    if (hb.clicked) att.openImage(ctx, it.url, it.label, it.w, it.h);
+    if (hb.clicked) openMedia(ctx, it);
+    if (hb.right and msg_id != 0) mediaMenu(ctx, msg_id, it);
+}
+
+/// Abre um item de mídia dos componentes no visualizador ("Salvar…" lá salva o original).
+fn openMedia(ctx: *d.Ctx, it: *const types.EmbedMedia) void {
+    att.openImage(ctx, it.url, it.label, it.w, it.h);
+    var pb: salvar.PickBuf = .{};
+    exportar_ui.setViewerPick(it.url, salvar.ofBlockMedia(&pb, it));
+}
+
+/// Botão direito num item de mídia: o menu da mensagem com "Salvar…".
+fn mediaMenu(ctx: *d.Ctx, msg_id: types.Id, it: *const types.EmbedMedia) void {
+    var pb: salvar.PickBuf = .{};
+    exportar_ui.mediaMenu(ctx, msg_id, salvar.ofBlockMedia(&pb, it));
 }
 
 /// Grade de imagens: uma sozinha mantém a proporção; várias ficam em células.
@@ -511,12 +527,13 @@ fn mediaCell(ctx: *d.Ctx, dl: *c.ImDrawList, it: *const types.EmbedMedia, r: d.R
             ctx.images.allow(it.url);
         } else if (it.video and it.link.len > 0) {
             video.click(ctx, vkey, it.link, it.link, r, it.size);
-        } else att.openImage(ctx, it.url, it.label, it.w, it.h);
+        } else openMedia(ctx, it);
     }
+    if (hb.right and msg_id != 0) mediaMenu(ctx, msg_id, it);
 }
 
 /// Linha de um arquivo: nome e tamanho; o clique abre no navegador.
-fn fileRow(ctx: *d.Ctx, dl: ?*c.ImDrawList, it: *const types.EmbedMedia, x: f32, y: f32, w: f32, alpha: f32) f32 {
+fn fileRow(ctx: *d.Ctx, dl: ?*c.ImDrawList, it: *const types.EmbedMedia, x: f32, y: f32, w: f32, alpha: f32, msg_id: types.Id) f32 {
     const h: f32 = 44;
     const l = dl orelse return h;
     const r: d.Rect = .{ .x = x, .y = y, .w = w, .h = h };
@@ -529,6 +546,7 @@ fn fileRow(ctx: *d.Ctx, dl: ?*c.ImDrawList, it: *const types.EmbedMedia, x: f32,
     d.text(l, ctx.ui.get(.regular), 12, x + 12, y + 25, ctx.col(.muted).alpha(alpha), att.formatSize(&sb, it.size));
     if (it.spoiler) spoilerCover(ctx, l, r, 6, alpha);
     if (hb.clicked and it.link.len > 0) att.openUrl(it.link);
+    if (hb.right and msg_id != 0) mediaMenu(ctx, msg_id, it);
     return h;
 }
 
@@ -575,7 +593,7 @@ fn blocks(ctx: *d.Ctx, dl: ?*c.ImDrawList, e: *const types.Embed, spans: []const
                 const tw = if (thumb) w - thumb_s - pad else w;
                 const sp: []const md.Span = if (first + i < spans.len) spans[first + i] else &.{};
                 const th = richText(ctx, dl, sp, b.text, x, y, tw, 14, sel);
-                if (thumb) if (dl) |l| blockThumb(ctx, l, &b.media[0], .{ .x = x + w - thumb_s, .y = y, .w = thumb_s, .h = thumb_s }, alpha);
+                if (thumb) if (dl) |l| blockThumb(ctx, l, &b.media[0], .{ .x = x + w - thumb_s, .y = y, .w = thumb_s, .h = thumb_s }, alpha, msg_id);
                 y += if (thumb) @max(th, thumb_s) else th;
             },
             .separator => {
@@ -586,7 +604,7 @@ fn blocks(ctx: *d.Ctx, dl: ?*c.ImDrawList, e: *const types.Embed, spans: []const
             },
             .gallery => y += gallery(ctx, dl, b, x, y, w, alpha, msg_id),
             .file => for (b.media) |*it| {
-                y += fileRow(ctx, dl, it, x, y, w, alpha);
+                y += fileRow(ctx, dl, it, x, y, w, alpha, msg_id);
             },
             .buttons => y += buttons(ctx, dl, b, x, y, w, alpha),
             .select => if (b.select) |s| {
@@ -724,6 +742,15 @@ fn image(ctx: *d.Ctx, dl: *c.ImDrawList, e: *const types.Embed, r: d.Rect, alpha
         att.playIcon(dl, r.x + r.w / 2, r.y + r.h / 2, alpha);
         d.tip(ctx, r, i18n.tr("Abrir o vídeo no navegador", "Open video in browser"), hb.hovered);
         if (hb.clicked and e.url.len > 0) att.openUrl(e.url);
-    } else if (hb.clicked) att.openImage(ctx, e.image, e.title, e.image_w, e.image_h);
+    } else if (hb.clicked) {
+        att.openImage(ctx, e.image, e.title, e.image_w, e.image_h);
+        var pb: salvar.PickBuf = .{};
+        exportar_ui.setViewerPick(e.image, salvar.ofEmbedImage(&pb, e));
+    }
     if (hb.hovered) d.rect(dl, r, d.Rgba.white.alpha(0.05), 6);
+    // Botão direito: "Salvar…" (o vídeo, se o cartão tem um que toca aqui; senão a imagem).
+    if (hb.right and msg_id != 0) {
+        var pb: salvar.PickBuf = .{};
+        exportar_ui.mediaMenu(ctx, msg_id, if (e.video_url.len > 0) salvar.ofEmbedVideo(&pb, e) else salvar.ofEmbedImage(&pb, e));
+    }
 }

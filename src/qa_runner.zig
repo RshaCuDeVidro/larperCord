@@ -43,6 +43,16 @@ pub const Target = union(enum) {
 /// tela): fica fora até o próximo passo que mexe o mouse.
 pub var mouse_out = false;
 
+/// Os passos de mouse e teclado vão para a janela flutuante (app_flutuante.zig) e não
+/// para a principal; as marcas dela começam com "pip/".
+pub var pip_mode = false;
+const app_flutuante = @import("app_flutuante.zig");
+
+fn evIo(app: *App) *c.ImGuiIO {
+    if (pip_mode) if (app_flutuante.ioOf(app)) |io| return io;
+    return app.io;
+}
+
 pub const Op = union(enum) {
     section: []const u8,
     click: Target,
@@ -833,6 +843,9 @@ const updater_qa = @import("net/updater.zig");
 fn updateAvailable(_: *App) void {
     updater_qa.qaSet(.available, "v9.9.9");
 }
+fn updateIdle(_: *App) void {
+    updater_qa.qaSet(.idle, "");
+}
 fn updateShownAvailable(_: *App) bool {
     return qa.find("update-status:available") != null;
 }
@@ -1562,6 +1575,7 @@ const ops_editor = [_]Op{
 
 const msg_cache = @import("net/msg_cache.zig");
 const search = @import("ui/search.zig");
+const busca_local = @import("net/busca_local.zig");
 const acc_store = @import("net/accounts_store.zig");
 
 var restored_before: u32 = 0;
@@ -1630,22 +1644,29 @@ fn privateWrite(_: *App) bool {
     if (c.stat("qa-out/privado/larpercord", &st) != 0 or st.st_mode & 0o777 != 0o700) return false;
     return c.stat(p ++ ".tmp", &st) != 0;
 }
+/// Leituras do disco pela busca (o arquivo do índice e os do cache).
 var disk_reads_before: u32 = 0;
 fn searchMarkReads(_: *App) void {
-    disk_reads_before = search.disk_reads;
+    disk_reads_before = busca_local.loads + busca_local.cache_files_read;
 }
-fn searchNoReread(_: *App) bool {
-    return !search.scanning and search.found_disk > 0 and search.disk_reads == disk_reads_before;
+fn searchNoReread(app: *App) bool {
+    return !search.scanning and awayResult(app) != null and busca_local.loads + busca_local.cache_files_read == disk_reads_before;
 }
 fn searchOpen(_: *App) bool {
     return search.open and qa.find("search-input") != null;
 }
-fn searchClosedLongAgo(_: *App) void {
+var docs_before_release: usize = 0;
+fn searchHiddenRelease(_: *App) void {
     search.close();
-    search.qaClosedAgo(6 * 60 * 1000);
+    docs_before_release = busca_local.stats().docs;
+    _ = search.releaseIdle(true);
 }
+/// Saiu da memória, gravado antes no disco (volta quando a busca abrir). O que chega
+/// depois fica num índice pequeno, só desta sessão.
 fn searchIndexFreed(_: *App) bool {
-    return search.diskBytes() == 0;
+    const st = busca_local.stats();
+    return busca_local.isReleased() and st.docs < docs_before_release and st.disk > 0 and
+        @import("platform/sys.zig").fileSize("qa-out/cache/demo/" ++ msg_cache.search_index_file) == st.disk;
 }
 fn searchClosed(_: *App) bool {
     return !search.open;
@@ -1681,11 +1702,20 @@ fn unloadMemes(app: *App) void {
     while (it.next()) |cs| if (cs.*.info.id != open_ch and std.mem.eql(u8, cs.*.info.name, "memes") and cs.*.history == .loaded) app.store.unload(cs.*);
 }
 var search_target: struct { ch: Id = 0, id: Id = 0 } = .{};
-fn searchFromDisk(_: *App) bool {
-    if (search.found_disk == 0 or search.results.items.len == 0) return false;
-    const r = search.results.items[0];
+/// Um resultado de uma conversa que não está na memória: veio do índice (o texto
+/// guardado nele), que leu o cache em disco.
+fn awayResult(app: *App) ?*const search.Result {
+    for (search.results.items) |*r| {
+        const cs = app.store.channel(r.channel) orelse continue;
+        if (cs.history != .loaded and r.local) return r;
+    }
+    return null;
+}
+fn searchFromDisk(app: *App) bool {
+    if (search.scanning) return false;
+    const r = awayResult(app) orelse return false;
     search_target = .{ .ch = r.channel, .id = r.id };
-    return r.disk;
+    return true;
 }
 fn searchClose(_: *App) void {
     search.close();
@@ -2127,6 +2157,8 @@ const ops = [_]Op{
     expect("instalar pede para reiniciar", updateShownReady),
     click("button:Reiniciar o larperCord"),
     expect("reiniciar (no QA só avisa)", toastRestart),
+    // Nada esperando de novo: a faixa de versão nova não fica por cima do resto do QA.
+    .{ .run = updateIdle },
     click("settings:Novidades"),
     expect("a página de novidades mostra o changelog", changelogShown),
     .{ .wait = 100 },
@@ -2600,7 +2632,7 @@ const ops = [_]Op{
     .{ .run = unloadMemes },
     ctrl(c.ImGuiKey_F),
     .{ .text = "in:memes" },
-    expect("canal fora da memória: a busca acha no cache em disco", searchFromDisk),
+    expect("canal fora da memória: a busca acha pelo índice, que leu o cache em disco", searchFromDisk),
     .{ .shot = "50-busca-disco" },
     .{ .run = searchMarkReads },
     key(c.ImGuiKey_Escape),
@@ -2611,8 +2643,8 @@ const ops = [_]Op{
     click("search-result:0"),
     .{ .expect = .{ .name = "clicar no resultado abre o canal e pula até a mensagem", .check = searchJumped, .timeout_ms = 4000 } },
     .{ .run = searchClose },
-    .{ .run = searchClosedLongAgo },
-    expect("fechada há minutos, a busca solta o índice do disco (até 16 MB)", searchIndexFreed),
+    .{ .run = searchHiddenRelease },
+    expect("janela escondida: o índice da busca vai para o disco e sai da memória", searchIndexFreed),
 } ++ @import("qa_busca.zig").ops ++ @import("qa_convites.zig").ops ++ @import("qa_conta.zig").ops ++ [_]Op{
     ctrl(c.ImGuiKey_Comma),
     click("settings:Privacidade"),
@@ -2622,7 +2654,7 @@ const ops = [_]Op{
     expect("Apagar cache apaga os arquivos", cacheEmpty),
     key(c.ImGuiKey_Escape),
 
-} ++ ops_plugin_section ++ @import("qa_alertas.zig").ops ++ @import("qa_leitura.zig").ops ++ @import("qa_threads.zig").ops ++ @import("qa_voz.zig").ops ++ @import("qa_chamada.zig").ops ++ @import("qa_bandeja.zig").ops ++ lsp_ops ++ @import("qa_paineis.zig").all ++ @import("qa_quadros.zig").ops ++ [_]Op{
+} ++ ops_plugin_section ++ @import("qa_alertas.zig").ops ++ @import("qa_leitura.zig").ops ++ @import("qa_threads.zig").ops ++ @import("qa_voz.zig").ops ++ @import("qa_chamada.zig").ops ++ @import("qa_som_mensagem.zig").ops ++ @import("qa_bandeja.zig").ops ++ lsp_ops ++ @import("qa_paineis.zig").all ++ @import("qa_quadros.zig").ops ++ [_]Op{
     s("caixa de entrada"),
     click("guild:500000"),
     click("channel:500005"),
@@ -2870,10 +2902,12 @@ const ops_leitura = [_]Op{
 } ++ @import("qa_leitura.zig").startup ++ @import("qa_leitura.zig").ops;
 const ops_voz = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ @import("qa_voz.zig").ops;
 const ops_chamada = [_]Op{expect("pronto", ready)} ++ @import("qa_chamada.zig").ops;
+const ops_som_mensagem = [_]Op{expect("pronto", ready)} ++ @import("qa_som_mensagem.zig").ops;
 const ops_lsp = [_]Op{expect("pronto", ready)} ++ lsp_ops;
 const ops_lsp_quit = [_]Op{expect("pronto", ready)} ++ lsp_ops_quit;
 const qa_bandeja = @import("qa_bandeja.zig");
 const ops_bandeja = [_]Op{expect("pronto", ready)} ++ qa_bandeja.ops;
+const ops_flutuante = [_]Op{expect("pronto", ready)} ++ @import("qa_flutuante.zig").ops;
 const ops_bandeja_sair = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_no_tray;
 const ops_bandeja_menu = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit;
 const ops_bandeja_sair_aberta = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit_open;
@@ -3262,13 +3296,14 @@ const ops_scripts = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @impo
 const ops_ime = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_paineis.zig").ops_ime;
 const ops_busca = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_busca.zig").ops;
 const ops_threads = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_threads.zig").ops;
-const ops_midia = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_midia.zig").ops;
+const ops_midia = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_midia.zig").ops ++ @import("qa_exportar.zig").ops;
 const ops_convites = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_convites.zig").ops;
 const ops_envio = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_envio.zig").ops;
+const ops_gravar = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_gravar.zig").ops;
 const ops_limites = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_limites.zig").ops;
 const ops_conta = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_conta.zig").ops;
 const ops_social = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_social.zig").ops;
-const ops_presenca = [_]Op{expect("carrega e mostra a conversa", ready)} ++ (if (@import("builtin").os.tag != .windows) @import("qa_presenca.zig").ops else [_]Op{});
+const ops_presenca = [_]Op{expect("carrega e mostra a conversa", ready)} ++ (if (@import("builtin").os.tag != .windows) @import("qa_presenca.zig").ops else [_]Op{}) ++ @import("qa_presenca.zig").ops_jogo;
 const ops_moderacao = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_moderacao.zig").ops;
 const ops_entrada = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_entrada.zig").ops;
 const ops_proxy = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_proxy.zig").ops;
@@ -3301,6 +3336,10 @@ const ops_fontes = [_]Op{
     key(c.ImGuiKey_Escape),
 };
 
+const ops_lembretes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops;
+const ops_lembretes_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops_a;
+const ops_lembretes_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops_b;
+
 /// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
 const suites = [_]struct { []const u8, []const Op }{
@@ -3315,9 +3354,11 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "atalhos", &@import("qa_atalhos.zig").ops },
     .{ "abas-conjuntos", &@import("qa_conjuntos.zig").ops },
     .{ "chamada", &ops_chamada },
+    .{ "som-mensagem", &ops_som_mensagem },
     .{ "lsp", &ops_lsp },
     .{ "lsp-quit", &ops_lsp_quit },
     .{ "bandeja", &ops_bandeja },
+    .{ "flutuante", &ops_flutuante },
     .{ "bandeja-sair", &ops_bandeja_sair },
     .{ "bandeja-menu", &ops_bandeja_menu },
     .{ "bandeja-sair-aberta", &ops_bandeja_sair_aberta },
@@ -3337,6 +3378,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "midia", &ops_midia },
     .{ "convites", &ops_convites },
     .{ "envio", &ops_envio },
+    .{ "gravar-audio", &ops_gravar },
     .{ "limites", &ops_limites },
     .{ "conta", &ops_conta },
     .{ "social", &ops_social },
@@ -3363,6 +3405,9 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "vitrine", &ops_vitrine },
     .{ "plugins-a", &ops_plugins_a },
     .{ "plugins-b", &ops_plugins_b },
+    .{ "lembretes", &ops_lembretes },
+    .{ "lembretes-a", &ops_lembretes_a },
+    .{ "lembretes-b", &ops_lembretes_b },
 };
 
 /// O nome de cada bateria (tools/qa.sh e quem quiser listar: --qa-list).
@@ -3425,10 +3470,10 @@ pub const Runner = struct {
 
     /// Se o elemento está fora da janela, rola até ele (como uma pessoa faria).
     fn scrollTo(r: *Runner, app: *App, p: [2]f32) bool {
-        const h = app.io.*.DisplaySize.y;
+        const h = evIo(app).*.DisplaySize.y;
         if (p[1] > 2 and p[1] < h - 2) return false;
-        r.pos(app, .{ app.io.*.DisplaySize.x * 0.6, h * 0.5 });
-        c.ImGuiIO_AddMouseWheelEvent(app.io, 0, if (p[1] >= h - 2) -2 else 2);
+        r.pos(app, .{ evIo(app).*.DisplaySize.x * 0.6, h * 0.5 });
+        c.ImGuiIO_AddMouseWheelEvent(evIo(app), 0, if (p[1] >= h - 2) -2 else 2);
         r.sub = 0;
         // Espera a rolagem acontecer e as posições serem redesenhadas.
         r.settle = 4;
@@ -3652,7 +3697,7 @@ pub const Runner = struct {
                     return;
                 };
                 const p: [2]f32 = .{ rect.x + rect.w / 2, rect.y + rect.h / 2 };
-                if (p[1] < 2 or p[1] > app.io.*.DisplaySize.y - 2 or p[0] < 2 or p[0] > app.io.*.DisplaySize.x - 2) {
+                if (p[1] < 2 or p[1] > evIo(app).*.DisplaySize.y - 2 or p[0] < 2 or p[0] > evIo(app).*.DisplaySize.x - 2) {
                     sw.i += 1;
                     sw.phase = 0;
                     return;
@@ -3664,11 +3709,11 @@ pub const Runner = struct {
                 sw.phase = 2;
             },
             2 => {
-                c.ImGuiIO_AddMouseButtonEvent(app.io, 0, true);
+                c.ImGuiIO_AddMouseButtonEvent(evIo(app), 0, true);
                 sw.phase = 3;
             },
             3 => {
-                c.ImGuiIO_AddMouseButtonEvent(app.io, 0, false);
+                c.ImGuiIO_AddMouseButtonEvent(evIo(app), 0, false);
                 sw.phase = 4;
                 sw.frames = 0;
             },
@@ -3696,6 +3741,13 @@ pub const Runner = struct {
     /// cursor do sistema no lugar do mouse a cada quadro. Aconteceu no Windows da
     /// CI ao encolher a janela: o clique do roteiro ia parar em outro lugar.
     pub fn holdMouse(r: *Runner, app: *App) void {
+        // O roteiro está na janela flutuante: a principal fica sem o mouse, e o dele vai
+        // para a fila do contexto dela (o quadro dela lê logo depois).
+        if (pip_mode and app_flutuante.ioOf(app) != null) {
+            c.ImGuiIO_AddMousePosEvent(app.io, -std.math.floatMax(f32), -std.math.floatMax(f32));
+            if (r.mouse_set and !mouse_out) c.ImGuiIO_AddMousePosEvent(evIo(app), r.mouse[0], r.mouse[1]);
+            return;
+        }
         if (mouse_out) {
             c.ImGuiIO_AddMousePosEvent(app.io, -std.math.floatMax(f32), -std.math.floatMax(f32));
         } else if (r.mouse_set) c.ImGuiIO_AddMousePosEvent(app.io, r.mouse[0], r.mouse[1]);
@@ -3705,7 +3757,7 @@ pub const Runner = struct {
         mouse_out = false;
         r.mouse_set = true;
         r.mouse = p;
-        c.ImGuiIO_AddMousePosEvent(app.io, p[0], p[1]);
+        c.ImGuiIO_AddMousePosEvent(evIo(app), p[0], p[1]);
     }
 
     /// O alvo parou de se mexer? A conversa rola suave depois de uma mensagem, e
@@ -3757,27 +3809,27 @@ pub const Runner = struct {
         }
         switch (r.sub) {
             0 => {
-                if (ctrl_held) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Ctrl, true);
+                if (ctrl_held) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Ctrl, true);
                 // Em máquina lenta, dois quadros já passam do tempo de um duplo clique.
                 // (O ImGui exige o atraso do clique simples maior que esse tempo.)
                 if (double) {
-                    r.dclick_time = .{ app.io.*.MouseDoubleClickTime, app.io.*.MouseSingleClickDelay };
-                    app.io.*.MouseSingleClickDelay = 3.5;
-                    app.io.*.MouseDoubleClickTime = 3;
+                    r.dclick_time = .{ evIo(app).*.MouseDoubleClickTime, evIo(app).*.MouseSingleClickDelay };
+                    evIo(app).*.MouseSingleClickDelay = 3.5;
+                    evIo(app).*.MouseDoubleClickTime = 3;
                     // Com esse tempo, um duplo clique logo depois de outro contaria como 3º e 4º cliques.
-                    app.io.*.MouseClickedTime[@intCast(button)] = -1e9;
+                    evIo(app).*.MouseClickedTime[@intCast(button)] = -1e9;
                 }
                 r.pos(app, r.target_pos);
             },
-            1 => c.ImGuiIO_AddMouseButtonEvent(app.io, button, true),
-            2 => c.ImGuiIO_AddMouseButtonEvent(app.io, button, false),
-            3 => if (double) c.ImGuiIO_AddMouseButtonEvent(app.io, button, true),
-            4 => if (double) c.ImGuiIO_AddMouseButtonEvent(app.io, button, false),
+            1 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, true),
+            2 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, false),
+            3 => if (double) c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, true),
+            4 => if (double) c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, false),
             else => {
-                if (ctrl_held) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Ctrl, false);
+                if (ctrl_held) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Ctrl, false);
                 if (double) {
-                    app.io.*.MouseDoubleClickTime = r.dclick_time[0];
-                    app.io.*.MouseSingleClickDelay = r.dclick_time[1];
+                    evIo(app).*.MouseDoubleClickTime = r.dclick_time[0];
+                    evIo(app).*.MouseSingleClickDelay = r.dclick_time[1];
                 }
                 return r.next();
             },
@@ -3836,12 +3888,12 @@ pub const Runner = struct {
                 const z = resolve(app, dg.to, &b2) orelse a;
                 switch (r.sub) {
                     0 => r.pos(app, a),
-                    1 => c.ImGuiIO_AddMouseButtonEvent(app.io, 0, true),
+                    1 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), 0, true),
                     2, 3, 4, 5 => {
                         const k = @as(f32, @floatFromInt(r.sub - 1)) / 4;
                         r.pos(app, .{ a[0] + (z[0] - a[0]) * k, a[1] + (z[1] - a[1]) * k });
                     },
-                    6 => c.ImGuiIO_AddMouseButtonEvent(app.io, 0, false),
+                    6 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), 0, false),
                     else => return blk: {
                         r.next();
                         break :blk true;
@@ -3869,12 +3921,12 @@ pub const Runner = struct {
                 const a = r.target_pos;
                 switch (r.sub) {
                     0 => r.pos(app, a),
-                    1 => c.ImGuiIO_AddMouseButtonEvent(app.io, 0, true),
+                    1 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), 0, true),
                     2, 3, 4, 5 => {
                         const k = @as(f32, @floatFromInt(r.sub - 1)) / 4;
                         r.pos(app, .{ a[0] + dg.dx * k, a[1] });
                     },
-                    6 => c.ImGuiIO_AddMouseButtonEvent(app.io, 0, false),
+                    6 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), 0, false),
                     7 => {},
                     else => {
                         r.next();
@@ -3886,20 +3938,20 @@ pub const Runner = struct {
             .key => |k| {
                 switch (r.sub) {
                     0 => {
-                        if (k.ctrl) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Ctrl, true);
-                        if (k.shift) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Shift, true);
-                        if (k.alt) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Alt, true);
+                        if (k.ctrl) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Ctrl, true);
+                        if (k.shift) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Shift, true);
+                        if (k.alt) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Alt, true);
                     },
                     1 => {
                         // Como no laço do app: com a lista do autocompletar
                         // aberta, a tecla é dela e o campo de texto não vê.
-                        if (autocomplete.takeImGuiKey(k.key, k.shift, k.ctrl)) r.sub = 2 else c.ImGuiIO_AddKeyEvent(app.io, k.key, true);
+                        if (!pip_mode and autocomplete.takeImGuiKey(k.key, k.shift, k.ctrl)) r.sub = 2 else c.ImGuiIO_AddKeyEvent(evIo(app), k.key, true);
                     },
-                    2 => c.ImGuiIO_AddKeyEvent(app.io, k.key, false),
+                    2 => c.ImGuiIO_AddKeyEvent(evIo(app), k.key, false),
                     3 => {
-                        if (k.ctrl) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Ctrl, false);
-                        if (k.shift) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Shift, false);
-                        if (k.alt) c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiMod_Alt, false);
+                        if (k.ctrl) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Ctrl, false);
+                        if (k.shift) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Shift, false);
+                        if (k.alt) c.ImGuiIO_AddKeyEvent(evIo(app), c.ImGuiMod_Alt, false);
                     },
                     else => return blk: {
                         r.next();
@@ -3911,7 +3963,7 @@ pub const Runner = struct {
             .text => |t| {
                 var buf: [512]u8 = undefined;
                 const z = std.fmt.bufPrintSentinel(&buf, "{s}", .{t}, 0) catch "";
-                c.ImGuiIO_AddInputCharactersUTF8(app.io, z.ptr);
+                c.ImGuiIO_AddInputCharactersUTF8(evIo(app), z.ptr);
                 r.next();
             },
             .wait => |ms| if (now() - r.step_ms >= ms) r.next(),

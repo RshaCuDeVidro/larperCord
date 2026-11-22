@@ -534,6 +534,10 @@ pub const Io = struct { ctx: *anyopaque, read: ReadFn, seek: SeekFn };
 /// decodificadores exóticos.
 const formats = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm";
 const codecs = "h264,hevc,vp8,vp9,av1,mpeg4,aac,mp3,opus,vorbis,flac,pcm_s16le";
+/// Anexos de áudio que o app não toca sozinho (ui/audio_fonte.zig): FLAC, Vorbis,
+/// AAC/M4A, ALAC. Os nomes dos codecs são os dos decodificadores.
+const audio_formats = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,ogg,flac,aac,mp3,wav,aiff";
+const audio_codecs = "aac,aac_fixed,alac,flac,mp3float,mp3,opus,libopus,vorbis,libvorbis,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8,pcm_s16be,pcm_s24be";
 
 pub const Kind = enum { video, audio, skip, eof };
 
@@ -598,13 +602,67 @@ pub const Media = struct {
         return m;
     }
 
+    /// Só o áudio (um anexo .flac, .m4a, .ogg Vorbis…): sem vídeo nem swscale.
+    pub fn openAudioOnly(a: *const Api, io: Io) !Media {
+        var m: Media = .{ .api = a };
+        errdefer m.close();
+        m.frame = a.av_frame_alloc() orelse return error.NoMem;
+        m.pkt = a.av_packet_alloc() orelse return error.NoMem;
+        const buf: [*]u8 = @ptrCast(a.av_malloc(64 * 1024) orelse return error.NoMem);
+        m.io = a.avio_alloc_context(buf, 64 * 1024, 0, io.ctx, io.read, null, io.seek) orelse {
+            a.av_free(buf);
+            return error.NoMem;
+        };
+        var fmt: ?*FormatCtx = a.avformat_alloc_context() orelse return error.NoMem;
+        field(?*IoCtx, fmt.?, 32).* = m.io; // AVFormatContext.pb
+        _ = a.av_opt_set(fmt.?, "format_whitelist", audio_formats, 0);
+        _ = a.av_opt_set(fmt.?, "codec_whitelist", audio_codecs, 0);
+        if (a.avformat_open_input(&fmt, null, null, null) < 0) return error.Format;
+        m.fmt = fmt;
+        if (a.avformat_find_stream_info(fmt.?, null) < 0) return error.Format;
+        m.openAudioWith(audio_codecs);
+        if (m.actx == null) return error.NoAudio;
+        const as = streamAt(fmt.?, m.ai) orelse return error.NoAudio;
+        const st = streamStart(as);
+        m.start_ms = if (st == nopts) 0 else toMs(st, m.atb);
+        const dur = streamDuration(as);
+        if (dur != nopts and dur > 0) {
+            m.duration_ms = toMs(dur, m.atb);
+        } else if (loaded.lavf == 63) {
+            const fd = field(i64, fmt.?, 104).*;
+            if (fd > 0 and fd < 24 * 3600 * 1_000_000) m.duration_ms = @divTrunc(fd, 1000);
+        }
+        return m;
+    }
+
+    /// Volta (ou avança) o áudio para perto de `ms` (o pacote antes dele).
+    pub fn seekAudio(m: *Media, ms: i64) void {
+        const a = m.api;
+        if (m.atb.num <= 0 or m.ai < 0) return;
+        const ts: i64 = @intCast(std.math.clamp(@divTrunc(@as(i128, ms + m.start_ms) * m.atb.den, 1000 * @as(i128, m.atb.num)), std.math.minInt(i64), std.math.maxInt(i64)));
+        _ = a.av_seek_frame(m.fmt.?, m.ai, ts, 1); // AVSEEK_FLAG_BACKWARD
+        if (m.actx) |v| a.avcodec_flush_buffers(v);
+    }
+
+    /// No fim do arquivo: o que o decodificador ainda guarda sai para `sink`.
+    pub fn drainAudio(m: *Media, sink: anytype) void {
+        const a = m.api;
+        const ctx = m.actx orelse return;
+        if (a.avcodec_send_packet(ctx, null) < 0) return;
+        m.receiveAudio(ctx, sink);
+    }
+
     fn openAudio(m: *Media) void {
+        m.openAudioWith(codecs);
+    }
+
+    fn openAudioWith(m: *Media, whitelist: [*:0]const u8) void {
         const a = m.api;
         var acodec: ?*const Codec = null;
         const ai = a.av_find_best_stream(m.fmt.?, media_audio, -1, m.vi, &acodec, 0);
         if (ai < 0 or acodec == null) return;
         const as = streamAt(m.fmt.?, ai) orelse return;
-        const ctx = openCodec(a, acodec.?, as, 1) catch return;
+        const ctx = openCodecWith(a, acodec.?, as, 1, whitelist) catch return;
         var rate: i64 = 0;
         var layout: ChLayout = .{};
         const ok = a.av_opt_get_int(ctx, "ar", 0, &rate) >= 0 and a.av_opt_get_chlayout(ctx, "ch_layout", 0, &layout) >= 0;
@@ -724,6 +782,11 @@ pub const Media = struct {
         const a = m.api;
         const ctx = m.actx orelse return;
         if (a.avcodec_send_packet(ctx, p) < 0) return;
+        m.receiveAudio(ctx, sink);
+    }
+
+    fn receiveAudio(m: *Media, ctx: *CodecCtx, sink: anytype) void {
+        const a = m.api;
         const f = m.frame.?;
         while (a.avcodec_receive_frame(ctx, f) == 0) {
             const n: usize = @intCast(@max(0, frameSamples(f)));
@@ -743,10 +806,14 @@ pub fn rgbaSize(dw: u32, dh: u32) usize {
 }
 
 fn openCodec(a: *const Api, codec: *const Codec, s: *Stream, threads: i64) !*CodecCtx {
+    return openCodecWith(a, codec, s, threads, codecs);
+}
+
+fn openCodecWith(a: *const Api, codec: *const Codec, s: *Stream, threads: i64, whitelist: [*:0]const u8) !*CodecCtx {
     var ctx: ?*CodecCtx = a.avcodec_alloc_context3(codec) orelse return error.NoMem;
     errdefer a.avcodec_free_context(&ctx);
     if (a.avcodec_parameters_to_context(ctx.?, streamCodecpar(s)) < 0) return error.Codec;
-    _ = a.av_opt_set(ctx.?, "codec_whitelist", codecs, 0);
+    _ = a.av_opt_set(ctx.?, "codec_whitelist", whitelist, 0);
     _ = a.av_opt_set_int(ctx.?, "threads", threads, 0);
     if (a.avcodec_open2(ctx.?, codec, null) < 0) return error.Codec;
     return ctx.?;

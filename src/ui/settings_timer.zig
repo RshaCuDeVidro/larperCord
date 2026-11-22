@@ -7,6 +7,7 @@ const d = @import("draw.zig");
 const qa = @import("qa.zig");
 const icons = @import("icons.zig");
 const i18n = @import("i18n.zig");
+const inbox = @import("inbox.zig");
 const dropdown = @import("dropdown.zig");
 const vt = @import("../core/voice_timer.zig");
 const S = @import("settings_state.zig");
@@ -166,9 +167,9 @@ fn custom(p: anytype, s: *S.Settings) void {
         p.y += 24;
     } else if (cp.unit == .none and std.mem.trim(u8, s.voice_timer_pattern.slice(), " \t").len > 0) {
         const y0 = p.y;
-        const tw = d.textClipped(p.dl, p.font(.medium), 13.5, p.x, p.y, ctx.col(.idle), i18n.tr("Sem nenhum campo, o texto nunca muda.", "Without any field, the text never changes."), p.w);
-        p.markText(.{ .x = p.x, .y = y0, .w = tw, .h = 18 });
-        p.y += 24;
+        const text = i18n.tr("Sem nenhum campo, o texto nunca muda.", "Without any field, the text never changes.");
+        p.y += inbox.wrapFlow(p.dl, p.font(.medium), 13.5, p.x, p.y, p.w, text, ctx.col(.idle), 24);
+        p.markText(.{ .x = p.x, .y = y0, .w = @min(d.width(p.font(.medium), 13.5, text), p.w), .h = p.y - y0 - 6 });
     }
     p.y += 6;
 }

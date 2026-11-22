@@ -191,6 +191,10 @@ static void ImGui_ImplSDL3_UpdateIme()
     ImGui_ImplSDL3_Data* bd = ImGui_ImplSDL3_GetBackendData();
     ImGuiPlatformImeData* data = &bd->ImeData;
     SDL_Window* window = SDL_GetKeyboardFocus();
+    // [larperCord] With the floating window (a second ImGui context, app_flutuante.zig), each context
+    // only drives the IME of its own window: the main one never moves the IME box onto the other.
+    if (window != bd->Window)
+        window = nullptr;
 
     // Stop previous input
     if ((!(data->WantVisible || data->WantTextInput) || bd->ImeWindow != window) && bd->ImeWindow != nullptr)

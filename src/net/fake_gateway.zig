@@ -83,6 +83,13 @@ pub const sent = struct {
     pub var sends: A = .init(0);
     pub var send_body: [8192]u8 = undefined;
     pub var send_body_len: A = .init(0);
+    /// O tipo da parte de cada arquivo do último envio, separados por vírgula
+    /// (envio_json.partType, como o de verdade põe no multipart; vazio = o do curl),
+    /// e o caminho do primeiro arquivo.
+    pub var send_types: [160]u8 = undefined;
+    pub var send_types_len: A = .init(0);
+    pub var send_file: [512]u8 = undefined;
+    pub var send_file_len: A = .init(0);
     pub var votes: A = .init(0);
     pub var vote_body: [160]u8 = undefined;
     pub var vote_len: A = .init(0);
@@ -234,6 +241,7 @@ pub const Gateway = struct {
     rng: std.Random.DefaultPrng,
     hot_channel: Id = 0,
     last_live: Id = 0,
+    last_live_channel: Id = 0,
     next_live_ms: i64 = 0,
     pending_typing: ?struct { channel: Id, user: Id, at_ms: i64 } = null,
     next_latency_ms: i64 = 0,
@@ -395,14 +403,30 @@ pub const Gateway = struct {
         defer if (act) |a| alloc.destroy(a);
         if (act != null and !g.presence.known(app)) g.presence.learn(alloc, app, "{\"name\":\"Jogo de Teste\"}", false, "[{\"id\":\"4242\",\"type\":1,\"name\":\"logo\"}]");
         g.presence.set(alloc, app, act);
+        g.notePresence();
+    }
+
+    /// O jogo aberto (core/jogos.zig): o mesmo op 3, com as duas atividades.
+    fn setGame(g: *Gateway, game: ?*rpc_proto.Game) void {
+        defer if (game) |x| alloc.destroy(x);
+        g.presence.setGame(alloc, game);
+        g.notePresence();
+    }
+
+    /// Anota o op 3 que iria para o Discord (o QA confere) e muda a nossa linha.
+    fn notePresence(g: *Gateway) void {
+        g.recordOp3();
+        g.emit(g.presence.meEvent(alloc, me_id, g.my_status));
+    }
+
+    fn recordOp3(g: *Gateway) void {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(alloc);
-        conta_net.writeOp3(&out, if (g.my_status == .offline) "invisible" else @tagName(g.my_status), g.conta.custom, g.presence.current) catch return;
+        conta_net.writeOp3(&out, if (g.my_status == .offline) "invisible" else @tagName(g.my_status), g.conta.custom, g.presence.activityList()) catch return;
         const n = @min(out.items.len, sent.presence.len);
         @memcpy(sent.presence[0..n], out.items[0..n]);
         sent.presence_len.store(n, .release);
         _ = sent.presences.fetchAdd(1, .release);
-        g.emit(g.presence.meEvent(alloc, me_id, g.my_status));
     }
 
     /// Pedidos de mensagem e grupo: anota o pedido que iria para o Discord e
@@ -619,6 +643,11 @@ pub const Gateway = struct {
                         defer b.deinit(alloc);
                         envio_json.messageBody(&b, alloc, .{ .content = m.content, .nonce = m.nonce, .reply_to = m.reply_to, .opts = m.opts, .names = names[0..nf], .files = m.file_opts }) catch {};
                         sent.keep(&sent.send_body, &sent.send_body_len, b.items);
+                        var tb: [160]u8 = undefined;
+                        var tw = std.Io.Writer.fixed(&tb);
+                        for (names[0..nf], 0..) |nm, i| tw.print("{s}{s}", .{ if (i > 0) "," else "", envio_json.partType(nm) orelse "" }) catch {};
+                        sent.keep(&sent.send_types, &sent.send_types_len, tw.buffered());
+                        sent.keep(&sent.send_file, &sent.send_file_len, if (nf > 0) m.files[0] else "");
                         _ = sent.sends.fetchAdd(1, .monotonic);
                     }
                     envio.freeFileOpts(alloc, m.file_opts);
@@ -867,9 +896,12 @@ pub const Gateway = struct {
                     @import("fake_conta.zig").saveStatus(ss.status, ss.expires_ms);
                     g.my_status = ss.status;
                     g.status_until = ss.expires_ms;
+                    // O op 3 que o gateway de verdade manda junto, com as atividades de agora.
+                    g.recordOp3();
                     g.emit(.{ .presence_update = .{ .user = me_id, .status = ss.status } });
                 },
                 .set_activity => |sa| g.setActivity(sa.app, sa.activity),
+                .set_game => |sg| g.setGame(sg),
                 .fetch_channel => |id| {
                     _ = sent.fetch_channels.fetchAdd(1, .monotonic);
                     sent.fetch_channel.store(id, .release);
@@ -943,6 +975,11 @@ pub const Gateway = struct {
                     _ = sent.stop_rings.fetchAdd(1, .monotonic);
                     if (ch == g.ringing_me) g.ringing_me = 0;
                     g.emit(.{ .call = .{ .channel = ch } });
+                },
+                .demo_message => |dm| {
+                    const r = g.rng.random();
+                    const user = dmRecipient(dm.channel) orelse (if (dm.channel == group_id) g.groupCaller() else null) orelse users[1 + r.uintLessThan(usize, 7)].id;
+                    _ = try g.liveMessage(dm.channel, user, 0, dm.mention);
                 },
                 .demo_call => |dc| {
                     const caller = dmRecipient(dc.channel) orelse (if (dc.channel == group_id) g.groupCaller() else null) orelse continue;
@@ -1607,6 +1644,28 @@ pub const Gateway = struct {
         g.emit(.{ .call = .{ .channel = ch, .ended = true } });
     }
 
+    /// Uma mensagem ao vivo de `user` em `channel`, com uma das frases da
+    /// demonstração. `mention`: marca a gente, como o Discord manda.
+    fn liveMessage(g: *Gateway, channel: Id, user: Id, reply_to: Id, mention: bool) !Id {
+        const now = nowMs();
+        const r = g.rng.random();
+        const id = types.makeSnowflake(now, r.int(u22));
+        const text = phrase(r.uintLessThan(usize, phrases.len));
+        const content = if (mention) try std.fmt.allocPrint(alloc, "<@{d}> {s}", .{ me_id, text }) else try alloc.dupe(u8, text);
+        g.emit(.{ .message_create = .{
+            .id = id,
+            .channel = channel,
+            .author = user,
+            .timestamp = @divTrunc(now, 1000),
+            .content = content,
+            .reply_to = reply_to,
+            .mentions_me = mention,
+        } });
+        g.last_live = id;
+        g.last_live_channel = channel;
+        return id;
+    }
+
     fn nextDeadline(g: *Gateway) i64 {
         var d = @min(@min(g.next_live_ms, g.next_latency_ms), g.next_flood_ms);
         if (g.call_answer) |a| d = @min(d, a.at_ms);
@@ -1865,24 +1924,21 @@ pub const Gateway = struct {
         if (g.pending_typing) |t| {
             if (now >= t.at_ms) {
                 const r = g.rng.random();
-                const id = types.makeSnowflake(now, r.int(u22));
-                g.emit(.{ .message_create = .{
-                    .id = id,
-                    .channel = t.channel,
-                    .author = t.user,
-                    .timestamp = @divTrunc(now, 1000),
-                    .content = try alloc.dupe(u8, phrase(r.uintLessThan(usize, phrases.len))),
-                    .reply_to = if (r.uintLessThan(u8, 3) == 0) g.last_live else 0,
-                } });
-                g.last_live = id;
+                // A resposta é a outra ao vivo da mesma conversa.
+                const reply_to = if (r.uintLessThan(u8, 3) == 0 and g.last_live_channel == t.channel) g.last_live else 0;
+                _ = try g.liveMessage(t.channel, t.user, reply_to, false);
                 g.pending_typing = null;
                 g.next_live_ms = now + r.intRangeLessThan(i64, 7000, 16000);
             }
         } else if (now >= g.next_live_ms and g.hot_channel != 0) {
             const r = g.rng.random();
-            const user = if (dmRecipient(g.hot_channel)) |u| u else users[1 + r.uintLessThan(usize, 7)].id;
-            g.emit(.{ .typing_start = .{ .channel = g.hot_channel, .user = user } });
-            g.pending_typing = .{ .channel = g.hot_channel, .user = user, .at_ms = now + r.intRangeLessThan(i64, 2200, 4000) };
+            // De vez em quando, um amigo manda DM em outra conversa: a demonstração
+            // também mostra o aviso de DM (o som de mensagem nova, o contador, a
+            // cartinha do mascote).
+            const ch = if (dmRecipient(g.hot_channel) == null and r.uintLessThan(u8, 4) == 0) dmId(r.uintLessThan(usize, 6)) else g.hot_channel;
+            const user = if (dmRecipient(ch)) |u| u else users[1 + r.uintLessThan(usize, 7)].id;
+            g.emit(.{ .typing_start = .{ .channel = ch, .user = user } });
+            g.pending_typing = .{ .channel = ch, .user = user, .at_ms = now + r.intRangeLessThan(i64, 2200, 4000) };
             if (r.uintLessThan(u8, 4) == 0) {
                 const who = users[1 + r.uintLessThan(usize, users.len - 1)].id;
                 const st: types.Status = @enumFromInt(r.uintLessThan(u8, 3));
@@ -3218,9 +3274,10 @@ pub const klipy_page = "https://klipy.com/gifs/larper-dance";
 pub const klipy_file = "larper-dance";
 
 /// Mensagem de voz (o Ogg é feito na hora pelo player), anexo com spoiler,
-/// anexo marcado como sensível, uma imagem antiga com o link vencido e um GIF do
-/// Klipy. O #música também tem o árabe e o hebraico (`demoRtlMessages`, nas
-/// posições 1, 2, 5 e 6 contando do fim): estas ficam nas 3, 4, 8, 7 e 11.
+/// anexo marcado como sensível, uma imagem antiga com o link vencido, um GIF do
+/// Klipy e quatro anexos de áudio. O #música também tem o árabe e o hebraico
+/// (`demoRtlMessages`, nas posições 1, 2, 5 e 6 contando do fim): estas ficam nas
+/// 3, 4, 8, 7 e 11, e os áudios nas 9, 10, 12 e 13.
 fn demoMediaMessages(msgs: []types.Message) !void {
     const n = msgs.len;
     const set = struct {
@@ -3251,7 +3308,21 @@ fn demoMediaMessages(msgs: []types.Message) !void {
     // parada à parte, e a página como chave dos favoritos. Longo, como muitos do Klipy:
     // passa do limite de cada GIF e toca aos poucos (ui/gif_stream.zig).
     try set(&msgs[n - 11], klipy_page, .{ .url = try alloc.dupe(u8, "demo:longgif"), .filename = try alloc.dupe(u8, klipy_file), .width = 400, .height = 240, .animated = true, .embed = true, .link = try alloc.dupe(u8, klipy_page) });
+    // Anexos de áudio (o player de ui/audio_card.zig; os arquivos saem de
+    // ui/audio_demo.zig na hora do play). O MP3 vem sem o tipo: a extensão basta.
+    // Fora das posições das fotos, do vídeo e do GIF que buildHistory põe em todo
+    // canal (5, 9, 12, 14, 23, 31) e da mensagem com o cartão do link (10).
+    try set(&msgs[n - 15], pick("a demo nova 🎧", "the new demo 🎧"), .{ .url = try alloc.dupe(u8, "demo:audio:mp3"), .filename = try alloc.dupe(u8, audio_mp3), .size = 12_407 });
+    try set(&msgs[n - 19], "", .{ .url = try alloc.dupe(u8, "demo:audio:wav"), .filename = try alloc.dupe(u8, audio_wav), .size = 132_344, .audio = true });
+    try set(&msgs[n - 24], pick("gravei aqui, escuta", "recorded this, listen"), .{ .url = try alloc.dupe(u8, "demo:audio:ogg"), .filename = try alloc.dupe(u8, audio_ogg), .size = 158_000, .audio = true });
+    try set(&msgs[n - 13], "", .{ .url = try alloc.dupe(u8, "demo:audio:flac"), .filename = try alloc.dupe(u8, audio_flac), .size = 96_174, .audio = true });
 }
+
+/// Os anexos de áudio da demonstração (QA_SUITE=midia).
+pub const audio_mp3 = "arpejo-demo.mp3";
+pub const audio_wav = "batida.wav";
+pub const audio_ogg = "violao.ogg";
+pub const audio_flac = "pad.flac";
 
 /// #zig do primeiro servidor: respostas a mensagens sem texto, para a prévia
 /// mostrar o ícone e o que a original tem (QA_SUITE=tema, qa_temas.zig).

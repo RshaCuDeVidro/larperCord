@@ -136,7 +136,7 @@ fn card(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y0: f32, m: *const StoredM
     var pb: [600]u8 = undefined;
     const text = inbox.previewText(ctx, &pb, m);
     const text_h = inbox.wrapText(null, fam.get(.regular), 14, tx, 0, tw, text, 4, ctx.col(.text));
-    const media_h = att.blockHeight(m.msg.attachments, tw, m.msg.content.len > 0);
+    const media_h = att.blockHeight(m.msg.attachments, tw, m.msg.content.len > 0, m.msg.id);
     const embed_h = emb.block(ctx, null, m, tx, 0, tw, 1, .{});
     const h = 36 + text_h + media_h + embed_h + 10;
     const r: d.Rect = .{ .x = x, .y = y0, .w = wd, .h = h };

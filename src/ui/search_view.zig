@@ -175,7 +175,10 @@ fn statusRow(ctx: *d.Ctx, dl: *c.ImDrawList, b: d.Rect, y: f32) f32 {
         if (search.server == .done) right_x = sortControl(ctx, dl, r);
         const label: []const u8 = switch (search.server) {
             .loading, .indexing => i18n.tr("Buscando no Discord…", "Searching Discord…"),
-            .done => if (search.total == 1)
+            // Na primeira página, o que estava neste computador veio junto.
+            .done => if (search.offset == 0 and search.found > 0)
+                i18n.fmt(&buf, "{d} no Discord · {d} neste computador", "{d} on Discord · {d} on this computer", .{ search.total, search.found })
+            else if (search.total == 1)
                 i18n.tr("1 resultado", "1 result")
             else
                 i18n.fmt(&buf, "{d} resultados", "{d} results", .{search.total}),
@@ -283,7 +286,9 @@ fn failedBanner(ctx: *d.Ctx, dl: *c.ImDrawList, list: d.Rect) d.Rect {
     d.text(dl, bold, 12.5, br.x + 10, d.centerY(br, 12.5), ctx.col(.text), label);
     if (hb.clicked) search.askServer(ctx);
     const room = br.x - r.x - 22;
-    _ = d.textClipped(dl, bold, 13, r.x + 12, r.y + 8, ctx.col(.text), i18n.tr("Sem resposta do Discord", "No answer from Discord"), room);
+    const title = if (search.offline) i18n.tr("Sem conexão com o Discord", "No connection to Discord") else i18n.tr("Sem resposta do Discord", "No answer from Discord");
+    qa.mark(r, "search-failed:{s}", .{if (search.offline) "offline" else "server"});
+    _ = d.textClipped(dl, bold, 13, r.x + 12, r.y + 8, ctx.col(.text), title, room);
     _ = d.textClipped(dl, font, 12.5, r.x + 12, r.y + 28, ctx.col(.muted), i18n.tr("Mostrando o que está neste computador.", "Showing what's on this computer."), room);
     return .{ .x = list.x, .y = r.bottom() + 2, .w = list.w, .h = list.bottom() - r.bottom() - 2 };
 }
@@ -532,8 +537,13 @@ fn resultCard(ctx: *d.Ctx, dl: *c.ImDrawList, rr: d.Rect, r: *const search.Resul
     var tb: [48]u8 = undefined;
     const when = w.stamp(&tb, r.ts, @divTrunc(ctx.now_ms, 1000));
     const ww = d.width(font, 12, when);
-    // À direita: "cache" (veio do disco) e, com o mouse em cima, "Ir".
+    // À direita: "neste computador" (está no índice daqui) e, com o mouse em cima, "Ir"
+    // no lugar dela (o nome precisa de espaço no painel estreito).
     var slot = right;
+    const tag = i18n.tr("neste computador", "on this computer");
+    const tw = @min(d.width(font, 11, tag) + 12, (right - tx) * 0.45);
+    const tr: d.Rect = .{ .x = slot - tw, .y = rr.y + 9, .w = tw, .h = 18 };
+    if (r.local) qa.mark(tr, "search-local:{d}", .{i});
     if (hb.hovered) {
         const jump = i18n.tr("Ir", "Jump");
         const jw = d.width(bold, 11.5, jump) + 14;
@@ -541,13 +551,9 @@ fn resultCard(ctx: *d.Ctx, dl: *c.ImDrawList, rr: d.Rect, r: *const search.Resul
         d.rect(dl, jr, ctx.col(.elevated).mix(ctx.col(.text), 0.1), @max(ctx.th.radius, 4));
         d.text(dl, bold, 11.5, jr.x + 7, d.centerY(jr, 11.5), ctx.col(.text), jump);
         slot = jr.x - 6;
-    }
-    if (r.disk) {
-        const tag = i18n.tr("cache", "cache");
-        const tw = d.width(font, 11, tag) + 12;
-        const tr: d.Rect = .{ .x = slot - tw, .y = rr.y + 9, .w = tw, .h = 18 };
+    } else if (r.local) {
         d.rect(dl, tr, ctx.col(.faint).alpha(0.18), 4);
-        d.text(dl, font, 11, tr.x + 6, d.centerY(tr, 11), ctx.col(.muted), tag);
+        _ = d.textClipped(dl, font, 11, tr.x + 6, d.centerY(tr, 11), ctx.col(.muted), tag, tw - 12);
         slot = tr.x - 6;
     }
     const name_room = @max(0, slot - tx - ww - 8);

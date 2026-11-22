@@ -49,12 +49,15 @@ const member_ask = @import("member_ask.zig");
 const envio_json = @import("envio_json.zig");
 const envio = @import("../core/envio.zig");
 const gw_budget = @import("gw_budget.zig");
+const saida = @import("saida_servidor.zig");
+const registro = @import("registro_rede.zig");
 const limits_json = @import("limits_json.zig");
 const debug_log = @import("../platform/debug_log.zig");
 const conta_net = @import("conta_net.zig");
 const social = @import("social.zig");
 const dm_order = @import("../core/dm_order.zig");
 const media_flags = @import("../core/media_flags.zig");
+const audio_formato = @import("../core/audio_formato.zig");
 const media_refresh = @import("../core/media_refresh.zig");
 const stickers = @import("../core/stickers.zig");
 const rpc_proto = @import("rpc_proto.zig");
@@ -505,7 +508,7 @@ pub const Gateway = struct {
         }
 
         const h = c.curl_easy_init() orelse return .retry;
-        sys.curlTls(h);
+        sys.curlTlsWebSocket(h);
         g.ws = h;
         var url_buf: [512]u8 = undefined;
         const base = if (g.resume_len > 0) g.resume_base[0..@as(usize, g.resume_len)] else gateway_host;
@@ -803,6 +806,10 @@ pub const Gateway = struct {
             if (g.ws_end == null) g.ws_end = .reconnect;
             return false;
         }
+        if (debug_log.isOn()) {
+            var lb: [64]u8 = undefined;
+            if (registro.opLine(&lb, payload)) |line| std.log.info("gateway: saiu {s}", .{line});
+        }
         return true;
     }
 
@@ -843,10 +850,11 @@ pub const Gateway = struct {
         g.send(out.items);
     }
 
-    fn dropHeldActivity(g: *Gateway) void {
+    /// Tira da espera os comandos do mesmo tipo de `cmd` (só o mais novo vale).
+    fn dropHeld(g: *Gateway, cmd: ev.Command) void {
         var i: usize = 0;
         while (i < g.held.items.len) {
-            if (g.held.items[i] == .set_activity) freeCommand(g.held.orderedRemove(i)) else i += 1;
+            if (std.meta.activeTag(g.held.items[i]) == std.meta.activeTag(cmd)) freeCommand(g.held.orderedRemove(i)) else i += 1;
         }
     }
 
@@ -1284,6 +1292,35 @@ pub const Gateway = struct {
         g.queueOp(.{ .lazy = .{ .guild = guild, .channel = channel, .thread = thread } });
     }
 
+    /// Saímos do servidor (kick, ban, ou saímos nós; net/saida_servidor.zig): a lista
+    /// de membros não é pedida de novo na reconexão, o que dele esperava na fila ou a
+    /// conexão voltar não sai, e a call de lá acaba aqui também. Do lado do Discord ela
+    /// já acabou: sem op 4 para sair, e sem tentar voltar com o token velho.
+    fn leftGuild(g: *Gateway, id: Id) void {
+        g.outbox.forgetGuild(id);
+        if (g.sub_guild == id) {
+            g.sub_guild = 0;
+            g.sub_channel = 0;
+            g.sub_thread = 0;
+        }
+        // Num RESUME, o GUILD_DELETE perdido chega antes do RESUMED, com o que foi
+        // pedido sem conexão ainda guardado (e o op 4 sem resposta, que iria de novo).
+        var i: usize = g.held.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (saida.heldGuild(g.held.items[i]) == id) freeCommand(g.held.orderedRemove(i));
+        }
+        if (g.voice_unconfirmed) |v| if (v.guild == id) {
+            g.voice_unconfirmed = null;
+        };
+        if (g.voice_guild == id and g.voice_channel != 0) {
+            g.stopVoice();
+            g.voice_channel = 0;
+            // O app sai da call sem mandar nada (como quando alguém nos desconecta).
+            g.emit(.{ .voice_state = .{ .channel = null, .user = g.me } });
+        }
+    }
+
     /// Nome do status no gateway (offline = invisível para os outros): o
     /// mesmo das configurações da conta.
     const statusName = status_proto.statusName;
@@ -1425,10 +1462,10 @@ pub const Gateway = struct {
                 // O op 8 de lá sai da fila (a espera do servidor fica: o limite é por
                 // sessão), e um RATE_LIMITED atrasado não o traz de volta.
                 g.members_ask.forgetGuild(id);
-                g.outbox.forgetMembers(id);
                 for (&g.members_sent) |*x| if (x.req.guild == id) {
                     x.req.guild = 0;
                 };
+                g.leftGuild(id);
                 g.emit(.{ .guild_delete = id });
             }
             return;
@@ -2297,6 +2334,8 @@ pub const Gateway = struct {
             const aflags = media_flags.flagsValue(j.int(j.get(a, "flags")));
             // Mensagem de voz: o Ogg Opus com a duração e a forma de onda.
             const voice = voice_msg and std.mem.startsWith(u8, ctype, "audio/");
+            // Outro áudio (música, gravação): o player de ui/audio_card.zig.
+            const audio = !voice and !image and audio_formato.tipoDeAudio(ctype);
             var att: types.Attachment = .{
                 .url = try alloc.dupe(u8, url),
                 .filename = undefined,
@@ -2309,6 +2348,7 @@ pub const Gateway = struct {
                 .spoiler = media_flags.spoilerAttachment(name, aflags),
                 .sensitive = media_flags.sensitive(aflags),
                 .voice = voice,
+                .audio = audio,
             };
             errdefer alloc.free(att.url);
             att.filename = try alloc.dupe(u8, name);
@@ -2828,6 +2868,17 @@ pub const Gateway = struct {
         member_ask.releaseSent(&g.members_ask, &g.members_sent);
         g.outbox.forgetPending();
         g.voice_unconfirmed = null;
+        // Servidores que deixamos com a conexão caída (kick, ban): o READY não os traz e
+        // GUILD_DELETE nenhum vem. A lista de membros, a call e o que esperava a conexão
+        // ficam por aqui.
+        if (g.sub_guild != 0 and !saida.readyHas(d, g.sub_guild)) g.leftGuild(g.sub_guild);
+        if (g.voice_guild != 0 and g.voice_channel != 0 and !saida.readyHas(d, g.voice_guild)) g.leftGuild(g.voice_guild);
+        var hi: usize = g.held.items.len;
+        while (hi > 0) {
+            hi -= 1;
+            const gid = saida.heldGuild(g.held.items[hi]) orelse continue;
+            if (!saida.readyHas(d, gid)) freeCommand(g.held.orderedRemove(hi));
+        }
         // O pedido de voz pode ter chegado antes do READY; agora o gateway
         // já aceita o op 4. Numa sessão nova a call antiga não vale mais.
         if (g.voice_channel != 0) {
@@ -2987,7 +3038,7 @@ pub const Gateway = struct {
     /// Comando que é escrito no WebSocket (não passa pelo REST).
     fn usesGateway(cmd: ev.Command) bool {
         return switch (cmd) {
-            .subscribe_guild, .channel_info, .set_status, .set_activity, .join_voice, .voice_flags => true,
+            .subscribe_guild, .channel_info, .set_status, .set_activity, .set_game, .join_voice, .voice_flags => true,
             // Os eventos da interação vão para a sessão do READY (session_id).
             .interaction => |ic| ic == .send,
             else => false,
@@ -3319,7 +3370,8 @@ pub const Gateway = struct {
             _ = c.curl_easy_setopt(h, c.CURLOPT_TIMEOUT, @as(c_long, if (mime != null) 180 else 20));
             // Com prazo, a conexão também: sem isso uma rede travada mandaria o pedido depois dele.
             if (deadline != 0) _ = c.curl_easy_setopt(h, c.CURLOPT_CONNECTTIMEOUT_MS, @as(c_long, @intCast(std.math.clamp(deadline - nowMs(), 1, 60_000))));
-            _ = c.curl_easy_setopt(h, c.CURLOPT_ACCEPT_ENCODING, "");
+            // Na ordem do Chrome (o curl, sozinho, põe "deflate, gzip, br, zstd").
+            _ = c.curl_easy_setopt(h, c.CURLOPT_ACCEPT_ENCODING, sys.acceptEncoding());
             g.abortable(h);
             if (mime) |mp| {
                 _ = c.curl_easy_setopt(h, c.CURLOPT_MIMEPOST, mp);
@@ -3348,6 +3400,7 @@ pub const Gateway = struct {
             applyRate(g, rate);
             // Captcha, verificação ou 401: conta e vai para o registro de depuração.
             challenge.observe(resp.status, method, path, resp.body.items);
+            if (debug_log.isOn()) std.log.info("api: {s} {s} -> {d}", .{ method, registro.pathOnly(path), resp.status });
             if (resp.status == 429) {
                 // Rate limit: espera o que o Discord pediu e tenta de novo.
                 var wait_ms: u32 = rate.retry_after_ms orelse 1000;
@@ -3478,6 +3531,7 @@ pub const Gateway = struct {
                 if (list.len > 0) alloc.free(list);
             },
             .set_activity => |sa| if (sa.activity) |a| alloc.destroy(a),
+            .set_game => |sg| if (sg) |x| alloc.destroy(x),
             .interaction => |ic| interaction.freeCmd(alloc, ic),
             .create_thread => |m| alloc.free(m.name),
             .edit_thread => |e| if (e.name) |n| alloc.free(n),
@@ -3869,8 +3923,8 @@ pub const Gateway = struct {
         // Grava no fim da volta do laço, junto com as outras estrelas que chegaram.
         if (cmd == .gif_favorite) return g.queueFavorite(cmd.gif_favorite);
         if (!g.ws_ready and usesGateway(cmd)) {
-            // Rich Presence: só a atividade mais nova espera a conexão voltar.
-            if (cmd == .set_activity) g.dropHeldActivity();
+            // Rich Presence e jogo aberto: só o mais novo de cada espera a conexão voltar.
+            if (cmd == .set_activity or cmd == .set_game) g.dropHeld(cmd);
             g.held.append(alloc, cmd) catch freeCommand(cmd);
             return;
         }
@@ -4193,6 +4247,8 @@ pub const Gateway = struct {
                         const fp = c.curl_mime_addpart(mp);
                         _ = c.curl_mime_name(fp, field.ptr);
                         _ = c.curl_mime_filedata(fp, f.ptr);
+                        // O tipo que o navegador mandaria onde o curl não sabe (.ogg: audio/ogg).
+                        if (envio_json.partType(names[i])) |t| _ = c.curl_mime_type(fp, t.ptr);
                         // Spoiler: o nome do arquivo na parte também leva o SPOILER_.
                         if (i < m.file_opts.len and m.file_opts[i].spoiler) {
                             var sb: [300]u8 = undefined;
@@ -4356,6 +4412,12 @@ pub const Gateway = struct {
                 // personalizado e esta atividade (net/conta_net.zig).
                 conta_net.sendPresence(g);
                 // O Discord não manda a nossa presença de volta: a nossa linha muda aqui.
+                g.emit(g.presence.meEvent(alloc, g.me, g.status));
+            },
+            .set_game => |sg| {
+                // O jogo aberto vai ao lado da atividade do Rich Presence, no mesmo op 3.
+                g.presence.setGame(alloc, sg);
+                conta_net.sendPresence(g);
                 g.emit(g.presence.meEvent(alloc, g.me, g.status));
             },
             .conta => |cc| conta_net.execute(g, cc),
@@ -4550,7 +4612,7 @@ pub const Gateway = struct {
                 var resp = g.request("POST", path, body) orelse return;
                 resp.body.deinit(alloc);
             },
-            .demo_call => {},
+            .demo_call, .demo_message => {},
             .shutdown => {},
         }
     }

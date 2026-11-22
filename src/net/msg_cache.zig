@@ -76,8 +76,19 @@ fn root() []const u8 {
     return root_buf[0..root_len];
 }
 
-fn usable() bool {
+/// Lê e grava no disco (ligado, fora dos prints, com conta).
+pub fn usable() bool {
     return enabled and !off and root_len > 0 and acct_len > 0;
+}
+
+/// O índice da busca local (net/busca_local.zig), na pasta da conta: vai junto com
+/// "Apagar cache" e com a conta removida.
+pub const search_index_file = "busca.lci";
+
+/// A pasta da conta atual. null = cache desligado ou sem conta.
+pub fn accountDir(buf: []u8) ?[]const u8 {
+    if (!usable()) return null;
+    return std.fmt.bufPrint(buf, "{s}/{s}", .{ root(), acct_buf[0..acct_len] }) catch null;
 }
 
 /// Conta da sessão (0 = demonstração). As conversas ficam separadas por conta.
@@ -156,6 +167,7 @@ fn dupeAttachments(list: []const types.Attachment) ![]const types.Attachment {
             .voice = a.voice,
             .voice_ms = a.voice_ms,
             .wave = a.wave,
+            .audio = a.audio,
         };
         out[n].filename = alloc.dupe(u8, a.filename) catch |e| {
             alloc.free(out[n].url);
@@ -458,6 +470,11 @@ fn removeDir(path: [:0]const u8) u64 {
             const fp = std.fmt.bufPrintSentinel(&fbuf, "{s}/{s}", .{ path, name }, 0) catch continue;
             const size = fileSize(fp.ptr);
             if (c.unlink(fp.ptr) == 0) freed += size;
+        } else if (std.mem.eql(u8, name, search_index_file)) {
+            // O índice da busca não entra no total do cache (tem o teto dele).
+            var fbuf: [560]u8 = undefined;
+            const fp = std.fmt.bufPrintSentinel(&fbuf, "{s}/{s}", .{ path, name }, 0) catch continue;
+            _ = c.unlink(fp.ptr);
         }
     }
     _ = c.closedir(dir);
@@ -503,24 +520,12 @@ pub fn removeAccount(id: Id) void {
     dirs_ok = false;
 }
 
-/// Muda quando o arquivo de um canal muda (a busca guarda o que já leu).
-pub const Stamp = struct { mtime_ns: i64, size: u64 };
-
-pub fn stamp(ch: Id) ?Stamp {
-    if (!usable()) return null;
-    var pbuf: [512]u8 = undefined;
-    const path = channelPath(&pbuf, ch, "") orelse return null;
-    var info: c.SDL_PathInfo = undefined;
-    if (!c.SDL_GetPathInfo(path.ptr, &info)) return null;
-    return .{ .mtime_ns = info.modify_time, .size = info.size };
-}
-
-/// Pasta da conta atual ("" sem conta): a busca esquece o índice se mudar.
+/// Pasta da conta atual ("" sem conta): a busca local esquece o índice se mudar.
 pub fn account() []const u8 {
     return acct_buf[0..acct_len];
 }
 
-/// Canais da conta atual que têm cache em disco (para a busca).
+/// Canais da conta atual que têm cache em disco.
 pub fn listChannels(out: *std.ArrayList(Id)) void {
     if (!usable()) return;
     var buf: [512]u8 = undefined;

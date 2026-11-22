@@ -386,6 +386,10 @@ pub const Command = union(enum) {
     /// Só a demonstração: alguém liga para nós nesta conversa (`ring`) ou
     /// desliga a call (o QA usa; o gateway de verdade ignora).
     demo_call: struct { channel: Id, ring: bool },
+    /// Só a demonstração: alguém manda agora nesta conversa uma mensagem como as
+    /// que chegam ao vivo (`mention`: marcando a gente). O QA usa (o som de
+    /// mensagem nova); o gateway de verdade ignora.
+    demo_message: struct { channel: Id, mention: bool = false },
     /// Pede a lista de membros de um servidor, vista do canal aberto (op 14).
     /// `channel` é sempre um canal de verdade (o pai, se for thread); `thread`
     /// pede também a lista de quem está nela.
@@ -417,6 +421,10 @@ pub const Command = union(enum) {
     /// Rich Presence: a atividade de um jogo (`app` = client_id). Alocada com o
     /// c_allocator, passa para quem recebe; null limpa.
     set_activity: struct { app: Id, activity: ?*@import("../net/rpc_proto.zig").Activity },
+    /// O jogo aberto, achado pelo processo (core/jogos.zig): vai junto com a
+    /// atividade do Rich Presence. Alocado com o c_allocator, passa para quem
+    /// recebe; null limpa.
+    set_game: ?*@import("../net/rpc_proto.zig").Game,
     /// Move alguém para outro canal de voz (null = desconecta da call).
     move_member: struct { guild: Id, user: Id, channel: ?Id },
     /// Expulsar, banir, castigar, silenciar… (chega como `moderated`).
@@ -538,12 +546,19 @@ pub const Action = union(enum) {
     pick_sound,
     /// Abre o seletor de pasta para o FFmpeg (ui/settings_video.zig).
     pick_ffmpeg_dir,
+    /// Abre o seletor para o executável de um jogo (ui/settings_jogos.zig).
+    pick_game_exe,
     restart,
     /// "Apagar todos os dados", confirmado (ui/settings.zig): apaga e fecha o app.
     wipe_data,
     react: struct { id: Id, emoji: types.Reaction },
     open_dm: Id,
     send_dm: struct { user: Id, text: []const u8 },
+    /// A caixa da janela flutuante: manda na conversa que ela segue, seja qual for a
+    /// aba aberta na principal (texto alocado com o gpa da interface).
+    send_to: struct { channel: Id, text: []const u8 },
+    /// A janela flutuante (app_flutuante.zig): abrir, fechar, voltar para a principal.
+    flutuante: @import("flutuante.zig").Pedido,
     copy: []const u8,
     jump_to: Id,
     /// Abre o canal e vai até a mensagem (buscando em volta dela se preciso).
@@ -601,11 +616,17 @@ pub const Action = union(enum) {
     logout,
     /// Abre o seletor de arquivos para anexar.
     pick_files,
+    /// "Salvar como" de uma exportação ou de uma mídia (o nome sugerido fica em
+    /// ui/exportar.zig, que recebe a resposta).
+    save_dialog,
     /// Um arquivo só, para a opção de anexo de um comando de bot (ui/interact.zig).
     pick_file,
     remove_upload: usize,
     /// Ctrl+V com uma imagem na área de transferência.
     paste_image,
+    /// O áudio gravado na caixa (ui/gravar_audio.zig), já salvo no arquivo
+    /// temporário (caminho no c_allocator): vai como um anexo comum.
+    send_recording: [:0]u8,
     /// Tela de amigos (no lugar da conversa, dentro das mensagens diretas).
     open_friends,
     /// Chegou perto do topo da conversa: busca as mais antigas.
@@ -648,6 +669,8 @@ pub const Action = union(enum) {
     unsave_message: Id,
     /// Troca a anotação (texto alocado com o gpa da interface).
     saved_note: struct { id: Id, text: []const u8 },
+    /// Lembretes de mensagens: também só locais (app_lembretes.zig).
+    lembrete: @import("lembretes.zig").Action,
     /// "Cor do servidor": destaque enquanto o servidor está aberto; null limpa.
     set_guild_color: struct { guild: Id, rgb: ?u32 },
     /// Várias contas: troca (desconecta e entra na outra), volta à tela de

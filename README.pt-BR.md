@@ -22,15 +22,17 @@ Zig · SDL3 · Dear ImGui · FreeType · zero Electron
 
 ### Se o Discord bloquear a sua conta
 
-O Discord desativa contas ou força a troca de senha quando acha que a conta é um bot de spam ou foi invadida. Isso pode acontecer em qualquer cliente, mas clientes de terceiros costumam disparar mais. Já aconteceu com quem desenvolve este projeto, depois de um dia de testes. **Use uma conta secundária.**
+O Discord desativa contas ou força a troca de senha quando acha que a conta é um bot de spam ou foi invadida. Isso pode acontecer em qualquer cliente, mas clientes de terceiros costumam disparar mais. Já aconteceu mais de uma vez com quem desenvolve este projeto: depois de um dia de testes, e logo depois de levar kick de um servidor. **Use uma conta secundária.**
 
 Estes são os gatilhos que as pessoas costumam relatar, então faça isso pelo cliente oficial:
 
-- entrar ou sair de servidores, o mais comum
+- entrar ou sair de servidores, o mais comum, e levar kick ou ban de um
 - desconectar e reconectar com frequência, o que inclui reiniciar o app várias vezes
 - abrir DMs com pessoas novas
 - mexer na lista de amigos
 - editar o perfil enquanto estiver conectado aqui
+
+Desde a 0.6.7, a própria conexão parece o Chrome que o app diz ser: o mesmo aperto de mão TLS (JA4) do Chrome e, na release de Linux, HTTP/2 com as configurações do Chrome (`tools/tls_check.sh` compara os dois, sem token; o Windows ainda está pendente). Com o registro de depuração ligado (Configurações → Avançado), cada pedido à API e cada op que sai pelo gateway ficam anotados, sem o token e sem conteúdo nenhum, para você ver o que o app mandou logo antes se a conta for marcada.
 
 Se acontecer, redefina a senha pelo discord.com. Se a conta continuar bloqueada, [faça uma apelação aqui](https://support.discord.com/hc/en-us/requests/new?ticket_form_id=360000029731). O Discord não publica essas regras, então a lista vem da experiência de quem faz clientes de terceiros.
 
@@ -97,7 +99,7 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
   botão direito, notas embaixo das mensagens, comandos e lembretes, numa thread só deles, com limite de
   instruções e de memória: não seguram a interface. Anti-golpe, radar de CVE, cartões do GitHub, o que perdi,
   tradução, lembretes, destaques, links limpos, e links e arquivos vêm com o app. [Guia e API →](docs/plugins.pt-BR.md)
-- **Voz:** em Configurações → Voz você escolhe microfone e saída (lembrados pelo nome, voltam ao padrão se sumirem, trocam em plena call), ajusta os volumes, vê o nível do microfone ao vivo e usa "Testar microfone" para ouvir a si mesmo. A detecção de voz tem limiar ajustável sobre a barra ou modo automático que aprende o ruído de fundo. O modo "aperte para falar" aceita tecla ou botão do mouse e funciona com a janela em foco (atalho global não é portável pelo SDL). Há passa-altas contra ronco, porta de ruído e um som para cada evento da call (entrar, sair, outra pessoa entrar ou sair, mudo, ensurdecer, o toque), embutido ou um arquivo seu em WAV ou Ogg Opus, cada um desligável. O painel de voz mostra ping, qualidade por cor, quando você está transmitindo e avisa se o microfone não abrir ou se o servidor te mutou ou ensurdeceu; mudo e surdo dos outros aparecem na lista da call.
+- **Voz:** em Configurações → Voz você escolhe microfone e saída (lembrados pelo nome, voltam ao padrão se sumirem, trocam em plena call), ajusta os volumes, vê o nível do microfone ao vivo e usa "Testar microfone" para ouvir a si mesmo. A detecção de voz tem limiar ajustável sobre a barra ou modo automático que aprende o ruído de fundo. O modo "aperte para falar" aceita tecla ou botão do mouse e funciona com a janela em foco (atalho global não é portável pelo SDL). Há passa-altas contra ronco, porta de ruído e um som para cada evento da call (entrar, sair, outra pessoa entrar ou sair, mudo, ensurdecer, o toque), embutido ou um arquivo seu em WAV ou Ogg Opus, cada um desligável. Um som de mensagem nova toca com DM e menção quando você não está olhando a conversa (não nas silenciadas, nem em Não perturbe), com a chave em Configurações → Notificações. O painel de voz mostra ping, qualidade por cor, quando você está transmitindo e avisa se o microfone não abrir ou se o servidor te mutou ou ensurdeceu; mudo e surdo dos outros aparecem na lista da call.
 - **Roda no Linux e no Windows.** No Linux, prefere Wayland nativo numa sessão Wayland, com X11 como alternativa. O Windows 10/11 sai do mesmo código; os tokens ficam no Gerenciador de Credenciais.
 - **Fica na bandeja.** O ícone fica na bandeja do sistema da abertura até sair, com Abrir e Sair no menu dele mesmo com a janela aberta, e fechar mantém o app conectado lá. O clique esquerdo no ícone mostra ou esconde a janela. "Fechar para a bandeja" em Configurações → Avançado desliga tudo isso: sem ícone, e fechar encerra. Sem bandeja, fechar encerra. Abrir de novo traz a janela que já está rodando. No Linux a bandeja precisa de um painel StatusNotifier.
 - **Atualiza sozinho.** Verifica ao abrir ou em Configurações → Atualizações. Um botão baixa, instala e reinicia. As atualizações são assinadas, e uma versão sem a assinatura certa não é instalada. Há botão de reiniciar e uma página de Novidades com o que mudou em cada versão.
@@ -107,7 +109,7 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
 - **Markdown do Discord.** Títulos, texto pequeno com `-#`, citações, listas e links `[texto](url)`, que mostram o endereço real ao passar o mouse. Blocos de código têm número de linha, e o texto de embeds pode ser selecionado e copiado.
 - **Cuide do que é seu.** Edite um servidor (nome, descrição, ícone, banner) ou um grupo de DM (nome, ícone, pessoas), e edite ou exclua threads quando tiver permissão. O banner do servidor aparece no topo da lista de canais e nos cartões de convite; clique nele para ver a imagem inteira.
 - **Moderação.** Expulsar, banir, castigar e silenciar ou ensurdecer no servidor pelo menu da pessoa, só quando o seu cargo permite, com motivo para o registro de auditoria; lista de Banimentos no menu do servidor. A caixa de mensagem mostra o modo lento e diz por que você não pode enviar (permissão, thread trancada, castigo, quarentena do AutoMod). Entrar por convite avisa antes, e servidores com regras ou boas-vindas abrem tudo no app.
-- **Sua conta, sincronizada.** Bloquear, ignorar, pedidos de amizade (também pelo nome de usuário), silenciar e o nível das notificações, o status com prazo, o status personalizado e o nome que aparece, os pronomes e o Sobre mim do perfil ficam gravados na sua conta do Discord, como no app oficial. Pedidos de mensagem e spam ficam fora das suas DMs. O Rich Presence mostra o jogo que você está jogando, desligado por padrão.
+- **Sua conta, sincronizada.** Bloquear, ignorar, pedidos de amizade (também pelo nome de usuário), silenciar e o nível das notificações, o status com prazo, o status personalizado e o nome que aparece, os pronomes e o Sobre mim do perfil ficam gravados na sua conta do Discord, como no app oficial. Pedidos de mensagem e spam ficam fora das suas DMs. O Rich Presence mostra o jogo que você está jogando, e os jogos sem ele (como o Dota 2) aparecem pelo programa aberto, de uma lista que você monta; os dois desligados por padrão.
 - **Texto em qualquer idioma.** O árabe sai ligado e o texto da direita para a esquerda vem na ordem certa ([GNU FriBidi](https://github.com/fribidi/fribidi)). Uma letra que falta na fonte do tema, em qualquer escrita, vem de uma fonte do sistema que a tenha, procurada só quando um texto assim aparece.
 - **Erros no código (opcional).** Veja erros enquanto digita um bloco de código, com o servidor de linguagem que você escolher. Desligado por padrão, nada embutido nem baixado. [Guia →](docs/lsp.pt-BR.md)
 - **Threads e fóruns.** Threads ativas aninhadas abaixo do canal pai (recolhíveis, com não lidas), abrindo como conversa normal, com abas, tela dividida, rascunho, cache e busca; cartão "N mensagens · última há X" na mensagem que abriu; criar thread, entrar, sair, renomear, pôr tags, arquivar e trancar pelo menu, e ver as arquivadas, inclusive as privadas. Fóruns e canais de mídia mostram a lista de posts no lugar da conversa, com busca local, ordem por atividade, páginas sob demanda e "Novo post" com título, tags e texto. Permissões herdadas do canal pai; a lista de membros mostra quem está na thread.
@@ -122,13 +124,21 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
 - **Mensagens salvas com anotação** (`Ctrl+Shift+S`, botão direito → Salvar mensagem): só no seu
   computador, em `~/.config/larpercord/saved-<conta>.json` (`%APPDATA%\larpercord\saved-<conta>.json`
   no Windows); nada vai para o Discord.
+- **Lembretes de mensagens** (botão direito → Me lembrar…): em 20 minutos, 1 hora, 3 horas, amanhã
+  às 9:00, semana que vem ou na data e hora que você escolher, com uma anotação opcional. Na hora,
+  um aviso fica na tela (ir até a mensagem, adiar 10 minutos, concluir), o mascote do canto leva o
+  bilhete, e com a janela sem foco ou na bandeja sai uma notificação do sistema (fora do "Não
+  perturbe"). O que venceu com o app fechado aparece ao abrir. Só no seu computador, em
+  `lembretes-<conta>.json`, ao lado das mensagens salvas.
 - **Cache local e busca offline.** As últimas 200 mensagens vistas de cada canal ficam em
   `~/.cache/larpercord/messages` (`%LOCALAPPDATA%\larpercord\messages` no Windows; teto de 50 MB e, no
   Linux, pastas 700 e arquivos 600): a conversa aparece
-  na hora ao abrir e o histórico de verdade chega por cima, sem pular a rolagem. `Ctrl+F` busca
-  na memória e no cache, a cada tecla e sem internet, com `from:nome`, `in:canal`, `has:link`,
-  `has:imagem` e `has:arquivo`; clicar no resultado pula até a mensagem. Dá para desligar e
-  apagar em Configurações → Privacidade.
+  na hora ao abrir e o histórico de verdade chega por cima, sem pular a rolagem. `Ctrl+F` responde
+  a cada tecla com um índice local das mensagens que já estão no seu computador, sem internet
+  ("hypr" já acha "hyprland"), com `from:nome`, `in:canal`, `mentions:nome`, `has:link`,
+  `has:imagem`, `has:arquivo`, `has:video`, `has:som`, `before:` e `after:`; o Enter junta o que o
+  Discord achar. Clicar no resultado pula até a mensagem. Dá para desligar e apagar em
+  Configurações → Privacidade.
 - **Várias contas.** O menu do próprio nome lista as contas guardadas (nome e foto) e troca na
   hora; "Adicionar conta" volta ao login sem esquecer as outras. A tela de login também lista
   as contas, e um token recusado pelo Discord é esquecido em vez de ser tentado de novo.
@@ -150,8 +160,15 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
   FFmpeg a página diz o porquê (um `ffmpeg` estático no PATH, sem as bibliotecas, uma versão que o app
   não usa, uma biblioteca que não carregou). Também anima os GIFs antigos do Tenor que só existem em MP4.
 - **Mídia**: spoilers e mídias sensíveis ficam cobertos até você clicar, sem baixar nada antes; links de
-  imagem do Discord vencidos são renovados sozinhos; mensagens de voz têm um player com a onda; GIFs
+  imagem do Discord vencidos são renovados sozinhos; mensagens de voz têm um player com a onda;
+  arquivos de áudio (.mp3, .ogg, .wav, .flac, .m4a…) tocam na conversa, com a onda do arquivo inteiro
+  como barra, velocidade 1×/1,5×/2× e barrinhas que dançam enquanto toca (Opus, MP3 e WAV sem instalar
+  nada, o resto pelo FFmpeg); GIFs longos tocam todos os quadros, e uma estrela em qualquer GIF põe nos
+  seus favoritos.
   longos tocam todos os quadros, e uma estrela em qualquer GIF põe nos seus favoritos.
+- **Exportar e salvar**: botão direito numa conversa → Exportar conversa… grava em HTML (uma página só, que
+  abre sem internet), Markdown ou JSON com o que já está no computador, sem pedir nada ao Discord. Botão
+  direito numa imagem, vídeo ou arquivo → Salvar… ou Salvar em Downloads guarda o arquivo original.
 - **Proxy** (HTTP, HTTPS, SOCKS5, SOCKS5h; Tor em `socks5h://127.0.0.1:9050`), com campos separados para
   endereço, porta, login e senha, para a mídia de fora do Discord ou para tudo menos as calls de voz, que
   sempre conectam direto (Configurações → Rede). A tela de entrada também tem ("Conectar por um
@@ -191,7 +208,7 @@ Todos têm **modo claro e escuro** e **opções próprias** em Configurações �
 
 No Linux, marque o arquivo como executável e rode: `chmod +x larpercord-linux-x86_64 && ./larpercord-linux-x86_64`. Ele pode ficar com esse nome: a atualização troca esse mesmo arquivo. Deixe-o numa pasta sua, como `~/.local/bin`, para ele conseguir se atualizar.
 
-No Windows, descompacte e abra o `larpercord.exe` da pasta `larperCord`. Deixe as três DLLs ao lado dele (`SDL3.dll`, `libcurl-x64.dll`, `libcrypto-3-x64.dll`) e descompacte num lugar onde você pode gravar, fora de `C:\Program Files`, para ele conseguir se atualizar. Ele ainda não tem assinatura de código: se o SmartScreen disser "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**. Na página de versões, pegue o zip: o `.exe` e as DLLs soltos lá são para o atualizador e o script de instalação.
+No Windows, descompacte e abra o `larpercord.exe` da pasta `larperCord`. Desde a 0.6.7 ele é um arquivo só, com a SDL3, o libcurl e o OpenSSL dentro. Descompacte num lugar onde você pode gravar, fora de `C:\Program Files`, para ele conseguir se atualizar. Ele ainda não tem assinatura de código: se o SmartScreen disser "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**. Na página de versões, pegue o zip: o `.exe` solto lá é para o atualizador e o script de instalação, e as DLLs, só para versões antes da 0.6.7 se atualizarem.
 
 A versão para Linux roda em distros de 2022 para cá (glibc 2.34 ou mais nova). SDL3, libcurl e OpenSSL vêm dentro dela. FreeType, fontconfig, libwebp, Opus e zlib vêm do sistema, e uma distro de desktop costuma já ter. Antes de cada versão, ela é aberta em contêineres de Ubuntu 22.04 e 24.04, Debian 12 e 13, Fedora, openSUSE e Arch, na demonstração e sem GPU.
 
@@ -290,7 +307,7 @@ Nada de mágica, só muitas decisões pequenas:
 8. **No Linux, o fontconfig é liberado** depois de resolver as fontes (`FcFini` + `malloc_trim`). O
    Windows não tem fontconfig: as fontes são abertas direto de `C:\Windows\Fonts`.
 9. **Sem cursor piscando**: o cursor piscando sozinho manteria a CPU acordada.
-10. **Binário enxuto**: build release sem símbolos de debug. O arquivo para Linux tem cerca de 14 MB com SDL3, libcurl e OpenSSL dentro, compilados só com as partes que o app usa e sem símbolos exportados, e cerca de 8 MB usando as cópias do sistema. No Windows, esses três vão como DLLs ao lado do `.exe`.
+10. **Binário enxuto**: build release sem símbolos de debug. O arquivo para Linux tem cerca de 16 MB com SDL3, libcurl e OpenSSL dentro, compilados só com as partes que o app usa e sem símbolos exportados, e cerca de 10 MB usando as cópias do sistema. No Windows, esses três vão como DLLs ao lado do `.exe`. Os maiores textos lá dentro (as traduções em japonês e russo, o changelog, a tabela de emoji) vão comprimidos e só abrem quando precisa.
 
 ## Compilando
 
@@ -316,7 +333,8 @@ tools/windows_deps.sh && zig build -Dtarget=x86_64-windows-gnu
 ```
 
 O `zig-out/bin/` fica com o `larpercord.exe` e as DLLs `SDL3.dll`, `libcurl-x64.dll` e `libcrypto-3-x64.dll`:
-copie os quatro juntos. O Windows não precisa de fontconfig nem de fontes extras: o app usa Segoe UI, Consolas,
+copie os quatro juntos. A release é o `.exe` único: o `tools/windows_static_deps.sh` (depois do `tools/windows_deps.sh`)
+compila o OpenSSL, o curl, o nghttp2 e o brotli para ele, e o `-Dsingle-exe=true` os liga, para a conexão parecer a do Chrome. O Windows não precisa de fontconfig nem de fontes extras: o app usa Segoe UI, Consolas,
 Georgia e Segoe UI Emoji de `C:\Windows\Fonts`.
 
 | Comando | |
@@ -324,6 +342,7 @@ Georgia e Segoe UI Emoji de `C:\Windows\Fonts`.
 | `zig build test` | testes (KDL, cores, layout, markdown, Store, temas embutidos, configurações) |
 | `tools/snapshots.sh` | gera os prints de `docs/` sem abrir janela |
 | `tools/membench.sh 60` | mede RAM e CPU de cada tema e falha se passar de 60 MB |
+| `tools/tls_check.sh` | compara a impressão TLS e HTTP/2 do app com a do Chrome, sem token |
 | `tools/qa_quadros.py BIN [--slow]` | confere o pulo de quadros e a memória com a janela escondida, com janela de verdade num Xvfb |
 | `zig build web -Demscripten=PASTA` | a demonstração no navegador em WebAssembly ([como](tools/web/README.pt-BR.md)) |
 
@@ -357,7 +376,8 @@ src/
   ui/         componentes, texto rico, paleta, configurações, animações
   platform/   janela, renderizador, "acordar" o laço; o único lugar que conhece o SDL
 themes/       os temas embutidos (também compilados dentro do binário)
-third_party/  Dear ImGui 1.93 + dear_bindings (C), com um patch pequeno para emoji em bitmap; GNU FriBidi
+third_party/  Dear ImGui 1.93 + dear_bindings (C), com um patch pequeno para emoji em bitmap; GNU FriBidi;
+              dr_mp3 + dr_wav (anexos de áudio)
 ```
 
 O fluxo é **interface → `Action` → app → `Command` → gateway → `Event` → Store → interface**.
@@ -377,6 +397,7 @@ gateway falso pelo real não toca na interface.
 - [x] Voz (DAVE/MLS + Opus)
 - [x] Calls em DM e grupo
 - [x] Rich Presence: mostrar o jogo que você está jogando, desligado por padrão
+- [x] "Jogando …" para jogos sem Rich Presence, achados pelo programa aberto, desligado por padrão
 - [x] Moderação: expulsar, banir, castigo, e silenciar e ensurdecer no servidor
 - [x] Botões, menus, formulários e comandos de barra dos bots
 - [x] Árabe e hebraico, e fontes para qualquer escrita
@@ -394,5 +415,5 @@ gateway falso pelo real não toca na interface.
 
 ## Licença
 
-O larperCord usa a [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). O código de terceiros mantém a própria licença, em cada pasta de `third_party/`: Dear ImGui e dear_bindings são MIT, RNNoise é BSD, GNU FriBidi é LGPL-2.1 ou posterior. O arquivo
+O larperCord usa a [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). O código de terceiros mantém a própria licença, em cada pasta de `third_party/`: Dear ImGui e dear_bindings são MIT, RNNoise é BSD, GNU FriBidi é LGPL-2.1 ou posterior, dr_mp3 e dr_wav (dr_libs) são domínio público ou MIT No Attribution. O arquivo
 `third_party/imgui/misc/freetype/imgui_freetype.cpp` tem alterações marcadas com `[larperCord]`.

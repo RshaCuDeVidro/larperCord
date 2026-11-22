@@ -4,16 +4,20 @@
 //! formato que o gateway e a API usam para um cliente que não é bot. Manter
 //! tudo num lugar só evita o clássico "atualizei o User-Agent num arquivo e
 //! esqueci no outro": inconsistência entre UA, `X-Super-Properties` e
-//! `Sec-CH-UA` é justamente o que denuncia um cliente que não é navegador.
+//! `Sec-CH-UA` é justamente o que denuncia um cliente que não é navegador. O mesmo
+//! vale um nível abaixo: o aperto de mão TLS e o HTTP/2 seguem o mesmo Chrome
+//! (src/platform/tls_chrome.c e tools/curl-chrome-h2.patch).
 //!
 //! Isto não é uma garantia contra banimento: cliente de terceiro viola os
 //! Termos do Discord e a decisão final é sempre da conta. O objetivo aqui é
 //! só não entregar de graça um fingerprint quebrado.
 const std = @import("std");
 
-/// Chrome 152 no Windows 10/11. É a mesma versão citada nas propriedades e
-/// no `Sec-CH-UA`; mudar a maior aqui muda nos três lugares.
-pub const browser_major = "152";
+/// Chrome 156 no Windows 10/11. É a mesma versão citada nas propriedades e
+/// no `Sec-CH-UA`; mudar a maior aqui muda nos três lugares. É também a do aperto de
+/// mão TLS (src/platform/tls_chrome.c, medido com tools/tls_check.sh): ao trocar,
+/// medir de novo.
+pub const browser_major = "156";
 pub const user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" ++ browser_major ++ ".0.0.0 Safari/537.36";
 
 /// Build number do bundle web do Discord. Confira em https://discord.com/login
@@ -28,11 +32,11 @@ pub const super_properties = std.fmt.comptimePrint(
     .{ user_agent, browser_major, build_number },
 );
 
-/// `Sec-CH-UA` do Chrome. O "Not_A Brand" é o GREASE que o Chrome sorteia;
-/// o valor não precisa ser o mesmo da versão exata, só existir e bater com a
-/// versão maior do User-Agent.
+/// `Sec-CH-UA` do Chrome 156: a marca GREASE, a ordem e a versão dela mudam a cada
+/// versão maior (medido no Chromium 156, que manda o mesmo, com o nome dele no lugar
+/// de "Google Chrome").
 pub const sec_ch_ua = std.fmt.comptimePrint(
-    "\"Not_A Brand\";v=\"99\", \"Chromium\";v=\"{s}\", \"Google Chrome\";v=\"{s}\"",
+    "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"{s}\", \"Google Chrome\";v=\"{s}\"",
     .{ browser_major, browser_major },
 );
 

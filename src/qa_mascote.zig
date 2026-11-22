@@ -582,6 +582,246 @@ fn stopTyping(app: *App) void {
     const ch = app.st.activeChannel() orelse return;
     if (app.store.channel(ch)) |cs| cs.typing.clearRetainingCapacity();
 }
+
+// --- O que você digita e as brincadeiras ---------------------------------------------
+
+const reacoes = @import("ui/mascote_reacoes.zig");
+const types = @import("core/types.zig");
+
+/// Tudo ligado e do começo: a vida própria normal, as duas chaves, a caixa vazia e ele
+/// em casa, sem esperar o Esc de antes.
+fn playReset(app: *App) void {
+    lifeReset(app);
+    const set = &app.st.settings;
+    set.mascot_typing = true;
+    set.mascot_games = true;
+    set.reduce_motion = false;
+    set.mascot_cursor = false;
+    pet.qaHome();
+    pet.qaEscReset();
+    app.st.popup = .none;
+    app.st.reply_to = 0;
+    @memset(&app.st.input, 0);
+    app.st.input_sync = true;
+}
+fn poseIs(comptime p: reacoes.Pose) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.boxPose() == p;
+        }
+    }.f;
+}
+fn reactIs(comptime r: pet.Reaction) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.reaction() == r;
+        }
+    }.f;
+}
+fn notReact(comptime r: pet.Reaction) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.reaction() != r;
+        }
+    }.f;
+}
+/// A caixa com um texto (o que não dá para digitar de uma vez: 1850 bytes).
+fn setInput(comptime len: usize) *const fn (*App) void {
+    return struct {
+        fn f(app: *App) void {
+            @memset(&app.st.input, 0);
+            for (0..len) |i| app.st.input[i] = if (i % 7 == 6) ' ' else 'a';
+            app.st.input_sync = true;
+        }
+    }.f;
+}
+fn scrollHalf(_: *App) bool {
+    const b = pet.boxNow();
+    return pet.boxPose() == .long and b.unroll > 0.3 and b.unroll < 0.7;
+}
+fn inputEmpty(app: *App) bool {
+    return app.st.input[0] == 0;
+}
+fn d20Next(comptime face: u8) *const fn (*App) void {
+    return struct {
+        fn f(_: *App) void {
+            pet.qaD20(face);
+        }
+    }.f;
+}
+fn rolled(comptime face: u8) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.reaction() == .d20 and pet.d20Face() == face;
+        }
+    }.f;
+}
+fn paletteOpenPortal(app: *App) bool {
+    return app.st.palette.open and (pet.activity() == .portal or pet.qa_portal);
+}
+fn portalReset(_: *App) void {
+    pet.qa_portal = false;
+}
+fn paletteClosed(app: *App) bool {
+    return !app.st.palette.open;
+}
+fn saveNoPopup(app: *App) bool {
+    return pet.reaction() == .save and app.st.popup == .none and !app.st.palette.open;
+}
+fn printNoPalette(app: *App) bool {
+    return pet.reaction() == .print and !app.st.palette.open;
+}
+fn cutDone(app: *App) bool {
+    const clip = c.SDL_GetClipboardText() orelse return false;
+    defer c.SDL_free(clip);
+    return pet.reaction() == .cut and app.st.input[0] == 0 and std.mem.eql(u8, std.mem.span(clip), "recorta isso");
+}
+fn pasteDone(app: *App) bool {
+    return pet.reaction() == .paste and std.mem.eql(u8, std.mem.sliceTo(&app.st.input, 0), "recorta isso");
+}
+fn clearAndBlur(app: *App) void {
+    @memset(&app.st.input, 0);
+    app.st.input_sync = true;
+    pet.qaHome();
+}
+fn replyToLast(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    const cs = app.store.channel(ch) orelse return;
+    const items = cs.messages.items;
+    if (items.len > 0) app.st.reply_to = items[items.len - 1].msg.id;
+}
+fn replyCanceledNoDuck(app: *App) bool {
+    return app.st.reply_to == 0 and pet.reaction() != .duck;
+}
+fn popupClosedNoDuck(app: *App) bool {
+    return app.st.popup == .none and pet.reaction() != .duck;
+}
+fn reactLast(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    const cs = app.store.channel(ch) orelse return;
+    const items = cs.messages.items;
+    if (items.len == 0) return;
+    app.actions.append(app.gpa, .{ .react = .{ .id = items[items.len - 1].msg.id, .emoji = types.Reaction.init("🍕") } }) catch {};
+}
+/// O chip do 🍕 na última mensagem (posto por `reactLast`).
+fn chipPizza(app: *App, b: []u8) []const u8 {
+    const ch = app.st.activeChannel() orelse return "";
+    const cs = app.store.channel(ch) orelse return "";
+    const items = cs.messages.items;
+    if (items.len == 0) return "";
+    const m = &items[items.len - 1];
+    for (m.reactionSlice(), 0..) |*r, i| if (std.mem.eql(u8, r.text(), "🍕")) return std.fmt.bufPrint(b, "chip:{d}:{d}", .{ m.msg.id, i }) catch "";
+    return "";
+}
+fn pizzaChipShown(app: *App) bool {
+    var b: [64]u8 = undefined;
+    const k = chipPizza(app, &b);
+    return k.len > 0 and qa.find(k) != null;
+}
+fn ateEmoji(comptime e: []const u8) *const fn (*App) bool {
+    return struct {
+        fn f(_: *App) bool {
+            return pet.reaction() == .treat and std.mem.eql(u8, pet.treatEaten(), e);
+        }
+    }.f;
+}
+fn ateSomething(_: *App) bool {
+    return pet.reaction() == .treat and pet.treatEaten().len > 0;
+}
+/// A primeira célula de emoji Unicode à vista no seletor.
+fn firstEmojiCell(_: *App, b: []u8) []const u8 {
+    var keys: [64][56]u8 = undefined;
+    var lens: [64]u8 = undefined;
+    const n = qa.keysWith(&.{"emoji:"}, &keys, &lens);
+    if (n == 0) return "";
+    const k = keys[0][0..lens[0]];
+    @memcpy(b[0..k.len], k);
+    return b[0..k.len];
+}
+fn pickerOpen(_: *App) bool {
+    return qa.find("emoji-picker") != null;
+}
+fn closePicker(app: *App) void {
+    app.st.popup = .none;
+}
+/// Solta um texto ou um arquivo em cima dele, como o SDL avisa (o ponto em pixels).
+var link_text = "https://ziglang.org".*;
+var image_path = "assets/icon-128.png".*;
+var uploads_before: usize = 0;
+fn dropOnPet(app: *App, kind: c_uint, data: [*c]u8) void {
+    const h = pet.qaHit();
+    const sc = app.uiScale();
+    var e = std.mem.zeroes(c.SDL_Event);
+    e.type = kind;
+    e.drop.x = (h.x + h.w / 2) * sc;
+    e.drop.y = (h.y + h.h / 2) * sc;
+    e.drop.data = data;
+    _ = c.SDL_PushEvent(&e);
+}
+fn dropLink(app: *App) void {
+    dropOnPet(app, c.SDL_EVENT_DROP_TEXT, &link_text);
+}
+fn dropImage(app: *App) void {
+    uploads_before = app.st.uploads.items.len;
+    dropOnPet(app, c.SDL_EVENT_DROP_FILE, &image_path);
+}
+fn framedAndAttached(app: *App) bool {
+    return pet.reaction() == .picture and app.st.uploads.items.len == uploads_before + 1;
+}
+fn dropTextAway(_: *App) void {
+    var e = std.mem.zeroes(c.SDL_Event);
+    e.type = c.SDL_EVENT_DROP_TEXT;
+    e.drop.x = 5;
+    e.drop.y = 5;
+    e.drop.data = &link_text;
+    _ = c.SDL_PushEvent(&e);
+}
+fn removeUploads(app: *App) void {
+    var i = app.st.uploads.items.len;
+    while (i > uploads_before) {
+        i -= 1;
+        app.actions.append(app.gpa, .{ .remove_upload = i }) catch {};
+    }
+}
+fn seekNow(_: *App) void {
+    pet.qaSeek();
+}
+fn hiding(_: *App) bool {
+    return pet.isHiding();
+}
+fn seekExpire(app: *App) void {
+    pet.qaSeekExpire(app.images.now_ms);
+}
+fn backNotFound(_: *App) bool {
+    return pet.mode() == .home and pet.reaction() != .found;
+}
+fn tellSmall(_: *App) bool {
+    // Só as pontinhas das orelhas pegam o clique (não o corpo inteiro).
+    const h = pet.qaHit();
+    return pet.isHiding() and h.w < 20 and h.h < 40 and pet.qaVisibleWidth() < 10;
+}
+fn playToggles(_: *App) bool {
+    return qa.find("toggle:Reage ao que você digita") != null and qa.find("toggle:Brincadeiras") != null;
+}
+fn playTogglesOff(_: *App) bool {
+    return qa.find("toggle-off:Reage ao que você digita") != null and qa.find("toggle-off:Brincadeiras") != null;
+}
+fn petClassic(app: *App) void {
+    app.st.settings.mascot = 1;
+}
+fn typingOff(app: *App) void {
+    app.st.settings.mascot_typing = false;
+}
+fn gamesOff(app: *App) void {
+    app.st.settings.mascot_games = false;
+}
+fn reduceOn(app: *App) void {
+    app.st.settings.reduce_motion = true;
+}
+fn noPose(_: *App) bool {
+    return pet.boxPose() == .none;
+}
+
 // --- Em cada tema: aonde ele vai e se aparece lá ------------------------------------
 
 /// O tema não tem o lugar (ou não tem lugar para ele): nada a conferir. Tem: ele pousa
@@ -1128,6 +1368,268 @@ pub const ops = [_]Op{
     run(petOff),
     expect("desligado nas Configurações, ele some", petGone),
     run(petOn),
+
+    s("mascote: o que você digita"),
+    run(playReset),
+    run(openAppearance),
+    expect("a aba Mascote tem \"Reage ao que você digita\" e \"Brincadeiras\"", playToggles),
+    run(closeSettings),
+    run(playReset),
+    click("composer"),
+    .{ .text = "PARA DE GRITAR" },
+    expect("tudo em maiúsculas: tapa as orelhas", poseIs(.caps)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-maiusculas" },
+    run(clearInput),
+    expect("a caixa vazia: a pose sai", poseIs(.none)),
+    .{ .text = "OK" },
+    .{ .wait = 100 },
+    expect("\"OK\" não é gritar", poseIs(.none)),
+    run(clearInput),
+    .{ .text = "o final é ||o mordomo||" },
+    expect("spoiler: cobre os olhos", poseIs(.spoiler)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-spoiler" },
+    .{ .key = .{ .key = c.ImGuiKey_Enter } },
+    expect("mandou: a caixa esvazia e ele destapa os olhos", inputEmpty),
+    expect("sem spoiler na caixa, sem a pose", poseIs(.none)),
+    run(home),
+    click("composer"),
+    .{ .text = "```zig\nconst x = 1;" },
+    expect("bloco de código: põe os óculos para revisar", poseIs(.code)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-codigo" },
+    run(clearInput),
+    .{ .text = "fala @" },
+    expect("\"@\": aponta para a lista de membros", poseIs(.members)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-arroba" },
+    run(clearInput),
+    .{ .text = "vai no #" },
+    expect("\"#\": aponta para a lista de canais", poseIs(.channels)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-canal" },
+    run(clearInput),
+    .{ .text = "/shrug" },
+    expect("\"/\" no começo: abre o terminalzinho", poseIs(.slash)),
+    .{ .wait = 900 },
+    .{ .shot = "brinca-terminal" },
+    run(clearInput),
+    run(setInput(1000)),
+    expect("mensagem longa: o pergaminho, meio desenrolado", scrollHalf),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-pergaminho" },
+    run(setInput(1850)),
+    expect("perto do limite: se afasta preocupado", poseIs(.full)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-limite" },
+    run(clearInput),
+    run(home),
+    click("composer"),
+    .{ .text = "isso aqui ta tudo errado demais" },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    expect("onze apagadas: ainda nada", notReact(.tea)),
+    .{ .key = .{ .key = c.ImGuiKey_Backspace } },
+    expect("doze apagadas seguidas: oferece um chá", reactIs(.tea)),
+    .{ .wait = 500 },
+    .{ .shot = "brinca-cha" },
+    run(clearInput),
+    run(home),
+    .{ .text = "miau" },
+    expect("\"miau\": mia de volta", reactIs(.meow)),
+    .{ .wait = 300 },
+    .{ .shot = "brinca-miau" },
+    run(clearInput),
+    run(home),
+    .{ .text = "olha ele >_" },
+    expect("\">_\": reconhece o rosto dele", reactIs(.prompt)),
+    run(clearInput),
+    run(home),
+    .{ .text = "sudo" },
+    expect("\"sudo\": fica em posição de sentido (e sai um sanduíche)", reactIs(.sudo)),
+    .{ .wait = 800 },
+    .{ .shot = "brinca-sudo" },
+    run(clearInput),
+    run(home),
+    .{ .text = "rm -rf /" },
+    expect("\"rm -rf\": se apaga e volta", reactIs(.rm)),
+    .{ .wait = 700 },
+    .{ .shot = "brinca-rm-rf" },
+    run(clearInput),
+    run(home),
+
+    s("mascote: brincadeiras"),
+    run(playReset),
+    run(d20Next(20)),
+    click("composer"),
+    .{ .text = "rolando" },
+    .{ .key = .{ .key = c.ImGuiKey_Enter } },
+    expect("o d20 do envio: 20, confete", rolled(20)),
+    .{ .wait = 1200 },
+    .{ .shot = "brinca-d20-vinte" },
+    run(home),
+    run(d20Next(1)),
+    click("composer"),
+    .{ .text = "de novo" },
+    .{ .key = .{ .key = c.ImGuiKey_Enter } },
+    expect("o d20 do envio: 1, ele cai de lado", rolled(1)),
+    .{ .wait = 1500 },
+    .{ .shot = "brinca-d20-um" },
+    run(home),
+    run(reactLast),
+    .{ .expect = .{ .name = "a reação de 🍕 aparece na última mensagem", .check = pizzaChipShown, .timeout_ms = 3000 } },
+    .{ .drag = .{ .from = .{ .dyn = chipPizza }, .to = .{ .mark = "pet" } } },
+    expect("arrastou a reação até ele: come o 🍕", ateEmoji("🍕")),
+    .{ .wait = 1000 },
+    .{ .shot = "brinca-emoji-olhos" },
+    run(home),
+    click("composer-emoji"),
+    expect("o seletor de emoji abre", pickerOpen),
+    .{ .drag = .{ .from = .{ .dyn = firstEmojiCell }, .to = .{ .mark = "pet" } } },
+    expect("arrastou um emoji do seletor até ele: come também", ateSomething),
+    run(closePicker),
+    run(home),
+    run(dropLink),
+    expect("um link solto em cima dele: abre um portalzinho", reactIs(.link)),
+    .{ .wait = 450 },
+    .{ .shot = "brinca-portal-link" },
+    run(home),
+    run(dropTextAway),
+    .{ .wait = 200 },
+    expect("texto solto longe dele não mexe nele", notReact(.link)),
+    run(dropImage),
+    expect("uma imagem solta em cima dele: segura num quadro (e vai para a bandeja)", framedAndAttached),
+    .{ .wait = 800 },
+    .{ .shot = "brinca-quadro" },
+    run(removeUploads),
+    run(home),
+    run(seekNow),
+    .{ .expect = .{ .name = "esconde-esconde: se esconde atrás de um painel", .check = hiding, .timeout_ms = 8000 } },
+    expect("só a pontinha das orelhas fica para fora (e pega o clique)", tellSmall),
+    .{ .wait = 300 },
+    .{ .shot = "brinca-esconde" },
+    click("pet"),
+    .{ .expect = .{ .name = "clicou nas orelhas: achou, e ele comemora em casa", .check = reactIs(.found), .timeout_ms = 8000 } },
+    .{ .wait = 300 },
+    .{ .shot = "brinca-achou" },
+    run(playReset),
+    run(seekNow),
+    .{ .expect = .{ .name = "escondido de novo", .check = hiding, .timeout_ms = 8000 } },
+    run(seekExpire),
+    .{ .expect = .{ .name = "ninguém achou: volta sozinho, sem comemorar", .check = backNotFound, .timeout_ms = 8000 } },
+
+    s("mascote: as teclas"),
+    run(playReset),
+    run(portalReset),
+    .{ .key = .{ .key = c.ImGuiKey_K, .ctrl = true } },
+    expect("Ctrl+K: a paleta abre, e ele pula num portal", paletteOpenPortal),
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("Esc fecha a paleta, e ele não se esconde por isso", paletteClosed),
+    expect("(o Esc era da paleta)", notReact(.duck)),
+    run(home),
+    .{ .key = .{ .key = c.ImGuiKey_S, .ctrl = true } },
+    expect("Ctrl+S: segura um disquete (nada mais abre)", saveNoPopup),
+    .{ .wait = 300 },
+    .{ .shot = "brinca-disquete" },
+    run(home),
+    .{ .key = .{ .key = c.ImGuiKey_P, .ctrl = true } },
+    expect("Ctrl+P: imprime a própria pata (a paleta não abre)", printNoPalette),
+    .{ .wait = 900 },
+    .{ .shot = "brinca-pata" },
+    run(home),
+    click("composer"),
+    .{ .text = "recorta isso" },
+    .{ .key = .{ .key = c.ImGuiKey_A, .ctrl = true } },
+    .{ .key = .{ .key = c.ImGuiKey_X, .ctrl = true } },
+    expect("Ctrl+X: pega a tesoura, e o texto vai para a área de transferência", cutDone),
+    .{ .wait = 250 },
+    .{ .shot = "brinca-tesoura" },
+    run(home),
+    .{ .key = .{ .key = c.ImGuiKey_V, .ctrl = true } },
+    expect("Ctrl+V: cospe um clone, e o texto volta para a caixa", pasteDone),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-cola" },
+    run(clearAndBlur),
+    run(replyToLast),
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("Esc cancela a resposta, e ele não se esconde por isso", replyCanceledNoDuck),
+    run(openStatusMenu),
+    .{ .wait = 100 },
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("Esc fecha o menu, e ele não se esconde por isso", popupClosedNoDuck),
+    .{ .wait = 100 },
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    expect("Esc sem nada para fechar: ele se esconde na caixa um instante", reactIs(.duck)),
+    .{ .wait = 250 },
+    .{ .shot = "brinca-esc" },
+    .{ .wait = 1200 },
+    .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    .{ .wait = 100 },
+    expect("outro Esc logo depois: não toda hora", notReact(.duck)),
+
+    s("mascote: o Clássico também brinca"),
+    run(playReset),
+    run(petClassic),
+    click("composer"),
+    .{ .text = "/shrug" },
+    expect("no Clássico, o \"/\" também abre o terminalzinho", poseIs(.slash)),
+    .{ .wait = 350 },
+    .{ .shot = "brinca-classico-terminal" },
+    run(clearInput),
+    run(d20Next(20)),
+    .{ .text = "dado" },
+    .{ .key = .{ .key = c.ImGuiKey_Enter } },
+    expect("e rola o d20", rolled(20)),
+    .{ .wait = 1100 },
+    .{ .shot = "brinca-classico-d20" },
+    run(backToTerminal),
+
+    s("mascote: as chaves das brincadeiras"),
+    run(playReset),
+    run(typingOff),
+    click("composer"),
+    .{ .text = "SEM REAGIR AGORA" },
+    .{ .wait = 100 },
+    expect("\"Reage ao que você digita\" desligado: nada de pose", noPose),
+    .{ .text = " miau" },
+    .{ .wait = 100 },
+    expect("nem segredo", notReact(.meow)),
+    run(clearInput),
+    run(playReset),
+    run(gamesOff),
+    .{ .key = .{ .key = c.ImGuiKey_S, .ctrl = true } },
+    .{ .wait = 100 },
+    expect("\"Brincadeiras\" desligado: Ctrl+S não mexe nele", notReact(.save)),
+    run(playReset),
+    run(lifeOff),
+    click("composer"),
+    .{ .text = "VIDA PROPRIA DESLIGADA" },
+    .{ .wait = 100 },
+    expect("vida própria desligada: nem a caixa", noPose),
+    run(clearInput),
+    run(playReset),
+    run(reduceOn),
+    click("composer"),
+    .{ .text = "REDUZIR MOVIMENTO" },
+    .{ .wait = 100 },
+    expect("\"Reduzir movimento\": nem a caixa", noPose),
+    run(clearInput),
+    run(openAppearance),
+    expect("e as duas chaves ficam apagadas na aba", playTogglesOff),
+    .{ .shot = "config-brincadeiras-reduzir" },
+    run(closeSettings),
+    run(playReset),
+    run(clearInput),
 
     s("abertura do demo"),
     run(demoOpening),

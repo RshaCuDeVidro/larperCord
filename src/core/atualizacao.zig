@@ -19,8 +19,15 @@ pub const files_windows: []const File = &.{
     .{ .asset = "libcrypto-3-x64.dll", .name = "libcrypto-3-x64.dll" },
 };
 
-pub fn files(windows: bool) []const File {
-    return if (windows) files_windows else files_linux;
+/// O .exe único (-Dsingle-exe, o das releases desde a 0.6.7): só ele. As DLLs continuam
+/// na release para quem atualiza de uma versão anterior, cujo atualizador pede as quatro;
+/// as que sobram na pasta não são carregadas por ele.
+pub const files_windows_single: []const File = &.{
+    .{ .asset = "larpercord-windows-x86_64.exe", .name = null },
+};
+
+pub fn files(windows: bool, single_exe: bool) []const File {
+    return if (!windows) files_linux else if (single_exe) files_windows_single else files_windows;
 }
 
 /// O /proc/self/exe de um executável trocado com o app aberto aponta para o
@@ -109,6 +116,15 @@ test "Windows: o .exe no próprio caminho, as DLLs na pasta dele" {
     try t.expectEqualStrings("C:\\Users\\Ana\\Downloads\\.update", stageDir(&b, exe, true).?);
 }
 
+test "Windows: o .exe único só baixa o .exe" {
+    try t.expectEqual(@as(usize, 1), files(true, true).len);
+    try t.expect(files(true, true)[0].name == null);
+    try t.expectEqualStrings("larpercord-windows-x86_64.exe", files(true, true)[0].asset);
+    // O com DLLs e o Linux continuam como antes.
+    try t.expectEqual(@as(usize, 4), files(true, false).len);
+    try t.expectEqual(files_linux.ptr, files(false, true).ptr);
+}
+
 test "caminho que não cabe não vira um pela metade" {
     var b: [16]u8 = undefined;
     try t.expect(place(&b, "/um/caminho/muito/comprido/larpercord", files_linux[0], "", false) == null);
@@ -116,7 +132,7 @@ test "caminho que não cabe não vira um pela metade" {
 }
 
 test "nenhum arquivo publicado aparece duas vezes na lista" {
-    for ([_][]const File{ files_linux, files_windows }) |list| {
+    for ([_][]const File{ files_linux, files_windows, files_windows_single }) |list| {
         for (list, 0..) |a, i| for (list[i + 1 ..]) |z| {
             try t.expect(!std.mem.eql(u8, a.asset, z.asset));
         };

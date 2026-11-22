@@ -61,6 +61,17 @@ fn addRnnoise(b: *std.Build, m: *std.Build.Module) void {
     }
 }
 
+/// MP3 e WAV do player de áudio (third_party/dr_libs; src/core/audio_pcm.zig). -Os
+/// também no debug do QA: tocar um MP3 custa pouco de qualquer jeito, e assim o
+/// executável fica uns 20 KB menor que com -O2. Sem o sanitizador de UB (o minimp3
+/// conta com aritmética de C que ele marcaria). `extra`: os cabeçalhos do sysroot
+/// no navegador.
+fn addDrLibs(b: *std.Build, m: *std.Build.Module, extra: []const []const u8) void {
+    const base = [_][]const u8{ "-std=gnu99", "-Os", "-fno-sanitize=undefined" };
+    const flags = std.mem.concat(b.allocator, []const u8, &.{ &base, extra }) catch @panic("OOM");
+    m.addCSourceFile(.{ .file = b.path("third_party/dr_libs/dr_libs.c"), .flags = flags });
+}
+
 /// GNU FriBidi (third_party/fribidi): árabe com as letras ligadas e texto da direita para a
 /// esquerda na ordem de desenho (src/ui/bidi.zig). Estático em todos os alvos, sem DLL nova.
 /// Os includes vão só nestes arquivos: o config.h e o common.h dele têm nomes comuns demais.
@@ -100,6 +111,37 @@ const freetype_sources = [_][]const u8{
 
 const theme_names = [_][]const u8{ "classico", "vidro", "terminal", "subsolo", "orbital", "editorial", "bolhas", "zen", "papel", "escritorio", "cupertino" };
 
+/// Os textos grandes que vão dentro do executável (as traduções, o changelog, a tabela de
+/// emoji), comprimidos na hora do build (tools/comprimir.zig): abrem quando alguém
+/// precisa (src/core/embutido.zig). Uma vez só por build, para todos os módulos.
+const packed_files = [_][3][]const u8{
+    .{ "changelog_en_z", "CHANGELOG.md", "changelog_en.z" },
+    .{ "changelog_pt_z", "CHANGELOG.pt-BR.md", "changelog_pt.z" },
+    .{ "i18n_ja_z", "i18n/ja.kdl", "ja.kdl.z" },
+    .{ "i18n_ru_z", "i18n/ru.kdl", "ru.kdl.z" },
+    .{ "emoji_blob", "src/ui/emoji_blob.txt", "emoji_blob.z" },
+};
+var packed_paths: ?[packed_files.len]std.Build.LazyPath = null;
+
+fn addPacked(b: *std.Build, m: *std.Build.Module) void {
+    const paths = packed_paths orelse blk: {
+        const tool = b.addExecutable(.{ .name = "comprimir", .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/comprimir.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }) });
+        var out: [packed_files.len]std.Build.LazyPath = undefined;
+        for (packed_files, &out) |f, *o| {
+            const run = b.addRunArtifact(tool);
+            run.addFileArg(b.path(f[1]));
+            o.* = run.addOutputFileArg(f[2]);
+        }
+        packed_paths = out;
+        break :blk out;
+    };
+    for (packed_files, paths) |f, path| m.addAnonymousImport(f[0], .{ .root_source_file = path });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     // Padrão: ReleaseFast (o de debug desenha cada quadro ~4x mais devagar).
@@ -109,13 +151,19 @@ pub fn build(b: *std.Build) void {
     const release = optimize != .debug;
     // Binário das releases: SDL3, curl e OpenSSL dentro dele (ver tools/linux_deps.sh).
     const portable = b.option(bool, "portable", "Liga SDL3, curl e OpenSSL estáticos") orelse false;
-    // Windows sem DLL ao lado (experimental, ver tools/windows_static_deps.sh). O padrão
-    // e as releases continuam com as DLLs, que o atualizador conhece.
-    const single_exe = b.option(bool, "single-exe", "Windows: SDL3, curl e OpenSSL dentro do .exe (experimental)") orelse false;
+    // Windows sem DLL ao lado (tools/windows_static_deps.sh): o das releases desde a 0.6.7,
+    // porque só com o curl e o OpenSSL compilados juntos a conexão sai igual à do Chrome.
+    // O padrão continua com as DLLs, que não pedem compilar nada.
+    const single_exe = b.option(bool, "single-exe", "Windows: SDL3, curl e OpenSSL dentro do .exe (o das releases)") orelse false;
     // O robô de QA (--qa) e suas marcações só entram onde são usados.
     const qa = b.option(bool, "qa", "Inclui o robô de QA (--qa); padrão: só no debug") orelse !release;
     const build_options = b.addOptions();
     build_options.addOption(bool, "qa", qa);
+    // O TLS do Chrome (src/platform/tls_chrome.c) mexe no OpenSSL do curl: só onde ele é
+    // o mesmo que o app liga. O libcurl oficial do Windows traz o dele por dentro.
+    const tls_chrome = target.result.os.tag != .windows or single_exe;
+    build_options.addOption(bool, "tls_chrome", tls_chrome);
+    build_options.addOption(bool, "single_exe", single_exe);
     // -Dversion: só para testar a atualização a partir de uma versão velha.
     build_options.addOption([]const u8, "version", b.option([]const u8, "version", "Versão gravada no executável") orelse @import("src/core/version.zig").number);
 
@@ -141,6 +189,9 @@ pub fn build(b: *std.Build) void {
     // Sem pkg-config: as bibliotecas vêm de tools/windows_deps.sh.
     const win_deps = b.path(".deps/windows");
     if (windows) {
+        // O .exe único liga o OpenSSL, o curl e a SDL3 de tools/windows_static_deps.sh: os
+        // headers deles vêm antes dos das DLLs (o OpenSSL de lá é outra versão).
+        if (single_exe) translate.addIncludePath(b.path(".deps/windows-static/include"));
         translate.addIncludePath(win_deps.path(b, "include"));
     } else {
         translate.linkSystemLibrary("sdl3", .{});
@@ -168,6 +219,7 @@ pub fn build(b: *std.Build) void {
     // Traduções além do português e do inglês: um arquivo por idioma (src/ui/i18n.zig).
     mod.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
     mod.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
+    addPacked(b, mod);
     mod.addImport("c", translate.createModule());
     mod.addImport("builtin_themes", builtin_themes);
     mod.addImport("plugin_examples", plugin_examples);
@@ -222,6 +274,7 @@ pub fn build(b: *std.Build) void {
     // Decodificador de imagens (PNG/JPEG/GIF) dos anexos; WebP vem da libwebp.
     mod.addIncludePath(b.path("third_party/stb"));
     mod.addCSourceFile(.{ .file = b.path("third_party/stb/stb_image.c"), .flags = &.{"-O2"} });
+    if (tls_chrome) mod.addCSourceFile(.{ .file = b.path("src/platform/tls_chrome.c"), .flags = &.{"-O2"} });
 
     // Voz: DAVE (E2EE) + MLS. Compilado junto porque só é usado quando
     // alguém entra numa chamada; parado, não custa CPU.
@@ -282,20 +335,27 @@ pub fn build(b: *std.Build) void {
     addLua(b, mod);
     addRnnoise(b, mod);
     addFribidi(b, mod);
+    addDrLibs(b, mod, &.{});
     if (windows) {
         const ft = win_deps.path(b, "src/freetype");
         mod.addIncludePath(ft.path(b, "include"));
         translate.addIncludePath(ft.path(b, "include"));
+        if (single_exe) mod.addIncludePath(b.path(".deps/windows-static/include"));
         mod.addIncludePath(win_deps.path(b, "include"));
         mod.addCSourceFiles(.{ .root = ft.path(b, "src"), .files = &freetype_sources, .flags = &.{ "-DFT2_BUILD_LIBRARY", "-DFT_CONFIG_MODULES_H=\"ftmodule.h\"", "-O2", "-fno-sanitize=undefined" } });
         mod.addIncludePath(b.path("src/platform/win"));
+        // Antes da pasta das DLLs, que tem um libcrypto.a do MSYS2 (outra versão, sem brotli):
+        // achado primeiro, ele entrava no lugar do nosso, e o libssl de uma versão ficava
+        // com o libcrypto da outra.
+        if (single_exe) mod.addLibraryPath(b.path(".deps/windows-static/lib"));
         mod.addLibraryPath(win_deps.path(b, "lib"));
         if (single_exe) {
             // O curl de lá é estático: sem o dllimport nos headers.
             mod.addCMacro("CURL_STATICLIB", "1");
             translate.defineCMacro("CURL_STATICLIB", "1");
-            mod.addLibraryPath(b.path(".deps/windows-static/lib"));
-            for ([_][]const u8{ "SDL3", "iconv", "curl", "ssl", "crypto" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no, .preferred_link_mode = .static, .search_strategy = .mode_first });
+            // nghttp2, brotli e zstd: o HTTP/2 e as compressões do curl e do OpenSSL, como o
+            // Chrome (tools/windows_static_deps.sh).
+            for ([_][]const u8{ "SDL3", "iconv", "curl", "nghttp2", "ssl", "crypto", "zstd", "brotlienc", "brotlidec", "brotlicommon" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no, .preferred_link_mode = .static, .search_strategy = .mode_first });
             // O que a SDL3 e o curl estáticos pedem ao Windows.
             for ([_][]const u8{ "gdi32", "winmm", "imm32", "oleaut32", "version", "uuid", "setupapi", "dinput8", "iphlpapi" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no });
         } else {
@@ -314,7 +374,13 @@ pub fn build(b: *std.Build) void {
         mod.linkSystemLibrary("libwebpdemux", .{});
         mod.linkSystemLibrary("opus", .{});
         mod.linkSystemLibrary("crypto", .{ .preferred_link_mode = if (portable) .static else .dynamic });
-        if (portable) mod.linkSystemLibrary("ssl", .{ .preferred_link_mode = .static });
+        // A libssl do curl: o TLS do Chrome mexe no SSL_CTX dele (src/platform/tls_chrome.c).
+        mod.linkSystemLibrary("ssl", .{ .preferred_link_mode = if (portable) .static else .dynamic });
+        // O HTTP/2, o br e o zstd do curl, e o brotli do certificado comprimido no
+        // OpenSSL (tools/linux_deps.sh): estáticos como eles.
+        if (portable) for ([_][]const u8{ "nghttp2", "zstd", "brotlienc", "brotlidec", "brotlicommon" }) |l| {
+            mod.linkSystemLibrary(l, .{ .use_pkg_config = .no, .preferred_link_mode = .static });
+        };
     }
 
     const exe = b.addExecutable(.{ .name = "larpercord", .root_module = mod });
@@ -347,9 +413,22 @@ pub fn build(b: *std.Build) void {
     test_mod.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
     test_mod.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
     test_mod.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
+    addPacked(b, test_mod);
     addLua(b, test_mod);
     addRnnoise(b, test_mod);
     addFribidi(b, test_mod);
+    // O ClientHello do perfil do Chrome, montado com o OpenSSL do sistema (Linux; o CI e
+    // quem compila têm a libssl): src/net/tls_ja4.zig confere o JA4 dele.
+    const tls_test = target.result.os.tag == .linux and !portable;
+    const tls_test_opts = b.addOptions();
+    tls_test_opts.addOption(bool, "on", tls_test);
+    test_mod.addOptions("tls_test", tls_test_opts);
+    if (tls_test) {
+        test_mod.addCSourceFile(.{ .file = b.path("src/platform/tls_chrome.c"), .flags = &.{"-O2"} });
+        test_mod.linkSystemLibrary("ssl", .{});
+        test_mod.linkSystemLibrary("crypto", .{});
+    }
+    addDrLibs(b, test_mod, &.{});
     const tests = b.addTest(.{ .root_module = test_mod });
     b.step("test", "Roda os testes").dependOn(&b.addRunArtifact(tests).step);
 
@@ -443,6 +522,7 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
         m.addCSourceFile(.{ .file = b.path("src/platform/web/stubs.c"), .flags = &.{"-std=gnu99"} });
         addLua(b, m);
         addFribidi(b, m);
+        addDrLibs(b, m, &.{});
         for ([_][]const u8{ "sdl3", "freetype2", "zlib" }) |l| m.linkSystemLibrary(l, .{});
         const exe = b.addExecutable(.{ .name = "larpercord-web-sim", .root_module = m });
         const run = b.addRunArtifact(exe);
@@ -507,6 +587,7 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
     // Lua com o setjmp/longjmp do Emscripten (o mesmo que o emcc liga por padrão).
     cm.addCSourceFiles(.{ .root = b.path("third_party/lua"), .files = &lua_sources, .flags = &.{ "-std=gnu99", "-O2", "-fno-sanitize=undefined", "-mllvm", "-enable-emscripten-sjlj", c_inc } });
     addWebC(b, cm, c_inc);
+    addDrLibs(b, cm, &.{c_inc});
     const clib = b.addLibrary(.{ .name = "larpercord-web-c", .linkage = .static, .root_module = cm });
     clib.bundle_compiler_rt = false;
 
@@ -569,6 +650,8 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
 fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, c_mod: *std.Build.Module, themes_mod: *std.Build.Module, examples_mod: *std.Build.Module) *std.Build.Module {
     const options = b.addOptions();
     options.addOption(bool, "qa", false);
+    options.addOption(bool, "tls_chrome", false);
+    options.addOption(bool, "single_exe", false);
     options.addOption([]const u8, "version", @import("src/core/version.zig").number);
     const m = b.createModule(.{
         .root_source_file = b.path("src/web_main.zig"),
@@ -584,6 +667,7 @@ fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     m.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
     m.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
     m.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
+    addPacked(b, m);
     m.addAnonymousImport("icon_64", .{ .root_source_file = b.path("assets/icon-64.png") });
     m.addAnonymousImport("icon_32", .{ .root_source_file = b.path("assets/icon-32.png") });
     m.addAnonymousImport("icon_128", .{ .root_source_file = b.path("assets/icon-128.png") });

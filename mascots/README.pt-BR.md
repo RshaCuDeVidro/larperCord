@@ -38,7 +38,8 @@ Isso já é um mascote inteiro: três linhas, nenhum desenho. Todo o resto abaix
 | Nó | O que faz |
 |---|---|
 | `mascot "nome" author=… license=… description=…` | as informações. O nome aparece na lista de arquivos |
-| `look eyes=… mouth=… hat=… ears=… accessories="…"` | peças da biblioteca (listas abaixo). O que ficar de fora continua o padrão |
+| `name "…"` | o nome do mascote (abaixo) |
+| `look eyes=… mouth=… hat=… ears=… accessories="…" eye-height=… mouth-height=… eye-size=… roundness=…` | peças da biblioteca (listas abaixo), onde ficam os olhos e a boca, os tamanhos e o formato do corpo. O que ficar de fora continua o padrão |
 | `colors palette="…"` ou `colors body-top="#…" …` ou `colors theme=#true` | as cinco cores (abaixo) |
 | `eyes { … }` | olhos próprios, desenhados com formas. Valem no lugar de `look eyes=` |
 | `mouth { … }` | boca própria, desenhada com formas. Vale no lugar de `look mouth=` |
@@ -66,6 +67,52 @@ das datas.
 o último.
 
 **Orelhas** (`look ears=`): `pointy` (o padrão), `round`, `floppy`, `bunny`, `tiny`, `none`.
+
+**Altura dos olhos e da boca** (`look eye-height=` e `look mouth-height=`, números inteiros, nas unidades do
+desenho): sobem (positivo) ou descem (negativo) os olhos ou a boca no rosto, como os controles **Altura dos
+olhos** e **Altura da boca** do Personalizar. `0` (o padrão) é o lugar de sempre. Os olhos vão de −4 a 10 e a
+boca de −4 a 8; um número fora disso fica no limite. Os olhos nunca ficam mais perto da boca do que no desenho
+de sempre: `eye-height` é pelo menos `mouth-height`, e quando não é, os olhos sobem até a altura da boca.
+Olhos ou boca maiores, e olhos desalinhados, pedem um pouco mais de espaço (até 6), então os olhos sobem mais um
+pouco; a boca 3 ou 4 passos maior não desce até o fim (aberta, comendo, sairia por baixo do queixo). Os
+óculos, as olheiras e a lupa acompanham os olhos; o bigode, a fita do mudo e o chiclete acompanham a boca; os
+seus `eyes { … }` e `mouth { … }` também andam.
+
+```kdl
+look eyes="dots" mouth="cat" eye-height=4 mouth-height=-2
+```
+
+**Mais ajustes** (números inteiros no `look`, como os controles de Personalizar → **Mais ajustes**). `0` (o
+padrão) é o desenho de sempre, e um número fora da faixa fica no limite:
+
+| Chave | Faixa | O que faz |
+|---|---|---|
+| `eye-x` | −6 a 6 | os dois olhos para a esquerda (−) ou para a direita (+) |
+| `eye-spacing` | −4 a 6 | os olhos mais perto (−) ou mais longe (+) um do outro, cada um andando isso |
+| `eye-tilt` | −6 a 6 | um olho mais alto que o outro: + sobe o direito e desce o esquerdo, metade cada um; − o contrário |
+| `eye-size` | −4 a 5 | olhos menores ou maiores, 7% por passo (crescem para a testa) |
+| `mouth-x` | −10 a 10 | a boca para a esquerda ou para a direita |
+| `mouth-size` | −3 a 4 | a boca menor ou maior, 7,5% por passo |
+| `ear-size` | −4 a 4 | orelhas mais baixas ou mais altas (e um pouco mais largas) |
+| `ear-tilt` | −4 a 4 | orelhas viradas para dentro (−) ou para fora (+) |
+| `roundness` | −5 a 4 | o corpo mais quadrado (−) ou mais redondo (+): os cantos vão para fora ou para dentro; os lados, o alto da cabeça e os pés ficam onde estão |
+| `body-width` | −4 a 4 | o corpo mais magrinho (−) ou mais gordinho (+), 4% por passo |
+| `blush` | 0 a 6 | a força das bochechas. Qualquer número liga o acessório `blush` (3 é a de sempre), e `0` tira |
+| `right-eye` | `"#RRGGBB"` | uma cor só para o olho direito (olhos de duas cores): o traço dos olhos de tinta, a íris de `big`, `cat` e `visor`, o recheio de `stars` e `hearts`. `"none"` deixa os dois iguais |
+
+Tudo acompanha: os óculos, as olheiras, as bochechas, as sardas e a lupa vão com os olhos; o bigode, a fita do
+mudo, o chiclete e o microfone da call vão com a boca; as orelhas, os chapéus, o fone, o curativo, o que vai no
+pescoço, o brinco e as formas dos seus `layer` vão com o corpo. Os seus `eyes { … }` e `mouth { … }` andam e
+crescem como os da biblioteca. Os números ficam dentro do rosto: os testes conferem todos os extremos juntos. No
+Personalizar dá também para arrastar os olhos ou a boca na prévia grande.
+
+```kdl
+look eyes="big" mouth="cat" eye-spacing=3 eye-size=2 mouth-size=-1 roundness=2 body-width=1 right-eye="#FFC23D"
+```
+
+**Nome** (`name "Bitinho"`, numa linha própria): o nome do mascote, até 24 letras. Aparece ao parar o mouse em
+cima do mascote do canto e embaixo da prévia do Personalizar. Com um arquivo em uso, o nome dele vale no lugar do
+escrito no Personalizar.
 
 Todo olho e toda boca têm uma versão para cada expressão (feliz, rindo, susto, bravo, triste, dormindo, tonto,
 preocupado), e mais a piscada, o olhar, comendo e a cara de erro.

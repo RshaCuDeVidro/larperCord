@@ -118,6 +118,38 @@ pub fn videoFromGif(buf: []u8, url: []const u8) ?[]const u8 {
     return null;
 }
 
+/// O GIF de verdade de um GIF do Tenor/Giphy, a partir de qualquer formato dele (a
+/// miniatura WebP que a conversa mostra, o MP4), para salvar no disco:
+///   media.tenor.com/<id><5 letras>/nome.<ext> -> media.tenor.com/<id>AAAAC/nome.gif
+///   media.giphy.com/media/<id>/giphy.<ext>    -> .../giphy.gif
+/// null = não é do Tenor nem do Giphy.
+pub fn gifOriginal(buf: []u8, url: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, url, "https://")) return null;
+    const path = url[0 .. std.mem.indexOfAny(u8, url, "?#") orelse url.len];
+    const last_slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse return null;
+    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
+    if (dot < last_slash) return null;
+    const host = hostOf(path);
+    if (std.mem.eql(u8, host, "media.tenor.com")) {
+        const start = 8 + host.len + 1;
+        const slash = std.mem.indexOfScalarPos(u8, path, start, '/') orelse return null;
+        if (slash != last_slash or slash - start < 6) return null;
+        return std.fmt.bufPrint(buf, "https://media.tenor.com/{s}AAAAC/{s}.gif", .{ path[start .. slash - 5], path[slash + 1 .. dot] }) catch null;
+    }
+    if (isGiphy(host)) return std.fmt.bufPrint(buf, "{s}.gif", .{path[0..dot]}) catch null;
+    return null;
+}
+
+test "o gif de verdade do tenor e do giphy (para salvar)" {
+    var b: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("https://media.tenor.com/H5y5Fk9VdKcAAAAC/cat-dance.gif", gifOriginal(&b, "https://media.tenor.com/H5y5Fk9VdKcAAAAx/cat-dance.webp").?);
+    try std.testing.expectEqualStrings("https://media.tenor.com/H5y5Fk9VdKcAAAAC/cat-dance.gif", gifOriginal(&b, "https://media.tenor.com/H5y5Fk9VdKcAAAPo/cat-dance.mp4?x=1").?);
+    try std.testing.expectEqualStrings("https://media.giphy.com/media/abc/giphy.gif", gifOriginal(&b, "https://media.giphy.com/media/abc/giphy.webp").?);
+    try std.testing.expect(gifOriginal(&b, "https://cdn.discordapp.com/attachments/1/2/x.gif") == null);
+    try std.testing.expect(gifOriginal(&b, "https://media.tenor.com/abc/x.gif") == null);
+    try std.testing.expect(gifOriginal(&b, "demo:longgif") == null);
+}
+
 test "vídeo do tenor e do giphy a partir do gif (para guardar o favorito)" {
     var b: [256]u8 = undefined;
     var b2: [256]u8 = undefined;

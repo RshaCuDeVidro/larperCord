@@ -21,15 +21,17 @@ Zig · SDL3 · Dear ImGui · FreeType · zero Electron
 
 ### If Discord locks your account
 
-Discord disables accounts or forces a password reset when it thinks an account is a spam bot or was compromised. It can happen on any client, but third-party clients tend to trigger it more often. It already happened to this project's developer, after a day of testing. **Use a secondary account.**
+Discord disables accounts or forces a password reset when it thinks an account is a spam bot or was compromised. It can happen on any client, but third-party clients tend to trigger it more often. It already happened to this project's developer more than once: after a day of testing, and right after being kicked from a server. **Use a secondary account.**
 
 These are the usual triggers people report, so do them in the official client:
 
-- joining or leaving servers, the most common one
+- joining or leaving servers, the most common one, and being kicked or banned from one
 - disconnecting and reconnecting often, which includes restarting the app over and over
 - opening DMs with new people
 - changing your friends list
 - editing your profile while connected here
+
+Since 0.6.7 the connection itself looks like the Chrome the app says it is: the same TLS handshake (JA4) as Chrome and, in the Linux release, HTTP/2 with Chrome's settings (`tools/tls_check.sh` compares the two, without a token; Windows is still pending). With the debug log on (Settings → Advanced), each API request and gateway op that goes out is written down without the token or any content, so if your account gets flagged you can see what the app sent right before.
 
 If it happens, reset your password from discord.com. If the account stays locked, [appeal here](https://support.discord.com/hc/en-us/requests/new?ticket_form_id=360000029731). Discord doesn't publish these rules, so this list comes from the experience of people who make third-party clients.
 
@@ -96,7 +98,7 @@ The official client is a whole browser dressed up as an app. On the same PC:
   entries, notes under messages, commands and reminders, on a thread of their own with an instruction
   and a memory limit, so they can't hold up the interface. Scam guard, CVE radar, GitHub cards, what did I miss, translate,
   reminders, highlights, clean links, and links and files come with the app. [Guide and API →](docs/plugins.md)
-- **Voice settings.** In Settings → Voice you pick the microphone and output (remembered by name, back to the default if they disappear, switchable mid-call), adjust volumes, see the mic level live and use "Test microphone" to hear yourself. Voice activity has an adjustable threshold on the meter or an automatic mode that learns your background noise. "Push to talk" takes a key or mouse button and works while the window is focused (SDL has no portable global shortcut). There's a high-pass against rumble, a noise gate and a sound for each call event (joining, leaving, someone else joining or leaving, mute, deafen, the ringtone), built-in or your own WAV or Ogg Opus file, each of which can be turned off. The voice panel shows ping, quality by color and when you're transmitting, and warns you if the mic doesn't open or if the server muted or deafened you. Other people's mute and deafen show in the call list.
+- **Voice settings.** In Settings → Voice you pick the microphone and output (remembered by name, back to the default if they disappear, switchable mid-call), adjust volumes, see the mic level live and use "Test microphone" to hear yourself. Voice activity has an adjustable threshold on the meter or an automatic mode that learns your background noise. "Push to talk" takes a key or mouse button and works while the window is focused (SDL has no portable global shortcut). There's a high-pass against rumble, a noise gate and a sound for each call event (joining, leaving, someone else joining or leaving, mute, deafen, the ringtone), built-in or your own WAV or Ogg Opus file, each of which can be turned off. A new message sound plays for DMs and mentions when you're not looking at the conversation (not for muted ones, nor in Do Not Disturb), with its switch in Settings → Notifications. The voice panel shows ping, quality by color and when you're transmitting, and warns you if the mic doesn't open or if the server muted or deafened you. Other people's mute and deafen show in the call list.
 - **Runs on Linux and Windows.** Linux prefers native Wayland in a Wayland session, with X11 fallback. Windows 10/11 builds come from the same code; tokens stay in Credential Manager.
 - **Stays in the tray.** The icon sits in the system tray from launch until you quit, with Open and Quit in its menu even while the window is open, and closing keeps the app connected there. A left click on the icon shows or hides the window. "Close to tray" in Settings → Advanced turns it all off: no icon, and closing quits. Without a tray, closing quits. Opening it a second time brings up the running window. On Linux the tray needs a StatusNotifier panel.
 - **Updates itself.** Checks when opening or from Settings → Updates. One button downloads, installs and restarts. Updates are signed, and a version without the right signature isn't installed. There's a restart button and a What's new page with the changes in each version.
@@ -106,7 +108,7 @@ The official client is a whole browser dressed up as an app. On the same PC:
 - **Discord markdown.** Headings, `-#` small text, quotes, lists and `[text](url)` links, which show the real address on hover. Code blocks have line numbers, and text in embeds can be selected and copied.
 - **Manage what's yours.** Edit a server (name, description, icon, banner) or a group DM (name, icon, members), and edit or delete threads when you have permission. Server banners appear at the top of the channel list and on invite cards; click one to see it in full.
 - **Moderation.** Kick, ban, time out and server mute or deafen from a person's menu, only when your role allows it, with a reason for the audit log; a Bans list in the server menu. The message box shows slowmode and says why you can't send (permission, a locked thread, a timeout, an AutoMod quarantine). Joining from an invite warns first, and servers with rules or onboarding open them in the app.
-- **Your account, synced.** Block, ignore, friend requests (also by username), mute and notification levels, your status with a duration, a custom status and your profile's display name, pronouns and About me are saved to your Discord account, like the official app. Message requests and spam stay apart from your DMs. Rich Presence shows the game you're playing, off by default.
+- **Your account, synced.** Block, ignore, friend requests (also by username), mute and notification levels, your status with a duration, a custom status and your profile's display name, pronouns and About me are saved to your Discord account, like the official app. Message requests and spam stay apart from your DMs. Rich Presence shows the game you're playing, and games without it (like Dota 2) show up by their running program, from a list you pick; both off by default.
 - **Text in any language.** Arabic letters are joined and right-to-left text comes in the right order ([GNU FriBidi](https://github.com/fribidi/fribidi)). A letter the theme's font lacks, in any script, comes from a system font that has it, looked up only when such text appears.
 - **Code diagnostics (optional).** See errors while typing a code block, from a language server you choose. Off by default, nothing bundled or downloaded. [Guide →](docs/lsp.md)
 - **Threads and forums.** Active threads nested under the parent channel (collapsible, with unreads), opening as a normal conversation, with tabs, split view, drafts, cache and search; a card with the message count and last activity on the message that started it; create, join, leave, rename, tag, archive and lock threads from the menu, and see archived ones, private ones included. Forums and media channels show the list of posts instead of a conversation, with local search, sorting by activity, pages on demand and "New Post" with title, tags and text. Permissions come from the parent channel, and the member list shows who's in the thread.
@@ -121,13 +123,20 @@ The official client is a whole browser dressed up as an app. On the same PC:
 - **Saved messages with notes** (`Ctrl+Shift+S`, right-click → Save message): only on your
   computer, in `~/.config/larpercord/saved-<account>.json` (`%APPDATA%\larpercord\saved-<account>.json`
   on Windows); nothing goes to Discord.
+- **Message reminders** (right-click → Remind Me…): in 20 minutes, 1 hour, 3 hours, tomorrow at
+  9:00, next week or a date and time you pick, with an optional note. When it's due a notice stays
+  on screen (jump, snooze 10 minutes, done), the corner mascot brings it, and with the window
+  unfocused or in the tray a desktop notification goes out (not on Do Not Disturb). One that came
+  due with the app closed shows up when it opens. Only on your computer, in
+  `lembretes-<account>.json` next to the saved messages.
 - **Local cache and offline search.** The last 200 messages seen in each channel stay in
   `~/.cache/larpercord/messages` (`%LOCALAPPDATA%\larpercord\messages` on Windows; 50 MB cap, and on
   Linux folders 700 and files 600): the conversation appears
-  right away on open and the real history arrives on top, without jumping the scroll. `Ctrl+F` searches
-  memory and the cache on every keystroke, without internet, with `from:name`, `in:channel`, `has:link`,
-  `has:image` and `has:file`; clicking a result jumps to the message. You can turn it off and
-  erase it in Settings → Privacy.
+  right away on open and the real history arrives on top, without jumping the scroll. `Ctrl+F` answers
+  on every keystroke from a local index of the messages already on your computer, without internet
+  ("hypr" already finds "hyprland"), with `from:name`, `in:channel`, `mentions:name`, `has:link`,
+  `has:image`, `has:file`, `has:video`, `has:sound`, `before:` and `after:`; Enter adds what Discord
+  finds. Clicking a result jumps to the message. You can turn it off and erase it in Settings → Privacy.
 - **Multiple accounts.** Your own name's menu lists the saved accounts (name and picture) and switches
   right away; "Add account" goes back to sign-in without forgetting the others. The sign-in screen
   lists them too, and a token Discord refuses is forgotten instead of being tried again.
@@ -150,7 +159,13 @@ The official client is a whole browser dressed up as an app. On the same PC:
   that didn't load). It also animates old Tenor GIFs that only exist as MP4.
 - **Media**: spoilers and sensitive media stay covered until you click, with nothing downloaded before;
   expired Discord image links are refreshed on their own; voice messages have a player with a waveform;
-  long GIFs play every frame, and a star on any GIF adds it to your favorites.
+  audio files (.mp3, .ogg, .wav, .flac, .m4a…) play in the conversation, with the whole file's waveform
+  as the seek bar, 1×/1.5×/2× speed and small bars that dance while it plays (Opus, MP3 and WAV with
+  nothing installed, the rest through FFmpeg); long GIFs play every frame, and a star on any GIF adds it
+  to your favorites.
+- **Export and save**: right-click a conversation → Export Conversation… writes it as HTML (one page that opens
+  offline), Markdown or JSON from what's already on your computer, with nothing requested from Discord.
+  Right-click an image, video or file → Save… or Save to Downloads keeps the original file.
 - **Proxy** (HTTP, HTTPS, SOCKS5, SOCKS5h; Tor at `socks5h://127.0.0.1:9050`), with separate fields for
   the address, port, login and password, for media from outside Discord or for everything except voice
   calls, which always connect directly (Settings → Network). The sign-in screen has it too ("Connect
@@ -190,7 +205,7 @@ All of them have **light and dark modes** and **their own options** in Settings 
 
 On Linux, make the file executable and run it: `chmod +x larpercord-linux-x86_64 && ./larpercord-linux-x86_64`. It can keep that name: an update replaces that same file. Keep it in a folder you own, like `~/.local/bin`, so it can update itself.
 
-On Windows, unzip it and open `larpercord.exe` in the `larperCord` folder. Keep the three DLLs next to it (`SDL3.dll`, `libcurl-x64.dll`, `libcrypto-3-x64.dll`) and unzip it somewhere you can write to, not `C:\Program Files`, so it can update itself. It isn't code-signed yet: if SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**. On the releases page, take the zip: the loose `.exe` and DLLs there are for the updater and the install script.
+On Windows, unzip it and open `larpercord.exe` in the `larperCord` folder. Since 0.6.7 it's a single file, with SDL3, libcurl and OpenSSL inside. Unzip it somewhere you can write to, not `C:\Program Files`, so it can update itself. It isn't code-signed yet: if SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**. On the releases page, take the zip: the loose `.exe` there is for the updater and the install script, and the DLLs only for versions before 0.6.7 updating themselves.
 
 The Linux build runs on distros from about 2022 onward (glibc 2.34 or newer). SDL3, libcurl and OpenSSL come inside it. FreeType, fontconfig, libwebp, Opus and zlib come from the system, and a desktop distro usually has them already. Before each release it's opened in Ubuntu 22.04 and 24.04, Debian 12 and 13, Fedora, openSUSE and Arch containers, in demo mode with no GPU.
 
@@ -289,7 +304,7 @@ No magic, just many small decisions:
 8. **On Linux, fontconfig gets freed** after fonts are resolved (`FcFini` + `malloc_trim`). Windows has
    no fontconfig: fonts are opened straight from `C:\Windows\Fonts`.
 9. **No blinking cursor**: a cursor blinking on its own would keep the CPU awake.
-10. **A lean binary**: a release build without debug symbols. The Linux file is about 14 MB with SDL3, libcurl and OpenSSL inside, built with only the parts the app uses and no exported symbols, and about 8 MB built against the system's copies. On Windows those three come as DLLs next to the `.exe`.
+10. **A lean binary**: a release build without debug symbols. The Linux file is about 16 MB with SDL3, libcurl and OpenSSL inside, built with only the parts the app uses and no exported symbols, and about 10 MB built against the system's copies. On Windows those three come as DLLs next to the `.exe`. The biggest texts inside it (the Japanese and Russian translations, the changelog, the emoji table) go in compressed and only open when needed.
 
 ## Building
 
@@ -315,7 +330,8 @@ tools/windows_deps.sh && zig build -Dtarget=x86_64-windows-gnu
 ```
 
 `zig-out/bin/` then has `larpercord.exe` with `SDL3.dll`, `libcurl-x64.dll` and `libcrypto-3-x64.dll`: copy the
-four together. Windows needs no fontconfig and no extra fonts: the app takes Segoe UI, Consolas, Georgia and
+four together. The release is the single `.exe` instead: `tools/windows_static_deps.sh` (after `tools/windows_deps.sh`)
+compiles OpenSSL, curl, nghttp2 and brotli for it, and `-Dsingle-exe=true` links them, so the connection looks like Chrome's. Windows needs no fontconfig and no extra fonts: the app takes Segoe UI, Consolas, Georgia and
 Segoe UI Emoji from `C:\Windows\Fonts`.
 
 | Command | |
@@ -323,6 +339,7 @@ Segoe UI Emoji from `C:\Windows\Fonts`.
 | `zig build test` | tests (KDL, colors, layout, markdown, Store, built-in themes, settings) |
 | `tools/snapshots.sh` | generates the screenshots in `docs/` without opening a window |
 | `tools/membench.sh 60` | measures RAM and CPU for each theme and fails over 60 MB |
+| `tools/tls_check.sh` | compares the app's TLS and HTTP/2 fingerprint with Chrome's, without a token |
 | `tools/qa_quadros.py BIN [--slow]` | checks frame skipping and hidden-window memory with a real window in Xvfb |
 | `zig build web -Demscripten=DIR` | the browser demo in WebAssembly ([how](tools/web/README.md)) |
 
@@ -356,7 +373,8 @@ src/
   ui/         components, rich text, palette, settings, animations
   platform/   window, renderer, "wake the loop"; the only place that knows SDL
 themes/       the built-in themes (also compiled into the binary)
-third_party/  Dear ImGui 1.93 + dear_bindings (C), with a small patch for bitmap emoji; GNU FriBidi
+third_party/  Dear ImGui 1.93 + dear_bindings (C), with a small patch for bitmap emoji; GNU FriBidi;
+              dr_mp3 + dr_wav (audio attachments)
 ```
 
 The flow is **UI → `Action` → app → `Command` → gateway → `Event` → Store → UI**.
@@ -376,6 +394,7 @@ swapping the fake gateway for the real one doesn't touch the UI.
 - [x] Voice (DAVE/MLS + Opus)
 - [x] Calls in DMs and groups
 - [x] Rich Presence: show the game you're playing, off by default
+- [x] "Playing …" for games without Rich Presence, found by their running program, off by default
 - [x] Moderation: kick, ban, timeout, and server mute and deafen
 - [x] Bot buttons, menus, forms and slash commands
 - [x] Arabic and Hebrew, and fonts for any script
@@ -393,5 +412,5 @@ swapping the fake gateway for the real one doesn't touch the UI.
 
 ## License
 
-larperCord is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). Third-party code keeps its own license, in each folder of `third_party/`: Dear ImGui and dear_bindings are MIT, RNNoise is BSD, GNU FriBidi is LGPL-2.1 or later. The file
+larperCord is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). Third-party code keeps its own license, in each folder of `third_party/`: Dear ImGui and dear_bindings are MIT, RNNoise is BSD, GNU FriBidi is LGPL-2.1 or later, dr_mp3 and dr_wav (dr_libs) are public domain or MIT No Attribution. The file
 `third_party/imgui/misc/freetype/imgui_freetype.cpp` has changes marked with `[larperCord]`.

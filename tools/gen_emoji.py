@@ -90,7 +90,7 @@ offsets.append(pos)
 
 w = ["""//! Tabela de emoji: a lista Unicode inteira (sem as variações de tom de pele),
 //! na ordem do Unicode. GERADO por tools/gen_emoji.py, não edite à mão.
-//! Cada linha de `blob`: emoji|nome|palavras em inglês|palavras em português
+//! Cada linha do texto (`texto`): emoji|nome|palavras em inglês|palavras em português
 //! (palavras em minúsculas e sem acento). `offsets[i]` é onde começa a linha i.
 const std = @import("std");
 
@@ -105,10 +105,12 @@ w.append("pub const offsets = [_]u32{")
 for i in range(0, len(offsets), 16):
     w.append("    " + ", ".join(str(x) for x in offsets[i:i + 16]) + ",")
 w.append("};\n")
-w.append("pub const blob =")
-for l in lines:
-    w.append("    \\\\" + l)
-w.append(";\n")
+# O texto vai num arquivo à parte, que o build comprime (core/embutido.zig).
+(out.parent / "emoji_blob.txt").write_text("".join(l + "\n" for l in lines), encoding="utf-8")
+w.append("""/// O texto da tabela (src/ui/emoji_blob.txt), que entra comprimido no executável e abre
+/// na primeira vez que alguém pede (core/embutido.zig). Cada linha termina em "\\n".
+const texto = @import("../core/embutido.zig").Lazy(@embedFile("emoji_blob"));
+""")
 w.append((pathlib.Path(sys.argv[0]).resolve().parent / "emoji_data_tail.zig").read_text(encoding="utf-8"))
 out.write_text("\n".join(w), encoding="utf-8")
 print(index, "emoji,", pos, "bytes de texto")

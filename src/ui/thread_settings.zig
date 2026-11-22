@@ -79,10 +79,18 @@ pub fn choose(ctx: *d.Ctx, id: Id, item: u8) void {
     }
 }
 
-/// Título de uma thread no cabeçalho: clicar abre o menu dela (com editar,
-/// arquivar e trancar). Fora de thread não faz nada.
+/// Título da conversa no cabeçalho: o botão direito abre o menu dela (abrir em nova
+/// aba, na janela flutuante, silenciar...), também numa DM, que na lista abre o da pessoa.
+/// Numa thread, o clique também abre (com editar, arquivar e trancar).
 pub fn headerTitle(ctx: *d.Ctx, dl: *c.ImDrawList, ch: *const types.Channel, r: d.Rect) void {
-    if (ch.thread == null or ch.guild == 0) return;
+    if (ch.thread == null or ch.guild == 0) {
+        // Fora de thread: o botão direito no nome abre o menu da conversa (exportar,
+        // silenciar…). Sem mudar o cursor: o clique comum no nome não faz nada.
+        qa.mark(r, "header-title", .{});
+        if (ctx.st.popup == .none and ctx.hovering(r) and c.ImGui_IsMouseClicked(1) and c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_RootAndChildWindows))
+            ctx.popup(.{ .menu = .{ .kind = .channel, .id = ch.id, .x = r.x, .y = r.bottom() + 4 } });
+        return;
+    }
     const hb = d.hit(ctx, @truncate((ch.id *% 0x9E3779B97F4A7C15) ^ 0x7E1), r);
     qa.mark(r, "header-thread", .{});
     if (hb.clicked or hb.right) ctx.popup(.{ .menu = .{ .kind = .channel, .id = ch.id, .x = r.x, .y = r.bottom() + 4 } });
@@ -243,8 +251,7 @@ pub fn dialog(ctx: *d.Ctx, id: Id) void {
     }
 
     if (t.archived) {
-        _ = d.textClipped(dl, fam.get(.regular), 12.5, r.x + pad, y, ctx.col(.faint), i18n.tr("Está arquivada: salvar também a desarquiva.", "It's archived: saving also unarchives it."), inner);
-        y += 24;
+        y += inbox.wrapFlow(dl, fam.get(.regular), 12.5, r.x + pad, y, inner, i18n.tr("Está arquivada: salvar também a desarquiva.", "It's archived: saving also unarchives it."), ctx.col(.faint), 24);
     }
 
     // Salvar só com mudança e nome válido.

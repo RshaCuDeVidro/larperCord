@@ -291,3 +291,427 @@ pub const ops = [_]Op{
     expect("desligar apaga o socket, para a thread e limpa a atividade", offCleared),
     run(restore),
 };
+
+// --- O jogo aberto pelo processo -------------------------------------------------
+//
+// Os processos do QA são de mentira (platform/processos.zig `fake`): a lista para
+// escolher, a varredura de 15 em 15 s (aqui, de 200 em 200 ms) e o fechar do jogo
+// são o mesmo código, só a fonte muda. A varredura de verdade tem o passo dela no
+// fim (Linux: acha o próprio QA em /proc) e o teste em processos.zig.
+
+const app_presenca = @import("app_presenca.zig");
+const processos = @import("platform/processos.zig");
+const jogos = @import("core/jogos.zig");
+const settings_jogos = @import("ui/settings_jogos.zig");
+const paineis = @import("qa_paineis.zig");
+const windows = @import("builtin").os.tag == .windows;
+
+const game_toggle = "toggle:Mostrar o jogo aberto";
+const fake_path = if (windows) "D:\\Jogos\\fakegame\\fakegame.exe" else "/opt/jogos/fakegame/fakegame";
+const fake_name = if (windows) "fakegame.exe" else "fakegame";
+const moved_path = if (windows) "D:\\Outro\\fakegame.exe" else "/outro/lugar/fakegame";
+const chosen_path = if (windows) "D:\\Jogos\\Escolhido\\Escolhido.exe" else "/opt/jogos/escolhido/Escolhido.x86_64";
+const chosen_exe = if (windows) "Escolhido.exe" else "Escolhido.x86_64";
+
+const running_list = [_]jogos.Proc{
+    .{ .pid = 4242, .name = fake_name, .path = fake_path },
+    .{ .pid = 4243, .name = "pipewire", .path = "/usr/bin/pipewire" },
+    .{ .pid = 4244, .name = if (windows) "outro.exe" else "outro", .path = if (windows) "D:\\Apps\\outro.exe" else "/opt/outro/outro" },
+    // O mesmo jogo duas vezes (outro processo dele): aparece uma vez só para escolher.
+    .{ .pid = 4245, .name = fake_name, .path = fake_path },
+};
+const closed_list = [_]jogos.Proc{running_list[1]};
+const moved_list = [_]jogos.Proc{ .{ .pid = 4246, .name = fake_name, .path = moved_path }, running_list[1] };
+
+fn fakeRunning(_: *App) void {
+    notePresences();
+    processos.fake = &running_list;
+}
+fn fakeClosed(_: *App) void {
+    notePresences();
+    processos.fake = &closed_list;
+}
+fn fakeMoved(_: *App) void {
+    notePresences();
+    processos.fake = &moved_list;
+}
+
+var scans_before: u32 = 0;
+fn noteScans(_: *App) void {
+    scans_before = app_presenca.scans;
+    notePresences();
+}
+
+fn gameOffNothing(app: *App) bool {
+    return !app.st.settings.show_game and !app_presenca.gameActive() and app_presenca.scans == 0 and qa.find("button:Adicionar processo aberto") == null;
+}
+
+fn gameOnEmpty(app: *App) bool {
+    // Ligado com a lista vazia: olha os processos, mas nada vai para o gateway.
+    return app.st.settings.show_game and app_presenca.gameActive() and app_presenca.scans > scans_before + 2 and
+        gw.sent.presences.load(.acquire) == presences_before and qa.find("button:Adicionar processo aberto") != null and qa.find("button:Escolher executável") != null;
+}
+
+fn pickerOpen(_: *App) bool {
+    // O jogo aparece uma vez, os do sistema não.
+    return qa.find("jogo-filtro") != null and qa.find("jogo-proc:" ++ fake_name) != null and qa.find("jogo-proc:pipewire") == null and
+        qa.find("jogo-proc:" ++ (if (windows) "outro.exe" else "outro")) != null and countMarks("jogo-proc:" ++ fake_name) == 1;
+}
+
+fn countMarks(key: []const u8) usize {
+    var keys: [64][56]u8 = undefined;
+    var lens: [64]u8 = undefined;
+    const n = qa.keysWith(&.{key}, &keys, &lens);
+    var k: usize = 0;
+    for (0..n) |i| {
+        if (std.mem.eql(u8, keys[i][0..lens[i]], key)) k += 1;
+    }
+    return k;
+}
+
+fn filtered(_: *App) bool {
+    return qa.find("jogo-proc:" ++ fake_name) != null and qa.find("jogo-proc:" ++ (if (windows) "outro.exe" else "outro")) == null;
+}
+
+fn firstEntry(app: *App) ?*jogos.Entry {
+    if (app.st.jogos.len == 0) return null;
+    return &app.st.jogos.items[0];
+}
+
+fn entryAdded(app: *App) bool {
+    const e = firstEntry(app) orelse return false;
+    return app.st.jogos.len == 1 and std.mem.eql(u8, e.exe.slice(), fake_name) and std.mem.eql(u8, e.name.slice(), "Fakegame") and
+        std.mem.eql(u8, e.path.slice(), fake_path) and e.on and !e.exact and qa.find("jogo-filtro") == null and qa.find("jogo-nome:0") != null;
+}
+
+/// O começo da atividade no último op 3 (0 = não tem).
+fn op3Start() i64 {
+    const t = lastOp3();
+    const key = "\"timestamps\":{\"start\":";
+    const i = std.mem.indexOf(u8, t, key) orelse return 0;
+    var end = i + key.len;
+    while (end < t.len and std.ascii.isDigit(t[end])) end += 1;
+    return std.fmt.parseInt(i64, t[i + key.len .. end], 10) catch 0;
+}
+
+var first_start: i64 = 0;
+fn op3Game(app: *App) bool {
+    if (!op3Has(&.{ "\"status\":\"online\"", "{\"type\":0,\"name\":\"Fakegame\",\"timestamps\":{\"start\":" })) return false;
+    first_start = op3Start();
+    const me = app.store.user(app.store.me) orelse return false;
+    const now = gw.nowMs();
+    return first_start > now - 60_000 and first_start <= now and me.activity != null and std.mem.eql(u8, me.activity.?, "Jogando Fakegame") and
+        myActivities(app).len == 1;
+}
+
+fn renameGame(app: *App) void {
+    notePresences();
+    const e = firstEntry(app) orelse return;
+    // Como digitar na caixa: muda o texto e avisa a lista.
+    e.name.set("Jogo Falso");
+    app.st.jogos.changed();
+}
+
+fn op3Renamed(_: *App) bool {
+    // Mesmo jogo aberto: o nome muda, a hora do começo fica.
+    return op3Has(&.{"\"name\":\"Jogo Falso\""}) and op3Start() == first_start;
+}
+
+fn op3Cleared(app: *App) bool {
+    return op3Has(&.{"\"activities\":[]"}) and myActivities(app).len == 0;
+}
+
+fn op3Reopened(_: *App) bool {
+    // Abriu de novo: conta de novo (o começo é outro, mais novo).
+    return op3Has(&.{"\"name\":\"Jogo Falso\""}) and op3Start() > first_start;
+}
+
+fn invisibleRename(app: *App) void {
+    app.handle(.{ .set_status = .offline });
+    renameGame(app);
+    const e = firstEntry(app) orelse return;
+    e.name.set("Jogo Escondido");
+}
+
+fn op3Invisible(_: *App) bool {
+    // Invisível vai como no Rich Presence: o status invisível, com a atividade (quem
+    // esconde dos outros é o Discord).
+    return op3Has(&.{ "\"status\":\"invisible\"", "\"name\":\"Jogo Escondido\"" });
+}
+
+fn backOnline(app: *App) void {
+    notePresences();
+    app.handle(.{ .set_status = .online });
+}
+
+fn op3Online(_: *App) bool {
+    return op3Has(&.{ "\"status\":\"online\"", "\"name\":\"Jogo Escondido\"" });
+}
+
+fn entryOff(app: *App) bool {
+    const e = firstEntry(app) orelse return false;
+    return !e.on and op3Cleared(app);
+}
+
+fn entryOn(app: *App) bool {
+    const e = firstEntry(app) orelse return false;
+    return e.on and op3Has(&.{"\"name\":\"Jogo Escondido\""});
+}
+
+fn pickExe(app: *App) void {
+    const z = std.heap.c_allocator.dupeSentinel(u8, chosen_path, 0) catch return;
+    app.picked.push(z);
+}
+
+fn exeAdded(app: *App) bool {
+    if (app.st.jogos.len != 2) return false;
+    const e = &app.st.jogos.items[1];
+    return std.mem.eql(u8, e.exe.slice(), chosen_exe) and std.mem.eql(u8, e.name.slice(), "Escolhido") and std.mem.eql(u8, e.path.slice(), chosen_path) and
+        qa.find("jogo-nome:1") != null and qa.find("jogo-exato:1") != null;
+}
+
+fn cancelThenAttach(app: *App) void {
+    // O seletor fechou sem arquivo: o próximo arquivo que chegar é anexo, não jogo.
+    settings_jogos.cancelPick();
+    settings_jogos.pollCancel();
+    pickExe(app);
+}
+
+fn notTwice(app: *App) bool {
+    return app.st.jogos.len == 2;
+}
+
+/// A lista vai e volta pelo settings.kdl (o QA não grava o arquivo dele).
+fn persists(app: *App) bool {
+    const gpa = std.heap.c_allocator;
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    app.st.jogos.write(&out, gpa) catch return false;
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const nodes = @import("theme/kdl.zig").parse(arena.allocator(), out.items, null) catch return false;
+    var back: jogos.Lista = .{};
+    for (nodes) |*n| if (!back.applyNode(n)) return false;
+    if (back.len != app.st.jogos.len) return false;
+    for (back.constSlice(), app.st.jogos.constSlice()) |*a, *b| {
+        if (!std.mem.eql(u8, a.name.slice(), b.name.slice()) or !std.mem.eql(u8, a.exe.slice(), b.exe.slice()) or
+            !std.mem.eql(u8, a.path.slice(), b.path.slice()) or a.on != b.on or a.exact != b.exact) return false;
+    }
+    return true;
+}
+
+fn exactSameFile(app: *App) bool {
+    // "Só este arquivo" com o mesmo caminho: continua aberto, nada muda.
+    const e = firstEntry(app) orelse return false;
+    return e.exact and gw.sent.presences.load(.acquire) == presences_before and std.mem.indexOf(u8, lastOp3(), "\"name\":\"Jogo Escondido\"") != null;
+}
+
+fn exactOtherFile(app: *App) bool {
+    return op3Cleared(app);
+}
+
+fn exactOffShows(app: *App) bool {
+    const e = firstEntry(app) orelse return false;
+    return !e.exact and op3Has(&.{"\"name\":\"Jogo Escondido\""});
+}
+
+fn switchedOff(app: *App) bool {
+    return !app.st.settings.show_game and !app_presenca.gameActive() and op3Cleared(app) and qa.find("button:Adicionar processo aberto") == null;
+}
+
+fn offStaysQuiet(_: *App) bool {
+    return app_presenca.scans == scans_before and gw.sent.presences.load(.acquire) == presences_before;
+}
+
+fn removedFirst(app: *App) bool {
+    return app.st.jogos.len == 1 and std.mem.eql(u8, app.st.jogos.items[0].exe.slice(), chosen_exe);
+}
+
+fn gameRestore(app: *App) void {
+    processos.fake = null;
+    app.st.jogos.len = 0;
+    app.st.jogos.changed();
+    app.st.settings.show_game = false;
+    app.st.settings.open = false;
+    app.handle(.{ .set_status = .online });
+}
+
+pub const ops_jogo = [_]Op{
+    s("jogo aberto pelo processo"),
+    run(fakeRunning),
+    expect("desligado: nenhuma varredura, nenhum timer, nenhuma lista", gameOffNothing),
+    run(openPrivacy),
+    .{ .wait = 150 },
+    run(noteScans),
+    click(game_toggle),
+    .{ .wait = 800 },
+    expect("ligado com a lista vazia: olha os processos e não manda nada", gameOnEmpty),
+    .{ .shot = "jogo-lista-vazia" },
+    click("button:Adicionar processo aberto"),
+    expect("a lista dos processos abertos, sem os do sistema e sem repetir", pickerOpen),
+    .{ .shot = "jogo-escolher-processo" },
+    click("jogo-filtro"),
+    .{ .text = "fake" },
+    expect("o filtro deixa só o que bate", filtered),
+    run(notePresencesRun),
+    click("jogo-proc:" ++ fake_name),
+    expect("escolher acrescenta o jogo com o nome do arquivo e fecha a lista", entryAdded),
+    expect("o gateway recebe o op 3 com \"Jogando Fakegame\" e o começo, e o painel mostra", op3Game),
+    expect("nada se sobrepõe na Privacidade com a lista", paineis.noOverlap),
+    .{ .shot = "jogo-lista" },
+    run(closeSettings),
+    .{ .wait = 300 },
+    .{ .shot = "jogo-painel" },
+    run(openPrivacy),
+    .{ .wait = 150 },
+    run(renameGame),
+    expect("mudar o nome muda a atividade, com o mesmo começo", op3Renamed),
+    run(fakeClosed),
+    expect("o jogo fechou: o op 3 limpa e o painel volta ao status", op3Cleared),
+    run(fakeRunning),
+    expect("abriu de novo: volta, contando de novo", op3Reopened),
+    run(invisibleRename),
+    expect("invisível: o op 3 vai com o status invisível, como o Rich Presence", op3Invisible),
+    run(backOnline),
+    expect("e volta ao online com o jogo", op3Online),
+    run(notePresencesRun),
+    click("jogo-ligado:0"),
+    expect("desligar o jogo na lista limpa", entryOff),
+    run(notePresencesRun),
+    click("jogo-ligado:0"),
+    expect("ligar de novo volta", entryOn),
+    click("button:Escolher executável"),
+    run(pickExe),
+    expect("o executável escolhido entra na lista, com o caminho e \"só este arquivo\"", exeAdded),
+    .{ .shot = "jogo-dois" },
+    click("button:Escolher executável"),
+    run(cancelThenAttach),
+    .{ .wait = 200 },
+    expect("seletor cancelado: o próximo arquivo não vira jogo", notTwice),
+    expect("a lista vai e volta pelo settings.kdl", persists),
+    run(notePresencesRun),
+    click("jogo-exato:0"),
+    .{ .wait = 700 },
+    expect("\"só este arquivo\" com o mesmo caminho: nada muda", exactSameFile),
+    run(fakeMoved),
+    expect("o mesmo nome em outro caminho não conta", exactOtherFile),
+    run(notePresencesRun),
+    click("jogo-exato:0"),
+    expect("sem a opção, qualquer caminho vale de novo", exactOffShows),
+} ++ (if (windows) [_]Op{} else ops_merge) ++ [_]Op{
+    run(notePresencesRun),
+    click(game_toggle),
+    expect("desligar a opção limpa na hora e para de olhar", switchedOff),
+    run(noteScans),
+    run(fakeRunning),
+    .{ .wait = 1000 },
+    expect("desligado: nenhuma varredura e nada para o gateway", offStaysQuiet),
+    click(game_toggle),
+    .{ .wait = 150 },
+    run(notePresencesRun),
+    click("jogo-tirar:0"),
+    expect("tirar da lista: sobra o outro", removedFirst),
+    expect("e o jogo que saiu da lista limpa", op3Cleared),
+} ++ (if (windows) [_]Op{} else [_]Op{expect("varredura de verdade: acha o próprio QA em /proc", realScan)}) ++ [_]Op{
+    run(gameRestore),
+};
+
+fn notePresencesRun(_: *App) void {
+    notePresences();
+}
+
+/// A varredura de verdade (sem a lista de mentira) acha este processo, rápido.
+fn realScan(_: *App) bool {
+    const saved = processos.fake;
+    processos.fake = null;
+    defer processos.fake = saved;
+    var l: processos.List = .{};
+    defer l.deinit(std.heap.c_allocator);
+    const t0 = c.SDL_GetTicksNS();
+    processos.scan(&l, std.heap.c_allocator, .all);
+    const us = (c.SDL_GetTicksNS() - t0) / 1000;
+    const me: u32 = @intCast(c.getpid());
+    var found = false;
+    for (l.items()) |p| if (p.pid == me) {
+        std.log.info("varredura de verdade: {d} processos em {d} µs; este é {s}", .{ l.items().len, us, p.name });
+        found = std.mem.eql(u8, p.name, "larpercord") and p.path.len > 0;
+    };
+    if (!found) return false;
+    // A de 15 em 15 s (só os candidatos aos jogos da lista): o mesmo custo de ler os links.
+    var games: jogos.Lista = .{};
+    _ = games.add("larpercord", "", .linux);
+    const t1 = c.SDL_GetTicksNS();
+    processos.scan(&l, std.heap.c_allocator, .{ .games = games.slice() });
+    std.log.info("varredura de verdade só dos jogos da lista: {d} candidato(s) em {d} µs", .{ l.items().len, (c.SDL_GetTicksNS() - t1) / 1000 });
+    return jogos.firstRunning(games.slice(), l.items(), .linux) == 0;
+}
+
+// Linux: o Rich Presence (o jogo de mentira do discord-ipc, lá de cima) e o jogo
+// aberto ao mesmo tempo: os dois no op 3, e um sair não leva o outro.
+
+fn rpcOn(app: *App) void {
+    app.st.settings.rich_presence = true;
+}
+
+fn rpcListening(_: *App) bool {
+    if (!rpc.running()) return false;
+    const p = rpc.path();
+    if (p.len >= path_buf.len) return false;
+    @memcpy(path_buf[0..p.len], p);
+    path_buf[p.len] = 0;
+    path_len = p.len;
+    return true;
+}
+
+fn rpcActivity(_: *App) void {
+    notePresences();
+    activityFrame("qa-m", "Fase M");
+}
+
+fn bothInOp3(app: *App) bool {
+    return op3Has(&.{ "\"details\":\"Fase M\"", "\"name\":\"Jogo Escondido\"" }) and myActivities(app).len == 2;
+}
+
+fn rpcStays(app: *App) bool {
+    return op3Has(&.{"\"details\":\"Fase M\""}) and std.mem.indexOf(u8, lastOp3(), "Jogo Escondido") == null and myActivities(app).len == 1;
+}
+
+fn rpcClear(_: *App) void {
+    notePresences();
+    sendFrame(proto.op_frame, "{\"cmd\":\"SET_ACTIVITY\",\"nonce\":\"qa-m2\",\"args\":{\"pid\":1,\"activity\":null}}");
+}
+
+fn gameStays(app: *App) bool {
+    return op3Has(&.{"\"name\":\"Jogo Escondido\""}) and std.mem.indexOf(u8, lastOp3(), "Fase M") == null and myActivities(app).len == 1;
+}
+
+fn rpcOff(app: *App) void {
+    closeClient();
+    app.st.settings.rich_presence = false;
+}
+
+fn rpcStopped(_: *App) bool {
+    return !rpc.running();
+}
+
+const ops_merge = [_]Op{
+    run(rpcOn),
+    expect("Rich Presence ligado junto", rpcListening),
+    run(handshake),
+    expect("o jogo do discord-ipc faz o handshake", readyReply),
+    run(rpcActivity),
+    expect("Rich Presence e jogo aberto juntos no op 3 e no painel", bothInOp3),
+    run(closeSettings),
+    .{ .wait = 300 },
+    .{ .shot = "jogo-e-rich-presence" },
+    run(openPrivacy),
+    .{ .wait = 150 },
+    run(fakeClosed),
+    expect("o jogo fechou: o Rich Presence fica", rpcStays),
+    run(fakeRunning),
+    expect("o jogo voltou: os dois de novo", bothInOp3),
+    run(rpcClear),
+    expect("o Rich Presence limpou: o jogo fica", gameStays),
+    run(rpcOff),
+    expect("Rich Presence desligado", rpcStopped),
+};

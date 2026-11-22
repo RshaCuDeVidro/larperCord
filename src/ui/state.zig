@@ -29,6 +29,8 @@ pub const Popup = union(enum) {
     /// Caixa de entrada (aba 0 = não lidas, 1 = menções) e mensagens salvas.
     inbox: struct { tab: u8 = 0 },
     saved,
+    /// "Me lembrar…" de uma mensagem, ou editar o lembrete `edit` (ui/lembretes.zig).
+    lembrete: struct { message: Id, edit: u32 = 0 },
     /// Mensagens fixadas de um canal.
     pins: struct { channel: Id },
     /// Threads de um canal de texto, ativas ou arquivadas (ui/forum.zig).
@@ -66,6 +68,8 @@ pub const Popup = union(enum) {
     devices: struct { which: DeviceMenu, x: f32, y: f32 },
     /// O nome de um conjunto de abas novo, ou do conjunto `rename` (ui/conjuntos.zig).
     tab_set_name: struct { rename: ?usize = null },
+    /// "Exportar conversa…" (ui/exportar.zig).
+    exportar: struct { channel: Id },
 };
 
 /// Seleção de texto entre mensagens: âncora e cabeça (mensagem + byte).
@@ -245,6 +249,8 @@ pub const State = struct {
     muted_channels: std.AutoHashMapUnmanaged(Id, void) = .empty,
     /// Palavras de alerta, filtro, ignorados e modo foco (core/filtros.zig).
     filtros: @import("../core/filtros.zig").Filtros = .{},
+    /// Os jogos do "Jogando …" pelo processo aberto (core/jogos.zig).
+    jogos: @import("../core/jogos.zig").Lista = .{},
     /// Notificações, status personalizado e o resto da conta no Discord.
     conta: @import("../core/conta.zig").State = .{},
     /// Rascunho de cada canal (ui/rascunhos.zig).
@@ -259,6 +265,8 @@ pub const State = struct {
     typing_sent_ms: i64 = 0,
     /// Mensagens salvas da conta (ui/saved.zig lê e grava o arquivo).
     saved: @import("../core/saved.zig").List = .{},
+    /// Lembretes da conta (ui/lembretes.zig lê e grava o arquivo).
+    lembretes: @import("../core/lembretes.zig").List = .{},
     /// Buffers reaproveitados a cada quadro pela lista de mensagens.
     offsets: std.ArrayList(f32) = .empty,
     groups: std.ArrayList(u8) = .empty,

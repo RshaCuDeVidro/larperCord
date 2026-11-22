@@ -22,6 +22,7 @@ Como o cliente oficial, o app avisa o Discord do que você leu, no máximo uma v
 | O quê | Onde | Controle |
 |---|---|---|
 | Cache de mensagens | `messages/` na pasta de cache: `~/.cache/larpercord/` no Linux (pastas 700, arquivos 600), `%LOCALAPPDATA%\larpercord\` no Windows | 200 mensagens por canal, teto de 50 MB. Dá para desligar e apagar em Configurações → Privacidade |
+| Índice da busca | `busca.lci` ao lado do cache de mensagens de cada conta | As mensagens que a busca acha neste computador, até 100.000. Segue a opção do cache de mensagens e vai embora com Apagar cache; Configurações → Privacidade mostra o tamanho |
 | Rascunhos | `drafts.kdl` na pasta de configurações: `~/.config/larpercord/` no Linux (`chmod 600`), `%APPDATA%\larpercord\` no Windows | Enviar uma mensagem apaga o rascunho dela |
 | Mensagens salvas e anotações | `saved-<conta>.json` | Até 500. Nada vai para o Discord |
 | Palavras de alerta, filtros, pessoas ignoradas | `settings.kdl` | Ninguém é avisado |
