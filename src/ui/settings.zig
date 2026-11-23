@@ -209,7 +209,7 @@ const Page = struct {
     }
 
     /// Controle deslizante com valor em texto.
-    fn slider(p: *Page, label: []const u8, value: *f32, min: f32, max: f32, comptime fmt: []const u8, scale: f32) void {
+    pub fn slider(p: *Page, label: []const u8, value: *f32, min: f32, max: f32, comptime fmt: []const u8, scale: f32) void {
         const ctx = p.ctx;
         d.text(p.dl, p.font(.medium), 16, p.x, p.y, ctx.col(.text), label);
         p.y += 30;
@@ -920,6 +920,8 @@ fn page(p: *Page, previews: []const Preview) void {
                     if (v != cur) ctx.act(.{ .set_theme_option = .{ .index = i, .value = v } });
                 }
             }
+            p.divider();
+            @import("wallpaper.zig").section(p);
             p.divider();
             p.heading(i18n.tr("Fontes", "Fonts"));
             fontPicker(p, false);

@@ -24,6 +24,9 @@
       "pattern-kind": "pattern: dots, lines, grid or diagonal", "pattern-color": "pattern needs pattern-color", side: "invalid side border",
       corners: "corners: all, left, right, top or bottom", weight: "weight: regular, medium, semibold, bold or italic",
       "span-text": "span without text", "span-color": "invalid color in the span",
+      "path-d": "shape kind=path needs d=\"M …\" (the path, as in SVG)", "path-data": "invalid path in d (commands M L H V C S Q T A Z, up to 1024)",
+      viewbox: "viewbox: x y width height, with width and height above zero", "fill-rule": "fill-rule: nonzero or evenodd",
+      "wallpaper-src": "wallpaper takes no image from the theme: people pick their own in Settings → Appearance",
       "link-version": "it comes from another version of this page", "link-broken": "it is incomplete or damaged",
       "link-layout": "it names a layout this page doesn't have", "link-unsupported": "this browser can't open compressed links",
       "css-too-big": "the CSS is bigger than 500 KB", "css-slow": "the CSS took too long to read",
@@ -42,6 +45,9 @@
       "pattern-kind": "pattern: dots, lines, grid ou diagonal", "pattern-color": "pattern precisa de pattern-color", side: "borda de lado inválida",
       corners: "corners: all, left, right, top ou bottom", weight: "weight: regular, medium, semibold, bold ou italic",
       "span-text": "span sem texto", "span-color": "cor inválida no span",
+      "path-d": "shape kind=path pede d=\"M …\" (o caminho, como no SVG)", "path-data": "caminho inválido em d (comandos M L H V C S Q T A Z, até 1024)",
+      viewbox: "viewbox: x y largura altura, com largura e altura maiores que zero", "fill-rule": "fill-rule: nonzero ou evenodd",
+      "wallpaper-src": "wallpaper não aceita imagem no tema: quem usa escolhe a dela em Configurações → Aparência",
       "link-version": "ele é de outra versão desta página", "link-broken": "ele está incompleto ou danificado",
       "link-layout": "ele cita um layout que esta página não tem", "link-unsupported": "este navegador não abre links comprimidos",
       "css-too-big": "o CSS passa de 500 KB", "css-slow": "o CSS demorou demais para ser lido",
@@ -597,7 +603,7 @@
 
   // ---------------------------------------- Primitivas (checagem, fx.zig) ----
   var SIDES = ["border-top", "border-right", "border-bottom", "border-left"];
-  var PAINTED = ["shape", "rule", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "window-controls"];
+  var PAINTED = ["shape", "rule", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "rain", "matrix", "waves", "particles", "window-controls"];
   var PAINT_KEYS = ["color", "color2", "color3", "fill", "dot", "ornament-color"];
 
   function fxColor(th, e, nd, code, arg) {
@@ -643,11 +649,65 @@
       if (str(sp, "color") !== null) fxColor(th, str(sp, "color"), sp, "span-color");
     });
   }
+  // `shape kind=path`: a mesma leitura de src/theme/path.zig (comandos, números, bandeiras
+  // do arco, limite de comandos), só para dizer se o app aceita. O erro aponta a linha do nó.
+  var PATH_ARGS = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
+  function pathProblem(d) {
+    var i = 0, n = d.length, cmd = null, segs = 0, lines = 0;
+    function wsp() { while (i < n && /[ \t\n\r\f]/.test(d[i])) i++; }
+    function sep() { wsp(); if (d[i] === ",") { i++; wsp(); } }
+    function number() {
+      sep();
+      var m = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(d.slice(i));
+      if (!m || !isFinite(+m[0]) || Math.abs(+m[0]) > 1e6) return false;
+      i += m[0].length;
+      return true;
+    }
+    function flag() { sep(); if (d[i] === "0" || d[i] === "1") { i++; return true; } return false; }
+    wsp();
+    if (i >= n) return "empty";
+    for (;;) {
+      wsp();
+      if (i >= n) break;
+      var ch = d[i];
+      if (/[A-Za-z]/.test(ch)) {
+        if (!PATH_ARGS.hasOwnProperty(ch.toUpperCase())) return "command";
+        if (cmd === null && ch.toUpperCase() !== "M") return "start";
+        cmd = ch; i++;
+      } else if (cmd === null) return "start";
+      else if (cmd.toUpperCase() === "Z") return "after-z";
+      else if (!/[0-9+.,-]/.test(ch)) return "char";
+      if (++segs > 1024) return "long";
+      var up = cmd.toUpperCase();
+      if (up !== "M" && up !== "Z") lines++;
+      for (var k = 0; k < PATH_ARGS[up]; k++) {
+        var ok = up === "A" && (k === 3 || k === 4) ? flag() : number();
+        if (!ok) return "number";
+      }
+      if (up === "M") cmd = cmd === "M" ? "L" : "l";
+      sep();
+    }
+    // Só M e Z não desenham nada (o app recusa: "o caminho não tem nenhuma linha").
+    return lines > 0 ? null : "empty";
+  }
+  function validPath(d) { return typeof d === "string" && /^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]*$/.test(d) && pathProblem(d) === null; }
+  function parseViewbox(v) {
+    if (typeof v !== "string") return null;
+    var p = v.trim().split(/[\s,]+/).map(Number);
+    return p.length === 4 && p.every(isFinite) && p[2] > 0 && p[3] > 0 ? p : null;
+  }
   function checkLayout(th, nd) {
     nd.kids.forEach(function (ch) {
       var bg = str(ch, "bg");
       if (bg !== null && !tokenName(bg)) fxColor(th, bg, ch, "invalid", "bg");
       checkBox(th, ch, false);
+      if (ch.name === "wallpaper" && ["src", "path", "url", "file", "image"].some(function (k) { return prop(ch, k) !== null; })) throw new ThemeError("wallpaper-src", ch.line);
+      if (ch.name === "shape" && str(ch, "kind") === "path") {
+        if (str(ch, "d") === null) throw new ThemeError("path-d", ch.line);
+        if (pathProblem(str(ch, "d")) !== null) throw new ThemeError("path-data", ch.line);
+        if (str(ch, "viewbox") !== null && !parseViewbox(str(ch, "viewbox"))) throw new ThemeError("viewbox", ch.line);
+        if (str(ch, "fill-rule") !== null && ["nonzero", "evenodd"].indexOf(str(ch, "fill-rule")) < 0) throw new ThemeError("fill-rule", ch.line);
+      }
       if (ch.name === "label") {
         checkLabel(th, ch);
       } else if (PAINTED.indexOf(ch.name) >= 0) {
@@ -852,6 +912,11 @@
     topography: [["levels", "num"], ["seed", "num"]],
     aurora: [["seed", "num"], ["motion", "bool"]],
     dunes: [["seed", "num"], ["motion", "bool"]],
+    rain: [["density", "num"], ["angle", "num"], ["seed", "num"], ["motion", "bool"]],
+    matrix: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
+    waves: [["lines", "num"], ["seed", "num"], ["motion", "bool"]],
+    particles: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
+    wallpaper: [["fit", ["cover", "contain", "tile", "center"]], ["dim", "num"], ["blur", "num"], ["opacity", "num"]],
     crt: [["spacing", "num"], ["strength", "num"]],
     logo: [["variant", ["wordmark", "ascii"]], ["size", "num"]],
     "window-controls": [["size", "num"], ["gap", "num"], ["align", ["left", "center", "right"]]],
@@ -863,7 +928,8 @@
     size: [16, 80, 1], "avatar-size": [16, 72, 1], spacing: [0, 48, 1], "font-size": [10, 24, 0.5],
     width: [40, 520, 1], height: [16, 240, 1], gap: [0, 40, 1], padding: [0, 64, 1],
     density: [0.1, 6, 0.1], "center-x": [-1, 2, 0.01], "center-y": [-1, 2, 0.01], rings: [1, 12, 1],
-    levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01],
+    levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01], angle: [-45, 45, 1], lines: [2, 24, 1],
+    dim: [0, 1, 0.05], blur: [0, 64, 1], opacity: [0, 1, 0.05],
     "crt.spacing": [1, 10, 1], "logo.size": [8, 40, 1], "window-controls.size": [6, 24, 1], "window-controls.gap": [2, 24, 1],
   };
   function range(comp, key) { return own(RANGES, comp + "." + key) ? RANGES[comp + "." + key] : own(RANGES, key) ? RANGES[key] : [0, 400, 1]; }
@@ -2021,5 +2087,6 @@
     COMMUNITY: COMMUNITY, COMMUNITY_MAX: COMMUNITY_MAX, LAYOUT_NODES: LAYOUT_NODES, LAYOUT_BYTES: LAYOUT_BYTES, layoutCheck: layoutCheck, LICENSES: LICENSES, licenseOk: licenseOk, communityCheck: communityCheck, communityFromSource: communityFromSource,
     CSS_MAX: CSS_MAX, CSS_MAP: CSS_MAP, parseCss: parseCss, parseCssColor: parseCssColor, importDiscordCss: importDiscordCss, applyCssImport: applyCssImport,
     encode: encode, encodeSync: encodeSync, decode: decode, compact: compact, expand: expand, clone: clone,
+    validPath: validPath, pathProblem: pathProblem, parseViewbox: parseViewbox,
   };
 });

@@ -42,6 +42,11 @@ pub const Spec = union(enum) {
     shadow: u16,
     orbit: Orbit,
     radar: Radar,
+    /// `tilt` em graus (a chuva inclinada pelo vento).
+    rain: struct { layer: u8, seed: u32, density: u16, tilt: i8 },
+    matrix: struct { layer: u8, seed: u32, density: u16 },
+    waves: struct { layer: u8, seed: u32, lines: u8 },
+    particles: struct { layer: u8, seed: u32, density: u16 },
 
     /// Tamanho da textura. Os ladrilhos têm lado potência de 2 quando vão
     /// repetir: é o único caso em que todo renderizador garante a repetição.
@@ -57,6 +62,8 @@ pub const Spec = union(enum) {
             .topography => .{ 1024, 1024 },
             .orbit => |o| .{ o.w, o.h },
             .radar => |o| .{ o.w, o.h },
+            .rain, .matrix, .particles => .{ 512, 512 },
+            .waves => .{ 1024, 512 },
         };
     }
 
@@ -87,6 +94,10 @@ pub fn render(spec: Spec, px: []u8, gpa: std.mem.Allocator) error{OutOfMemory}!v
         .topography => |t| try topography(m, t.seed, t.levels, gpa),
         .orbit => |o| orbit(m, o),
         .radar => |o| radar(m, o),
+        .rain => |o| rain(m, o.layer, o.seed, @as(f32, @floatFromInt(o.density)) / 100, o.tilt),
+        .matrix => |o| matrix(m, o.layer, o.seed, @as(f32, @floatFromInt(o.density)) / 100),
+        .waves => |o| waves(m, o.layer, o.seed, o.lines),
+        .particles => |o| particles(m, o.layer, o.seed, @as(f32, @floatFromInt(o.density)) / 100),
     }
 }
 
@@ -126,6 +137,22 @@ const Mask = struct {
     /// Como `lift`, dando a volta nas bordas (ladrilho sem emenda).
     fn liftWrap(m: Mask, x: i32, y: i32, a: f32) void {
         m.lift(@mod(x, @as(i32, @intCast(m.w))), @mod(y, @as(i32, @intCast(m.h))), a);
+    }
+
+    /// Como `plot`, dando a volta nas bordas.
+    fn plotWrap(m: Mask, x: f32, y: f32, a: f32) void {
+        const fx = x - 0.5;
+        const fy = y - 0.5;
+        const x0 = @floor(fx);
+        const y0 = @floor(fy);
+        const dx = fx - x0;
+        const dy = fy - y0;
+        const ix: i32 = @intFromFloat(x0);
+        const iy: i32 = @intFromFloat(y0);
+        m.liftWrap(ix, iy, a * (1 - dx) * (1 - dy));
+        m.liftWrap(ix + 1, iy, a * dx * (1 - dy));
+        m.liftWrap(ix, iy + 1, a * (1 - dx) * dy);
+        m.liftWrap(ix + 1, iy + 1, a * dx * dy);
     }
 
     /// Ponto com posição fracionária, dividido entre os 4 pixels em volta.
@@ -546,6 +573,152 @@ fn radar(m: Mask, o: Radar) void {
     }
 }
 
+/// Chuva: riscos finos inclinados pelo vento, mais fortes na ponta de baixo (a gota)
+/// e sumindo para cima (o rastro). Camada 0: muitos, curtos e fracos (longe);
+/// camada 1: poucos, compridos e mais fortes (perto). Ladrilho sem emenda.
+fn rain(m: Mask, layer: u8, seed: u32, density: f32, tilt: i8) void {
+    var r = Rng.init(seed +% @as(u32, layer) *% 6007);
+    const slope = @tan(std.math.degreesToRadians(@as(f32, @floatFromInt(tilt))));
+    const n: usize = @intFromFloat((if (layer == 0) @as(f32, 230) else 46) * density);
+    for (0..n) |_| {
+        const x = r.f() * fl(m.w);
+        const y = r.f() * fl(m.h);
+        const len = if (layer == 0) 9 + 18 * r.f() else 26 + 40 * r.f();
+        const peak = if (layer == 0) 0.25 + 0.4 * r.f() else 0.55 + 0.4 * r.f();
+        var t: f32 = 0;
+        while (t <= len) : (t += 0.5) {
+            // A ponta (t = len) é a parte de baixo.
+            const k = t / len;
+            const a = peak * k * k;
+            m.plotWrap(x + slope * t, y + t, a);
+            if (layer == 1) m.plotWrap(x + slope * t + 0.7, y + t, a * 0.55);
+        }
+    }
+}
+
+/// Os caracteres da chuva de código: 16 desenhos de 5×7 (algarismos e traços de
+/// katakana, a olho), feitos à mão em bits. Não dependem de fonte nenhuma.
+const glyphs = [16][7]u5{
+    .{ 0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110 }, // 0
+    .{ 0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 }, // 1
+    .{ 0b11110, 0b00001, 0b00001, 0b01110, 0b10000, 0b10000, 0b11111 }, // 2
+    .{ 0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110 }, // 3
+    .{ 0b10001, 0b10001, 0b11111, 0b00001, 0b00001, 0b00001, 0b00001 }, // 4
+    .{ 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 }, // 7
+    .{ 0b11111, 0b00100, 0b00100, 0b11111, 0b00100, 0b01000, 0b10000 }, // ナ
+    .{ 0b11110, 0b00010, 0b11110, 0b00010, 0b00010, 0b00100, 0b11000 }, // ヨ-ish
+    .{ 0b00100, 0b11111, 0b00100, 0b01110, 0b10101, 0b00100, 0b00100 }, // 木
+    .{ 0b10000, 0b10000, 0b11110, 0b10001, 0b00001, 0b00010, 0b01100 }, // レ-ish
+    .{ 0b11111, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b11111 }, // 日
+    .{ 0b00010, 0b00100, 0b01100, 0b10100, 0b00100, 0b00100, 0b00100 }, // イ
+    .{ 0b11111, 0b00001, 0b01010, 0b00100, 0b01010, 0b10000, 0b00000 }, // メ-ish
+    .{ 0b01000, 0b11111, 0b01001, 0b01001, 0b01001, 0b10001, 0b10010 }, // カ
+    .{ 0b00000, 0b11111, 0b00000, 0b00000, 0b00000, 0b11111, 0b00000 }, // 二
+    .{ 0b10101, 0b10101, 0b00001, 0b00010, 0b00010, 0b00100, 0b11000 }, // シ-ish
+};
+
+/// Célula de cada caractere no ladrilho (o desenho de 5×7 sai em dobro, 10×14).
+pub const matrix_cell = 16;
+
+fn glyph(m: Mask, cx: u32, cy: u32, g: u4, a: f32) void {
+    for (glyphs[g], 0..) |bits, row| {
+        for (0..5) |col| {
+            if ((bits >> @intCast(4 - col)) & 1 == 0) continue;
+            const x: i32 = @intCast(cx * matrix_cell + 3 + col * 2);
+            const y: i32 = @intCast(cy * matrix_cell + 1 + row * 2);
+            for (0..2) |dy| for (0..2) |dx| m.liftWrap(x + @as(i32, @intCast(dx)), y + @as(i32, @intCast(dy)), a);
+        }
+    }
+}
+
+/// Chuva de código: colunas de caracteres com a cabeça clara embaixo e o rastro
+/// apagando para cima. Camada 0: o rastro; camada 1: só as cabeças (com `color2`).
+/// Ladrilho de 32 × 32 células, sem emenda nos dois sentidos.
+fn matrix(m: Mask, layer: u8, seed: u32, density: f32) void {
+    var r = Rng.init(seed);
+    const cols = m.w / matrix_cell;
+    const rows = m.h / matrix_cell;
+    for (0..cols) |cx| {
+        // Uma ou duas cadeias por coluna; as duas camadas sorteiam igual.
+        const chains: usize = if (r.f() < 0.35 * density) 2 else if (r.f() < 0.75 * density) 1 else 0;
+        for (0..chains) |_| {
+            const head = r.next() % rows;
+            const len = 5 + r.next() % 18;
+            for (0..len) |k| {
+                const cy = (head + rows - @as(u32, @intCast(k))) % rows;
+                const g: u4 = @intCast(r.next() % glyphs.len);
+                const fade = 1 - fl(k) / fl(len);
+                if (k == 0) {
+                    if (layer == 1) glyph(m, @intCast(cx), cy, g, 1);
+                } else if (layer == 0) glyph(m, @intCast(cx), cy, g, 0.12 + 0.78 * std.math.pow(f32, fade, 1.4));
+            }
+        }
+    }
+}
+
+/// Ondas: linhas onduladas umas sobre as outras, as de cima mais fracas (longe) e
+/// as de baixo mais fortes. Cada linha soma senos de frequência inteira, então o
+/// ladrilho não tem emenda em u e pode deslizar de lado. Camada 1: menos linhas,
+/// mais claras (as cristas). Calculado por coluna: `lines` contas por coluna, não
+/// por pixel.
+fn waves(m: Mask, layer: u8, seed: u32, lines: u8) void {
+    var r = Rng.init(seed +% @as(u32, layer) *% 7727);
+    const total: usize = if (layer == 0) @max(lines, 2) else @max(lines / 3, 1);
+    var ph: [24][4]f32 = undefined;
+    var amp: [24]f32 = undefined;
+    for (0..@min(total, 24)) |i| {
+        for (&ph[i]) |*p| p.* = r.f();
+        amp[i] = 0.018 + 0.03 * r.f();
+    }
+    const n = @min(total, 24);
+    for (0..m.w) |xi| {
+        const u = (fl(xi) + 0.5) / fl(m.w);
+        for (0..n) |i| {
+            const depth = (fl(i) + (if (layer == 0) @as(f32, 0) else 0.5)) / fl(n);
+            const base = 0.22 + 0.72 * depth;
+            const y = (base + amp[i] * (0.6 + depth) * wave(u, &.{ 1, 2, 3, 5 }, &ph[i])) * fl(m.h);
+            const peak = if (layer == 0) 0.3 + 0.6 * depth else 0.7 + 0.3 * depth;
+            // Linha macia: miolo de ~1,5 px e um brilho que some em volta.
+            var dy: i32 = -5;
+            while (dy <= 5) : (dy += 1) {
+                const py = @floor(y) + fl(dy);
+                const dist = @abs(py + 0.5 - y);
+                const a = peak * @max(std.math.clamp(1.3 - dist, 0, 1), 0.35 * @exp(-dist * dist / 6));
+                m.lift(@intCast(xi), @intFromFloat(py), a);
+            }
+        }
+    }
+}
+
+/// Partículas no ar: camada 0, poeira fina (pontos macios de 1 a 2 px); camada 1,
+/// discos grandes e desfocados com a borda um pouco mais clara (bokeh). Ladrilho
+/// sem emenda.
+fn particles(m: Mask, layer: u8, seed: u32, density: f32) void {
+    var r = Rng.init(seed +% @as(u32, layer) *% 3571);
+    const n: usize = @intFromFloat((if (layer == 0) @as(f32, 110) else 16) * density);
+    for (0..n) |_| {
+        const x = r.f() * fl(m.w);
+        const y = r.f() * fl(m.h);
+        const rad = if (layer == 0) 0.7 + 1.3 * r.f() else 4 + 8 * r.f();
+        const peak = if (layer == 0) 0.3 + 0.6 * r.f() else 0.16 + 0.3 * r.f();
+        const ext: i32 = @intFromFloat(@ceil(rad + 2));
+        var dy: i32 = -ext;
+        while (dy <= ext) : (dy += 1) {
+            var dx: i32 = -ext;
+            while (dx <= ext) : (dx += 1) {
+                const px = @floor(x) + fl(dx) + 0.5;
+                const py = @floor(y) + fl(dy) + 0.5;
+                const d = std.math.hypot(px - x, py - y);
+                const a = if (layer == 0)
+                    peak * @exp(-d * d / (rad * rad))
+                else
+                    peak * std.math.clamp(rad + 0.8 - d, 0, 1) * (0.75 + 0.25 * smoothstep(rad * 0.55, rad, d));
+                m.liftWrap(@intFromFloat(@floor(x) + fl(dx)), @intFromFloat(@floor(y) + fl(dy)), a);
+            }
+        }
+    }
+}
+
 // --- Testes ---------------------------------------------------------------
 
 const testing = std.testing;
@@ -717,3 +890,108 @@ test "órbita passa onde a elipse diz; radar tem anel e centro" {
     try testing.expect(alphaAt(rp, 300, @intFromFloat(150 + big), 150) > 60);
     try testing.expect(alphaAt(rp, 300, 150, 150) > 30);
 }
+
+fn countOn(px: []const u8, min: u8) usize {
+    var n: usize = 0;
+    var o: usize = 3;
+    while (o < px.len) : (o += 4) {
+        if (px[o] > min) n += 1;
+    }
+    return n;
+}
+
+test "fundos novos: a mesma semente dá o mesmo desenho, outra semente outro" {
+    const specs = [_][2]Spec{
+        .{ .{ .rain = .{ .layer = 1, .seed = 3, .density = 100, .tilt = 12 } }, .{ .rain = .{ .layer = 1, .seed = 4, .density = 100, .tilt = 12 } } },
+        .{ .{ .matrix = .{ .layer = 0, .seed = 3, .density = 100 } }, .{ .matrix = .{ .layer = 0, .seed = 4, .density = 100 } } },
+        .{ .{ .waves = .{ .layer = 0, .seed = 3, .lines = 9 } }, .{ .waves = .{ .layer = 0, .seed = 4, .lines = 9 } } },
+        .{ .{ .particles = .{ .layer = 1, .seed = 3, .density = 100 } }, .{ .particles = .{ .layer = 1, .seed = 4, .density = 100 } } },
+    };
+    for (specs) |pair| {
+        const a = try gen(pair[0]);
+        defer testing.allocator.free(a);
+        const b = try gen(pair[0]);
+        defer testing.allocator.free(b);
+        const o = try gen(pair[1]);
+        defer testing.allocator.free(o);
+        try testing.expectEqualSlices(u8, a, b);
+        try testing.expect(!std.mem.eql(u8, a, o));
+        try testing.expect(countOn(a, 40) > 50);
+        try testing.expect(pair[0].key() != pair[1].key());
+    }
+}
+
+test "chuva e partículas: a densidade conta" {
+    for ([_]bool{ true, false }) |is_rain| {
+        var totals: [2]usize = undefined;
+        for ([_]u16{ 50, 200 }, 0..) |dens, i| {
+            const spec: Spec = if (is_rain) .{ .rain = .{ .layer = 0, .seed = 5, .density = dens, .tilt = 0 } } else .{ .particles = .{ .layer = 0, .seed = 5, .density = dens } };
+            const px = try gen(spec);
+            defer testing.allocator.free(px);
+            totals[i] = countOn(px, 20);
+        }
+        try testing.expect(totals[1] > totals[0] * 2);
+    }
+}
+
+test "chuva: risco inclinado com a ponta embaixo mais forte" {
+    // Um ladrilho com poucos riscos e sem vento: cada coluna acesa fica mais forte para baixo.
+    const px = try gen(.{ .rain = .{ .layer = 1, .seed = 9, .density = 10, .tilt = 0 } });
+    defer testing.allocator.free(px);
+    var down: usize = 0;
+    var up: usize = 0;
+    for (0..512) |x| for (0..500) |y| {
+        const a = alphaAt(px, 512, @intCast(x), @intCast(y));
+        const b = alphaAt(px, 512, @intCast(x), @intCast(y + 8));
+        if (a > 30 and b > 30) {
+            if (b > a) down += 1 else if (a > b) up += 1;
+        }
+    };
+    try testing.expect(down > up * 3);
+}
+
+test "chuva de código: as cabeças ficam embaixo do rastro e no desenho da célula" {
+    const trail = try gen(.{ .matrix = .{ .layer = 0, .seed = 2, .density = 100 } });
+    defer testing.allocator.free(trail);
+    const heads = try gen(.{ .matrix = .{ .layer = 1, .seed = 2, .density = 100 } });
+    defer testing.allocator.free(heads);
+    var found: usize = 0;
+    const cells = 512 / matrix_cell;
+    for (0..cells) |cx| for (0..cells) |cy| {
+        // Célula com cabeça: a de cima é rastro forte, a de baixo não é desta cadeia.
+        var lit = false;
+        for (0..matrix_cell) |dy| for (0..matrix_cell) |dx| {
+            if (alphaAt(heads, 512, @intCast(cx * matrix_cell + dx), @intCast(cy * matrix_cell + dy)) > 200) lit = true;
+        };
+        if (!lit) continue;
+        const above = (cy + cells - 1) % cells;
+        var ink: usize = 0;
+        for (0..matrix_cell) |dy| for (0..matrix_cell) |dx| {
+            if (alphaAt(trail, 512, @intCast(cx * matrix_cell + dx), @intCast(above * matrix_cell + dy)) > 120) ink += 1;
+        };
+        if (ink > 4) found += 1;
+    };
+    try testing.expect(found > 8);
+    // Nada fora do desenho de 10×14 dentro da célula: as bordas ficam vazias.
+    for (0..512) |y| try testing.expectEqual(@as(u8, 0), alphaAt(trail, 512, 0, @intCast(y)));
+}
+
+test "ondas: sem emenda em u, linhas de baixo mais fortes" {
+    const px = try gen(.{ .waves = .{ .layer = 0, .seed = 6, .lines = 9 } });
+    defer testing.allocator.free(px);
+    var left: usize = 0;
+    var right: usize = 0;
+    var top: u32 = 0;
+    var bottom: u32 = 0;
+    for (0..512) |y| {
+        const a = alphaAt(px, 1024, 0, @intCast(y));
+        const b = alphaAt(px, 1024, 1023, @intCast(y));
+        if (a > 100) left += 1;
+        if (b > 100) right += 1;
+        if (y < 256) top = @max(top, a) else bottom = @max(bottom, a);
+    }
+    try testing.expect(left > 5);
+    try testing.expect(@abs(@as(i64, @intCast(left)) - @as(i64, @intCast(right))) <= 3);
+    try testing.expect(bottom > top);
+}
+

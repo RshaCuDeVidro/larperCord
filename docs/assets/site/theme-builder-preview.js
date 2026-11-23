@@ -30,7 +30,7 @@
   // Os mesmos limites do app (src/ui/backdrop.zig): um número enorme não trava a página.
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
   var ALIGN = ["left", "center", "right"];
-  var SHAPE_KINDS = ["circle", "ring", "arc", "rounded", "line"];
+  var SHAPE_KINDS = ["circle", "ring", "arc", "rounded", "line", "path"];
   var RULE_KINDS = ["solid", "dashed", "dotted", "double", "oxford"];
   var ORNAMENTS = { diamond: "◆", dot: "●", ring: "○", star: "✦" };
   var WGT = { regular: 400, medium: 500, semibold: 600, bold: 700, italic: 400 };
@@ -384,8 +384,22 @@
     if (TB.num(nd, "span-gap") !== null) st += "gap:" + num(nd, "span-gap", 0) + "px;";
     return '<div class="pv-label ' + align + '" style="' + esc(st) + '">' + inner + "</div>";
   };
+  // `shape kind=path`: o mesmo `d` do arquivo num <path>, só se tiver apenas os caracteres de
+  // um caminho do SVG (o app recusa o resto ao carregar); a caixa de visão, só números.
+  function pathShape(th, nd, toks) {
+    var d = TB.str(nd, "d"), vb = TB.parseViewbox(TB.str(nd, "viewbox"));
+    if (d === null || !TB.validPath(d)) return '<div class="pv-shape"></div>';
+    var box = vb || [0, 0, 24, 24], fill = paint(th, nd, "fill", toks, null), stroked = TB.str(nd, "color") !== null || fill === null;
+    var t = num(nd, "thickness", 1.5), col = paint(th, nd, "color", toks, "var(--t-accent)"), align = pick(nd, "align", ALIGN, "center");
+    var size = TB.num(nd, "size") === null ? null : num(nd, "size", 24), rule = pick(nd, "fill-rule", ["nonzero", "evenodd"], "nonzero");
+    var dim = size ? "width:" + size + "px;height:" + size + "px" : "width:100%;height:100%";
+    // O traço tem a espessura em pixels da tela, como no app (não na escala da caixa de visão).
+    var attrs = 'd="' + esc(d.replace(/\s+/g, " ")) + '" fill="' + (fill || "none") + '" style="fill-rule:' + rule + ';vector-effect:non-scaling-stroke"' + (stroked && t > 0 ? ' stroke="' + col + '" stroke-width="' + t + '"' : "");
+    return '<div class="pv-shape ' + align + '" style="transform:translate(' + num(nd, "offset-x", 0) + "px," + num(nd, "offset-y", 0) + 'px)"><svg viewBox="' + box.join(" ") + '" preserveAspectRatio="xMidYMid meet" style="' + dim + ';overflow:hidden"><path ' + attrs + '/></svg></div>';
+  }
   C.shape = function (th, nd, toks) {
     var kind = pick(nd, "kind", SHAPE_KINDS, "circle"), col = paint(th, nd, "color", toks, "var(--t-accent)"), fill = paint(th, nd, "fill", toks, "none");
+    if (kind === "path") return pathShape(th, nd, toks);
     var t = num(nd, "thickness", 1.5) || 1.5, size = TB.num(nd, "size") === null ? null : num(nd, "size", 24), align = pick(nd, "align", ALIGN, "center");
     var ox = num(nd, "offset-x", 0), oy = num(nd, "offset-y", 0), s = size || 24, svg = "";
     if (kind === "rounded") {
@@ -487,6 +501,50 @@
     out += '<path d="M' + cx + " " + cy + "L" + (cx + R) + " " + cy + "A" + R + " " + R + " 0 0 0 " + (cx + R * Math.cos(-0.7)).toFixed(1) + " " + (cy + R * Math.sin(-0.7)).toFixed(1) + 'Z" fill="' + sw + '" opacity=".22"/>';
     return bgSvg(out + '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + R) + '" y2="' + cy + '" stroke="' + sw + '" stroke-width="2"/>');
   };
+  // Os fundos novos, no mesmo jeito dos de cima: SVG com sementes fixas, sem animação.
+  C.rain = function (th, nd, toks) {
+    var r = TB.rng(num(nd, "seed", 1) * 613), count = Math.round(120 * clamp(num(nd, "density", 1), 0.1, 6)), out = "";
+    var tilt = Math.tan(clamp(num(nd, "angle", 10), -45, 45) * Math.PI / 180), far = paint(th, nd, "color", toks, "var(--t-faint)"), near = paint(th, nd, "color2", toks, "var(--t-muted)");
+    for (var i = 0; i < count; i++) {
+      var close = r() < 0.18, x = r() * W, y = r() * H, len = close ? 30 + r() * 40 : 10 + r() * 18;
+      out += '<line x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x + tilt * len).toFixed(1) + '" y2="' + (y + len).toFixed(1) + '" stroke="' + (close ? near : far) + '" stroke-width="' + (close ? 1.4 : 1) + '" opacity="' + (0.35 + r() * 0.5).toFixed(2) + '"/>';
+    }
+    return bgSvg(out);
+  };
+  C.matrix = function (th, nd, toks) {
+    // Cada caractere vira um tracinho: a prévia só mostra as colunas e o rastro.
+    var r = TB.rng(num(nd, "seed", 1) * 271), dens = clamp(num(nd, "density", 1), 0.1, 6), trail = paint(th, nd, "color", toks, "var(--t-online)"), head = paint(th, nd, "color2", toks, "var(--t-text)"), out = "";
+    for (var x = 4; x < W; x += 16) {
+      if (r() > 0.55 * dens) continue;
+      var y0 = r() * H, len = 5 + Math.floor(r() * 18);
+      for (var k = 0; k < len; k++) {
+        var y = y0 - k * 16, w = 4 + Math.floor(r() * 6);
+        if (y < -16) break;
+        out += '<path d="M' + x + " " + y.toFixed(0) + "h" + w + "v10h-" + w + 'z" fill="' + (k === 0 ? head : trail) + '" opacity="' + (k === 0 ? 1 : (0.15 + 0.75 * Math.pow(1 - k / len, 1.4))).toFixed(2) + '"/>';
+      }
+    }
+    return bgSvg(out);
+  };
+  C.waves = function (th, nd, toks) {
+    var r = TB.rng(num(nd, "seed", 1) * 89), lines = Math.round(clamp(num(nd, "lines", 9), 2, 24)), col = paint(th, nd, "color", toks, "var(--t-border)"), crest = paint(th, nd, "color2", toks, "var(--t-accent)"), out = "";
+    for (var i = 0; i < lines; i++) {
+      var depth = i / lines, base = (0.22 + 0.72 * depth) * H, amp = (12 + r() * 22) * (0.6 + depth), ph = r() * 6, ph2 = r() * 6, d = "";
+      for (var x = 0; x <= W; x += 20) d += (x ? " L" : "M") + x + " " + (base + amp * (Math.sin(x / W * Math.PI * 2 + ph) * 0.7 + Math.sin(x / W * Math.PI * 6 + ph2) * 0.3)).toFixed(1);
+      out += '<path d="' + d + '" fill="none" stroke="' + (i % 3 === 2 ? crest : col) + '" stroke-width="1.4" opacity="' + (0.3 + 0.6 * depth).toFixed(2) + '"/>';
+    }
+    return bgSvg(out);
+  };
+  C.particles = function (th, nd, toks) {
+    var r = TB.rng(num(nd, "seed", 1) * 457), count = Math.round(70 * clamp(num(nd, "density", 1), 0.1, 6)), far = paint(th, nd, "color", toks, "var(--t-muted)"), near = paint(th, nd, "color2", toks, "var(--t-accent)"), out = "";
+    for (var i = 0; i < count; i++) {
+      var big = r() < 0.15;
+      out += '<circle cx="' + (r() * W).toFixed(1) + '" cy="' + (r() * H).toFixed(1) + '" r="' + (big ? 5 + r() * 8 : 0.8 + r() * 1.4).toFixed(2) + '" fill="' + (big ? near : far) + '" opacity="' + (big ? 0.18 + r() * 0.3 : 0.35 + r() * 0.55).toFixed(2) + '"/>';
+    }
+    return bgSvg(out);
+  };
+  // O papel de parede é uma imagem do computador de quem usa o app: o site não tem
+  // nenhuma, e o nó sem imagem não desenha nada, como no app.
+  C.wallpaper = function () { return ""; };
   C["window-controls"] = function (th, nd, toks) {
     var s = num(nd, "size", 12) || 12, g = num(nd, "gap", 8) || 8, cols = [paint(th, nd, "color", toks, "#ff5f57"), paint(th, nd, "color2", toks, "#febc2e"), paint(th, nd, "color3", toks, "#28c840")];
     return '<div class="pv-wc ' + pick(nd, "align", ALIGN, "left") + '" style="gap:' + g + 'px">' + cols.map(function (c) { return '<i style="width:' + s + "px;height:" + s + "px;background:" + c + '"></i>'; }).join("") + "</div>";

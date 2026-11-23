@@ -89,6 +89,11 @@ pub const Settings = struct {
     accent: u8 = 0,
     /// Cantos: 0 = os do tema, 1 = retos, 2 = suaves, 3 = redondos.
     corners: u8 = 0,
+    /// Papel de parede (ui/wallpaper.zig): o caminho de uma imagem do disco, escolhida
+    /// no seletor (vazio = nenhuma), e o quanto ela escurece em direção ao fundo do
+    /// tema, em porcentagem (0 a 90).
+    wallpaper: Text = .{},
+    wallpaper_dim: u8 = 45,
     /// O mascote do app (ui/mascote.zig): a abertura, o "Sobre" e o ícone da janela,
     /// da bandeja e do menu de aplicativos. 0 = Terminal (o principal), 1 = Clássico.
     mascot: u8 = 0,
@@ -617,6 +622,8 @@ test "configurações vão e voltam pelo KDL" {
     s.proxy.set("socks5h://127.0.0.1:9050");
     s.emoji_recent.set("😀 ❤️ pepe:12");
     s.ffmpeg_dir.set("C:\\Program Files\\ffmpeg \"shared\"\\bin");
+    s.wallpaper.set("C:\\Users\\Zé\\Pictures\\praia à tarde.jpg");
+    s.wallpaper_dim = 60;
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(std.testing.allocator);
     try write(&s, "vidro", &out, std.testing.allocator);
@@ -632,6 +639,8 @@ test "configurações vão e voltam pelo KDL" {
     try std.testing.expectEqualStrings("socks5h://127.0.0.1:9050", back.proxy.slice());
     try std.testing.expectEqualStrings("😀 ❤️ pepe:12", back.emoji_recent.slice());
     try std.testing.expectEqualStrings("C:\\Program Files\\ffmpeg \"shared\"\\bin", back.ffmpeg_dir.slice());
+    try std.testing.expectEqualStrings("C:\\Users\\Zé\\Pictures\\praia à tarde.jpg", back.wallpaper.slice());
+    try std.testing.expectEqual(@as(u8, 60), back.wallpaper_dim);
     try std.testing.expectEqualStrings("vidro", nodes[0].str("theme").?);
 }
 

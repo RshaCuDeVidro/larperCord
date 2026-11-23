@@ -10,6 +10,7 @@ const tfx = @import("../theme/fx.zig");
 const d = @import("draw.zig");
 const anim = @import("anim.zig");
 const procgen = @import("procgen.zig");
+const tpath = @import("../theme/path.zig");
 
 const Rect = d.Rect;
 const Rgba = d.Rgba;
@@ -84,9 +85,32 @@ pub fn texture(ctx: *const d.Ctx, spec: procgen.Spec) ?*c.SDL_Texture {
     const px = gpa.alloc(u8, sz[0] * sz[1] * 4) catch return null;
     defer gpa.free(px);
     procgen.render(spec, px, gpa) catch return null;
-    const tex = c.SDL_CreateTexture(ctx.images.renderer, c.SDL_PIXELFORMAT_RGBA32, c.SDL_TEXTUREACCESS_STATIC, @intCast(sz[0]), @intCast(sz[1])) orelse return null;
+    return keep(ctx, key, sz[0], sz[1], px);
+}
+
+/// Máscara do preenchimento de um `shape kind=path`, feita na CPU uma vez por
+/// tamanho (`w`×`h` pixels de verdade, a caixa de visão inteira). A chave é o
+/// conteúdo do caminho, não o endereço dele.
+pub fn pathMask(ctx: *const d.Ctx, p: *const tpath.Path, w: u32, h: u32) ?*c.SDL_Texture {
+    if (w == 0 or h == 0) return null;
+    var hs = std.hash.Wyhash.init(0x9a7e5);
+    std.hash.autoHash(&hs, p.hash);
+    std.hash.autoHash(&hs, w);
+    std.hash.autoHash(&hs, h);
+    const key = hs.final();
+    if (find(key)) |t| return t;
+    const gpa = std.heap.c_allocator;
+    const px = gpa.alloc(u8, w * h * 4) catch return null;
+    defer gpa.free(px);
+    tpath.rasterize(p, w, h, px, gpa) catch return null;
+    return keep(ctx, key, w, h, px);
+}
+
+/// Sobe os pixels para uma textura nova e guarda na tabela.
+fn keep(ctx: *const d.Ctx, key: u64, w: u32, h: u32, px: []const u8) ?*c.SDL_Texture {
+    const tex = c.SDL_CreateTexture(ctx.images.renderer, c.SDL_PIXELFORMAT_RGBA32, c.SDL_TEXTUREACCESS_STATIC, @intCast(w), @intCast(h)) orelse return null;
     _ = c.SDL_SetTextureBlendMode(tex, c.SDL_BLENDMODE_BLEND);
-    _ = c.SDL_UpdateTexture(tex, null, px.ptr, @intCast(sz[0] * 4));
+    _ = c.SDL_UpdateTexture(tex, null, px.ptr, @intCast(w * 4));
     generated +%= 1;
     if (count == table.len) {
         // Cheia: sai a usada há mais tempo (nunca a deste quadro, que já está
@@ -110,7 +134,7 @@ pub fn texture(ctx: *const d.Ctx, spec: procgen.Spec) ?*c.SDL_Texture {
 }
 
 /// O renderizador repete textura de lado qualquer? Se não, só potência de 2.
-fn wrapsAnySize(ctx: *const d.Ctx) bool {
+pub fn wrapsAnySize(ctx: *const d.Ctx) bool {
     const S = struct {
         var known: ?bool = null;
     };

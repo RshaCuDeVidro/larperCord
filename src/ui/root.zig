@@ -28,6 +28,7 @@ const extra = @import("comp_extra.zig");
 const fx = @import("fx.zig");
 const display = @import("display_text.zig");
 const backdrop = @import("backdrop.zig");
+const wallpaper = @import("wallpaper.zig");
 const resize = @import("resize.zig");
 const plugin_panel = @import("plugin_panel.zig");
 const insp = @import("../inspect/captura.zig");
@@ -57,6 +58,11 @@ const registry = std.StaticStringMap(Component).initComptime(.{
     .{ "dunes", backdrop.draw },
     .{ "topography", backdrop.draw },
     .{ "radar", backdrop.draw },
+    .{ "rain", backdrop.draw },
+    .{ "matrix", backdrop.draw },
+    .{ "waves", backdrop.draw },
+    .{ "particles", backdrop.draw },
+    .{ "wallpaper", wallpaper.draw },
     .{ "spacer", spacer },
 });
 
@@ -119,6 +125,7 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
 
     d.opt_theme = ctx.th;
     fx.beginFrame();
+    wallpaper.frame(ctx);
     if (ctx.th.layout) |root| {
         const Look = struct {
             fn get(p: *const anyopaque, name: []const u8) ?bool {
@@ -146,6 +153,9 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
         const base_theme = ctx.th;
         defer ctx.th = base_theme;
         var local: theme_mod.Theme = undefined;
+        // Papel de parede num tema sem lugar para ele: atrás de tudo, e os fundos dos
+        // nós do layout com este alfa (o fundo procedural do tema sai da frente).
+        const glass = wallpaper.behind(ctx, ctx.win);
         for (placed.items, 0..) |p, i| {
             // O Inspetor vê cada pedaço do layout (contêiner ou componente) com o que ele desenhou.
             const insp_scope = insp.scope(p.node.name, p.rect, p.node, p.depth, p.kind == .component);
@@ -158,13 +168,16 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
                 for (ovs) |o| local.colors.set(o.tok, o.color);
                 ctx.th = &local;
             }
+            const bg_start = ctx.dl.*.VtxBuffer.Size;
             // Fundo rápido pelo próprio nó: bg=sidebar radius=12
             if (p.node.str("bg")) |bg| if (theme_mod.tokenFromName(bg)) |tok|
                 d.rect(ctx.dl, p.rect, ctx.col(tok), d.pnum(p.node, "radius", 0));
             if (ctx.th.style(p.node.str("style"))) |st| d.drawStyle(ctx, ctx.dl, st, p.rect, i);
             // Primitivas novas no próprio nó (gradiente, grão, borda por lado…).
             if (base_theme.nodeFx(p.node)) |x| fx.node(ctx, x, p.node, p.rect, i);
+            if (glass) |k| wallpaper.glassVerts(ctx.dl, bg_start, k);
             if (p.kind != .component or hidden(ctx, p.node.name)) continue;
+            if (glass != null and backdrop.isBackdrop(p.node.name)) continue;
             c.ImGui_PushIDPtr(p.node);
             defer c.ImGui_PopID();
             const inner = p.rect.inset(d.pnum(p.node, "inset-x", 0), d.pnum(p.node, "inset-y", 0));

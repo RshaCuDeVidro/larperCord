@@ -437,6 +437,9 @@ tasks.push(test("every error has English and Portuguese text", () => {
     ["side", () => L('layout { row border-top="nope" { messages } }')], ["corners", () => L('layout { row corners="x" { messages } }')],
     ["weight", () => L('layout { row { label tracking=1 weight="gorda" } }')], ["span-text", () => L("layout { row { label { span } } }")],
     ["span-color", () => L('layout { row { label { span "x" color="nope" } } }')],
+    ["path-d", () => L("layout { row { shape kind=path } }")], ["path-data", () => L('layout { row { shape kind=path d="M 0 0 L 5" } }')],
+    ["viewbox", () => L('layout { row { shape kind=path d="M0 0 L1 1" viewbox="0 0 0 1" } }')], ["fill-rule", () => L('layout { row { shape kind=path d="M0 0 L1 1" fill-rule=odd } }')],
+    ["wallpaper-src", () => L('layout { stack { wallpaper src="/x.png" } }')],
     ["link-version", () => TB.expand({ v: 9 })], ["link-broken", () => TB.expand(null)], ["link-layout", () => TB.expand(Object.assign(TB.compact(TB.fromSource(sources.zen)), { l: "nada" }), builtinStructure)],
     ["css-too-big", () => TB.importDiscordCss("a".repeat(TB.CSS_MAX + 1))], ["css-empty", () => TB.importDiscordCss(":root { --nothing-here: #fff }")],
     ["css-slow", () => { let clock = 0; TB.importDiscordCss(":root{" + "--v: #fff;".repeat(5000) + "}", { now: () => (clock += 100), budget: 1000 }); }],
@@ -1247,6 +1250,38 @@ tasks.push(test("layers: outline, hide and reorder edit only the layout tree", (
     assert.ok(nd && !P.visible(th, nd), t + " hidden layer is not drawn");
     assert.strictEqual(TB.setProp(hidden, comp.start, "show", null), s.structure, t + " show again");
   }
+}));
+// Caminhos vetoriais e papel de parede: o site recusa o que o app recusa (src/theme/fx.zig e
+// path.zig), e a prévia só desenha um `d` feito de caracteres de caminho.
+tasks.push(test("vector paths and wallpaper follow the app's rules", () => {
+  const base = sources.classico.replace(/^layout \{/m, "layout {\n    // x");
+  const withNode = (node) => sources.classico.replace(/(\n\s*)messages flex=1/, "$1" + node + "$1messages flex=1");
+  const ok = ['shape kind=path height=24 viewbox="0 0 24 24" fill=accent d="M12 2 L22 20 H2 Z"',
+    'shape kind=path height=24 d="m10,10 5-5 h-5v5z M0 0 C0 10 10 10 10 0 S20 -10 20 0 Q5 10 10 0 T20 0 A5 5 0 0110 0"',
+    'shape kind=path height=24 fill-rule=evenodd fill=accent d="M0 0 H32 V32 H0 Z M8 8 H24 V24 H8 Z"',
+    "wallpaper fit=cover dim=0.3 blur=6", "rain angle=-20 density=2", "matrix", "waves lines=12", "particles density=3"];
+  for (const node of ok) for (const mode of ["dark", "light"]) TB.loadTheme(withNode(node), { mode });
+  const bad = [['shape kind=path height=24', /path-d|needs d=/], ['shape kind=path d="M 0 0 L 5"', /path/], ['shape kind=path d="L 1 1"', /path/],
+    ['shape kind=path d="M0 0 A5 5 0 2 0 10 0"', /path/], ['shape kind=path d="M1 1 Z"', /path/], ['shape kind=path d="M0 0 L1 1" viewbox="0 0 -1 4"', /viewbox/],
+    ['shape kind=path d="M0 0 L1 1" fill-rule=odd', /fill-rule/], ['wallpaper src="/home/x.png"', /wallpaper/], ['wallpaper url="https://x/y.png"', /wallpaper/]];
+  for (const [node, re] of bad) {
+    let err = null;
+    try { TB.loadTheme(withNode(node), { mode: "dark" }); } catch (e) { err = e; }
+    assert.ok(err, node + " should fail");
+    assert.ok(re.test(err.code + " " + TB.errorText(err, "en")), node + ": " + err.code);
+  }
+  const long = "M0 0" + " L1 1".repeat(1100);
+  assert.ok(!TB.validPath(long) && TB.validPath("M0 0 L1 1"), "1024 commands at most");
+  assert.ok(base.length > 0);
+  // A prévia: o caminho certo vira um <path>, o hostil não vira nada, e o papel de parede é vazio.
+  const P = PREVIEW(TB, "en");
+  const th = TB.loadTheme(sources.classico, { mode: "dark" });
+  const good = P.component("shape", th, TB.parseKdl('shape kind=path viewbox="0 0 32 32" fill="#ff0000" fill-rule=evenodd d="M0 0 L32 0 L16 32 Z"')[0], th.tokens);
+  assert.ok(good.includes('<path d="M0 0 L32 0 L16 32 Z"') && good.includes("fill-rule:evenodd") && good.includes('viewBox="0 0 32 32"'), good);
+  const hostile = P.component("shape", th, TB.parseKdl("shape kind=path d=" + TB.quote(HOSTILE) + " viewbox=" + TB.quote(HOSTILE))[0], th.tokens);
+  assert.ok(!hostile.includes("<path") && !hostile.includes("onmouseover"), hostile);
+  assert.strictEqual(P.component("wallpaper", th, TB.parseKdl("wallpaper fit=tile")[0], th.tokens), "");
+  for (const name of ["rain", "matrix", "waves", "particles"]) assert.ok(P.component(name, th, TB.parseKdl(name)[0], th.tokens).includes("<svg"), name);
 }));
 tasks.push(test("every option the builder offers is one the app reads", () => {
   // Cada propriedade de componente aparece como "nome" no código do app (src/ui, src/theme).

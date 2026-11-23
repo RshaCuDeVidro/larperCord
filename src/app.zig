@@ -890,6 +890,21 @@ pub const App = struct {
         pickedCb(data, list, filter);
     }
 
+    /// Uma imagem do disco para o papel de parede (ui/wallpaper.zig). Cancelar avisa,
+    /// para o próximo arquivo anexado não virar papel de parede.
+    fn pickWallpaper(app: *App) void {
+        if (app.opts.qa) return;
+        c.SDL_ShowOpenFileDialog(pickedWallpaperCb, app, app.win.window, &wallpaper_filters, wallpaper_filters.len, null, false);
+    }
+
+    /// Fora da pilha, como `exe_filters` (o seletor do Windows lê os filtros depois).
+    const wallpaper_filters = [_]c.SDL_DialogFileFilter{.{ .name = "Imagens (PNG, JPEG, WebP, BMP)", .pattern = "png;jpg;jpeg;webp;bmp" }};
+
+    fn pickedWallpaperCb(data: ?*anyopaque, list: [*c]const [*c]const u8, filter: c_int) callconv(.c) void {
+        if (list == null or list[0] == null) @import("ui/wallpaper.zig").cancelPick();
+        pickedCb(data, list, filter);
+    }
+
     /// Só uma imagem, para o ícone ou o banner (ui/edit_place.zig).
     fn pickImage(app: *App) void {
         if (app.opts.qa) return;
@@ -2132,6 +2147,7 @@ pub const App = struct {
             .pick_image => app.pickImage(),
             .pick_sound => app.pickSound(),
             .pick_ffmpeg_dir => app.pickFolder(),
+            .pick_wallpaper => app.pickWallpaper(),
             .pick_game_exe => app.pickGameExe(),
             .restart => if (app.opts.qa) st.showToast(now(), false, "reiniciando", "restarting", .{}) else {
                 app.restart_wanted = true;
@@ -3494,6 +3510,7 @@ pub const App = struct {
                 settings_voz.pollCancel();
                 settings_video.pollCancel();
                 settings_jogos.pollCancel();
+                @import("ui/wallpaper.zig").pollCancel();
                 app.picked.drain(&picked);
                 for (picked.items) |p| {
                     defer std.heap.c_allocator.free(p);
@@ -3502,6 +3519,10 @@ pub const App = struct {
                         continue;
                     }
                     if (settings_video.takePicked(&app.st, now(), p)) {
+                        app.saveSettings();
+                        continue;
+                    }
+                    if (@import("ui/wallpaper.zig").takePicked(&app.st, now(), p)) {
                         app.saveSettings();
                         continue;
                     }
@@ -3543,6 +3564,8 @@ pub const App = struct {
                     const before = app.images.bytes;
                     // O índice da busca local, com ela fechada, também sai.
                     if (@import("ui/search.zig").releaseIdle(true)) app.trim_wanted.store(true, .release);
+                    // O papel de parede volta quando a janela aparecer.
+                    if (@import("ui/wallpaper.zig").releaseHidden()) app.trim_wanted.store(true, .release);
                     if (app.images.releaseHidden()) {
                         app.trim_wanted.store(true, .release);
                         if (app.opts.stats) std.log.info("janela escondida: soltou {d} KB, ficaram {d} imagens, {d} KB", .{ (before - app.images.bytes) / 1024, app.images.readyCount(), app.images.bytes / 1024 });

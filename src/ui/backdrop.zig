@@ -1,4 +1,5 @@
-//! Fundos procedurais: `starfield`, `orbit`, `aurora`, `dunes`, `topography`, `radar`.
+//! Fundos procedurais: `starfield`, `orbit`, `aurora`, `dunes`, `topography`, `radar`,
+//! `rain`, `matrix`, `waves`, `particles`.
 //! Parados por padrão: tudo sai de máscaras geradas uma vez (`procgen.zig`),
 //! tingidas com os tokens do tema ao desenhar, então claro/escuro e cor de
 //! destaque não geram nada de novo e um tema parado nunca acorda o laço.
@@ -37,8 +38,23 @@ pub fn draw(ctx: *d.Ctx, n: *const kdl.Node, r: Rect) void {
         orbit(ctx, n, r, seed, t);
     } else if (std.mem.eql(u8, name, "radar")) {
         radar(ctx, n, r, seed, t);
+    } else if (std.mem.eql(u8, name, "rain")) {
+        rain(ctx, n, r, seed, t);
+    } else if (std.mem.eql(u8, name, "matrix")) {
+        matrix(ctx, n, r, seed, t);
+    } else if (std.mem.eql(u8, name, "waves")) {
+        waves(ctx, n, r, seed, t);
+    } else if (std.mem.eql(u8, name, "particles")) {
+        particles(ctx, n, r, seed, t);
     }
     if (moving) fx.wake(n);
+}
+
+/// Os nomes que este arquivo desenha (o papel de parede de quem usa os tira da frente).
+pub fn isBackdrop(name: []const u8) bool {
+    const names = [_][]const u8{ "starfield", "orbit", "aurora", "dunes", "topography", "radar", "rain", "matrix", "waves", "particles" };
+    for (names) |x| if (std.mem.eql(u8, x, name)) return true;
+    return false;
 }
 
 /// Ladrilho desenhado em `scale`, deslizando `sx`/`sy` pixels. A textura é
@@ -82,6 +98,80 @@ fn dunes(ctx: *d.Ctx, n: *const kdl.Node, r: Rect, seed: u32, t: f32) void {
         const ua = @mod(t * sp, 1);
         c.ImDrawList_AddImageEx(ctx.dl, fx.refOf(tex), d.v(r.x, r.y), d.v(r.right(), r.bottom()), d.v(ua, 0), d.v(ua + 1, 1), col.u());
     }
+}
+
+fn densityOf(n: *const kdl.Node) u16 {
+    return @intFromFloat(std.math.clamp(d.pnum(n, "density", 1), 0.1, 6) * 100);
+}
+
+/// Chuva: as gotas de longe caem devagar, as de perto mais rápido (e as duas seguem a
+/// inclinação do vento). Só desliza os dois ladrilhos.
+fn rain(ctx: *d.Ctx, n: *const kdl.Node, r: Rect, seed: u32, t: f32) void {
+    const tilt: i8 = @intFromFloat(std.math.clamp(d.pnum(n, "angle", 10), -45, 45));
+    const slope = @tan(std.math.degreesToRadians(@as(f32, @floatFromInt(tilt))));
+    const dens = densityOf(n);
+    const cols = [2]d.Rgba{ fx.nodeColor(ctx, n, "color", .faint), fx.nodeColor(ctx, n, "color2", .muted) };
+    const speeds = [2]f32{ 70, 150 };
+    const sides = [2]f32{ 512, 640 };
+    for (cols, speeds, sides, 0..) |col, sp, side, li| {
+        const tex = fx.texture(ctx, .{ .rain = .{ .layer = @intCast(li), .seed = seed, .density = dens, .tilt = tilt } }) orelse continue;
+        const fall = t * sp;
+        drift(ctx.dl, tex, r, side, side, @mod(-fall * slope, side), @mod(-fall, side), col.u());
+    }
+}
+
+/// Chuva de código: o ladrilho em faixas de 8 colunas, cada faixa descendo num
+/// ritmo (são 4), para as colunas não andarem todas juntas. Parado, é um quad por camada.
+fn matrix(ctx: *d.Ctx, n: *const kdl.Node, r: Rect, seed: u32, t: f32) void {
+    const dens = densityOf(n);
+    const cols = [2]d.Rgba{ fx.nodeColor(ctx, n, "color", .online), fx.nodeColor(ctx, n, "color2", .text) };
+    const side: f32 = 512;
+    const strip: f32 = side / 4;
+    const speeds = [4]f32{ 34, 52, 26, 44 };
+    for (cols, 0..) |col, li| {
+        const tex = fx.texture(ctx, .{ .matrix = .{ .layer = @intCast(li), .seed = seed, .density = dens } }) orelse continue;
+        if (t == 0) {
+            drift(ctx.dl, tex, r, side, side, 0, 0, col.u());
+            continue;
+        }
+        // Faixas presas à janela, como o ladrilho: a de x em [k·128, (k+1)·128).
+        var x = @floor(r.x / strip) * strip;
+        while (x < r.right()) : (x += strip) {
+            const x0 = @max(x, r.x);
+            const x1 = @min(x + strip, r.right());
+            if (x1 <= x0) continue;
+            const g: usize = @intFromFloat(@mod(@floor(x / strip), 4));
+            const sy = @mod(-t * speeds[g], side);
+            const ua = x0 / side;
+            const va = (r.y + sy) / side;
+            c.ImDrawList_AddImageEx(ctx.dl, fx.refOf(tex), d.v(x0, r.y), d.v(x1, r.bottom()), d.v(ua, va), d.v(ua + (x1 - x0) / side, va + r.h / side), col.u());
+        }
+    }
+}
+
+/// Ondas: esticadas na área inteira, como a aurora; andando, as de trás vão para um
+/// lado e as cristas para o outro.
+fn waves(ctx: *d.Ctx, n: *const kdl.Node, r: Rect, seed: u32, t: f32) void {
+    const lines: u8 = @intFromFloat(std.math.clamp(d.pnum(n, "lines", 9), 2, 24));
+    const cols = [2]d.Rgba{ fx.nodeColor(ctx, n, "color", .border), fx.nodeColor(ctx, n, "color2", .accent) };
+    const speeds = [2]f32{ 0.004, -0.007 };
+    for (cols, speeds, 0..) |col, sp, li| {
+        const tex = fx.texture(ctx, .{ .waves = .{ .layer = @intCast(li), .seed = seed, .lines = lines } }) orelse continue;
+        const ua = @mod(t * sp, 1);
+        c.ImDrawList_AddImageEx(ctx.dl, fx.refOf(tex), d.v(r.x, r.y), d.v(r.right(), r.bottom()), d.v(ua, 0), d.v(ua + 1, 1), col.u());
+    }
+}
+
+/// Partículas: a poeira sobe devagar, os discos de perto um pouco mais rápido e
+/// para o outro lado; a de perto repete em outro período, como as estrelas.
+fn particles(ctx: *d.Ctx, n: *const kdl.Node, r: Rect, seed: u32, t: f32) void {
+    const dens = densityOf(n);
+    const far = fx.nodeColor(ctx, n, "color", .muted);
+    const near = fx.nodeColor(ctx, n, "color2", .accent);
+    if (fx.texture(ctx, .{ .particles = .{ .layer = 0, .seed = seed, .density = dens } })) |tex|
+        drift(ctx.dl, tex, r, 512, 512, @mod(t * 1.5, 512), @mod(t * 5, 512), far.u());
+    if (fx.texture(ctx, .{ .particles = .{ .layer = 1, .seed = seed, .density = dens } })) |tex|
+        drift(ctx.dl, tex, r, 640, 640, @mod(-t * 2.5, 640), @mod(t * 11, 640), near.u());
 }
 
 fn topography(ctx: *d.Ctx, n: *const kdl.Node, r: Rect, seed: u32) void {

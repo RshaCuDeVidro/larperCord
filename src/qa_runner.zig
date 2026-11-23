@@ -2972,6 +2972,7 @@ const ops_nome = [_]Op{
 const ops_emoji = [_]Op{expect("pronto", ready)} ++ @import("qa_emoji.zig").ops;
 const ops_paineis = [_]Op{expect("pronto", ready)} ++ @import("qa_paineis.zig").ops_no_scripts ++ @import("qa_paineis.zig").all;
 const ops_quadros = [_]Op{expect("pronto", ready)} ++ @import("qa_quadros.zig").ops;
+const ops_vetores = [_]Op{expect("pronto", ready)} ++ @import("qa_vetores.zig").ops;
 
 const ops_config = [_]Op{
     expect("pronto", ready),
@@ -3380,6 +3381,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "lsp-real", &ops_lsp_real },
     .{ "paineis", &ops_paineis },
     .{ "quadros", &ops_quadros },
+    .{ "vetores", &ops_vetores },
     .{ "plugins", &ops_plugins_only },
     .{ "plugins-tls", &ops_plugins_tls },
     .{ "extras", &ops_extras },

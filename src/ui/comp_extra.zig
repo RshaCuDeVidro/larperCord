@@ -3,7 +3,7 @@
 //! logo:   variant = ascii | wordmark      (logo do app)
 //! topbar: barra superior com voltar/avançar entre abas, busca e ajuda
 //! crt:    efeito de monitor antigo (linhas de varredura + vinheta), por cima de tudo
-//! shape:  círculo, anel, arco, retângulo arredondado ou linha
+//! shape:  círculo, anel, arco, retângulo arredondado, linha ou caminho (SVG)
 //! rule:   régua (lisa, tracejada, pontilhada, dupla, "oxford") com ornamento
 //! window-controls: fechar, minimizar e maximizar a janela, em três bolinhas
 const std = @import("std");
@@ -16,6 +16,7 @@ const i18n = @import("i18n.zig");
 const fx = @import("fx.zig");
 const qa = @import("qa.zig");
 const procgen = @import("procgen.zig");
+const tpath = @import("../theme/path.zig");
 
 const ascii_logo = [_][]const u8{
     "┬  ┌─┐┬─┐┌─┐┌─┐┬─┐┌─┐┌─┐┬─┐┌┬┐",
@@ -125,15 +126,17 @@ pub fn crt(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     c.ImDrawList_AddRectFilledMultiColor(fg, d.v(r.x, r.bottom() - vw), d.v(r.right(), r.bottom()), 0, 0, edge, edge);
 }
 
-const ShapeKind = enum { circle, ring, arc, rounded, line };
+const ShapeKind = enum { circle, ring, arc, rounded, line, path };
 
 /// `shape kind=ring color=accent thickness=1.5 size=16`
 /// `shape kind=arc start=-90 sweep=270 dot="@text" dot-size=2.5`
 /// `shape kind=rounded radius=6 fill="alpha(@accent, 0.1)" color=accent`
 /// `shape kind=line angle=0 cap=#true`
+/// `shape kind=path d="M 0 0 L 24 0 L 12 20 Z" viewbox="0 0 24 24" fill=accent`
 pub fn shape(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     const kind = std.meta.stringToEnum(ShapeKind, d.pstr(n, "kind", "circle")) orelse .circle;
     if (qa.on()) qa.mark(r, "shape:{s}", .{@tagName(kind)});
+    if (kind == .path) return pathShape(ctx, n, r);
     const dl = ctx.dl;
     const col = fx.nodeColor(ctx, n, "color", .accent);
     const th = d.pnum(n, "thickness", 1.5);
@@ -171,6 +174,64 @@ pub fn shape(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
             const half = if (n.num("size") != null) size / 2 else @abs(r.w / 2 * @cos(ang)) + @abs(r.h / 2 * @sin(ang));
             d.line(dl, cx - half * @cos(ang), cy - half * @sin(ang), cx + half * @cos(ang), cy + half * @sin(ang), col, th);
         },
+        // Desenhado acima, em `pathShape`.
+        .path => {},
+    }
+}
+
+/// Os pontos do traço já na tela: no quadro, o caminho só muda de escala e de lugar.
+var path_pts: [tpath.max_points]c.ImVec2 = undefined;
+
+/// Caminho do SVG lido ao carregar o tema (`theme/path.zig`). O preenchimento é uma
+/// máscara guardada por tamanho (côncavo, com buraco, evenodd: tudo igual); o traço
+/// é uma polilinha do ImGui. `size=` é o lado do quadrado onde a caixa de visão cabe
+/// (sem ele, o nó inteiro), alinhado como os outros `shape`.
+fn pathShape(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
+    // Pela linha do arquivo: um tema pode ter vários caminhos.
+    if (qa.on()) qa.mark(r, "path:{d}", .{n.line});
+    const x = ctx.th.nodeFx(n) orelse return;
+    const p = x.path orelse return;
+    const side = n.num("size");
+    const bw = if (side) |s| @min(@as(f32, @floatCast(s)), r.w) else r.w;
+    const bh = if (side) |s| @min(@as(f32, @floatCast(s)), r.h) else r.h;
+    const al = std.meta.stringToEnum(tpath.Align, d.pstr(n, "align", "center")) orelse .center;
+    const bx = switch (al) {
+        .left => r.x,
+        .center => r.x + (r.w - bw) / 2,
+        .right => r.right() - bw,
+    };
+    var m = tpath.fit(p.view, bx, r.y + (r.h - bh) / 2, bw, bh, .center);
+    m.ox += d.pnum(n, "offset-x", 0);
+    m.oy += d.pnum(n, "offset-y", 0);
+    if (m.s <= 0 or !std.math.isFinite(m.s)) return;
+    const toks = ctx.th.tokenValues();
+    if (x.color("fill")) |fe| {
+        // A máscara em pixels de verdade (com a escala da interface), presa à grade.
+        const sc = ctx.io.*.DisplayFramebufferScale;
+        const k = @min(1, @as(f32, 2048) / @max(m.w * sc.x, m.h * sc.y));
+        const mw: u32 = @intFromFloat(@max(@ceil(m.w * sc.x * k), 1));
+        const mh: u32 = @intFromFloat(@max(@ceil(m.h * sc.y * k), 1));
+        if (fx.pathMask(ctx, p, mw, mh)) |tex| {
+            const ox = @round(m.ox * sc.x) / sc.x;
+            const oy = @round(m.oy * sc.y) / sc.y;
+            const w = @as(f32, @floatFromInt(mw)) / (sc.x * k);
+            const h = @as(f32, @floatFromInt(mh)) / (sc.y * k);
+            c.ImDrawList_AddImageEx(ctx.dl, fx.refOf(tex), d.v(ox, oy), d.v(ox + w, oy + h), d.v(0, 0), d.v(1, 1), fe.eval(toks).u());
+        }
+    }
+    // Sem `fill`, o traço é o desenho (na cor de destaque, como os outros `shape`);
+    // com `fill`, só quando o tema pede a cor do traço.
+    const th = d.pnum(n, "thickness", 1.5);
+    const stroke = x.color("color") != null or x.color("fill") == null;
+    if (!stroke or th <= 0) return;
+    const col = fx.nodeColor(ctx, n, "color", .accent).u();
+    for (p.subs) |s| {
+        const pts = p.pts[s.start..][0..s.len];
+        for (pts, 0..) |q, i| {
+            const t = m.apply(p.view, q);
+            path_pts[i] = d.v(t[0], t[1]);
+        }
+        c.ImDrawList_AddPolyline(ctx.dl, &path_pts, @intCast(pts.len), col, th, if (s.closed) c.ImDrawFlags_Closed else 0);
     }
 }
 

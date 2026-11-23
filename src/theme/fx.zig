@@ -9,6 +9,7 @@
 const std = @import("std");
 const kdl = @import("kdl.zig");
 const color = @import("color.zig");
+const tpath = @import("path.zig");
 pub const Expr = color.Expr;
 
 pub const Gradient = struct {
@@ -104,6 +105,8 @@ pub const NodeFx = struct {
     text: ?*const TextFx = null,
     /// Cores dos componentes `shape`, `rule` e dos fundos procedurais.
     colors: []const NamedColor = &.{},
+    /// `shape kind=path`: o caminho já achatado (`path.zig`).
+    path: ?*const tpath.Path = null,
 
     pub fn color(x: *const NodeFx, key: []const u8) ?*const Expr {
         for (x.colors) |nc| if (std.mem.eql(u8, nc.key, key)) return nc.expr;
@@ -315,7 +318,8 @@ pub fn parseText(cx: *Cx, n: *const kdl.Node, color_is_expr: bool) Error!?*const
 
 /// Componentes que guardam cores (o resto das propriedades é lido ao desenhar).
 const painted = std.StaticStringMap(void).initComptime(.{
-    .{"shape"}, .{"rule"}, .{"starfield"}, .{"orbit"}, .{"aurora"}, .{"dunes"}, .{"topography"}, .{"radar"}, .{"window-controls"},
+    .{"shape"},     .{"rule"},  .{"starfield"}, .{"orbit"}, .{"aurora"},    .{"dunes"},           .{"topography"},
+    .{"radar"},     .{"rain"},  .{"matrix"},    .{"waves"}, .{"particles"}, .{"window-controls"},
 });
 const color_keys = [_][]const u8{ "color", "color2", "color3", "fill", "dot", "ornament-color" };
 
@@ -329,6 +333,15 @@ pub fn parseNode(cx: *Cx, n: *const kdl.Node, bg_is_token: bool) Error!?*const N
     };
     if (try parseBox(cx, n, false)) |b| {
         x.box = b;
+        used = true;
+    }
+    // A imagem do papel de parede vem só das Configurações, nunca do tema.
+    if (std.mem.eql(u8, n.name, "wallpaper")) {
+        for ([_][]const u8{ "src", "path", "url", "file", "image" }) |k| if (n.prop(k) != null)
+            return cx.fail(n, "wallpaper não aceita imagem no tema: quem usa escolhe a dela em Configurações → Aparência");
+    }
+    if (std.mem.eql(u8, n.name, "shape") and std.mem.eql(u8, n.str("kind") orelse "", "path")) {
+        x.path = try parsePath(cx, n);
         used = true;
     }
     if (std.mem.eql(u8, n.name, "label")) {
@@ -347,6 +360,23 @@ pub fn parseNode(cx: *Cx, n: *const kdl.Node, bg_is_token: bool) Error!?*const N
     const out = try cx.a.create(NodeFx);
     out.* = x;
     return out;
+}
+
+/// `shape kind=path d="…" viewbox="0 0 24 24" fill-rule=evenodd`: lido e achatado
+/// aqui, uma vez; o erro diz o que é e onde (a linha é a do nó; a posição, em `d`).
+fn parsePath(cx: *Cx, n: *const kdl.Node) Error!*const tpath.Path {
+    const src = n.str("d") orelse return cx.fail(n, "shape kind=path pede d=\"M … \" (o caminho, como no SVG)");
+    const view: ?[4]f32 = if (n.str("viewbox")) |v| tpath.parseViewbox(v) orelse return cx.fail(n, "viewbox: x y largura altura, com largura e altura maiores que zero") else null;
+    const rule: tpath.FillRule = if (n.str("fill-rule")) |r| std.meta.stringToEnum(tpath.FillRule, r) orelse return cx.fail(n, "fill-rule: nonzero ou evenodd") else .nonzero;
+    var problem: ?tpath.Problem = null;
+    return tpath.parse(cx.a, src, view, rule, &problem) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.Invalid => {
+            const pr = problem orelse return cx.fail(n, "d: caminho inválido");
+            const msg = std.fmt.allocPrint(cx.a, "{s} (caractere {d} de d)", .{ pr.msg, pr.at }) catch return error.OutOfMemory;
+            return cx.fail(n, msg);
+        },
+    };
 }
 
 // --- Testes ---------------------------------------------------------------
@@ -487,4 +517,55 @@ test "nó: bg com expressão e cores dos componentes novos" {
     try testing.expect(s.color("fill") == null);
     var cx2 = e.cx();
     try testing.expectError(error.Invalid, parseNode(&cx2, try e.node("rule color=\"nada\""), false));
+}
+
+test "shape kind=path: lido no carregamento, erros com a linha e o lugar em d" {
+    var e: TestEnv = .{ .arena = .init(testing.allocator) };
+    defer e.arena.deinit();
+    var cx = e.cx();
+    const ok = (try parseNode(&cx, try e.node("shape kind=path d=\"M 0 0 L 24 0 L 12 20 Z\" viewbox=\"0 0 24 24\" fill=accent fill-rule=evenodd"), false)).?;
+    try testing.expectEqual(@as(usize, 3), ok.path.?.pts.len);
+    try testing.expectEqual(tpath.FillRule.evenodd, ok.path.?.rule);
+    try testing.expectEqual([4]f32{ 0, 0, 24, 24 }, ok.path.?.view);
+    try testing.expect(ok.color("fill") != null);
+    // Os outros `shape` não passam por aqui.
+    try testing.expect((try parseNode(&cx, try e.node("shape kind=ring d=\"nada\""), false)) == null);
+    const casos = [_]struct { src: []const u8, has: []const u8 }{
+        .{ .src = "\n\nshape kind=path", .has = "pede d=" },
+        .{ .src = "shape kind=path d=\"M 0 0 L 5\"", .has = "caractere 10" },
+        .{ .src = "shape kind=path d=\"M0 0 L1 1\" viewbox=\"0 0 -1 4\"", .has = "viewbox" },
+        .{ .src = "shape kind=path d=\"M0 0 L1 1\" fill-rule=odd", .has = "fill-rule" },
+    };
+    for (casos) |cs| {
+        var c2 = e.cx();
+        try testing.expectError(error.Invalid, parseNode(&c2, try e.node(cs.src), false));
+        try testing.expect(std.mem.indexOf(u8, c2.problem.?.message, cs.has) != null);
+    }
+    var c3 = e.cx();
+    try testing.expectError(error.Invalid, parseNode(&c3, try e.node("\n\nshape kind=path"), false));
+    try testing.expectEqual(@as(u32, 3), c3.problem.?.node.line);
+}
+
+test "wallpaper: o tema não escolhe a imagem" {
+    var e: TestEnv = .{ .arena = .init(testing.allocator) };
+    defer e.arena.deinit();
+    var cx = e.cx();
+    try testing.expect((try parseNode(&cx, try e.node("wallpaper fit=cover dim=0.3 blur=6"), false)) == null);
+    for ([_][]const u8{ "wallpaper src=\"/home/x.png\"", "wallpaper url=\"https://x/y.png\"", "wallpaper path=\"C:\\\\x.png\"" }) |src| {
+        var c2 = e.cx();
+        try testing.expectError(error.Invalid, parseNode(&c2, try e.node(src), false));
+        try testing.expect(std.mem.indexOf(u8, c2.problem.?.message, "Configurações") != null);
+    }
+}
+
+test "fundos novos guardam as cores" {
+    var e: TestEnv = .{ .arena = .init(testing.allocator) };
+    defer e.arena.deinit();
+    var cx = e.cx();
+    for ([_][]const u8{ "rain", "matrix", "waves", "particles" }) |name| {
+        var buf: [96]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf, "{s} color=accent color2=\"alpha(@text, 0.5)\"", .{name});
+        const x = (try parseNode(&cx, try e.node(src), false)).?;
+        try testing.expect(x.color("color") != null and x.color("color2") != null);
+    }
 }

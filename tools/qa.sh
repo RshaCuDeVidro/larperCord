@@ -104,6 +104,9 @@ LARPER_DEMO_EPOCH_MS=$epoch QA_LEMBRETES_READ=1 QA_SUITE=lembretes-b run "lembre
 bash tools/qa_apagar.sh "$bin" || total_fail=1
 # Parado não gasta: quadros desenhados com o app à toa (o --stats do demo).
 bash tools/qa_parado.sh "$bin" || total_fail=1
+# Caminhos vetoriais, fundos novos (chuva, chuva de código, ondas, partículas) e o papel de
+# parede pelo seletor: num tema de teste, no classico (escuro e claro) e no orbital.
+QA_SUITE=vetores run "vetores e papel de parede" $bin --qa --theme classico
 QA_SUITE=render run "renderizador" $bin --qa --theme classico
 QA_SUITE=atalhos run "atalhos personalizáveis" $bin --qa --theme classico
 # Um settings.kdl que pede um renderizador que não existe: abre no automático e avisa.

@@ -167,9 +167,10 @@ searched. For a theme that looks right on both systems, use font names that say 
 | `member-list` | `variant=discord\|tty` |
 | `status-bar` | `variant=pills\|tty\|plain` `items="conn ping ram frame voice spacer theme keys clock"` (also `me mic deaf`: your status and the mute/deafen buttons with the device menu, for layouts without a `user-panel`) |
 | `label` | `text=` `size=` `weight=regular\|medium\|semibold\|bold` `color=token` `align=left\|center\|right`, plus [display typography](#display-typography-in-label) |
-| `shape` | circle, ring, arc, rounded rectangle, line ([details](#shape-and-rule)) |
+| `shape` | circle, ring, arc, rounded rectangle, line, SVG path ([details](#shape-and-rule)) |
 | `rule` | plain, dashed, double, newspaper or ornamented rule ([details](#shape-and-rule)) |
-| `starfield` `orbit` `aurora` `dunes` `topography` `radar` | [procedural backgrounds](#procedural-backgrounds) (first child of a `stack`) |
+| `starfield` `orbit` `aurora` `dunes` `topography` `radar` `rain` `matrix` `waves` `particles` | [procedural backgrounds](#procedural-backgrounds) (first child of a `stack`) |
+| `wallpaper` | the picture the user chose in Settings, or nothing ([details](#wallpaper)) |
 | `window-controls` | the three window buttons, which really work: close, minimize, maximize. `size=12` `gap=8` `color=` `color2=` `color3=` `align=` |
 | `logo` | `variant=ascii\|wordmark` `size=` |
 | `topbar` | top bar (tabs, search, help) |
@@ -285,6 +286,7 @@ stack width=28 {
 }
 shape kind=rounded radius=6 color=accent fill="alpha(@accent, 0.1)" thickness=1
 shape kind=line angle=30 thickness=2 color=border
+shape kind=path width=28 viewbox="0 0 24 24" fill=accent d="M12 2 L22 20 H2 Z"
 
 rule height=1 color=border
 rule height=1 kind=dashed dash=3 gap=3 color="alpha(@accent, 0.45)"
@@ -297,15 +299,41 @@ rule height=1 fade=#true color=accent                                // fades ou
 
 | `shape` | |
 |---|---|
-| `kind=` | `circle` `ring` `arc` `rounded` `line` |
+| `kind=` | `circle` `ring` `arc` `rounded` `line` `path` |
 | `color=` `thickness=` | stroke color and thickness |
-| `size=` | diameter (default: the node's shorter side); on `line`, the length |
-| `fill=` | fill of `ring` and `rounded` |
+| `size=` | diameter (default: the node's shorter side); on `line`, the length; on `path`, the side of the square the `viewbox` fits in (default: the whole node) |
+| `fill=` | fill of `ring`, `rounded` and `path` |
 | `start=` `sweep=` | start and opening of the `arc`, in degrees |
 | `dot=color` `dot-size=` | a dot at the tip of the `arc` |
 | `radius=` | corners of `rounded` |
 | `angle=` | tilt of the `line`, in degrees |
 | `align=left\|center\|right` `offset-x=` `offset-y=` | position inside the node |
+| `d=` | the `path`: SVG path data (below) |
+| `viewbox="x y w h"` | the part of the path's coordinates that fits in the node, keeping the proportions (default: the path's own bounds) |
+| `fill-rule=nonzero\|evenodd` | which parts of a `path` that crosses itself or has holes get filled (default `nonzero`) |
+
+### `shape kind=path`
+
+Icons and ornaments as vectors, with the path data of an SVG file:
+
+```kdl
+// A ring with a hole: two circles, the inner one cut out by evenodd.
+shape kind=path size=20 viewbox="0 0 24 24" fill=accent fill-rule=evenodd \
+    d="M12 1 A11 11 0 1 1 12 23 A11 11 0 1 1 12 1 Z M12 6 A6 6 0 1 0 12 18 A6 6 0 1 0 12 6 Z"
+// Only the outline: no `fill`, so the path is stroked with `color` (accent by default).
+shape kind=path height=24 viewbox="0 0 24 24" thickness=1.5 color=muted d="M3 12 C 8 4, 16 20, 21 12"
+```
+
+The commands are those of SVG: `M` move, `L` line, `H` horizontal and `V` vertical line, `C` and `S` cubic
+curves, `Q` and `T` quadratic curves, `A` elliptical arc and `Z` close. An uppercase letter takes absolute
+coordinates and a lowercase one takes them relative to the current point. Numbers can be separated by spaces or
+commas (`M10,10 l5-5`). Without `fill`, the path is stroked; with `fill`, it is filled, and also stroked when
+the node has a `color`.
+
+The path is read once, when the theme loads, and turned into straight lines precise enough to stay smooth at
+2048 pixels. The fill becomes a mask made once for each size. A path takes up to 1024 commands and 4096
+points after the curves are flattened. A mistake stops the theme with the line of the `shape` and the
+character of `d` where the problem is.
 
 | `rule` | |
 |---|---|
@@ -341,6 +369,10 @@ layout {
 | `dunes` | `color`, `color2`, `color3`: hills from back to front (the sky is the `gradient` of the surrounding node) | |
 | `topography` | `color` | `levels=14` (how many contour lines) |
 | `radar` | `color` rings, `color2` the sweep | `center-x=0.5` `center-y=0.5` `rings=5` |
+| `rain` | `color` far drops, `color2` the near ones | `density=1` `angle=10` (the wind's tilt, from -45 to 45 degrees) |
+| `matrix` | `color` the trails, `color2` the bright head of each column | `density=1` |
+| `waves` | `color` the waves, `color2` the crests | `lines=9` (from 2 to 24) |
+| `particles` | `color` fine dust, `color2` large blurred discs | `density=1` |
 
 All of them accept `seed=` (a different drawing), and all except `topography` accept motion:
 `motion=#true`, or better `motion="$opcao"`, so the user can choose, and `motion-fps=10` (15 at most).
@@ -349,10 +381,49 @@ with the window minimized or out of focus.
 
 The mask is only shape: the color comes at draw time. Switching mode or accent color generates nothing
 new. Only `orbit` and `radar` depend on size, and they are rebuilt once when the window stops changing.
+The characters of `matrix` are drawn by the app (digits and katakana-like strokes), so they don't depend on
+any font. In motion, its columns fall at four different speeds.
 
 **Contrast first.** Text never sits directly on a strong background: put a translucent panel in
 between (`gradient="alpha(@surface, 0.9) alpha(@surface, 0.76)"`) and check both modes. Use colors
 derived from tokens: `@muted` in dark mode is light stars, and in light mode it becomes ink on paper.
+
+## Wallpaper
+
+The picture comes **only** from the user's own computer: Settings → Appearance → **Wallpaper** →
+**Choose image…** (PNG, JPEG, WebP or BMP, up to 8192 pixels per side). The path is saved in `settings.kdl` and the
+picture never leaves the computer. A theme can't point to a file or an address: `src=` on a `wallpaper` is an
+error. **Remove** takes it away, and **Dim** darkens it toward the theme's `bg`.
+
+A theme says where the picture goes with a `wallpaper` node, the first child of a `stack`, like the procedural
+backgrounds. When the user has no picture, it draws nothing and the theme looks as it always did:
+
+```kdl
+layout {
+    stack gradient="@bg @rail" {
+        wallpaper fit=cover dim=0.35 blur=6
+        row { … translucent panels … }
+    }
+}
+```
+
+| Property | What it does |
+|---|---|
+| `fit=cover\|contain\|tile\|center` | `cover` fills the node and crops the excess (default); `contain` shows the whole picture; `tile` repeats it at its own size; `center` puts it in the middle at its own size |
+| `dim=0` | how much it darkens toward `bg`, from 0 to 1. It's the theme's minimum: the user's **Dim** can only darken further |
+| `blur=0` | blur radius, in pixels. It's made once, on a small copy of the picture, never per frame |
+| `opacity=1` | the picture's opacity (what's behind the node shows through) |
+| `radius=0` | rounded corners |
+
+**Themes without `wallpaper`**, like the bundled ones, work with a picture too: it goes behind the whole layout
+and the backgrounds of the layout's nodes become translucent, only as far as `text` keeps 7:1 contrast and
+`muted` keeps 4.5:1 (or what they had without a picture) over the brightest and the darkest parts of the
+picture. When even opaque panels aren't enough, the picture is darkened more. The theme's procedural background
+steps aside while there's a picture. To keep a theme free of the user's picture, add a `wallpaper show=#false`.
+
+The picture is read in the background, shrunk to the size that covers the window (the full-size image doesn't
+stay in memory) and drawn as a still texture: it never asks for frames. When the window grows past the size
+that was loaded, it's read again once.
 
 ## Light and dark
 
