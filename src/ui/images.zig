@@ -1439,7 +1439,7 @@ pub fn loadStill(path: [:0]const u8, cover_w: u32, cover_h: u32) ?Still {
     const mw: u16 = @intFromFloat(std.math.clamp(@ceil(fw * k), 1, 8192));
     const mh: u16 = @intFromFloat(std.math.clamp(@ceil(fh * k), 1, 8192));
     var stop = std.atomic.Value(bool).init(false);
-    var px = decode(bytes, mw, mh, &stop, false);
+    var px = decode(bytes, mw, mh, &stop, .{});
     if (px.frames.len == 0) return null;
     const first = px.frames[0].data;
     px.frames[0].data = &.{};
