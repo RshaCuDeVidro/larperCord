@@ -114,6 +114,9 @@ pub const Header = struct {
     footer: []const u8 = "",
     /// Idioma do documento (lang do HTML).
     lang: []const u8 = "en",
+    /// O idioma da interface é escrito da direita para a esquerda (`direction "rtl"` no
+    /// arquivo de tradução): o documento inteiro também (dir do HTML).
+    rtl: bool = false,
     conversation: Conversation,
     exported_unix: i64 = 0,
     from_unix: i64 = 0,
@@ -555,6 +558,7 @@ pub const Writer = struct {
         const s = w.out;
         s.write("<!doctype html>\n<html lang=\"");
         htmlEscape(s, h.lang);
+        if (h.rtl) s.write("\" dir=\"rtl");
         s.write("\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"");
         htmlEscape(s, h.app);
         s.write("\">\n<title>");
@@ -646,7 +650,8 @@ pub const Writer = struct {
             s.write("</div>");
         }
         if (m.text.len > 0) {
-            s.write("<div class=\"text\">");
+            // Cada mensagem na direção da primeira letra dela, seja qual for a da página.
+            s.write("<div class=\"text\" dir=\"auto\">");
             markdownHtml(s, w.gpa, m.text);
             if (m.edited) {
                 s.write("<span class=\"edited\">");
@@ -1249,6 +1254,7 @@ test "html: escapa tudo, Markdown vira HTML, resposta, anexos e cores do tema" {
     defer testing.allocator.free(out);
     try testing.expect(std.mem.startsWith(u8, out, "<!doctype html>"));
     try testing.expect(has(out, "<html lang=\"pt-BR\">"));
+    try testing.expect(has(out, "<div class=\"text\" dir=\"auto\">"));
     try testing.expect(has(out, "<title>#geral &lt;b&gt;</title>"));
     try testing.expect(has(out, "--bg:#101010"));
     try testing.expect(has(out, "--accent:#ff0066"));
@@ -1278,6 +1284,17 @@ test "html: escapa tudo, Markdown vira HTML, resposta, anexos e cores do tema" {
     try testing.expect(has(out, "<span>👍 3</span>"));
     try testing.expect(has(out, "<div class=\"day\"><span>2025-11-17</span></div>"));
     try testing.expect(std.mem.endsWith(u8, out, "</html>\n"));
+}
+
+test "html: idioma da direita para a esquerda vira o documento inteiro" {
+    var h = sample_header;
+    h.lang = "ar";
+    h.rtl = true;
+    const out = try render(.html, &h, &sample);
+    defer testing.allocator.free(out);
+    try testing.expect(has(out, "<html lang=\"ar\" dir=\"rtl\">"));
+    // A mensagem continua na direção dela.
+    try testing.expect(has(out, "<div class=\"text\" dir=\"auto\">"));
 }
 
 test "markdown do discord em html: títulos, listas, spoiler, código inline" {

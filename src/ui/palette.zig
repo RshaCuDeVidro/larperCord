@@ -266,10 +266,8 @@ fn rebuild(ctx: *d.Ctx) void {
         const n_tabs = set.abas.ids.items.len;
         const hint = if (sets.active == i)
             i18n.tr("em uso", "in use")
-        else if (n_tabs == 1)
-            i18n.tr("1 aba", "1 tab")
         else
-            i18n.allocPrint(a, "{d} abas", "{d} tabs", .{n_tabs}) catch continue;
+            i18n.pluralAlloc(a, n_tabs, "{d} aba", "{d} abas", "{d} tab", "{d} tabs", .{n_tabs}) catch continue;
         add(p, gpa, q, .{ .label = label, .hint = hint, .kind = .tab_set, .index = i });
     }
     for (commands, 0..) |cmd, i| {

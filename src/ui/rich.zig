@@ -231,14 +231,14 @@ pub fn stampText(buf: []u8, value: u64) []const u8 {
         .minute = @intCast(dt.minute),
         .second = @intCast(dt.second),
         .weekday = @intCast(std.math.clamp(dt.day_of_week, 0, 6)),
-    }, i18n.current());
+    }, horario.styleOf(i18n.current()));
 }
 
 /// "em 2 horas", "há 3 dias": refeito a cada desenho, sem nada guardado.
 fn relativeText(buf: []u8, unix: i64) []const u8 {
     var ns: c.SDL_Time = 0;
     _ = c.SDL_GetCurrentTime(&ns);
-    return horario.relative(buf, unix - @divTrunc(ns, 1_000_000_000), i18n.current());
+    return horario.relative(buf, unix - @divTrunc(ns, 1_000_000_000));
 }
 
 /// Ordem visual de um texto com árabe ou hebraico (ver `rich_plan`).

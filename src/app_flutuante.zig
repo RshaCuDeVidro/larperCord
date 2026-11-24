@@ -377,7 +377,10 @@ fn mudouFora(app: *App) bool {
     h.update(std.mem.asBytes(&app.st.settings));
     h.update(std.mem.asBytes(&app.themes.current));
     h.update(std.mem.asBytes(&app.themes.mode));
-    h.update(&.{ app.st.theme_gen, @intFromEnum(i18n.current()), @intFromBool(app.st.muted), @intFromBool(app.st.deafened), @intFromBool(app.qa_blur) });
+    h.update(&.{ app.st.theme_gen, @intFromBool(app.st.muted), @intFromBool(app.st.deafened), @intFromBool(app.qa_blur) });
+    // O idioma, e o arquivo de tradução recarregado.
+    const lang = i18n.stamp();
+    h.update(std.mem.asBytes(&lang));
     h.update(std.mem.asBytes(&app.st.voice));
     const s = h.final();
     if (s == app.pip.resumo) return false;

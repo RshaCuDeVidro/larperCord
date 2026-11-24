@@ -19,7 +19,7 @@ larperCord is a young project: version 0.6.5, with its first commit on November 
 | Threads and forums | **works** | Nested threads, forum post lists, creating and editing threads and posts, archived and private ones |
 | Custom emoji, stickers, autocomplete | **works** | Animated too. The picker warns when an emoji needs Nitro, and the GIF picker sends stickers |
 | Arabic, Hebrew and other scripts | partial | They display in messages and in the message box, and a system font fills in letters any theme lacks. Scripts that need shaping (Devanagari, Bengali, Thai, Khmer…) show their letters one by one, without conjuncts or reordered vowel signs |
-| Languages | **works** | English, Portuguese, Japanese and Russian, one translation file each |
+| Languages | **works** | English, Portuguese, Japanese and Russian built in; any other language is one file, no code ([status of each one](page:translation-status)) |
 | Read state, pins, Discord links | **works** | Synced with your other devices |
 | Themes | **works** | 11 built-in, each light and dark, reload on save |
 | Voice | partial | Server voice channels and DM and group calls, with the call screen. E2EE (DAVE), the mixer with Remove noise and Even out volume per person, mute, device picker, push-to-talk, high-pass filter, noise gate and RNNoise noise suppression work. On Linux, push-to-talk needs the window focused, and no automated test covers a real call |
@@ -57,6 +57,7 @@ larperCord is a young project: version 0.6.5, with its first commit on November 
 - [x] Arabic and Hebrew, and fonts for any script
 - [x] On the site: a theme builder, a community theme gallery and a demo in the browser
 - [x] Russian interface
+- [x] A new language is just a file, with live reload, plural forms and a translation editor on the site
 - [x] Push-to-talk from any window, on Windows
 - [x] Call screen, one tile per person, in the theme's style
 - [x] Server profiles: nickname, picture, bio and banner per server

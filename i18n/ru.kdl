@@ -1,6 +1,11 @@
 // larperCord — Russian (Русский) interface text.
 //
-// One entry per line: the English text exactly as it is in the code, then the
+// The first line says which language this is (code: the ISO 639 code, with a region
+// if needed, like "pt-PT"; english: its name in English):
+//
+//     language "Русский" code="ru" english="Russian"
+//
+// Then one entry per line: the English text exactly as it is in the code, then the
 // translation:
 //
 //     "Sign in" "Войти"
@@ -16,13 +21,19 @@
 //   - every value of the English text must appear; {{ and }} are literal braces.
 // A translation that breaks these rules shows in English.
 //
+// Text with a count has one form per plural category of the language (CLDR), each
+// with the same placeholders:
+//
+//     "{d} votes" one="{d} голос" few="{d} голоса" many="{d} голосов"
+//
+// The guide: https://rshacudevidro.github.io/larperCord/guide/translating.html
 // The list of texts, what is still missing and a check of this file:
 //     python3 tools/i18n_strings.py --lang ru --check
 // To try changes without building, copy this file to larpercord/i18n/ru.kdl in the
-// settings folder (~/.config on Linux, %APPDATA% on Windows) and restart the app.
+// settings folder (~/.config on Linux, %APPDATA% on Windows): saving it updates the app.
 //
 // Português: o texto em inglês do código como chave, a tradução ao lado; o que
-// falta aparece em inglês. As regras dos marcadores {…} estão acima.
+// falta aparece em inglês. As regras dos marcadores {…} e do plural estão acima.
 //
 // An entry whose translation is the English text itself is a placeholder waiting for a
 // person to translate it: either a new text, or one that had been machine-translated
@@ -31,6 +42,8 @@
 // Português: a entrada com o próprio inglês como tradução está esperando alguém
 // traduzir (texto novo, ou um que tinha sido traduzido por máquina e voltou para o
 // inglês). Traduza e abra um pull request.
+
+language "Русский" code="ru" english="Russian"
 
 "  (same, not drawn)" "  (same, not drawn)"
 "  [LIVE]" "  [LIVE]"
@@ -69,16 +82,7 @@
 "1 day" "1 день"
 "1 h" "1 ч"
 "1 hour" "1 час"
-"1 mention" "1 упоминание"
-"1 message · last {s}" "1 сообщение · последнее: {s}"
-"1 Mutual Friend" "1 общий друг"
-"1 Mutual Server" "1 общий сервер"
 "1 new message · jump to the first" "1 новое сообщение · перейти к первому"
-"1 result" "1 результат"
-"1 tab" "1 tab"
-"1 thread" "1 ветка"
-"1 unread" "1 непрочитанное"
-"1 vote" "1 голос"
 "1 week" "1 неделя"
 "1.5×" "1.5×"
 "10 min" "10 мин"
@@ -126,6 +130,8 @@
 "Fit" "Fit"
 "\nPush to talk from a system shortcut: ptt-down on key press and ptt-up on release\n(Settings → Voice → Push to talk). Needs Settings → Advanced → External control on.\nExits with 0 when it worked, 1 when it didn't.\nLARPER_CTL=1 on both sides talks to a demo (--demo) started with it.\nExamples (Hyprland, Sway, KDE, GNOME, waybar, polybar, Windows): docs/ctl.md\n" "\nPush to talk from a system shortcut: ptt-down on key press and ptt-up on release\n(Settings → Voice → Push to talk). Needs Settings → Advanced → External control on.\nExits with 0 when it worked, 1 when it didn't.\nLARPER_CTL=1 on both sides talks to a demo (--demo) started with it.\nExamples (Hyprland, Sway, KDE, GNOME, waybar, polybar, Windows): docs/ctl.md\n"
 "_files" "_files"
+"a '}' is missing" "a '}' is missing"
+"a /* comment that isn't closed" "a /* comment that isn't closed"
 "A channel with new messages opens at them, like Discord. When off, it opens at the bottom." "Канал с новыми сообщениями открывается на первом из них, как в Discord. Если выключено, открывается в конце."
 "A colored strip with the server name above the channels." "A colored strip with the server name above the channels."
 "A copy goes without the GPS, the camera model and the rest hidden in the file (JPEG, PNG, WebP, MP4 and MOV). The file on your computer stays as it is." "A copy goes without the GPS, the camera model and the rest hidden in the file (JPEG, PNG, WebP, MP4 and MOV). The file on your computer stays as it is."
@@ -142,6 +148,7 @@
 "A message with the whole word (any case) counts as a mention." "Сообщение, содержащее слово целиком (в любом регистре), засчитывается как упоминание."
 "A name is required." "Требуется имя."
 "A picture from your computer behind the theme. It stays here: nothing goes online." "A picture from your computer behind the theme. It stays here: nothing goes online."
+"a plural form is a text in quotes" "a plural form is a text in quotes"
 "A Santa hat at Christmas, a witch hat at Halloween and a party hat at New Year, when it has no hat picked." "A Santa hat at Christmas, a witch hat at Halloween and a party hat at New Year, when it has no hat picked."
 "A short cue for direct messages and mentions, also while the window is unfocused or in the tray. Silent for the conversation you're looking at and in Do Not Disturb." "A short cue for direct messages and mentions, also while the window is unfocused or in the tray. Silent for the conversation you're looking at and in Do Not Disturb."
 "A single page that opens offline, in the theme's colors." "A single page that opens offline, in the theme's colors."
@@ -152,6 +159,7 @@
 "A strip of light at the top of each card, like real glass." "A strip of light at the top of each card, like real glass."
 "A strip with the server name above the channels." "A strip with the server name above the channels."
 "A subtle ship-screen effect over everything." "A subtle ship-screen effect over everything."
+"a text that isn't closed" "a text that isn't closed"
 "A title is required." "Требуется название."
 "A very fine grain on the surfaces, so they don't look flat." "A very fine grain on the surfaces, so they don't look flat."
 "a video" "видео"
@@ -210,6 +218,7 @@
 "Always show spoilers" "Всегда показывать спойлеры"
 "an argument can't have a line break" "an argument can't have a line break"
 "An export is already running." "An export is already running."
+"an extra '}'" "an extra '}'"
 "an image" "изображение"
 "Angry" "Angry"
 "Animate Tenor and Giphy GIFs" "Анимировать GIF из Tenor и Giphy"
@@ -407,6 +416,7 @@
 "Code" "Code"
 "Code diagnostics" "Диагностика кода"
 "Code font" "Code font"
+"code: letters, digits and -, up to 15 (\"ja\", \"pt-PT\")" "code: letters, digits and -, up to 15 (\"ja\", \"pt-PT\")"
 "Collapse threads" "Свернуть ветки"
 "collapsed message" "свёрнутое сообщение"
 "Colophon" "Colophon"
@@ -677,6 +687,7 @@
 "Direct3D 11" "Direct3D 11"
 "Direct3D 12" "Direct3D 12"
 "Direct3D 9" "Direct3D 9"
+"direction: \"ltr\" or \"rtl\"" "direction: \"ltr\" or \"rtl\""
 "disable accounts on third-party clients." "отключать аккаунты в сторонних клиентах."
 "Discard" "Удалить"
 "Disconnect" "Отключить"
@@ -753,6 +764,7 @@
 "E.g. your name, a project, \"good morning\"" "Например: ваше имя, проект, «доброе утро»"
 "Each .kdl file in the folder becomes a look: it picks parts and colors or draws its own, per expression. Saving the file updates it right away." "Each .kdl file in the folder becomes a look: it picks parts and colors or draws its own, per expression. Saving the file updates it right away."
 "Each GIF" "На каждый GIF"
+"Each language is a .kdl file with the English text and the translation next to it, and the percentage is how much of the app's text it translates. A file in the translations folder applies right away (saving updates the app): with a new code it's a new language; with the code of one in the list, it fixes just what's in it." "Each language is a .kdl file with the English text and the translation next to it, and the percentage is how much of the app's text it translates. A file in the translations folder applies right away (saving updates the app): with a new code it's a new language; with the code of one in the list, it fixes just what's in it."
 "each person's volume · 100% = normal" "громкость каждого участника · 100% = обычная"
 "Each sound can be turned off, swapped for another built-in one or for a file of yours: WAV (PCM) or Ogg Opus, up to 2 MB and 5 s (the ringtone, up to 15 s). The file is copied into larperCord's folder." "Каждый звук можно отключить, заменить другим встроенным или своим файлом: WAV (PCM) или Ogg Opus, до 2 МБ и 5 с (мелодия звонка — до 15 с). Файл копируется в папку larperCord."
 "Each theme changes the whole layout, not just the colors. All of them come in light and dark." "Каждая тема меняет весь интерфейс, а не только цвета. У всех есть светлый и тёмный вариант."
@@ -802,6 +814,12 @@
 "Everything else (images, avatars) only comes from Discord's servers." "Всё остальное (изображения, аватары) поступает только с серверов Discord."
 "Exit fullscreen (Esc)" "Exit fullscreen (Esc)"
 "exited by itself (code {d})" "завершился сам (код {d})"
+"expected \"English\" \"translation\"" "expected \"English\" \"translation\""
+"expected a name" "expected a name"
+"expected direction \"ltr\" or \"rtl\"" "expected direction \"ltr\" or \"rtl\""
+"expected font-script \"ja\"" "expected font-script \"ja\""
+"expected language \"Name\" code=\"xx\"" "expected language \"Name\" code=\"xx\""
+"expected plurals \"ru\"" "expected plurals \"ru\""
 "EXPIRES AFTER" "СРОК ДЕЙСТВИЯ"
 "Explore the demo" "Открыть демо-режим"
 "External control (larpercord ctl)" "External control (larpercord ctl)"
@@ -878,6 +896,7 @@
 "Font" "Font"
 "Font atlas" "Атлас шрифтов"
 "Font scaling" "Масштабирование шрифта"
+"font-script: a code like \"ja\", \"zh\" or \"ko\"" "font-script: a code like \"ja\", \"zh\" or \"ko\""
 "Fonts" "Fonts"
 "Footer" "Footer"
 "For 1 Hour" "For 1 Hour"
@@ -1003,6 +1022,18 @@
 "In a folder next to it: profile pictures and images the app already downloaded. Nothing is downloaded now; the rest stays as links." "In a folder next to it: profile pictures and images the app already downloaded. Nothing is downloaded now; the rest stays as links."
 "In call: {s}" "In call: {s}"
 "In the demo, only with LARPER_CTL=1 (for testing)." "In the demo, only with LARPER_CTL=1 (for testing)."
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"in {d} days" one="через {d} день" few="через {d} дня" many="через {d} дней"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"in {d} hours" one="через {d} час" few="через {d} часа" many="через {d} часов"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"in {d} minutes" one="через {d} минуту" few="через {d} минуты" many="через {d} минут"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"in {d} months" one="через {d} месяц" few="через {d} месяца" many="через {d} месяцев"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"in {d} seconds" one="через {d} секунду" few="через {d} секунды" many="через {d} секунд"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"in {d} years" one="через {d} год" few="через {d} года" many="через {d} лет"
 "Include images and files already on this computer" "Include images and files already on this computer"
 "Info" "Info"
 "Inside" "Inside"
@@ -1062,7 +1093,9 @@
 "Invalid address: just the proxy's name or IP, or paste the full URL (scheme://host:port, with http, https, socks5 or socks5h)." "Неверный адрес: укажите только имя или IP прокси либо вставьте полный URL (схема://хост:порт, с http, https, socks5 или socks5h)."
 "invalid color (use #RRGGBB, ink, body-top, body-bottom, tufts, accent, white, black or none)" "invalid color (use #RRGGBB, ink, body-top, body-bottom, tufts, accent, white, black or none)"
 "Invalid command: check the quotes. The text doesn't go through a shell." "Неверная команда: проверьте кавычки. Текст не проходит через оболочку."
+"invalid escape" "invalid escape"
 "invalid hex — use #RRGGBB or #RRGGBBAA" "неверный hex-код — используйте #RRGGBB или #RRGGBBAA"
+"invalid number" "invalid number"
 "Invalid or expired invite" "Недействительное или просроченное приглашение"
 "invalid or expired token (4004). Update the token and restart." "недействительный или просроченный токен (4004). Обновите токен и перезапустите."
 "invalid path (commands M L H V Q C Z)" "invalid path (commands M L H V Q C Z)"
@@ -1486,7 +1519,9 @@
 "notify everyone online" "уведомить всех, кто в сети"
 "Now and then it rolls a d20 when you send a message. Drag an emoji from the picker or a reaction onto it and it eats it; a link dropped on it goes into a portal and an image becomes a framed picture. Every so often it hides behind a panel: click the tips of its ears to find it. And it reacts to Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V and Esc, without changing what the keys do." "Now and then it rolls a d20 when you send a message. Drag an emoji from the picker or a reaction onto it and it eats it; a link dropped on it goes into a portal and an image becomes a framed picture. Every so often it hides behind a panel: click the tips of its ears to find it. And it reacts to Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V and Esc, without changing what the keys do."
 "NOW" "NOW"
+"Now: {s}" "Now: {s}"
 "number" "число"
+"number too long" "number too long"
 "Ocean" "Ocean"
 "Off" "Выкл."
 "off" "выкл."
@@ -1554,6 +1589,7 @@
 "Open the Inspector ({s})" "Open the Inspector ({s})"
 "Open the log folder" "Открыть папку журнала"
 "Open the theme file" "Open the theme file"
+"Open the translations folder" "Open the translations folder"
 "Open this channel" "Открыть этот канал"
 "Open Thread" "Открыть ветку"
 "Open to the Side" "Открыть сбоку"
@@ -1646,6 +1682,7 @@
 "plugin {s}: {s}" "плагин {s}: {s}"
 "Plugins" "Плагины"
 "Plugins can also propose a server, with larper.lsp. Guide: docs/lsp.md" "Плагины также могут предлагать сервер с помощью larper.lsp. Руководство: docs/lsp.md"
+"plurals: a language code the app knows" "plurals: a language code the app knows"
 "Pointy" "Pointy"
 "Poll" "Опрос"
 "Poll closed" "Опрос закрыт"
@@ -2154,6 +2191,7 @@
 "the image is over 10 MB" "изображение больше 10 МБ"
 "the Inspector: find and click elements, the tree, the network, the log… (inspect help)" "the Inspector: find and click elements, the tree, the network, the log… (inspect help)"
 "the interaction failed" "взаимодействие не удалось"
+"the language name is empty" "the language name is empty"
 "The LARPER_RENDERER variable is set and wins over this choice." "The LARPER_RENDERER variable is set and wins over this choice."
 "The left strip disappears until the mouse gets close." "Левая полоса прячется, пока мышь не приблизится."
 "the microphone didn't open (see Settings → Voice)" "the microphone didn't open (see Settings → Voice)"
@@ -2276,6 +2314,7 @@
 "Too long: the proxy URL goes over 255 characters." "Слишком длинный: URL прокси превышает 255 символов."
 "Too many actions in a row: try again shortly." "Слишком много действий подряд: повторите чуть позже."
 "too many connections at once" "too many connections at once"
+"too many nested blocks" "too many nested blocks"
 "Too many options." "Слишком много вариантов."
 "too many points (at most 4096 in the file and 256 per shape)" "too many points (at most 4096 in the file and 256 per shape)"
 "too many requests right now: try again later" "сейчас слишком много запросов: повторите позже"
@@ -2295,6 +2334,9 @@
 "total minutes" "всего минут"
 "Total seconds" "Всего секунд"
 "total seconds" "всего секунд"
+"Translation editor" "Translation editor"
+"translation reloaded: {s}" "translation reloaded: {s}"
+"Translations" "Translations"
 "Transmitting" "Идёт передача"
 "Tree" "Tree"
 "Trending" "Популярное"
@@ -2347,6 +2389,7 @@
 "unknown layer (front or back)" "unknown layer (front or back)"
 "unknown node" "unknown node"
 "unknown part" "unknown part"
+"unknown plural form (zero, one, two, few, many or other)" "unknown plural form (zero, one, two, few, many or other)"
 "unknown-role" "неизвестная-роль"
 "unknown-user" "неизвестный-пользователь"
 "Unlock Thread" "Разблокировать ветку"
@@ -2497,6 +2540,7 @@
 "With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move)." "With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move)."
 "With the text box unfocused (Esc leaves it), the keys below navigate." "Когда текстовое поле не в фокусе (Esc выводит из него), для навигации служат клавиши ниже."
 "With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you)." "With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you)."
+"With {s} from the translations folder on top" "With {s} from the translations folder on top"
 "Without a notification server on D-Bus, they go out through notify-send, without buttons." "Without a notification server on D-Bus, they go out through notify-send, without buttons."
 "Without any field, the text never changes." "Без полей текст никогда не меняется."
 "Wizard" "Wizard"
@@ -2564,34 +2608,54 @@
 "{1d:0>2}/{0d:0>2}/{2d} {3s}" "{1}.{0}.{2} {3}"
 "{1s} {0d}, {2d}" "{1} {0} {2} г."
 "{d} d ago" "{d} дн. назад"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"{d} days ago" one="{d} день назад" few="{d} дня назад" many="{d} дней назад"
 "{d} found" "Найдено: {d}"
 "{d} h ago" "{d} ч назад"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"{d} hours ago" one="{d} час назад" few="{d} часа назад" many="{d} часов назад"
 "{d} members" "Участников: {d}"
 "{d} members in total" "Всего участников: {d}"
-"{d} mentions" "Упоминаний: {d}"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} mentions" "Упоминаний: {d}" one="{d} упоминание"
 "{d} mentions in {s}" "Упоминаний в {1}: {0}"
 "{d} messages in this range" "{d} messages in this range"
 "{d} messages on this computer, since {s}." "{d} messages on this computer, since {s}."
 "{d} messages ready so far. The search retries on its own." "Пока готово сообщений: {d}. Поиск сам повторит попытку."
-"{d} messages · last {s}" "Сообщений: {d} · последнее: {s}"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} messages · last {s}" "Сообщений: {d} · последнее: {s}" one="{d} сообщение · последнее: {s}"
 "{d} min ago" "{d} мин назад"
 "{d} min left" "Осталось: {d} мин"
-"{d} months ago" "{d} мес. назад"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"{d} minutes ago" one="{d} минуту назад" few="{d} минуты назад" many="{d} минут назад"
+// Plural forms from src/ui/horario.zig (the same Russian it showed for <t:…:R> until 0.6); the
+// plain text stays for anything that asks without a count.
+"{d} months ago" "{d} мес. назад" one="{d} месяц назад" few="{d} месяца назад" many="{d} месяцев назад"
 "{d} more waiting" "{d} more waiting"
 "{d} more…" "Ещё {d}…"
-"{d} Mutual Friends" "Общих друзей: {d}"
-"{d} Mutual Servers" "Общих серверов: {d}"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} Mutual Friends" "Общих друзей: {d}" one="{d} общий друг"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} Mutual Servers" "Общих серверов: {d}" one="{d} общий сервер"
 "{d} on Discord · {d} on this computer" "{d} on Discord · {d} on this computer"
 "{d} on this computer" "На этом компьютере: {d}"
 "{d} online" "В сети: {d}"
 "{d} online · {d} members" "В сети: {0} · участников: {1}"
 "{d} reminders" "{d} reminders"
 "{d} requests · {d} to the API · {s} received · {d} ms waiting on the rate limit" "{d} requests · {d} to the API · {s} received · {d} ms waiting on the rate limit"
-"{d} results" "Результатов: {d}"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} results" "Результатов: {d}" one="{d} результат"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"{d} seconds ago" one="{d} секунду назад" few="{d} секунды назад" many="{d} секунд назад"
 "{d} tabs" "{d} tabs"
-"{d} threads" "Веток: {d}"
-"{d} unread" "Непрочитанных: {d}"
-"{d} votes" "Голосов: {d}"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} threads" "Веток: {d}" one="{d} ветка"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} unread" "Непрочитанных: {d}" one="{d} непрочитанное"
+// The one= form comes from the old "1 …" entry (same translation, now for 1, 21, 31…), which the code no longer uses.
+"{d} votes" "Голосов: {d}" one="{d} голос"
+// The same Russian the app showed for <t:…:R> times until 0.6 (src/ui/horario.zig), now in this file.
+"{d} years ago" one="{d} год назад" few="{d} года назад" many="{d} лет назад"
 "{d}d left" "Осталось: {d} дн."
 "{d}h left" "Осталось: {d} ч"
 "{d}{s} new messages · jump to the first" "Новых сообщений: {d}{s} · перейти к первому"
@@ -2627,6 +2691,7 @@
 "{s} · unavailable (the server lost its boost)" "{s} · недоступно (сервер потерял буст)"
 "{s} · {d} messages from this computer, {s} to {s}" "{s} · {d} messages from this computer, {s} to {s}"
 "{s}'s timeout was removed" "Тайм-аут пользователя {s} снят"
+"{s}, from the translations folder" "{s}, from the translations folder"
 "{s}, {s} at {s}" "{s}, {s} в {s}"
 "{s}.kdl:{d}:{d}: {s}" "{s}.kdl:{d}:{d}: {s}"
 "{s}: off" "{s}: выкл."

@@ -1397,7 +1397,7 @@ fn filesSection(p: anytype) void {
     const r2 = f.next(buttonWidth(p, b_guide));
     if (button(p, r1, 7, b_open, false, true) and !qa.on()) arquivos.openFolder();
     if (button(p, r2, 8, b_guide, false, true)) {
-        attachments.openUrl(if (i18n.current() == .pt) "https://rshacudevidro.github.io/larperCord/pt/guide/mascots.html" else "https://rshacudevidro.github.io/larperCord/guide/mascots.html");
+        attachments.openUrl(if (i18n.is("pt")) "https://rshacudevidro.github.io/larperCord/pt/guide/mascots.html" else "https://rshacudevidro.github.io/larperCord/guide/mascots.html");
     }
     p.y = f.bottom() + 12;
 }

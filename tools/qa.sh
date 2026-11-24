@@ -89,6 +89,9 @@ QA_SUITE=video-tela-tema QA_PREFIX=papel-claro-ja- run "vídeo em tela cheia (ja
 # nada; a segunda vez no claro e em japonês. Contra o executável de antes: tools/pixels_antes.sh.
 QA_SUITE=partes run "partes do tema" $bin --qa --theme classico
 QA_SUITE=partes QA_PREFIX=claro-ja- run "partes (claro, japonês)" $bin --qa --theme classico --mode claro --lang ja
+# Configurações → Idioma em japonês e 125%: a lista sai dos arquivos, um idioma só de arquivo
+# (o xx dos testes, numa pasta de traduções dentro de qa-out/) funciona e recarrega ao salvar.
+QA_SUITE=idioma QA_PREFIX=ja-125- run "idioma (japonês, 125%)" $bin --qa --theme classico --lang ja
 # Inspetor (F12): elementos, escolher na tela, comandos, rede, gateway, eventos, fechar.
 QA_SUITE=inspetor run "inspetor" $bin --qa --theme classico
 # Arrastar alguém da call para outro canal de voz (e soltar fora não mover).

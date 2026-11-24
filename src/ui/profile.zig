@@ -84,9 +84,9 @@ const months_short_ru = [_][]const u8{ "янв.", "февр.", "мар.", "ап�
 /// "21 de nov. de 2017" / "Nov 21, 2017".
 fn dateShort(buf: []u8, ms: i64) []const u8 {
     const t = w.localTime(@divTrunc(ms, 1000));
-    if (i18n.current() == .ja) return std.fmt.bufPrint(buf, "{d}年{d}月{d}日", .{ t.year, t.month, t.day }) catch "";
+    if (i18n.is("ja")) return std.fmt.bufPrint(buf, "{d}年{d}月{d}日", .{ t.year, t.month, t.day }) catch "";
     const m: usize = t.month - 1;
-    const mon = if (i18n.current() == .ru) months_short_ru[m] else if (i18n.en()) months_short_en[m] else months_short[m];
+    const mon = if (i18n.is("ru")) months_short_ru[m] else if (i18n.en()) months_short_en[m] else months_short[m];
     return i18n.fmt(buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ t.day, mon, t.year });
 }
 
@@ -200,8 +200,8 @@ fn mutuals(col: *Col, uid: Id, pf: ?types.Profile, gid: Id) void {
     const font = ctx.ui.get(.medium);
     var fb: [48]u8 = undefined;
     var gb: [48]u8 = undefined;
-    const ft = if (nf == 1) i18n.tr("1 amigo em comum", "1 Mutual Friend") else i18n.fmt(&fb, "{d} amigos em comum", "{d} Mutual Friends", .{nf});
-    const gt = if (ng == 1) i18n.tr("1 servidor em comum", "1 Mutual Server") else i18n.fmt(&gb, "{d} servidores em comum", "{d} Mutual Servers", .{ng});
+    const ft = i18n.plural(&fb, nf, "{d} amigo em comum", "{d} amigos em comum", "{d} Mutual Friend", "{d} Mutual Friends", .{nf});
+    const gt = i18n.plural(&gb, ng, "{d} servidor em comum", "{d} servidores em comum", "{d} Mutual Server", "{d} Mutual Servers", .{ng});
     const parts = [_]struct { s: []const u8, tab: u8, on: bool }{ .{ .s = ft, .tab = 1, .on = nf > 0 }, .{ .s = gt, .tab = 2, .on = ng > 0 } };
     var first = true;
     for (parts, 0..) |part, i| {
@@ -831,8 +831,8 @@ pub fn full(ctx: *d.Ctx, uid: Id, gid: Id) void {
     var tb: [2][48]u8 = undefined;
     const tabs = [_][]const u8{
         i18n.tr("Atividade", "Activity"),
-        if (nf == 1) i18n.tr("1 amigo em comum", "1 Mutual Friend") else i18n.fmt(&tb[0], "{d} amigos em comum", "{d} Mutual Friends", .{nf}),
-        if (ng == 1) i18n.tr("1 servidor em comum", "1 Mutual Server") else i18n.fmt(&tb[1], "{d} servidores em comum", "{d} Mutual Servers", .{ng}),
+        i18n.plural(&tb[0], nf, "{d} amigo em comum", "{d} amigos em comum", "{d} Mutual Friend", "{d} Mutual Friends", .{nf}),
+        i18n.plural(&tb[1], ng, "{d} servidor em comum", "{d} servidores em comum", "{d} Mutual Server", "{d} Mutual Servers", .{ng}),
     };
     // Webhook não tem amigos nem servidores em comum.
     const own = uid == ctx.store.me or isWebhook(ctx, uid);

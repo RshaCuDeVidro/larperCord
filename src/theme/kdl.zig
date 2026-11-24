@@ -50,6 +50,9 @@ pub const Node = struct {
     col: u32 = 0,
     /// De qual arquivo veio, num tema com `extends` (0 = o próprio; ver heranca.zig).
     file: u8 = 0,
+    /// O nome veio entre aspas (`"Sign in" …`), e não solto (`language …`): os arquivos de
+    /// tradução separam assim as entradas do cabeçalho (src/ui/i18n.zig).
+    quoted: bool = false,
 
     pub fn prop(n: *const Node, key: []const u8) ?Value {
         // A última ocorrência vence, como no KDL.
@@ -209,6 +212,7 @@ const Parser = struct {
     fn node(p: *Parser) Error!Node {
         const line = p.line;
         const col: u32 = @intCast(p.i - p.line_start + 1);
+        const quoted = p.peek() == '"';
         const name = try p.identOrString();
         var args: std.ArrayList(Value) = .empty;
         var props: std.ArrayList(Prop) = .empty;
@@ -270,6 +274,7 @@ const Parser = struct {
             .line = line,
             .col = col,
             .file = p.file,
+            .quoted = quoted,
         };
     }
 

@@ -2912,6 +2912,7 @@ const ops_flutuante = [_]Op{expect("pronto", ready)} ++ @import("qa_flutuante.zi
 const ops_ctl = [_]Op{expect("pronto", ready)} ++ @import("qa_ctl.zig").ops;
 const ops_imagem = [_]Op{expect("pronto", ready)} ++ @import("qa_imagem.zig").ops;
 const ops_imagem_tema = [_]Op{expect("pronto", ready)} ++ @import("qa_imagem.zig").ops_tema;
+const ops_idioma = [_]Op{expect("pronto", ready)} ++ @import("qa_idioma.zig").ops;
 const ops_inspetor = [_]Op{expect("pronto", ready)} ++ @import("qa_inspetor.zig").ops;
 const ops_arrastar = [_]Op{expect("pronto", ready)} ++ @import("qa_arrastar.zig").ops;
 const ops_notificacao = [_]Op{expect("pronto", ready)} ++ @import("qa_notificacao.zig").ops;
@@ -3390,6 +3391,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "ctl", &ops_ctl },
     .{ "imagem", &ops_imagem },
     .{ "imagem-tema", &ops_imagem_tema },
+    .{ "idioma", &ops_idioma },
     .{ "inspetor", &ops_inspetor },
     .{ "arrastar", &ops_arrastar },
     .{ "notificacao", &ops_notificacao },

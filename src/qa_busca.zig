@@ -58,13 +58,13 @@ fn tipsShown(_: *App) bool {
     return qa.find("search-tip:from:") != null and qa.find("search-tip:pinned:") != null;
 }
 fn toJa(_: *App) void {
-    i18n.set(.ja);
+    i18n.set("ja");
 }
 fn toRu(_: *App) void {
-    i18n.set(.ru);
+    i18n.set("ru");
 }
 fn toPt(_: *App) void {
-    i18n.set(.pt);
+    i18n.set("pt");
 }
 fn suggShown(_: *App) bool {
     return sugg.count > 0 and qa.find("search-sugg:0") != null;

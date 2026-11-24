@@ -11,6 +11,11 @@ jobs:
       # Os testes cobrem as partes puras (KDL, cores, layout, markdown, Store,
       # temas embutidos, protobuf, APNG, URLs de mídia) e não precisam de SDL.
       - run: zig build test
+      # Os arquivos de tradução (i18n/*.kdl): arquivo quebrado, cabeçalho errado, marcador
+      # errado (em cada forma de plural) e entrada repetida falham; tradução que falta, texto
+      # que o código não usa mais e i18n/keys.txt desatualizado só avisam.
+      - name: Traduções
+        run: python3 tools/i18n_strings.py --check
       # O gerador de plugin do site contra a API do app: cabeçalho, capacidades, luac e
       # cada plugin gerado rodando num larper de mentira com as regras do app.
       - name: Gerador de plugin do site
@@ -203,3 +208,5 @@ jobs:
           node-version: "22"
       - run: python3 tools/gen_site.py --check-community
       - run: node tools/theme_builder_test.js
+      # O editor de traduções do site lê e confere os .kdl como o app e o tools/i18n_strings.py.
+      - run: node tools/translate_test.js

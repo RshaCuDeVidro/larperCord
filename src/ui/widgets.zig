@@ -323,15 +323,15 @@ pub const months_ru = [_][]const u8{ "января", "февраля", "март
 /// Nome do mês (1..12) no idioma da interface.
 pub fn monthName(m: anytype) []const u8 {
     const i: usize = @intCast(m - 1);
-    if (i18n.current() == .ja) return months_ja[i];
-    if (i18n.current() == .ru) return months_ru[i];
+    if (i18n.is("ja")) return months_ja[i];
+    if (i18n.is("ru")) return months_ru[i];
     return if (i18n.en()) months_en[i] else months[i];
 }
 
 /// Data por extenso: "3 de novembro de 2026" / "November 3, 2026".
 /// `month` vai de 1 a 12.
 pub fn dateLong(buf: []u8, day: anytype, month: anytype, year: anytype) []const u8 {
-    if (i18n.current() == .ja) return std.fmt.bufPrint(buf, "{d}年{d}月{d}日", .{ year, @as(u32, @intCast(month)), @as(u32, @intCast(day)) }) catch "";
+    if (i18n.is("ja")) return std.fmt.bufPrint(buf, "{d}年{d}月{d}日", .{ year, @as(u32, @intCast(month)), @as(u32, @intCast(day)) }) catch "";
     return i18n.fmt(buf, "{d} de {s} de {d}", "{1s} {0d}, {2d}", .{ day, monthName(month), year });
 }
 
@@ -342,7 +342,7 @@ pub fn stamp(buf: []u8, ts: i64, now_s: i64) []const u8 {
     const today = localTime(now_s).day_index;
     var cb: [16]u8 = undefined;
     const hm = clock(&cb, ts);
-    if (i18n.current() == .ja) {
+    if (i18n.is("ja")) {
         return switch (today - t.day_index) {
             0 => std.fmt.bufPrint(buf, "今日 {s}", .{hm}) catch "",
             1 => std.fmt.bufPrint(buf, "昨日 {s}", .{hm}) catch "",
@@ -371,12 +371,12 @@ pub fn fullDate(buf: []u8, ts: i64) []const u8 {
     var db: [64]u8 = undefined;
     const hm = clock(&cb, ts);
     const date = dateLong(&db, t.day, t.month, t.year);
-    if (i18n.current() == .ja) {
+    if (i18n.is("ja")) {
         var db2: [64]u8 = undefined;
         const date2 = std.fmt.bufPrint(&db2, "{d}年{d}月{d}日", .{ t.year, t.month, t.day }) catch "";
         return std.fmt.bufPrint(buf, "{s} {s} {s}", .{ days_ja[wd], date2, hm }) catch "";
     }
-    const day_name = if (i18n.current() == .ru) days_ru[wd] else if (i18n.en()) days_en[wd] else days[wd];
+    const day_name = if (i18n.is("ru")) days_ru[wd] else if (i18n.en()) days_en[wd] else days[wd];
     return i18n.fmt(buf, "{s}, {s} às {s}", "{s}, {s} at {s}", .{ day_name, date, hm });
 }
 

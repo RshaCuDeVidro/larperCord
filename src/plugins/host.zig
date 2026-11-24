@@ -65,7 +65,8 @@ pub fn init(app: *App) void {
     // O código de cada idioma da interface, como o plugin vê (um idioma novo entra sozinho).
     runtime.lang_code = &struct {
         fn f() [*:0]const u8 {
-            return @tagName(i18n.current());
+            // Vive até o app fechar (i18n.zig): "pt", "en" ou o código de um arquivo.
+            return i18n.current().ptr;
         }
     }.f;
     // Prints da documentação: sempre iguais, sem os plugins de quem roda.

@@ -16,7 +16,7 @@ Open settings with `Ctrl+,`. Changes apply right away and are saved in `settings
 | **Voice** | Microphone and output, volumes, voice activity or push-to-talk, microphone test, filters, noise suppression and a sound for each call event. See [Voice calls](page:voice) |
 | **Notifications** | Desktop notifications and taskbar flashing |
 | **Keybinds** | Vim navigation and the shortcut list. Click a changeable shortcut and press the new keys; **Default** puts it back. See [Changing a shortcut](page:shortcuts#changing-a-shortcut) |
-| **Language** | Follow the system, Português (Brasil), English (US), 日本語 (Japanese) or Русский (Russian) |
+| **Language** | Follow the system, Português (Brasil), English (US), 日本語 (Japanese), Русский (Russian), or any language from a file in the translations folder, each with how much of the app it translates. Buttons open the translations folder and the [translation editor](translate:new) |
 | **Network** | The proxy (type, address, port, login and password) and **Use the proxy for everything**. The sign-in screen has the same form under **Connect through a proxy**. See [Proxy](page:privacy#proxy) |
 | **Advanced** | Developer mode (message IDs, "Copy ID"), reload themes on save, close to tray, text weight, the debug log, and how often Discord asked for a captcha or verification |
 | **Performance** | Live RAM, CPU per frame, frames skipped because nothing changed, idle CPU and messages per channel; where the memory goes; memory limits for images, each GIF and messages; and the **Renderer** (below) |

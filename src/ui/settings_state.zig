@@ -335,7 +335,12 @@ pub const Settings = struct {
     /// `larpercord ctl`: scripts e atalhos do sistema controlam o app aberto (app_ctl.zig).
     /// Desligado, não há porta nenhuma escutando.
     external_control: bool = true,
-    /// 0 = seguir o sistema, 1 = português, 2 = inglês, 3 = japonês.
+    /// O idioma: "" = seguir o sistema, "pt", "en" ou o código de um arquivo de tradução
+    /// ("ja", "ru", um da pasta larpercord/i18n/). Ver ui/i18n.zig.
+    language_code: Text = .{},
+    /// O idioma como as versões até a 0.6 salvavam (0 = sistema, 1 = português, 2 = inglês,
+    /// 3 = japonês, 4 = russo): lido de um arquivo antigo, e mantido junto com o código para
+    /// uma versão antiga que abra o mesmo arquivo (os outros idiomas são 0 para ela).
     language: u8 = 0,
     /// 0 = escuro, 1 = claro, 2 = seguir o sistema.
     color_mode: u8 = 0,
@@ -571,6 +576,14 @@ pub fn apply(s: *Settings, node: anytype) void {
         }
     }
     if (node.num("limits_rev") == null) migrateLimits(s);
+    // Arquivo de antes da 0.7: só o número do idioma.
+    if (node.str("language_code") == null) s.language_code.set(switch (s.language) {
+        1 => "pt",
+        2 => "en",
+        3 => "ja",
+        4 => "ru",
+        else => "",
+    });
 }
 
 test "limites de memória voltam do arquivo como estavam e o arquivo da 0.6.1 é corrigido" {
@@ -615,12 +628,34 @@ test "limites de memória voltam do arquivo como estavam e o arquivo da 0.6.1 é
     try std.testing.expectEqual(@as(f32, 12), later.gif_limit_mb);
 }
 
+test "idioma de um arquivo de antes da 0.7 (só o número) vira o código" {
+    const kdl = @import("../theme/kdl.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const cases = [_]struct { []const u8, []const u8 }{
+        .{ "settings language=3\n", "ja" },
+        .{ "settings language=4\n", "ru" },
+        .{ "settings language=1\n", "pt" },
+        .{ "settings language=0\n", "" },
+        // Com o código, o código manda.
+        .{ "settings language=3 language_code=\"xx\"\n", "xx" },
+        .{ "settings language=0 language_code=\"\"\n", "" },
+    };
+    for (cases) |cs| {
+        const nodes = try kdl.parse(arena.allocator(), cs[0], null);
+        var s: Settings = .{};
+        apply(&s, &nodes[0]);
+        try std.testing.expectEqualStrings(cs[1], s.language_code.slice());
+    }
+}
+
 test "configurações vão e voltam pelo KDL" {
     const kdl = @import("../theme/kdl.zig");
     var s: Settings = .{};
     s.compact = true;
     s.font_scale = 1.2;
     s.language = 2;
+    s.language_code.set("xx-YY");
     s.proxy.set("socks5h://127.0.0.1:9050");
     s.emoji_recent.set("😀 ❤️ pepe:12");
     s.ffmpeg_dir.set("C:\\Program Files\\ffmpeg \"shared\"\\bin");
@@ -639,6 +674,7 @@ test "configurações vão e voltam pelo KDL" {
     try std.testing.expect(back.compact);
     try std.testing.expectApproxEqAbs(@as(f32, 1.2), back.font_scale, 0.001);
     try std.testing.expectEqual(@as(u8, 2), back.language);
+    try std.testing.expectEqualStrings("xx-YY", back.language_code.slice());
     try std.testing.expectEqualStrings("socks5h://127.0.0.1:9050", back.proxy.slice());
     try std.testing.expectEqualStrings("😀 ❤️ pepe:12", back.emoji_recent.slice());
     try std.testing.expectEqualStrings("C:\\Program Files\\ffmpeg \"shared\"\\bin", back.ffmpeg_dir.slice());

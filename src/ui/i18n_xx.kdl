@@ -1,0 +1,16 @@
+// Um idioma que não existe, só para os testes de src/ui/i18n.zig (e o QA da página
+// Idioma, qa_idioma.zig): mostra que um idioma novo é só um arquivo. Não vai no app.
+
+language "Xx (teste)" code="xx" english="Test language"
+direction "rtl"
+font-script "ja"
+plurals "ru"
+
+"Language" "Xxlang"
+"Today at {s}" "xx-today {0}"
+// Marcadores errados de propósito: o app mostra o inglês.
+"Yesterday at {s}" "xx-yesterday {d}"
+"{d} votes" one="{d} xvote" few="{d} xvotes-few" many="{d} xvotes-many"
+// Espaço reservado (igual ao inglês): conta como não traduzido.
+"{d} tabs" "{d} tabs"
+"Follow system" "Xx-system"

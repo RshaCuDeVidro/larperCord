@@ -31,6 +31,10 @@ To share it with everyone, add it to `themes/community/` in a pull request: it s
 
 To add one as built-in, put the file in `themes/` and add its name to `theme_names` in `build.zig` and to `themes/builtin.zig`.
 
+## Translating
+
+Translating needs no Zig: each language is one `.kdl` file in `i18n/`, with the English text and its translation, and the build picks up every file there. Start in the [translation editor](translate:new) or with `python3 tools/i18n_strings.py --template <code>`, try the file in the app's translations folder (saving updates the app), and send it as `i18n/<code>.kdl`. [Translating larperCord](page:translating) has the details, and [Translation status](page:translation-status) shows what each language still needs.
+
 ## Sending code
 
 - Keep the layers apart: `core/` knows nothing about windows, and the UI never changes data directly.
