@@ -455,6 +455,9 @@ tasks.push(test("every error has English and Portuguese text", () => {
     ["side", () => L('layout { row border-top="nope" { messages } }')], ["corners", () => L('layout { row corners="x" { messages } }')],
     ["weight", () => L('layout { row { label tracking=1 weight="gorda" } }')], ["span-text", () => L("layout { row { label { span } } }")],
     ["span-color", () => L('layout { row { label { span "x" color="nope" } } }')],
+    ["path-d", () => L("layout { row { shape kind=path } }")], ["path-data", () => L('layout { row { shape kind=path d="M 0 0 L 5" } }')],
+    ["viewbox", () => L('layout { row { shape kind=path d="M0 0 L1 1" viewbox="0 0 0 1" } }')], ["fill-rule", () => L('layout { row { shape kind=path d="M0 0 L1 1" fill-rule=odd } }')],
+    ["wallpaper-src", () => L('layout { stack { wallpaper src="/x.png" } }')],
     ["link-version", () => TB.expand({ v: 9 })], ["link-broken", () => TB.expand(null)], ["link-layout", () => TB.expand(Object.assign(TB.compact(TB.fromSource(sources.zen)), { l: "nada" }), builtinStructure)],
     ["css-too-big", () => TB.importDiscordCss("a".repeat(TB.CSS_MAX + 1))], ["css-empty", () => TB.importDiscordCss(":root { --nothing-here: #fff }")],
     ["css-slow", () => { let clock = 0; TB.importDiscordCss(":root{" + "--v: #fff;".repeat(5000) + "}", { now: () => (clock += 100), budget: 1000 }); }],
@@ -1303,6 +1306,11 @@ tasks.push(test("the tweaks come from the app's schema and match the ones the pa
     topography: [["levels", "num"], ["seed", "num"]],
     aurora: [["seed", "num"], ["motion", "bool"]],
     dunes: [["seed", "num"], ["motion", "bool"]],
+    rain: [["density", "num"], ["angle", "num"], ["seed", "num"], ["motion", "bool"]],
+    matrix: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
+    waves: [["lines", "num"], ["seed", "num"], ["motion", "bool"]],
+    particles: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
+    wallpaper: [["fit", ["cover", "contain", "tile", "center"]], ["dim", "num"], ["blur", "num"], ["opacity", "num"]],
     crt: [["spacing", "num"], ["strength", "num"]],
     logo: [["variant", ["wordmark", "ascii"]], ["size", "num"]],
     "window-controls": [["size", "num"], ["gap", "num"], ["align", ["left", "center", "right"]]],
@@ -1310,7 +1318,8 @@ tasks.push(test("the tweaks come from the app's schema and match the ones the pa
   assert.deepStrictEqual(Object.keys(TB.COMPONENTS).sort(), Object.keys(before).sort());
   for (const k of Object.keys(before)) assert.deepStrictEqual(TB.COMPONENTS[k], before[k], k);
   const ranges = { size: [16, 80, 1], "avatar-size": [16, 72, 1], spacing: [0, 48, 1], "font-size": [10, 24, 0.5], density: [0.1, 6, 0.1],
-    "center-x": [-1, 2, 0.01], "center-y": [-1, 2, 0.01], rings: [1, 12, 1], levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01] };
+    "center-x": [-1, 2, 0.01], "center-y": [-1, 2, 0.01], rings: [1, 12, 1], levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01],
+    angle: [-45, 45, 1], lines: [2, 24, 1], dim: [0, 1, 0.05], blur: [0, 64, 1], opacity: [0, 1, 0.05] };
   for (const [comp, spec] of Object.entries(before)) for (const [key, kind] of spec) {
     if (kind !== "num") continue;
     const want = { "crt.spacing": [1, 10, 1], "logo.size": [8, 40, 1], "window-controls.size": [6, 24, 1], "window-controls.gap": [2, 24, 1] }[comp + "." + key] || ranges[key];
@@ -1394,6 +1403,38 @@ tasks.push(test("in the page, the core reads the schema from the inline block", 
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, "docs/assets/site/theme-builder-core.js"), "utf8"), sandbox);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.LC_TB.COMPONENTS)), JSON.parse(JSON.stringify(TB.COMPONENTS)));
   assert.deepStrictEqual(Array.from(sandbox.LC_TB.TOKENS), TB.TOKENS);
+}));
+// Caminhos vetoriais e papel de parede: o site recusa o que o app recusa (src/theme/fx.zig e
+// path.zig), e a prévia só desenha um `d` feito de caracteres de caminho.
+tasks.push(test("vector paths and wallpaper follow the app's rules", () => {
+  const base = sources.classico.replace(/^layout \{/m, "layout {\n    // x");
+  const withNode = (node) => sources.classico.replace(/(\n\s*)messages flex=1/, "$1" + node + "$1messages flex=1");
+  const ok = ['shape kind=path height=24 viewbox="0 0 24 24" fill=accent d="M12 2 L22 20 H2 Z"',
+    'shape kind=path height=24 d="m10,10 5-5 h-5v5z M0 0 C0 10 10 10 10 0 S20 -10 20 0 Q5 10 10 0 T20 0 A5 5 0 0110 0"',
+    'shape kind=path height=24 fill-rule=evenodd fill=accent d="M0 0 H32 V32 H0 Z M8 8 H24 V24 H8 Z"',
+    "wallpaper fit=cover dim=0.3 blur=6", "rain angle=-20 density=2", "matrix", "waves lines=12", "particles density=3"];
+  for (const node of ok) for (const mode of ["dark", "light"]) TB.loadTheme(withNode(node), { mode });
+  const bad = [['shape kind=path height=24', /path-d|needs d=/], ['shape kind=path d="M 0 0 L 5"', /path/], ['shape kind=path d="L 1 1"', /path/],
+    ['shape kind=path d="M0 0 A5 5 0 2 0 10 0"', /path/], ['shape kind=path d="M1 1 Z"', /path/], ['shape kind=path d="M0 0 L1 1" viewbox="0 0 -1 4"', /viewbox/],
+    ['shape kind=path d="M0 0 L1 1" fill-rule=odd', /fill-rule/], ['wallpaper src="/home/x.png"', /wallpaper/], ['wallpaper url="https://x/y.png"', /wallpaper/]];
+  for (const [node, re] of bad) {
+    let err = null;
+    try { TB.loadTheme(withNode(node), { mode: "dark" }); } catch (e) { err = e; }
+    assert.ok(err, node + " should fail");
+    assert.ok(re.test(err.code + " " + TB.errorText(err, "en")), node + ": " + err.code);
+  }
+  const long = "M0 0" + " L1 1".repeat(1100);
+  assert.ok(!TB.validPath(long) && TB.validPath("M0 0 L1 1"), "1024 commands at most");
+  assert.ok(base.length > 0);
+  // A prévia: o caminho certo vira um <path>, o hostil não vira nada, e o papel de parede é vazio.
+  const P = PREVIEW(TB, "en");
+  const th = TB.loadTheme(sources.classico, { mode: "dark" });
+  const good = P.component("shape", th, TB.parseKdl('shape kind=path viewbox="0 0 32 32" fill="#ff0000" fill-rule=evenodd d="M0 0 L32 0 L16 32 Z"')[0], th.tokens);
+  assert.ok(good.includes('<path d="M0 0 L32 0 L16 32 Z"') && good.includes("fill-rule:evenodd") && good.includes('viewBox="0 0 32 32"'), good);
+  const hostile = P.component("shape", th, TB.parseKdl("shape kind=path d=" + TB.quote(HOSTILE) + " viewbox=" + TB.quote(HOSTILE))[0], th.tokens);
+  assert.ok(!hostile.includes("<path") && !hostile.includes("onmouseover"), hostile);
+  assert.strictEqual(P.component("wallpaper", th, TB.parseKdl("wallpaper fit=tile")[0], th.tokens), "");
+  for (const name of ["rain", "matrix", "waves", "particles"]) assert.ok(P.component(name, th, TB.parseKdl(name)[0], th.tokens).includes("<svg"), name);
 }));
 tasks.push(test("every option the builder offers is one the app reads", () => {
   // Cada propriedade de componente aparece como "nome" no código do app (src/ui, src/theme).

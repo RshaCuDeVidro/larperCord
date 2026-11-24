@@ -920,6 +920,72 @@ def part_table():
 
 _PART_TABLE = None
 
+# Quantos números cada comando de caminho do SVG pede (src/theme/path.zig).
+PATH_ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+PATH_NUMBER = re.compile(r"[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?")
+
+
+def path_ok(d):
+    """A leitura de `d` de src/theme/path.zig, só para dizer se o app aceita."""
+    i, n, cmd, segs, lines = 0, len(d), None, 0, 0
+
+    def wsp(i):
+        while i < n and d[i] in " \t\n\r\f":
+            i += 1
+        return i
+
+    def sep(i):
+        i = wsp(i)
+        if i < n and d[i] == ",":
+            i = wsp(i + 1)
+        return i
+
+    i = wsp(i)
+    if i >= n:
+        return False
+    while True:
+        i = wsp(i)
+        if i >= n:
+            # Só M e Z não desenham nada (o app recusa: "o caminho não tem nenhuma linha").
+            return lines > 0
+        ch = d[i]
+        if ch.isalpha():
+            if ch.upper() not in PATH_ARGS or (cmd is None and ch.upper() != "M"):
+                return False
+            cmd = ch
+            i += 1
+        elif cmd is None or cmd.upper() == "Z" or ch not in "0123456789+-.,":
+            return False
+        segs += 1
+        if segs > 1024:
+            return False
+        up = cmd.upper()
+        if up not in ("M", "Z"):
+            lines += 1
+        for k in range(PATH_ARGS[up]):
+            i = sep(i)
+            if up == "A" and k in (3, 4):
+                if i >= n or d[i] not in "01":
+                    return False
+                i += 1
+                continue
+            m = PATH_NUMBER.match(d, i)
+            if not m or abs(float(m.group(0))) > 1e6:
+                return False
+            i = m.end()
+        if up == "M":
+            cmd = "L" if cmd == "M" else "l"
+        i = sep(i)
+
+
+def viewbox_ok(v):
+    p = re.split(r"[\s,]+", v.strip())
+    try:
+        nums = [float(x) for x in p]
+    except ValueError:
+        return False
+    return len(nums) == 4 and nums[2] > 0 and nums[3] > 0
+
 
 class ThemeProblem(Exception):
     def __init__(self, msg, line=0, col=0):
@@ -1339,6 +1405,17 @@ def check_theme_nodes(nodes):
             if bg is not None and not token_name(bg) and not color_ok(bg, True):
                 bad(ch, "bg is invalid")
             box(ch, False)
+            if ch.name == "wallpaper" and any(k in ch.props for k in ("src", "path", "url", "file", "image")):
+                bad(ch, "wallpaper takes no image from the theme: people pick their own in Settings → Appearance")
+            if ch.name == "shape" and ch.s("kind") == "path":
+                if ch.s("d") is None:
+                    bad(ch, "shape kind=path needs d= (the path, as in SVG)")
+                if not path_ok(ch.s("d")):
+                    bad(ch, "invalid path in d (commands M L H V C S Q T A Z, up to 1024)")
+                if ch.s("viewbox") is not None and not viewbox_ok(ch.s("viewbox")):
+                    bad(ch, "viewbox: x y width height, with width and height above zero")
+                if ch.s("fill-rule") is not None and ch.s("fill-rule") not in ("nonzero", "evenodd"):
+                    bad(ch, "fill-rule: nonzero or evenodd")
             if ch.name == "label":
                 label(ch)
             elif ch.name in PAINTED:

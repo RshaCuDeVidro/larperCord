@@ -138,6 +138,9 @@ bash tools/qa_parado.sh "$bin" || total_fail=1
 # A rede de verdade: o net/discord.zig (WebSocket, zlib-stream, RESUME, REST, 429) contra o
 # Discord de mentira de tools/discord_falso.py, em 127.0.0.1 (precisa de python3).
 bash tools/qa_rede.sh "$bin" || total_fail=1
+# Caminhos vetoriais, fundos novos (chuva, chuva de código, ondas, partículas) e o papel de
+# parede pelo seletor: num tema de teste, no classico (escuro e claro) e no orbital.
+QA_SUITE=vetores run "vetores e papel de parede" $bin --qa --theme classico
 QA_SUITE=render run "renderizador" $bin --qa --theme classico
 QA_SUITE=atalhos run "atalhos personalizáveis" $bin --qa --theme classico
 # Um settings.kdl que pede um renderizador que não existe: abre no automático e avisa.

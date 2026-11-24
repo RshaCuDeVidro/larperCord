@@ -576,6 +576,8 @@ pub const Action = union(enum) {
     pick_sound,
     /// Abre o seletor de pasta para o FFmpeg (ui/settings_video.zig).
     pick_ffmpeg_dir,
+    /// Abre o seletor de imagem para o papel de parede (ui/wallpaper.zig).
+    pick_wallpaper,
     /// Abre o seletor para o executável de um jogo (ui/settings_jogos.zig).
     pick_game_exe,
     restart,

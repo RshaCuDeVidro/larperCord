@@ -1406,6 +1406,48 @@ fn still(px: [*]const u8, w: c_int, h: c_int, max_w: u16, max_h: u16) Pixels {
     return Pixels.single(out, dims[0], dims[1]);
 }
 
+/// Maior arquivo de papel de parede (um PNG de 8K passa de 32 MB).
+const max_wallpaper_bytes: usize = 96 * 1024 * 1024;
+
+/// Uma imagem parada do disco, já reduzida (RGBA no c_allocator), e o tamanho da original.
+pub const Still = struct { px: []u8, w: u32, h: u32, src_w: u32, src_h: u32 };
+
+/// O papel de parede (ui/wallpaper.zig, numa thread): lê o arquivo, decodifica e
+/// reduz para o tamanho que cobre `cover_w`×`cover_h` pixels sem aumentar nunca. A
+/// original em tamanho cheio só existe dentro desta chamada. De um GIF ou WebP
+/// animado, fica o primeiro quadro. null = não abriu (arquivo sumiu, formato que não
+/// é imagem, maior que 8192 pixels de lado).
+pub fn loadStill(path: [:0]const u8, cover_w: u32, cover_h: u32) ?Still {
+    var size: usize = 0;
+    const data = c.SDL_LoadFile(path.ptr, &size) orelse return null;
+    defer c.SDL_free(data);
+    if (size == 0 or size > max_wallpaper_bytes) return null;
+    const bytes = @as([*]const u8, @ptrCast(data))[0..size];
+    var sw: c_int = 0;
+    var sh: c_int = 0;
+    if (isWebp(bytes)) {
+        if (c.WebPGetInfo(bytes.ptr, bytes.len, &sw, &sh) == 0) return null;
+    } else {
+        var comp: c_int = 0;
+        if (c.stbi_info_from_memory(bytes.ptr, @intCast(bytes.len), &sw, &sh, &comp) == 0) return null;
+    }
+    // O mesmo limite do stb (STBI_MAX_DIMENSIONS) também para o WebP: é o que o aviso diz.
+    if (sw <= 0 or sh <= 0 or sw > 8192 or sh > 8192) return null;
+    const fw: f32 = @floatFromInt(sw);
+    const fh: f32 = @floatFromInt(sh);
+    const k = @min(1.0, @max(@as(f32, @floatFromInt(@max(cover_w, 1))) / fw, @as(f32, @floatFromInt(@max(cover_h, 1))) / fh));
+    const mw: u16 = @intFromFloat(std.math.clamp(@ceil(fw * k), 1, 8192));
+    const mh: u16 = @intFromFloat(std.math.clamp(@ceil(fh * k), 1, 8192));
+    var stop = std.atomic.Value(bool).init(false);
+    var px = decode(bytes, mw, mh, &stop, false);
+    if (px.frames.len == 0) return null;
+    const first = px.frames[0].data;
+    px.frames[0].data = &.{};
+    const out: Still = .{ .px = first, .w = px.w, .h = px.h, .src_w = @intCast(sw), .src_h = @intCast(sh) };
+    px.deinit();
+    return out;
+}
+
 /// Navegadores tratam atraso < 20 ms de GIF como 100 ms; fazemos igual
 /// (no WebP também, que quase sempre vem de um GIF).
 pub fn gifDelay(ms: i64) u32 {

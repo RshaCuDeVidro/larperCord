@@ -172,9 +172,10 @@ Georgia.
 | `member-list` | `variant=discord\|tty` |
 | `status-bar` | `variant=pills\|tty\|plain` `items="conn ping ram frame voice spacer theme keys clock"` (também `me mic deaf`: seu status e os botões de mudo e ensurdecer com o menu de dispositivos, para layouts sem `user-panel`) |
 | `label` | `text=` `size=` `weight=regular\|medium\|semibold\|bold` `color=token` `align=left\|center\|right`, mais [tipografia de display](#tipografia-de-display-no-label) |
-| `shape` | círculo, anel, arco, retângulo arredondado, linha ([detalhes](#shape-e-rule)) |
+| `shape` | círculo, anel, arco, retângulo arredondado, linha, caminho do SVG ([detalhes](#shape-e-rule)) |
 | `rule` | régua lisa, tracejada, dupla, de jornal, com ornamento ([detalhes](#shape-e-rule)) |
-| `starfield` `orbit` `aurora` `dunes` `topography` `radar` | [fundos procedurais](#fundos-procedurais) (primeiro filho de um `stack`) |
+| `starfield` `orbit` `aurora` `dunes` `topography` `radar` `rain` `matrix` `waves` `particles` | [fundos procedurais](#fundos-procedurais) (primeiro filho de um `stack`) |
+| `wallpaper` | a imagem que o usuário escolheu nas Configurações, ou nada ([detalhes](#papel-de-parede)) |
 | `window-controls` | os três botões da janela, que funcionam de verdade: fechar, minimizar, maximizar. `size=12` `gap=8` `color=` `color2=` `color3=` `align=` |
 | `logo` | `variant=ascii\|wordmark` `size=` |
 | `topbar` | barra superior (abas, busca, ajuda) |
@@ -400,6 +401,7 @@ stack width=28 {
 }
 shape kind=rounded radius=6 color=accent fill="alpha(@accent, 0.1)" thickness=1
 shape kind=line angle=30 thickness=2 color=border
+shape kind=path width=28 viewbox="0 0 24 24" fill=accent d="M12 2 L22 20 H2 Z"
 
 rule height=1 color=border
 rule height=1 kind=dashed dash=3 gap=3 color="alpha(@accent, 0.45)"
@@ -412,15 +414,40 @@ rule height=1 fade=#true color=accent                                // some nas
 
 | `shape` | |
 |---|---|
-| `kind=` | `circle` `ring` `arc` `rounded` `line` |
+| `kind=` | `circle` `ring` `arc` `rounded` `line` `path` |
 | `color=` `thickness=` | cor e espessura do traço |
-| `size=` | diâmetro (padrão: o menor lado do nó); em `line`, o comprimento |
-| `fill=` | preenchimento de `ring` e `rounded` |
+| `size=` | diâmetro (padrão: o menor lado do nó); em `line`, o comprimento; em `path`, o lado do quadrado onde a `viewbox` cabe (padrão: o nó inteiro) |
+| `fill=` | preenchimento de `ring`, `rounded` e `path` |
 | `start=` `sweep=` | início e abertura do `arc`, em graus |
 | `dot=cor` `dot-size=` | um ponto na ponta do `arc` |
 | `radius=` | cantos do `rounded` |
 | `angle=` | inclinação da `line`, em graus |
 | `align=left\|center\|right` `offset-x=` `offset-y=` | posição dentro do nó |
+| `d=` | o `path`: os dados de caminho do SVG (abaixo) |
+| `viewbox="x y l a"` | o pedaço das coordenadas do caminho que cabe no nó, sem deformar (padrão: a caixa do próprio caminho) |
+| `fill-rule=nonzero\|evenodd` | que partes de um `path` que se cruza ou tem buracos são preenchidas (padrão `nonzero`) |
+
+### `shape kind=path`
+
+Ícones e ornamentos em vetor, com os dados de caminho de um arquivo SVG:
+
+```kdl
+// Um anel com buraco: dois círculos, o de dentro recortado pelo evenodd.
+shape kind=path size=20 viewbox="0 0 24 24" fill=accent fill-rule=evenodd \
+    d="M12 1 A11 11 0 1 1 12 23 A11 11 0 1 1 12 1 Z M12 6 A6 6 0 1 0 12 18 A6 6 0 1 0 12 6 Z"
+// Só o contorno: sem `fill`, o caminho é traçado com `color` (o destaque, por padrão).
+shape kind=path height=24 viewbox="0 0 24 24" thickness=1.5 color=muted d="M3 12 C 8 4, 16 20, 21 12"
+```
+
+Os comandos são os do SVG: `M` move, `L` reta, `H` reta horizontal e `V` vertical, `C` e `S` curvas cúbicas,
+`Q` e `T` curvas quadráticas, `A` arco de elipse e `Z` fecha. Letra maiúscula usa coordenadas absolutas, e
+minúscula, relativas ao ponto atual. Os números podem vir separados por espaço ou vírgula (`M10,10 l5-5`). Sem
+`fill`, o caminho é traçado; com `fill`, é preenchido, e também traçado quando o nó tem `color`.
+
+O caminho é lido uma vez, ao carregar o tema, e vira retas com precisão para continuar liso em 2048 pixels.
+O preenchimento vira uma máscara feita uma vez para cada tamanho. Um caminho aceita até 1024 comandos e 4096
+pontos depois de achatar as curvas. Um erro para o tema com a linha do `shape` e o caractere de `d` onde está o
+problema.
 
 | `rule` | |
 |---|---|
@@ -456,6 +483,10 @@ layout {
 | `dunes` | `color`, `color2`, `color3`: colinas de trás para a frente (o céu é o `gradient` do nó em volta) | |
 | `topography` | `color` | `levels=14` (quantas curvas de nível) |
 | `radar` | `color` anéis, `color2` a varredura | `center-x=0.5` `center-y=0.5` `rings=5` |
+| `rain` | `color` as gotas de longe, `color2` as de perto | `density=1` `angle=10` (a inclinação do vento, de -45 a 45 graus) |
+| `matrix` | `color` os rastros, `color2` a cabeça clara de cada coluna | `density=1` |
+| `waves` | `color` as ondas, `color2` as cristas | `lines=9` (de 2 a 24) |
+| `particles` | `color` a poeira fina, `color2` os discos grandes e desfocados | `density=1` |
 
 Todos aceitam `seed=` (outro desenho), e todos menos `topography` aceitam movimento:
 `motion=#true`, ou melhor `motion="$opcao"`, para o usuário escolher, e `motion-fps=10` (no máximo 15).
@@ -464,10 +495,52 @@ com a janela minimizada ou fora de foco.
 
 A máscara é só forma: a cor vem na hora de desenhar. Trocar de modo ou de cor de destaque não gera nada
 de novo. Só `orbit` e `radar` dependem do tamanho, e são refeitos uma vez quando a janela para de mudar.
+Os caracteres do `matrix` são desenhados pelo app (algarismos e traços de katakana), então não dependem de
+fonte nenhuma. Em movimento, as colunas dele caem em quatro velocidades.
 
 **Contraste primeiro.** Texto nunca fica direto sobre um fundo forte: ponha um painel translúcido no
 meio (`gradient="alpha(@surface, 0.9) alpha(@surface, 0.76)"`) e confira nos dois modos. Use cores
 derivadas de tokens: `@muted` no escuro são estrelas claras, e no claro viram tinta sobre papel.
+
+## Papel de parede
+
+A imagem vem **só** do computador de quem usa: Configurações → Aparência → **Papel de parede** →
+**Escolher imagem…** (PNG, JPEG, WebP ou BMP, até 8192 pixels de lado). O caminho fica no `settings.kdl` e a
+imagem nunca sai do computador. Um tema não aponta para arquivo nem endereço: `src=` num `wallpaper` é erro.
+**Remover** tira a imagem, **Escurecer** a escurece em direção ao `bg` do tema, e **Ajuste** escolhe como ela
+ocupa o espaço: **Do tema** (o `fit=` do nó, ou `cover` num tema sem ele), **Preencher** (`cover`), **Inteira**
+(`contain`), **Repetir** (`tile`) ou **Centro** (`center`). Os dois ficam no `settings.kdl` (`wallpaper_dim`,
+`wallpaper_fit`).
+
+O tema diz onde a imagem vai com um nó `wallpaper`, primeiro filho de um `stack`, como os fundos procedurais.
+Sem imagem escolhida, ele não desenha nada e o tema fica como sempre foi:
+
+```kdl
+layout {
+    stack gradient="@bg @rail" {
+        wallpaper fit=cover dim=0.35 blur=6
+        row { … painéis translúcidos … }
+    }
+}
+```
+
+| Propriedade | O que faz |
+|---|---|
+| `fit=cover\|contain\|tile\|center` | `cover` preenche o nó e corta o que sobra (padrão); `contain` mostra a imagem inteira; `tile` repete no tamanho dela; `center` põe no meio, no tamanho dela. O **Ajuste** do usuário vale mais, menos em **Do tema** |
+| `dim=0` | quanto escurece em direção ao `bg`, de 0 a 1. É o mínimo do tema: o **Escurecer** do usuário só escurece mais |
+| `blur=0` | raio do desfoque, em pixels. Feito uma vez, numa cópia pequena da imagem, nunca por quadro |
+| `opacity=1` | opacidade da imagem (o que está atrás do nó aparece) |
+| `radius=0` | cantos arredondados |
+
+**Temas sem `wallpaper`**, como os que vêm junto, também funcionam com imagem: ela vai atrás do layout inteiro e
+os fundos dos nós do layout ficam translúcidos, só até onde `text` continua com contraste de 7:1 e `muted` de
+4,5:1 (ou o que eles tinham sem imagem) sobre a parte mais clara e a mais escura da imagem. Quando nem o painel
+opaco basta, a imagem escurece mais. O fundo procedural do tema sai da frente enquanto houver imagem. Para um
+tema nunca mostrar a imagem do usuário, ponha um `wallpaper show=#false`.
+
+A imagem é lida em segundo plano, reduzida ao tamanho que cobre a janela (a original em tamanho cheio não fica
+na memória) e desenhada como uma textura parada: não pede quadro nenhum. Quando a janela cresce além do tamanho
+carregado, ela é lida de novo, uma vez.
 
 ## Claro e escuro
 
