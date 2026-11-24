@@ -263,8 +263,9 @@ test "docs/assets/site/theme-schema.json está em dia com o esquema" {
 test "toda propriedade lida em src/theme e src/ui está no esquema" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
-    // Arquivos que leem outros KDL com os mesmos nós: o do mascote e o settings.kdl.
-    const fora = [_][]const u8{ "mascote_visual.zig", "settings_state.zig", "guild_color.zig" };
+    // Arquivos que leem outros KDL com os mesmos nós: o do mascote, o settings.kdl e os
+    // arquivos de tradução (o cabeçalho `language … code= english=`).
+    const fora = [_][]const u8{ "mascote_visual.zig", "settings_state.zig", "guild_color.zig", "i18n.zig" };
     var faltam: usize = 0;
     var lidas: usize = 0;
     for ([_][]const u8{ "theme", "ui" }) |sub| {

@@ -605,22 +605,22 @@ fn noMoreLoads(_: *App) bool {
 // Japonês e russo com a interface em 125%: as linhas novas (o nome do arquivo, o
 // Escurecer, o Ajuste com cinco opções e a nota) cabem e nada sai cortado.
 /// Como o app troca de idioma: com as fontes refeitas (sem isso o japonês sai em "?").
-fn startLang(app: *App, l: i18n.Lang) void {
+fn startLang(app: *App, l: []const u8) void {
     i18n.set(l);
     app.fonts_lang_changed = true;
     i18n.cuts.store(0, .monotonic);
     settings_ui.overflows.store(0, .monotonic);
 }
 fn langJa(app: *App) void {
-    startLang(app, .ja);
+    startLang(app, "ja");
     openAppearance(app);
 }
 fn langRu(app: *App) void {
-    startLang(app, .ru);
+    startLang(app, "ru");
     openAppearance(app);
 }
 fn langDone(app: *App) void {
-    i18n.set(.pt);
+    i18n.set("pt");
     app.fonts_lang_changed = true;
     app.st.settings.open = false;
     app.st.settings.ui_scale = 1;

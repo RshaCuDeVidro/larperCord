@@ -168,11 +168,11 @@ const rmsg: Op = .{ .rclick = .{ .dyn_at = .{ .f = tOther, .fx = 0.25, .fy = 0.5
 // --- Idiomas ---------------------------------------------------------------------------
 
 fn setJa(_: *App) void {
-    i18n.set(.ja);
+    i18n.set("ja");
 }
 
 fn setPt(_: *App) void {
-    i18n.set(.pt);
+    i18n.set("pt");
 }
 
 fn titleJa(app: *App) bool {
