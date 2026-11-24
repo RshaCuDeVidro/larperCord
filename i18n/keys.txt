@@ -862,6 +862,7 @@ For direct messages and mentions, when you're not looking at the conversation.
 Forest
 Forget the folder
 FORMAT
+Formatting bar
 Forward
 Forward to which channel or DM?
 Forwarded
@@ -2499,6 +2500,7 @@ With **bold**, `code`, ||spoilers||…, shows above the box how it will look.
 With a hat picked, the corner mascot doesn't switch to the holiday one.
 with a link, image, file, video…
 With FFmpeg, videos play in the app. Without it, they open in the browser.
+With text selected in the box, B and I appear above the selection and put ** and * around it.
 With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move).
 With the text box unfocused (Esc leaves it), the keys below navigate.
 With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you).
