@@ -1,0 +1,72 @@
+<main id="main" class="tb trx" data-translate>
+<noscript><p class="trx-noscript">{{The editor needs JavaScript: it reads the texts and checks the file in this page, without sending anything anywhere. Without it, make the template on your computer with <code>python3 tools/i18n_strings.py --template xx</code> and fill it in any text editor; <a href="%GUIDE%translating.html">Translating larperCord</a> has the steps.||O editor precisa de JavaScript: ele lê os textos e confere o arquivo nesta página, sem mandar nada para lugar nenhum. Sem ele, gere o modelo no seu computador com <code>python3 tools/i18n_strings.py --template xx</code> e preencha em qualquer editor de texto; <a href="%GUIDE%translating.html">Traduzindo o larperCord</a> tem os passos.}}</p></noscript>
+
+<section class="tb-head trx-head">
+  <span class="tag"><b>i18n</b> <i>"translate" {</i> &nbsp;// {{one file per language||um arquivo por idioma}}</span>
+  <h1 class="h">{{Translate larperCord. <em>No Zig, just text.</em>||Traduza o larperCord. <em>Sem Zig, só texto.</em>}}</h1>
+  <p class="lede">{{Every English text of the app, next to where it appears. Placeholders are checked while you type, the missing texts come first, and what comes out is a <code>.kdl</code> file: put it in the app's translations folder and it applies right away. Nothing leaves this page; your work stays in this browser until you download it. <a href="%GUIDE%translating.html">How translating works</a> · <a href="%GUIDE%translation-status.html">status of each language</a>.||Cada texto em inglês do app, ao lado de onde ele aparece. Os marcadores são conferidos enquanto você escreve, os textos que faltam vêm primeiro, e o que sai é um arquivo <code>.kdl</code>: coloque na pasta de traduções do app e ele vale na hora. Nada sai desta página; o seu trabalho fica neste navegador até você baixar. <a href="%GUIDE%translating.html">Como a tradução funciona</a> · <a href="%GUIDE%translation-status.html">estado de cada idioma</a>.}}</p>
+</section>
+
+<div class="trx-app" data-app hidden>
+
+<div class="trx-bar-top">
+  <label class="trx-field"><span>{{Start from||Começar de}}</span><select data-start></select></label>
+  <button type="button" class="tb-b" data-open title="{{Open a .kdl from your computer (or drop it on the page)||Abrir um .kdl do seu computador (ou soltar na página)}}">{{Open a .kdl||Abrir um .kdl}}</button>
+  <input type="file" accept=".kdl,text/plain" data-file hidden>
+  <span class="trx-grow"></span>
+  <label class="trx-check"><input type="checkbox" data-keep-empty> {{Keep empty entries||Manter as entradas vazias}}</label>
+  <button type="button" class="tb-b primary" data-download>{{Download .kdl||Baixar .kdl}}</button>
+</div>
+
+<section class="trx-meta" aria-label="{{The language||O idioma}}">
+  <label class="trx-field"><span>{{Name, in the language||Nome, na própria língua}}</span><input data-name placeholder="Deutsch" maxlength="60" autocomplete="off"></label>
+  <label class="trx-field trx-short"><span>{{Code||Código}}</span><input data-code placeholder="de" maxlength="15" spellcheck="false" autocapitalize="off" autocomplete="off"></label>
+  <label class="trx-field"><span>{{Name in English||Nome em inglês}}</span><input data-english placeholder="German" maxlength="60" autocomplete="off"></label>
+  <label class="trx-field"><span>{{Direction||Direção}}</span><select data-dir><option value="ltr">{{Left to right||Da esquerda para a direita}}</option><option value="rtl">{{Right to left||Da direita para a esquerda}}</option></select></label>
+  <p class="trx-forms" data-forms></p>
+</section>
+
+<section class="trx-progress" aria-live="polite">
+  <div class="trx-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-meter><i data-bar></i></div>
+  <p class="trx-summary" data-summary></p>
+  <p class="trx-note" data-note hidden></p>
+</section>
+
+<div class="trx-tools">
+  <label class="trx-search"><span class="sr-only">{{Search||Buscar}}</span><input type="search" data-q spellcheck="false" autocomplete="off" placeholder="{{Search the English, the translation or the file||Buscar no inglês, na tradução ou no arquivo}}"></label>
+  <div class="trx-seg" role="radiogroup" aria-label="{{Which texts||Quais textos}}" data-show>
+    <button type="button" role="radio" data-v="todo" aria-checked="true">{{To do first||O que falta primeiro}}</button>
+    <button type="button" role="radio" data-v="missing" aria-checked="false">{{Missing||Faltando}} <b data-n="missing"></b></button>
+    <button type="button" role="radio" data-v="problem" aria-checked="false">{{Problems||Problemas}} <b data-n="problem"></b></button>
+    <button type="button" role="radio" data-v="same" aria-checked="false">{{Same as English||Igual ao inglês}} <b data-n="same"></b></button>
+    <button type="button" role="radio" data-v="done" aria-checked="false">{{Translated||Traduzidos}} <b data-n="done"></b></button>
+    <button type="button" role="radio" data-v="stale" aria-checked="false" data-stale-tab hidden>{{No longer used||Fora de uso}} <b data-n="stale"></b></button>
+  </div>
+</div>
+
+<ol class="trx-list" data-list></ol>
+<p class="trx-empty" data-empty hidden>{{Nothing here.||Nada aqui.}}</p>
+<button type="button" class="tb-b trx-more" data-more hidden>{{Show more||Mostrar mais}}</button>
+
+</div>
+
+<section class="tb-out trx-out" aria-labelledby="trx-use-h">
+  <span class="tag"><b>{{the file||o arquivo}}</b> <i>{</i> // {{try it, then send it||teste, depois mande}}</span>
+  <h2 class="h" id="trx-use-h">{{Try it in the app. <em>Then send it.</em>||Teste no app. <em>Depois mande.</em>}}</h2>
+  <div class="tb-out-grid">
+    <ol class="tb-steps">
+      <li>{{Download the <code>.kdl</code> and put it in the app's translations folder: <code>~/.config/larpercord/i18n/</code> on Linux, <code>%APPDATA%\larpercord\i18n\</code> on Windows. Settings → Language → <strong>Open the translations folder</strong> opens it.||Baixe o <code>.kdl</code> e coloque na pasta de traduções do app: <code>~/.config/larpercord/i18n/</code> no Linux, <code>%APPDATA%\larpercord\i18n\</code> no Windows. Configurações → Idioma → <strong>Abrir a pasta de traduções</strong> abre ela.}}</li>
+      <li>{{Pick your language in Settings → Language. Saving the file again updates the app on the spot, so you can fix a text and see it in place.||Escolha o seu idioma em Configurações → Idioma. Salvar o arquivo de novo atualiza o app na hora, então dá para corrigir um texto e ver no lugar.}}</li>
+      <li>{{Fork <a href="%REPO%">the repository</a>, add the file as <code>i18n/&lt;code&gt;.kdl</code> and open a pull request. The language then comes with the app, with no code change: the build finds every file in that folder.||Faça um fork do <a href="%REPO%">repositório</a>, coloque o arquivo como <code>i18n/&lt;código&gt;.kdl</code> e abra um pull request. O idioma então vem com o app, sem mudar código: o build acha cada arquivo daquela pasta.}}</li>
+    </ol>
+    <ul class="trx-facts">
+      <li>{{<b>Placeholders</b> like <code>{s}</code> and <code>{d}</code> are filled in by the app. Copy them as they are, or write <code>{0}</code>, <code>{1}</code>… to change their order. A translation with the wrong ones shows in English, so the editor marks it.||<b>Marcadores</b> como <code>{s}</code> e <code>{d}</code> são preenchidos pelo app. Copie como estão, ou escreva <code>{0}</code>, <code>{1}</code>… para mudar a ordem. Uma tradução com os marcadores errados aparece em inglês, por isso o editor marca.}}</li>
+      <li>{{<b>Counts</b> have one form per plural category of your language (the CLDR rules), with the numbers that use each one next to it.||<b>Contagens</b> têm uma forma por categoria de plural do seu idioma (as regras do CLDR), com os números que usam cada uma ao lado.}}</li>
+      <li>{{<b>Missing texts</b> show in English, never in Portuguese, so a partial translation is fine to use and to send.||<b>Textos que faltam</b> aparecem em inglês, nunca em português, então uma tradução pela metade já serve para usar e para mandar.}}</li>
+    </ul>
+  </div>
+</section>
+</main>
+<script src="%ROOT%assets/site/i18n-data.js"></script>
+<script src="%ROOT%assets/site/translate-core.js"></script>
+<script src="%ROOT%assets/site/translate.js"></script>

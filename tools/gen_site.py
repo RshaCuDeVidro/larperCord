@@ -15,6 +15,9 @@ Entradas:
   src/plugins/manifest.zig, src/ui/plugins_page.zig   capacidades e rótulos dos plugins
   themes/community/*.kdl    temas mandados por pull request: conferidos aqui, e o build para no primeiro erro
   site/try.html             a demonstração no navegador, só quando docs/try/ tem o build dela
+  site/translate.html       o editor de traduções (o código fica em docs/assets/site/translate.js; os textos
+                            do app, com o contexto de cada um, saem de tools/i18n_strings.py em i18n-data.js)
+  i18n/*.kdl                as traduções: a página "Estado das traduções" e uma cópia em docs/i18n/ para o editor
 
 Só usa a biblioteca padrão. Rode: python3 tools/gen_site.py
 Só conferir os temas da comunidade (o mesmo que o CI faz):
@@ -29,6 +32,10 @@ import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+sys.dont_write_bytecode = True  # sem tools/__pycache__ no repositório
+import i18n_strings as I18N  # noqa: E402  (os textos do app e os arquivos de tradução)
+
 OUT = ROOT / "docs"
 SITE = ROOT / "site"
 REPO = "https://github.com/RshaCuDeVidro/larperCord"
@@ -1605,6 +1612,8 @@ GUIDE = [
     ("Project", "Projeto", [
         ("status", "Status and roadmap", "Estado e roteiro"),
         ("contributing", "Contributing", "Contribuir"),
+        ("translating", "Translating larperCord", "Traduzindo o larperCord"),
+        ("translation-status", "Translation status", "Estado das traduções"),
     ]),
 ]
 FLAT = [p for _, _, ps in GUIDE for p in ps]
@@ -1622,6 +1631,10 @@ def page_url(lang, slug=None):
 
 def builder_url(lang):
     return "theme-builder.html" if lang == "en" else "pt/theme-builder.html"
+
+
+def translate_url(lang):
+    return "translate.html" if lang == "en" else "pt/translate.html"
 
 
 def community_url(lang):
@@ -1839,6 +1852,88 @@ def gallery_md(lang, themes):
     return "\n".join(out)
 
 
+# ------------------------------------------------------------- traduções ----
+I18N_DATA = None
+
+
+def i18n_data():
+    """Os textos do app com o contexto de cada um, o estado de cada i18n/*.kdl e as formas de
+    plural de cada idioma: o que o editor e a página de estado mostram (tools/i18n_strings.py)."""
+    global I18N_DATA
+    if I18N_DATA is None:
+        uses, _ = I18N.collect(I18N.source_files())
+        uses += I18N.theme_uses()
+        by_key = I18N.first_uses(uses)
+        keys = []
+        for k in sorted(by_key, key=I18N.sort_key):
+            us = by_key[k]
+            u = us[0]
+            one = next((x.one for x in us if x.one is not None), None)
+            fmt = 1 if any(x.fmt for x in us) and I18N.parse_format(k) is not None else 0
+            keys.append([k, u.file, u.line, I18N.kind_of(u), one, fmt, len(us) - 1])
+        rules = {code: {"forms": forms, "examples": ex} for code, (forms, ex) in I18N.plural_rules().items()}
+        I18N_DATA = {"keys": keys, "languages": I18N.language_status(uses), "rules": rules}
+    return I18N_DATA
+
+
+def i18n_status_md(lang):
+    data = i18n_data()
+    total = len(data["keys"])
+    out = [t(lang, "# Translation status", "# Estado das traduções"), "",
+           t(lang, f"Generated from `i18n/*.kdl` and the {total} English texts the app has today (`tools/i18n_strings.py`). Portuguese and English live in the code, so they are always complete. A text that's missing shows in English.",
+             f"Gerado a partir de `i18n/*.kdl` e dos {total} textos em inglês que o app tem hoje (`tools/i18n_strings.py`). Português e inglês ficam no código, então estão sempre completos. O texto que falta aparece em inglês."), "",
+           t(lang, "| Language | Code | Translated | Missing | Same as English | |", "| Idioma | Código | Traduzido | Faltando | Igual ao inglês | |"),
+           "|---|---|---|---|---|---|"]
+    for la in sorted(data["languages"], key=lambda x: -x["translated"]):
+        pct = 100 * la["translated"] // max(la["total"], 1)
+        name = la["name"] + (f" ({la['english']})" if la["english"] else "")
+        of = t(lang, "of", "de")
+        edit = t(lang, "Continue in the editor", "Continuar no editor")
+        src = t(lang, "File", "Arquivo")
+        out.append(f"| {name} | `{la['code']}` | **{pct}%** · {la['translated']} {of} {la['total']} | {la['missing']} | {la['placeholders']} | "
+                   f"[{edit}](translate:{la['code']}) · [{src}]({REPO}/blob/main/i18n/{la['file']}) |")
+    out += ["", t(lang, "*Same as English* counts entries whose translation is still the English text: a placeholder waiting for someone (names and acronyms stay like that on purpose). Plural texts count as translated when any form is.",
+                  "*Igual ao inglês* conta as entradas cuja tradução ainda é o texto em inglês: um espaço reservado esperando alguém (nomes e siglas ficam assim de propósito). Um texto com plural conta como traduzido quando alguma forma está."), "",
+            t(lang, "## Add a language", "## Adicionar um idioma"), "",
+            t(lang, "[Start a new language in the editor](translate:new), or make the template on your computer and fill it in any text editor:",
+              "[Comece um idioma novo no editor](translate:new), ou gere o modelo no seu computador e preencha em qualquer editor de texto:"), "",
+            "```bash", "python3 tools/i18n_strings.py --template de --name Deutsch --english German -o de.kdl", "```", "",
+            t(lang, "[Translating larperCord](page:translating) has the whole path, from the first line to the pull request.",
+              "[Traduzindo o larperCord](page:translating) tem o caminho inteiro, da primeira linha ao pull request.")]
+    return "\n".join(out)
+
+
+def build_translate(lang):
+    """O editor de traduções: os textos e o contexto vêm de assets/site/i18n-data.js, e cada
+    idioma pronto de docs/i18n/<código>.kdl, do próprio site."""
+    src = (SITE / "translate.html").read_text(encoding="utf-8")
+    src = re.sub(r"\{\{(.*?)\|\|(.*?)\}\}", lambda m: m.group(1 if lang == "en" else 2), src, flags=re.S)
+    path = translate_url(lang)
+    alt = translate_url("pt" if lang == "en" else "en")
+    root = root_of(path)
+    src = (src.replace("%ROOT%", root).replace("%REPO%", REPO).replace("%GUIDE%", rel(path, page_url(lang, "x")).removesuffix("x.html")))
+    title = t(lang, "Translation editor · larperCord", "Editor de traduções · larperCord")
+    desc = t(lang, "Translate larperCord in the browser: every English text of the app next to where it appears, placeholder checks while you type, the missing ones first, and the .kdl to download.",
+             "Traduza o larperCord no navegador: cada texto em inglês do app ao lado de onde ele aparece, checagem dos marcadores enquanto você escreve, os que faltam primeiro e o .kdl para baixar.")
+    head = (f'\n<meta http-equiv="Content-Security-Policy" content="{BUILDER_CSP}">\n<link rel="stylesheet" href="{root}assets/site/theme-builder.css">'
+            f'\n<link rel="stylesheet" href="{root}assets/site/translate.css">')
+    write(path, shell(lang, path, alt, title, desc, src, "translate", head=head))
+    return [{"t": t(lang, "Translation editor", "Editor de traduções"), "s": "larperCord", "u": path,
+             "x": t(lang, "Translate the app in the browser, with context and placeholder checks.", "Traduza o app no navegador, com contexto e checagem dos marcadores.")}]
+
+
+def write_i18n_files():
+    """Os i18n/*.kdl em docs/i18n/, para o editor abrir (os que saíram da pasta somem)."""
+    out = OUT / "i18n"
+    names = {f.name for f in I18N.lang_files()}
+    if out.exists():
+        for f in out.iterdir():
+            if f.name not in names:
+                f.unlink()
+    for f in I18N.lang_files():
+        write(f"i18n/{f.name}", f.read_text(encoding="utf-8"))
+
+
 def build_guide(lang, themes):
     index = []
     plugin_api = load_plugin_api()
@@ -1848,6 +1943,8 @@ def build_guide(lang, themes):
         title = ten if lang == "en" else tpt
         if slug == "theme-gallery":
             src = gallery_md(lang, themes)
+        elif slug == "translation-status":
+            src = i18n_status_md(lang)
         elif slug == "plugin-directory":
             src = plugins_md(lang, plugin_api)
         else:
@@ -1884,6 +1981,9 @@ def build_guide(lang, themes):
                 return rel(path, builder_url(lang)) + "#base=" + url[8:]
             if url.startswith("community:"):
                 return rel(path, community_url(lang))
+            if url.startswith("translate:"):
+                code = url[10:]
+                return rel(path, translate_url(lang)) + (f"#lang={code}" if code and code != "new" else "#new" if code == "new" else "")
             if url.startswith("page:"):
                 name, _, frag = url[5:].partition("#")
                 return rel(path, page_url(lang, name)) + (f"#{frag}" if frag else "")
@@ -1922,6 +2022,8 @@ def build_guide(lang, themes):
             pager += f'<a class="next" href="{rel(path, page_url(lang, next_[0]))}"><small>{t(lang, "Next", "Próximo")}</small>{next_[1] if lang == "en" else next_[2]}</a>'
         pager += "</nav>"
         edit = f"{REPO}/blob/main/" + str((external_sources(slug, lang) or SITE / "guide" / lang / f"{slug}.md").relative_to(ROOT)) if slug != "theme-gallery" else f"{REPO}/tree/main/themes"
+        if slug == "translation-status":
+            edit = f"{REPO}/tree/main/i18n"
         if slug == "plugin-directory":
             edit = f"{REPO}/tree/main/docs/plugins"
         body = f'''<div class="guide">
@@ -2372,16 +2474,21 @@ def main():
     write("assets/site/presets.js", "window.LC_PRESETS=" + json.dumps({k: v["preset"] for k, v in themes.items()}, ensure_ascii=False) + ";\n")
     # O gerador de plugin (plugin-starter.js) pega daqui as capacidades e os rótulos do app.
     write("assets/site/plugin-api.js", "window.LC_PLUGIN_API=" + json.dumps(load_plugin_api(), ensure_ascii=False, separators=(",", ":")) + ";\n")
+    # O editor de traduções: os textos do app com o contexto, e o estado de cada idioma.
+    i18n_blob = i18n_data()
+    write("assets/site/i18n-data.js", "window.LC_I18N=" + json.dumps({**i18n_blob, "repo": REPO}, ensure_ascii=False, separators=(",", ":")) + ";\n")
+    write_i18n_files()
     for lang in LANGS:
         index = build_landing(lang, themes)
         index += build_builder(lang, themes, community)
         index += build_community(lang, community)
         index += build_mascots(lang, mascots)
+        index += build_translate(lang)
         index += build_guide(lang, themes)
         if TRY_SIZE:
             index += build_try(lang)
         write(f"assets/site/search-{lang}.js", "window.LC_SEARCH=" + json.dumps(index, ensure_ascii=False, separators=(",", ":")) + ";\n")
-    urls = (["", "pt/"] + [builder_url(la) for la in LANGS] + [community_url(la) for la in LANGS] + [mascots_url(la) for la in LANGS] + [page_url(la, s) for la in LANGS for s, _, _ in FLAT]
+    urls = (["", "pt/"] + [builder_url(la) for la in LANGS] + [community_url(la) for la in LANGS] + [mascots_url(la) for la in LANGS] + [translate_url(la) for la in LANGS] + [page_url(la, s) for la in LANGS for s, _, _ in FLAT]
             + (["try/", "pt/try/"] if TRY_SIZE else []))
     write_community_files(community)
     write_mascot_files(mascots)
