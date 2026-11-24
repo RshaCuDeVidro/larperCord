@@ -147,7 +147,7 @@ fn popupKey(p: state.Popup) u64 {
         .exportar => |t| 27 +% t.channel *% 31,
         .editar_imagem => |t| 28 +% @as(u64, t.index) *% 31,
         .folder_settings => |t| 29 +% t.folder *% 31,
-        .plugin_confirm => 29 +% @as(u64, @import("plugin_confirm.zig").key()) *% 31,
+        .plugin_confirm => 30 +% @as(u64, @import("plugin_confirm.zig").key()) *% 31,
     };
 }
 
