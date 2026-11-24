@@ -604,21 +604,24 @@ fn noMoreLoads(_: *App) bool {
 
 // Japonês e russo com a interface em 125%: as linhas novas (o nome do arquivo, o
 // Escurecer, o Ajuste com cinco opções e a nota) cabem e nada sai cortado.
-fn startLang(l: i18n.Lang) void {
+/// Como o app troca de idioma: com as fontes refeitas (sem isso o japonês sai em "?").
+fn startLang(app: *App, l: i18n.Lang) void {
     i18n.set(l);
+    app.fonts_lang_changed = true;
     i18n.cuts.store(0, .monotonic);
     settings_ui.overflows.store(0, .monotonic);
 }
 fn langJa(app: *App) void {
-    startLang(.ja);
+    startLang(app, .ja);
     openAppearance(app);
 }
 fn langRu(app: *App) void {
-    startLang(.ru);
+    startLang(app, .ru);
     openAppearance(app);
 }
 fn langDone(app: *App) void {
     i18n.set(.pt);
+    app.fonts_lang_changed = true;
     app.st.settings.open = false;
     app.st.settings.ui_scale = 1;
     app.st.settings.wallpaper_fit = 0;
@@ -813,7 +816,7 @@ pub const ops = [_]Op{
     .{ .run = scale125 },
     expectLong("interface em 125%", inScale125, 4000),
     .{ .run = langJa },
-    .{ .wait = 200 },
+    .{ .wait = 800 },
     .{ .click = .{ .dyn = segWhole } },
     expect("japonês: \"全体を表示\" fica nas configurações", fitIs(2)),
     expect("japonês: Remover e Escurecer traduzidos", rowsTranslated),
@@ -822,7 +825,7 @@ pub const ops = [_]Op{
     expect("japonês: nada maior que a área", noOverflow),
     expect("japonês: nenhum texto cortado", noCuts),
     .{ .run = langRu },
-    .{ .wait = 200 },
+    .{ .wait = 800 },
     .{ .click = .{ .dyn = segTile } },
     expect("russo: \"Tile\" fica nas configurações", fitIs(3)),
     .{ .wait = 150 },
