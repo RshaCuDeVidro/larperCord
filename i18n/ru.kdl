@@ -2189,6 +2189,7 @@
 "Theme colors — {s} ({s})" "Цвета темы — {s} ({s})"
 "theme error" "ошибка темы"
 "theme reloaded: {s}" "тема перезагружена: {s}"
+"theme warnings ({d}): {s}" "theme warnings ({d}): {s}"
 "theme: {s}" "тема: {s}"
 "There are no pending friend requests." "Нет ожидающих запросов на добавление в друзья."
 "There's already a set with that name." "There's already a set with that name."

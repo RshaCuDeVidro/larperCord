@@ -1,10 +1,13 @@
 // O núcleo do criador de temas: sem DOM, para a página e o teste (tools/theme_builder_test.js)
 // usarem o mesmo código. Leitor de KDL, cores e o carregamento do tema seguem
 // src/theme/kdl.zig, color.zig, theme.zig e fx.zig; o arquivo gerado é o que o app lê.
+// Os componentes, as propriedades e os tokens vêm do esquema que o app gera
+// (src/theme/schema.zig → theme-schema.json): na página, o gen_site.py põe o JSON num
+// <script type="application/json" id="tb-schema">; no Node, ele vem do arquivo ao lado.
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.LC_TB = factory();
-})(typeof self !== "undefined" ? self : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./theme-schema.json"));
+  else root.LC_TB = factory(JSON.parse(document.getElementById("tb-schema").textContent));
+})(typeof self !== "undefined" ? self : this, function (SCHEMA) {
   "use strict";
 
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -20,6 +23,11 @@
       palette: "invalid palette color", token: "unknown color token: {0}", "missing-color": "missing color", "color-string": "the color must be a string",
       "color-expr": "invalid color expression", role: "invalid role color", "style-name": "style without a name", "style-string": "style name must be a string",
       invalid: "{0} is invalid", "no-layout": "the theme needs a `layout` node", "c-token": "unknown color token in c-…",
+      "extends-base": "the base theme '{0}' isn't one of the themes this page has: paste its contents instead of extends",
+      "extends-one": "a theme extends a single base (one extends node)", "extends-name": "extends needs the name of a theme in quotes: extends \"classico\"",
+      "extends-cycle": "extends cycle: {0}", "extends-deep": "extends goes deeper than 4 levels",
+      "var-name": "'{0}' isn't a valid variable name (letters, digits, - and _)", "var-value": "variable '{0}' needs a value",
+      "var-option": "variable '{0}' has the same name as an option ($ means both)", "var-loop": "variables use each other in a loop: {0}",
       "gradient-count": "a gradient needs 2 or 3 colors", "gradient-color": "invalid color in the gradient",
       "pattern-kind": "pattern: dots, lines, grid or diagonal", "pattern-color": "pattern needs pattern-color", side: "invalid side border",
       corners: "corners: all, left, right, top or bottom", weight: "weight: regular, medium, semibold, bold or italic",
@@ -38,6 +46,11 @@
       palette: "cor inválida na paleta", token: "token de cor desconhecido: {0}", "missing-color": "faltou a cor", "color-string": "a cor deve ser uma string",
       "color-expr": "expressão de cor inválida", role: "cor de cargo inválida", "style-name": "estilo sem nome", "style-string": "nome do estilo deve ser string",
       invalid: "{0} inválido", "no-layout": "o tema precisa de um nó `layout`", "c-token": "token de cor desconhecido em c-…",
+      "extends-base": "o tema base '{0}' não é um dos temas desta página: cole o conteúdo dele no lugar do extends",
+      "extends-one": "um tema estende uma base só (um nó extends)", "extends-name": "extends pede o nome de um tema entre aspas: extends \"classico\"",
+      "extends-cycle": "laço de extends: {0}", "extends-deep": "extends com mais de 4 níveis",
+      "var-name": "'{0}' não é um nome de variável (letras, números, - e _)", "var-value": "a variável '{0}' precisa de um valor",
+      "var-option": "a variável '{0}' tem o nome de uma opção (o $ vale para as duas)", "var-loop": "variáveis que usam uma à outra em laço: {0}",
       "gradient-count": "gradiente pede 2 ou 3 cores", "gradient-color": "cor inválida no gradiente",
       "pattern-kind": "pattern: dots, lines, grid ou diagonal", "pattern-color": "pattern precisa de pattern-color", side: "borda de lado inválida",
       corners: "corners: all, left, right, top ou bottom", weight: "weight: regular, medium, semibold, bold ou italic",
@@ -253,10 +266,23 @@
   }
   function arg(nd, i) { return i < nd.args.length ? nd.args[i].v : undefined; }
 
+  // ---------------------------------------------------------- Esquema ----
+  function names(list) { return list.map(function (x) { return x.name; }); }
+  // A propriedade `key` de um nó do esquema: as dele e as dos grupos (`sets`).
+  function schemaProp(spec, key) {
+    var own = (spec.props || []).filter(function (p) { return p.key === key; })[0];
+    if (own) return own;
+    for (var i = 0; i < (spec.sets || []).length; i++) {
+      var hit = SCHEMA.sets[spec.sets[i]].filter(function (p) { return p.key === key; })[0];
+      if (hit) return hit;
+    }
+    return null;
+  }
+  function schemaNode(name) { return SCHEMA.containers.concat(SCHEMA.components).filter(function (n) { return n.name === name; })[0] || null; }
+  function setValues(set, key) { return SCHEMA.sets[set].filter(function (p) { return p.key === key; })[0].values.slice(); }
+
   // ------------------------------------------------------------ Cores ----
-  var TOKENS = ["bg", "rail", "sidebar", "surface", "elevated", "overlay", "text", "muted", "faint", "accent",
-    "accent-text", "border", "hover", "selected", "online", "idle", "dnd", "danger", "mention", "link",
-    "code-bg", "bubble-self", "bubble-self-text", "bubble-other", "shadow"];
+  var TOKENS = names(SCHEMA.tokens);
   var FALLBACK = ["#15161b", "#e06c75", "#98c379", "#e5c07b", "#7aa2f7", "#c678dd", "#56b6c2", "#d7dae0",
     "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#7aa2f7", "#c678dd", "#56b6c2", "#f0f2f5"];
   var BLACK = [0, 0, 0, 1], WHITE = [1, 1, 1, 1], CLEAR = [0, 0, 0, 0];
@@ -492,12 +518,156 @@
   }
   ThemeError.prototype.toString = function () { return this.line + ": " + this.message; };
 
+  // ------------------------------------------------ extends e vars ----
+  // Como src/theme/heranca.zig. `vars` vira `$nome` na hora de carregar, cada modo com as
+  // dele. `extends`: a página só tem os temas embutidos (setBases); um tema que estende um
+  // deles vira um arquivo só, com a base dentro, e é esse que a página edita e exporta.
+  var BASES = null;
+  function setBases(fn) { BASES = typeof fn === "function" ? fn : null; }
+  var VAR_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+  function withVars(nodes, mode) {
+    if (!nodes.some(function (nd) { return nd.name === "vars"; })) return nodes;
+    var options = Object.create(null);
+    options["modo-claro"] = options["modo-escuro"] = true;
+    nodes.forEach(function (nd) {
+      if (nd.name === "options") nd.kids.forEach(function (ch) { if (typeof arg(ch, 0) === "string") options[arg(ch, 0)] = true; });
+    });
+    var defs = Object.create(null), order = [];
+    nodes.forEach(function (nd) {
+      if (nd.name !== "vars") return;
+      var m = str(nd, "mode");
+      if (m !== null && m !== mode) return;
+      nd.kids.forEach(function (ch) {
+        if (!VAR_NAME.test(ch.name)) throw new ThemeError("var-name", ch.line, ch.name);
+        var v = arg(ch, 0);
+        if (v === undefined || v === null) throw new ThemeError("var-value", ch.line, ch.name);
+        if (options[ch.name]) throw new ThemeError("var-option", ch.line, ch.name);
+        if (!(ch.name in defs)) order.push(ch.name);
+        defs[ch.name] = { v: v, line: ch.line, done: typeof v !== "string" || v.indexOf("$") < 0 };
+      });
+    });
+    function resolve(name, stack) {
+      var d = defs[name];
+      if (d.done) return d.v;
+      if (stack.indexOf(name) >= 0) throw new ThemeError("var-loop", d.line, stack.concat([name]).map(function (x) { return "$" + x; }).join(" → "));
+      d.v = sub(d.v, stack.concat([name]));
+      d.done = true;
+      return d.v;
+    }
+    function sub(v, stack) {
+      if (typeof v !== "string" || v.indexOf("$") < 0) return v;
+      var whole = /^\$([A-Za-z_][A-Za-z0-9_-]*)$/.exec(v);
+      // O valor inteiro fica com o tipo da variável (`gap=$gap` vira número); a opção, com o `$`.
+      if (whole) return whole[1] in defs ? resolve(whole[1], stack) : v;
+      return v.replace(/\$\$|\$([A-Za-z_][A-Za-z0-9_-]*)/g, function (m, name) {
+        return name && name in defs ? String(resolve(name, stack)) : m;
+      });
+    }
+    order.forEach(function (name) { resolve(name, []); });
+    function node(nd) {
+      if (nd.name === "vars" || nd.name === "extends" || nd.name === "theme-api") return nd;
+      var out = Object.assign({}, nd);
+      out.args = nd.args.map(function (a) { return Object.assign({}, a, { v: sub(a.v, []) }); });
+      out.props = nd.props.map(function (p) { return Object.assign({}, p, { v: sub(p.v, []) }); });
+      out.kids = nd.kids.map(node);
+      return out;
+    }
+    return nodes.map(node);
+  }
+
+  // O tema com a base de `extends` dentro, como texto (as regras de heranca.zig): os metadados
+  // são do tema (a miniatura da base fica); palette, roles e layout do tema trocam os da base;
+  // colors, fonts, metrics, window e vars vêm na ordem (os do tema vencem); a opção do tema
+  // toma o lugar da da base; e cada estilo do tema que a base também tem ganha uma cópia com
+  // as propriedades dos dois em cada condição da base. Os estilos vão por último.
+  function flatten(src, seen) {
+    var nodes = parseKdl(src);
+    var exts = nodes.filter(function (nd) { return nd.name === "extends"; });
+    if (!exts.length) return src;
+    var ext = exts[0];
+    if (exts.length > 1) throw new ThemeError("extends-one", exts[1].line);
+    var name = arg(ext, 0);
+    if (typeof name !== "string") throw new ThemeError("extends-name", ext.line);
+    seen = seen || [];
+    if (seen.indexOf(name) >= 0) throw new ThemeError("extends-cycle", ext.line, seen.concat([name]).join(" → "));
+    if (seen.length >= 4) throw new ThemeError("extends-deep", ext.line);
+    var baseSrc = BASES ? BASES(name) : null;
+    if (typeof baseSrc !== "string") throw new ThemeError("extends-base", ext.line, name);
+    var base = flatten(baseSrc, seen.concat([name]));
+    var bnodes = parseKdl(base);
+    function has(list, n) { return list.some(function (nd) { return nd.name === n; }); }
+    function text(t, nd) { return t.slice(nd.start, nd.end); }
+    function cut(t, nd, kids, keep) {
+      // O texto do bloco `nd` com os filhos que `keep` recusa trocados (ou tirados).
+      var out = text(t, nd), at = nd.start;
+      kids.slice().reverse().forEach(function (ch) {
+        var r = keep(ch);
+        if (r === true) return;
+        out = out.slice(0, ch.start - at) + (r || "") + out.slice(ch.end - at);
+      });
+      return out;
+    }
+    function cond(blocks) {
+      var c = {};
+      blocks.forEach(function (b) { ["mode", "when", "unless"].forEach(function (k) { if (str(b, k) !== null) c[k] = str(b, k); }); });
+      return Object.keys(c).map(function (k) { return " " + k + "=" + q(c[k]); }).join("");
+    }
+    function props(t, nd) { return nd.args.length ? t.slice(nd.args[0].e, nd.headEnd) : ""; }
+    var childOpts = Object.create(null), used = Object.create(null);
+    nodes.forEach(function (nd) {
+      if (nd.name === "options") nd.kids.forEach(function (ch) { if (typeof arg(ch, 0) === "string") childOpts[arg(ch, 0)] = text(src, ch); });
+    });
+    var head = [], baseStyles = [], childStyles = [];
+    bnodes.forEach(function (nd) {
+      if (nd.name === "extends" || nd.name === "theme-api") return;
+      if ((nd.name === "palette" || nd.name === "roles" || nd.name === "layout") && has(nodes, nd.name)) return;
+      if (nd.name === "theme") {
+        if (str(nd, "preview") !== null) head.push("theme preview=" + q(str(nd, "preview")) + cond([nd]));
+      } else if (nd.name === "styles") {
+        baseStyles.push(nd);
+      } else if (nd.name === "options") {
+        head.push(cut(base, nd, nd.kids, function (ch) {
+          var on = arg(ch, 0);
+          if (typeof on !== "string" || !(on in childOpts)) return true;
+          used[on] = true;
+          return childOpts[on];
+        }));
+      } else head.push(text(base, nd));
+    });
+    nodes.forEach(function (nd) {
+      // O `theme-api` do tema fica (o da base, não): o arquivo que sai é dele.
+      if (nd.name === "extends") return;
+      if (nd.name === "styles") childStyles.push(nd);
+      else if (nd.name === "options") head.push(cut(src, nd, nd.kids, function (ch) { return !(typeof arg(ch, 0) === "string" && used[arg(ch, 0)]) || ""; }));
+      else head.push(text(src, nd));
+    });
+    var styles = baseStyles.map(function (nd) { return text(base, nd); });
+    childStyles.forEach(function (blk) {
+      var joined = [];
+      styles.push(cut(src, blk, blk.kids, function (ch) {
+        var sn = arg(ch, 0), found = false;
+        if (typeof sn !== "string") return true;
+        baseStyles.forEach(function (b) {
+          b.kids.forEach(function (bk) {
+            if (arg(bk, 0) !== sn) return;
+            found = true;
+            joined.push("styles" + cond([b, blk]) + " { style " + q(sn) + props(base, bk) + props(src, ch) + " }");
+          });
+        });
+        return found ? "" : true;
+      }));
+      styles = styles.concat(joined);
+    });
+    return head.concat(styles).join("\n\n") + "\n";
+  }
+
   // Porta de `loadWith` (theme.zig) mais a validação das primitivas (fx.zig):
   // se isto aceita, o app aceita. `opt.wal` é a paleta do pywal (o site não tem uma).
   function loadTheme(src, opt) {
     opt = opt || {};
     var mode = opt.mode === "light" ? "light" : "dark";
-    var nodes = typeof src === "string" ? parseKdl(src) : src;
+    var nodes = withVars(typeof src === "string" ? parseKdl(flatten(src)) : src, mode);
     // Sem protótipo: uma opção ou um estilo chamado "constructor" não acha nada de fora.
     var options = optionList(nodes), values = Object.create(null);
     options.forEach(function (o) {
@@ -597,8 +767,13 @@
 
   // ---------------------------------------- Primitivas (checagem, fx.zig) ----
   var SIDES = ["border-top", "border-right", "border-bottom", "border-left"];
-  var PAINTED = ["shape", "rule", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "window-controls"];
-  var PAINT_KEYS = ["color", "color2", "color3", "fill", "dot", "ornament-color"];
+  // Os componentes que guardam cores (fx.zig) e as chaves de cor deles.
+  var PAINTED = names(SCHEMA.components.filter(function (c) { return c.paints; }));
+  var PAINT_KEYS = [];
+  SCHEMA.components.forEach(function (c) {
+    if (c.paints) (c.props || []).forEach(function (p) { if (p.type === "color" && PAINT_KEYS.indexOf(p.key) < 0) PAINT_KEYS.push(p.key); });
+  });
+  var PATTERNS = setValues("box", "pattern"), CORNERS = setValues("box", "corners");
 
   function fxColor(th, e, nd, code, arg) {
     try { return evalColor(e, th.palette, function (n) { return th.tokens[n]; }, true); } catch (err) { throw new ThemeError(code, nd.line, arg); }
@@ -611,7 +786,7 @@
   function checkBox(th, nd, isStyle) {
     if (str(nd, "gradient") !== null) checkGradient(th, nd, "gradient");
     if (str(nd, "pattern") !== null) {
-      if (["dots", "lines", "grid", "diagonal"].indexOf(str(nd, "pattern")) < 0) throw new ThemeError("pattern-kind", nd.line);
+      if (PATTERNS.indexOf(str(nd, "pattern")) < 0) throw new ThemeError("pattern-kind", nd.line);
       if (str(nd, "pattern-color") === null) throw new ThemeError("pattern-color", nd.line);
       fxColor(th, str(nd, "pattern-color"), nd, "invalid", "pattern-color");
     }
@@ -622,9 +797,9 @@
     if (!isStyle && str(nd, "border") !== null) fxColor(th, str(nd, "border"), nd, "invalid", "border");
     SIDES.forEach(function (k) { if (str(nd, k) !== null) fxColor(th, str(nd, k), nd, "side"); });
     var c = str(nd, "corners");
-    if (c !== null && ["all", "left", "right", "top", "bottom"].indexOf(c) < 0) throw new ThemeError("corners", nd.line);
+    if (c !== null && CORNERS.indexOf(c) < 0) throw new ThemeError("corners", nd.line);
   }
-  var WEIGHTS = ["regular", "medium", "semibold", "bold", "italic"];
+  var WEIGHTS = schemaProp(schemaNode("label"), "weight").values.slice();
   function checkLabel(th, ch) {
     // Como `labelWantsFx` de fx.zig: o rótulo simples não passa por esta leitura.
     var col = str(ch, "color"), colExpr = col !== null && !tokenName(col);
@@ -693,6 +868,7 @@
 
   function fromSource(src, info) {
     info = info || {};
+    src = flatten(src);
     var nodes = parseKdl(src);
     var state = {
       v: 1, base: info.base || null, layoutFrom: info.base || null,
@@ -702,8 +878,10 @@
       structure: "",
     };
     var kept = nodes.filter(function (nd) { return absorbable(nd); });
+    // Os blocos `vars` vão junto: `colors { accent "$card" }` também é absorvido.
+    var vars = nodes.filter(function (nd) { return nd.name === "vars"; });
     ["dark", "light"].forEach(function (mode) {
-      var th = loadTheme(kept.concat([{ name: "layout", args: [], props: [], kids: [], line: 0 }]), { mode: mode });
+      var th = loadTheme(kept.concat(vars, [{ name: "layout", args: [], props: [], kids: [], line: 0 }]), { mode: mode });
       state.palette[mode] = th.palette.map(toHex);
       state.colors[mode] = {};
       TOKENS.forEach(function (t) { state.colors[mode][t] = toHex(th.authored[t]); });
@@ -756,7 +934,7 @@
     t = t.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
     return t || "my-theme";
   }
-  var PREVIEWS = ["classic", "glass", "terminal", "bubbles", "zen", "mirror", "office", "desktop"];
+  var PREVIEWS = SCHEMA.previews.slice();
 
   function samePalette(a, b) { return a.every(function (x, i) { return normHex(x) === normHex(b[i]); }); }
 
@@ -832,40 +1010,27 @@
     return text.slice(0, nd.headEnd) + " " + key + "=" + valueText(value) + text.slice(nd.headEnd);
   }
 
-  // As propriedades de cada componente (themes/README.md), para os ajustes da página.
-  var COMPONENTS = {
-    "guild-bar": [["variant", ["bar", "dock", "list"]], ["icon-style", ["fill", "soft", "outline"]], ["orientation", ["vertical", "horizontal"]],
-      ["shape", ["circle", "squircle", "square", "text"]], ["size", "num"], ["labels", "bool"], ["home", "bool"], ["indicators", "bool"]],
-    "channel-list": [["variant", ["discord", "tree", "pills"]], ["header", "bool"], ["banner", "bool"]],
-    "user-panel": [["variant", ["discord", "tty"]]],
-    header: [["variant", ["discord", "minimal", "tty"]], ["divider", "bool"]],
-    tabs: [["variant", ["pills", "underline", "tty"]]],
-    messages: [["variant", ["cozy", "irc", "bubbles"]], ["avatar", ["circle", "squircle", "square", "none"]], ["avatar-size", "num"],
-      ["spacing", "num"], ["font-size", "num"], ["ruled", "bool"], ["margin-line", "bool"], ["ticks", "bool"], ["typing-bubble", "bool"]],
-    composer: [["variant", ["box", "pill", "prompt"]], ["typing", "bool"]],
-    "member-list": [["variant", ["discord", "tty"]]],
-    "status-bar": [["variant", ["pills", "tty", "plain"]], ["items", "text"]],
-    // Fundos procedurais e enfeites (src/ui/backdrop.zig e comp_extra.zig leem estas).
-    starfield: [["density", "num"], ["seed", "num"], ["motion", "bool"]],
-    orbit: [["center-x", "num"], ["center-y", "num"], ["rings", "num"], ["seed", "num"], ["motion", "bool"]],
-    radar: [["center-x", "num"], ["center-y", "num"], ["rings", "num"], ["seed", "num"], ["motion", "bool"]],
-    topography: [["levels", "num"], ["seed", "num"]],
-    aurora: [["seed", "num"], ["motion", "bool"]],
-    dunes: [["seed", "num"], ["motion", "bool"]],
-    crt: [["spacing", "num"], ["strength", "num"]],
-    logo: [["variant", ["wordmark", "ascii"]], ["size", "num"]],
-    "window-controls": [["size", "num"], ["gap", "num"], ["align", ["left", "center", "right"]]],
-  };
-  var CONTAINERS = ["row", "column", "stack"];
-  // A faixa dos controles deslizantes de cada número: [mínimo, máximo, passo]. É só a régua da
-  // página; o campo ao lado aceita qualquer valor que o app aceita (ele mesmo limita alguns).
-  var RANGES = {
-    size: [16, 80, 1], "avatar-size": [16, 72, 1], spacing: [0, 48, 1], "font-size": [10, 24, 0.5],
-    width: [40, 520, 1], height: [16, 240, 1], gap: [0, 40, 1], padding: [0, 64, 1],
-    density: [0.1, 6, 0.1], "center-x": [-1, 2, 0.01], "center-y": [-1, 2, 0.01], rings: [1, 12, 1],
-    levels: [4, 40, 1], seed: [1, 999, 1], strength: [0, 0.4, 0.01],
-    "crt.spacing": [1, 10, 1], "logo.size": [8, 40, 1], "window-controls.size": [6, 24, 1], "window-controls.gap": [2, 24, 1],
-  };
+  // As propriedades de cada componente que a página oferece como ajuste (as marcadas com
+  // `tweak` no esquema), na ordem dele: [chave, valores | "num" | "bool" | "text"].
+  var COMPONENTS = {};
+  SCHEMA.components.forEach(function (c) {
+    var tw = (c.props || []).filter(function (p) { return p.tweak; });
+    if (!tw.length) return;
+    COMPONENTS[c.name] = tw.map(function (p) {
+      return [p.key, p.type === "enum" ? p.values.slice() : p.type === "number" ? "num" : p.type === "boolean" ? "bool" : "text"];
+    });
+  });
+  var CONTAINERS = names(SCHEMA.containers);
+  // A faixa dos controles deslizantes de cada número: [mínimo, máximo, passo] (o `range` do esquema).
+  // É só a régua da página; o campo ao lado aceita qualquer valor que o app aceita (ele mesmo
+  // limita alguns: o `min`/`max` do esquema).
+  var RANGES = {};
+  SCHEMA.components.forEach(function (c) {
+    (c.props || []).forEach(function (p) { if (p.range) RANGES[c.name + "." + p.key] = p.range.slice(); });
+  });
+  ["node", "container", "component"].forEach(function (set) {
+    SCHEMA.sets[set].forEach(function (p) { if (p.range && !own(RANGES, p.key)) RANGES[p.key] = p.range.slice(); });
+  });
   function range(comp, key) { return own(RANGES, comp + "." + key) ? RANGES[comp + "." + key] : own(RANGES, key) ? RANGES[key] : [0, 400, 1]; }
 
   function listTweaks(structure) {
@@ -2006,11 +2171,12 @@
   return {
     KdlError: KdlError, ThemeError: ThemeError, ColorError: ColorError, MSG: MSG, errorText: errorText, own: own,
     parseKdl: parseKdl, prop: prop, pv: pv, str: str, num: num, flag: flag, arg: arg,
+    SCHEMA: SCHEMA, schemaProp: schemaProp, schemaNode: schemaNode,
     TOKENS: TOKENS, FALLBACK: FALLBACK, BACKS: BACKS, LEGIBLE: LEGIBLE, PREVIEWS: PREVIEWS, COMPONENTS: COMPONENTS,
     tokenName: tokenName, parseHex: parseHex, hexRgba: hexRgba, toHex: toHex, normHex: normHex, cssColor: cssColor,
     mix: mix, alpha: alpha, luma: luma, luminance: luminance, contrast: contrast,
     evalColor: evalColor, splitColors: splitColors, defaults: defaults, defaultRoles: defaultRoles, legibleText: legibleText,
-    loadTheme: loadTheme, fromSource: fromSource, toKdl: toKdl, slug: slug, quote: q,
+    loadTheme: loadTheme, fromSource: fromSource, toKdl: toKdl, slug: slug, quote: q, setBases: setBases, flatten: flatten, withVars: withVars,
     setProp: setProp, listTweaks: listTweaks, structureOptions: structureOptions, findNode: findNode,
     outline: outline, essentialInside: essentialInside, moveNode: moveNode, RANGES: RANGES, range: range,
     HARMONY: HARMONY, seedFromBase: seedFromBase, applyGenerated: applyGenerated, onColor: onColor,

@@ -35,6 +35,9 @@ pub const Value = union(enum) {
 pub const Prop = struct {
     key: []const u8,
     value: Value,
+    /// Onde a chave começa (1 = a primeira coluna): a checagem do esquema aponta a propriedade.
+    line: u32 = 0,
+    col: u32 = 0,
 };
 
 pub const Node = struct {
@@ -45,6 +48,8 @@ pub const Node = struct {
     line: u32 = 0,
     /// Coluna onde o nó começa (1 = a primeira), para erros com arquivo:linha:coluna.
     col: u32 = 0,
+    /// De qual arquivo veio, num tema com `extends` (0 = o próprio; ver heranca.zig).
+    file: u8 = 0,
 
     pub fn prop(n: *const Node, key: []const u8) ?Value {
         // A última ocorrência vence, como no KDL.
@@ -89,7 +94,12 @@ pub const Diagnostic = struct {
 pub const Error = error{ SyntaxError, OutOfMemory };
 
 pub fn parse(arena: std.mem.Allocator, src: []const u8, diag: ?*Diagnostic) Error![]const Node {
-    var p: Parser = .{ .src = src, .arena = arena, .diag = diag };
+    return parseIn(arena, src, diag, 0);
+}
+
+/// Como `parse`, marcando os nós com o arquivo `file` (a base de um `extends`).
+pub fn parseIn(arena: std.mem.Allocator, src: []const u8, diag: ?*Diagnostic, file: u8) Error![]const Node {
+    var p: Parser = .{ .src = src, .arena = arena, .diag = diag, .file = file };
     const nodes = try p.nodeList(false);
     return nodes;
 }
@@ -105,6 +115,7 @@ const Parser = struct {
     diag: ?*Diagnostic,
     /// Blocos abertos: um arquivo com `a{a{a{…` não estoura a pilha.
     depth: u16 = 0,
+    file: u8 = 0,
 
     fn fail(p: *Parser, msg: []const u8) Error {
         if (p.diag) |d| d.* = .{ .line = p.line, .column = @intCast(p.i - p.line_start + 1), .message = msg };
@@ -226,12 +237,14 @@ const Parser = struct {
             }
             // Propriedade (`chave=valor`) ou argumento.
             const start = p.i;
+            const kline = p.line;
+            const kcol: u32 = @intCast(p.i - p.line_start + 1);
             if (p.peek() != '"' and !isNumberStart(p)) {
                 const key = try p.identOrString();
                 if (p.peek() == '=') {
                     p.advance();
                     const v = try p.value();
-                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v });
+                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v, .line = kline, .col = kcol });
                     continue;
                 }
                 p.i = start;
@@ -240,7 +253,7 @@ const Parser = struct {
                 if (p.peek() == '=') {
                     p.advance();
                     const v = try p.value();
-                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v });
+                    if (!skip) try props.append(p.arena, .{ .key = key, .value = v, .line = kline, .col = kcol });
                     continue;
                 }
                 if (!skip) try args.append(p.arena, .{ .string = key });
@@ -256,6 +269,7 @@ const Parser = struct {
             .children = children,
             .line = line,
             .col = col,
+            .file = p.file,
         };
     }
 
@@ -380,6 +394,18 @@ test "nós, argumentos, propriedades e filhos" {
     try std.testing.expectEqual(false, row.children[2].flag("show-avatars").?);
     try std.testing.expectEqualStrings("extra", row.children[2].arg(0).?.string);
     try std.testing.expectEqual(@as(f64, -2), nodes[2].num("neg").?);
+}
+
+test "propriedades guardam linha e coluna, também depois de uma continuação" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const nodes = try parse(arena.allocator(), "a x=1 \"y z\"=2 \\\n    w=3", null);
+    const ps = nodes[0].props;
+    try std.testing.expectEqual(@as(u32, 1), ps[0].line);
+    try std.testing.expectEqual(@as(u32, 3), ps[0].col);
+    try std.testing.expectEqual(@as(u32, 7), ps[1].col);
+    try std.testing.expectEqual(@as(u32, 2), ps[2].line);
+    try std.testing.expectEqual(@as(u32, 5), ps[2].col);
 }
 
 test "erro com linha" {

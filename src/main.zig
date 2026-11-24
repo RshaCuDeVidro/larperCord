@@ -31,6 +31,9 @@ const usage =
     \\uso: larpercord [opções]
     \\  --theme NOME      começa com esse tema (classico, vidro, terminal, bolhas, zen…)
     \\  --list-themes     lista os temas embutidos
+    \\  --theme-check ARQ…  confere arquivos de tema (--strict: aviso também falha)
+    \\  --theme-schema    mostra o esquema dos temas em JSON
+    \\  --theme-lsp       servidor de linguagem para editar temas (entrada e saída padrão)
     \\  --settings        abre já nas configurações
     \\  --shot ARQ.png    salva um print quando a tela estabilizar e sai
     \\  --mode MODO       claro ou escuro (ignora as configurações)
@@ -93,6 +96,26 @@ pub fn main(init: std.process.Init.Minimal) !void {
                 n += 1;
             }
             std.process.exit(@import("ctl_cli.zig").main(rest[0..n]));
+        } else if (std.mem.eql(u8, arg, "--theme-schema")) {
+            // O esquema dos temas em JSON (theme_cli.zig), sem SDL nem janela.
+            std.process.exit(@import("theme_cli.zig").printSchema());
+        } else if (std.mem.eql(u8, arg, "--theme-lsp")) {
+            // Servidor de linguagem dos .kdl de tema na entrada e saída padrão, sem janela.
+            std.process.exit(@import("theme_cli.zig").serveLsp());
+        } else if (std.mem.eql(u8, arg, "--theme-check")) {
+            var paths: [256][:0]const u8 = undefined;
+            var n: usize = 0;
+            var strict = false;
+            while (it.next()) |a| {
+                if (std.mem.eql(u8, a, "--strict")) {
+                    strict = true;
+                    continue;
+                }
+                if (n == paths.len) return fail("--theme-check: arquivos demais");
+                paths[n] = a;
+                n += 1;
+            }
+            std.process.exit(@import("theme_cli.zig").check(paths[0..n], strict));
         } else if (std.mem.eql(u8, arg, "--theme")) {
             opts.theme = it.next() orelse return fail("--theme precisa de um nome");
         } else if (std.mem.eql(u8, arg, "--shot")) {

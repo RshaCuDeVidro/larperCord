@@ -14,6 +14,8 @@ Entradas:
   docs/plugins/*.lua        os plugins que vêm com o app (diretório de plugins)
   src/plugins/manifest.zig, src/ui/plugins_page.zig   capacidades e rótulos dos plugins
   themes/community/*.kdl    temas mandados por pull request: conferidos aqui, e o build para no primeiro erro
+  docs/assets/site/theme-schema.json  o esquema dos temas (componentes, tokens, propriedades), que o app gera
+                            (zig build theme-schema): vai dentro do criador e da galeria
   site/try.html             a demonstração no navegador, só quando docs/try/ tem o build dela
 
 Só usa a biblioteca padrão. Rode: python3 tools/gen_site.py
@@ -36,6 +38,9 @@ VERSION = re.search(r'number = "(.+?)"', (ROOT / "src/core/version.zig").read_te
 BASE_URL = "https://rshacudevidro.github.io/larperCord/"
 THEMES = ["classico", "vidro", "terminal", "subsolo", "orbital", "editorial", "bolhas", "zen", "papel", "escritorio", "cupertino"]
 LANGS = ["en", "pt"]
+# O esquema dos temas que o app gera de src/theme/schema.zig: os nomes de componentes, tokens e
+# miniaturas daqui saem dele, nada escrito à mão.
+SCHEMA = json.loads((OUT / "assets" / "site" / "theme-schema.json").read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------- KDL ----
@@ -540,7 +545,7 @@ def live_icon():
 # ------------------------------------------------------------ Layouts ----
 # Os retângulos de cada tema numa janela de 1280x800, como src/theme/layout.zig
 # calcula: é o que a interface 3D do topo da página mostra.
-CONTAINERS = ("row", "column", "stack")
+CONTAINERS = tuple(n["name"] for n in SCHEMA["containers"])
 
 
 def layout_nodes(src, top, on, pal, raw):
@@ -892,16 +897,12 @@ LICENSES = ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC-BY-3.0", "CC-BY-SA-3.0",
             "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later",
             "LGPL-3.0-only", "LGPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 LICENSE_EXAMPLES = "CC0-1.0, CC-BY-4.0, CC-BY-SA-4.0, MIT, Apache-2.0, GPL-3.0-or-later…"
-TOKENS = ["bg", "rail", "sidebar", "surface", "elevated", "overlay", "text", "muted", "faint", "accent",
-          "accent-text", "border", "hover", "selected", "online", "idle", "dnd", "danger", "mention", "link",
-          "code-bg", "bubble-self", "bubble-self-text", "bubble-other", "shadow"]
-PREVIEWS = ["classic", "glass", "terminal", "bubbles", "zen", "mirror", "office", "desktop"]
-# Os componentes que src/ui/root.zig desenha, mais os contêineres de src/theme/layout.zig.
-COMPONENTS = {"guild-bar", "channel-list", "user-panel", "header", "tabs", "messages", "composer", "member-list",
-              "status-bar", "label", "logo", "topbar", "crt", "shape", "rule", "window-controls", "starfield",
-              "orbit", "aurora", "dunes", "topography", "radar", "spacer"}
-PAINTED = {"shape", "rule", "starfield", "orbit", "aurora", "dunes", "topography", "radar", "window-controls"}
-WEIGHTS = {"regular", "medium", "semibold", "bold", "italic"}
+TOKENS = [t["name"] for t in SCHEMA["tokens"]]
+PREVIEWS = list(SCHEMA["previews"])
+# Os componentes que src/ui/root.zig desenha (os contêineres ficam em CONTAINERS).
+COMPONENTS = {n["name"] for n in SCHEMA["components"]}
+PAINTED = {n["name"] for n in SCHEMA["components"] if n.get("paints")}
+WEIGHTS = set(next(p for n in SCHEMA["components"] if n["name"] == "label" for p in n["props"] if p["key"] == "weight")["values"])
 
 
 class ThemeProblem(Exception):
@@ -1388,6 +1389,68 @@ def check_theme_nodes(nodes):
             walk(nd)
 
 
+VAR_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+VAR_REF = re.compile(r"\$\$|\$([A-Za-z_][A-Za-z0-9_-]*)")
+
+
+def apply_vars(nodes, mode):
+    """Os nós com as variáveis de `vars` trocadas, no modo `mode` (como src/theme/heranca.zig):
+    `$nome` sozinho fica com o tipo da variável; dentro de um texto, vira o texto dela."""
+    if not any(nd.name == "vars" for nd in nodes):
+        return nodes
+    options = {"modo-claro", "modo-escuro"} | {o.args[0] for nd in nodes if nd.name == "options" for o in nd.kids if o.args and isinstance(o.args[0], str)}
+    defs = {}
+    for nd in nodes:
+        if nd.name != "vars" or nd.props.get("mode", mode) != mode:
+            continue
+        for ch in nd.kids:
+            if not VAR_NAME.fullmatch(ch.name):
+                raise ThemeProblem(f"'{ch.name}' isn't a valid variable name (letters, digits, - and _)", ch.line, ch.col)
+            if not ch.args or ch.args[0] is None:
+                raise ThemeProblem(f"variable '{ch.name}' needs a value", ch.line, ch.col)
+            if ch.name in options:
+                raise ThemeProblem(f"variable '{ch.name}' has the same name as an option ($ means both)", ch.line, ch.col)
+            defs[ch.name] = [ch.args[0], False, ch]
+
+    def text(v):
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return str(int(v)) if float(v).is_integer() else repr(float(v))
+        return v
+
+    def resolve(name, stack):
+        d = defs[name]
+        if d[1]:
+            return d[0]
+        if name in stack:
+            raise ThemeProblem("variables use each other in a loop: " + " → ".join("$" + x for x in stack + [name]), d[2].line, d[2].col)
+        d[0], d[1] = sub(d[0], stack + [name]), True
+        return d[0]
+
+    def sub(v, stack):
+        if not isinstance(v, str) or "$" not in v:
+            return v
+        whole = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_-]*)", v)
+        if whole:
+            return resolve(whole.group(1), stack) if whole.group(1) in defs else v
+        return VAR_REF.sub(lambda m: text(resolve(m.group(1), stack)) if m.group(1) in defs else m.group(0), v)
+
+    for name in list(defs):
+        resolve(name, [])
+
+    def node(nd):
+        if nd.name in ("vars", "extends", "theme-api"):
+            return nd
+        out = KNode(nd.line, nd.col, nd.start)
+        out.name, out.end = nd.name, nd.end
+        out.args = [sub(a, []) for a in nd.args]
+        out.props = {k: sub(v, []) for k, v in nd.props.items()}
+        out.kids = [node(k) for k in nd.kids]
+        return out
+    return [node(nd) for nd in nodes]
+
+
 def theme_modes(nodes):
     """As cores resolvidas nos dois modos, com as opções no padrão (como `load_themes`)."""
     top = {n.name: n for n in nodes}
@@ -1400,7 +1463,7 @@ def theme_modes(nodes):
     out = {}
     for mode in ("dark", "light"):
         toks = default_tokens(pal, mode)
-        for nd in nodes:
+        for nd in apply_vars(nodes, mode):
             if nd.name != "colors" or nd.props.get("mode", mode) != mode:
                 continue
             if "when" in nd.props and nd.props["when"] not in on:
@@ -1450,8 +1513,16 @@ def check_community_file(path, builtins, src_bytes):
         raise ThemeProblem("the file starts with a byte order mark (BOM), which the app reads as part of the first line: save it as UTF-8 without BOM", 1, 1)
     if "\x00" in src:
         raise ThemeProblem("the file has a NUL byte")
-    nodes = kdl_strict(src)
-    check_theme_nodes(nodes)
+    raw = kdl_strict(src)
+    # A galeria só leva temas inteiros: o criador de temas abre um tema com `extends` e
+    # baixa de novo com a base dentro do arquivo.
+    for nd in raw:
+        if nd.name == "extends":
+            raise ThemeProblem("extends isn't accepted in the gallery: open the theme in the theme builder and download it again "
+                               "(the builder puts the base inside the file)", nd.line, nd.col)
+    for mode in ("dark", "light"):
+        check_theme_nodes(apply_vars(raw, mode))
+    nodes = apply_vars(raw, "dark")
 
     heads = [nd for nd in nodes if nd.name == "theme"]
     if not heads:
@@ -1497,7 +1568,7 @@ def check_community_file(path, builtins, src_bytes):
         raise ThemeProblem(f"preview= must be one of: {', '.join(PREVIEWS)}", th.line, th.col)
 
     try:
-        modes = theme_modes(nodes)
+        modes = theme_modes(raw)
     except (ValueError, KeyError, IndexError, TypeError):
         raise ThemeProblem("couldn't work out the theme's colors (palette or color blocks)")
     lay = layout_key(nodes)
@@ -2161,7 +2232,8 @@ def build_builder(lang, themes, community):
     blob = script_json(data)
     licenses = "".join(f'<option value="{x}">' for x in LICENSES)
     src = (src.replace("%ROOT%", root).replace("%REPO%", REPO).replace("%GUIDE%", rel(path, page_url(lang, "x")).removesuffix("x.html"))
-           .replace("%COMMUNITY%", rel(path, community_url(lang))).replace("%LICENSE_OPTIONS%", licenses).replace("%BUILDER_DATA%", blob))
+           .replace("%COMMUNITY%", rel(path, community_url(lang))).replace("%LICENSE_OPTIONS%", licenses).replace("%BUILDER_DATA%", blob)
+           .replace("%THEME_SCHEMA%", script_json(SCHEMA)))
     title = t(lang, "Theme builder · larperCord", "Criador de temas · larperCord")
     desc = t(lang, "Build a larperCord theme in the browser: click any part of the live preview to change its color, generate palettes, pick a layout, and download the .kdl.",
              "Monte um tema do larperCord no navegador: clique em qualquer parte da prévia ao vivo para mudar a cor, gere paletas, escolha um layout e baixe o .kdl.")
@@ -2204,7 +2276,7 @@ def build_community(lang, community):
     src = (src.replace("%ROOT%", root).replace("%REPO%", REPO).replace("%GUIDE%", rel(path, page_url(lang, "x")).removesuffix("x.html"))
            .replace("%BUILDER%", rel(path, builder_url(lang))).replace("%CARDS%", "\n".join(community_card(lang, path, c) for c in community))
            .replace("%COUNT%", t(lang, f"{count} theme" + ("" if count == 1 else "s"), f"{count} tema" + ("" if count == 1 else "s")))
-           .replace("%DATA%", blob))
+           .replace("%DATA%", blob).replace("%THEME_SCHEMA%", script_json(SCHEMA)))
     title = t(lang, "Community themes · larperCord", "Temas da comunidade · larperCord")
     desc = t(lang, "larperCord themes made by people who use it: a live preview of each, a link to open it in the theme builder and the .kdl to download. How to send yours.",
              "Temas do larperCord feitos por quem usa: prévia ao vivo de cada um, link para abrir no criador de temas e o .kdl para baixar. Como mandar o seu.")

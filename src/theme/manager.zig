@@ -12,13 +12,14 @@ const vigia = @import("../platform/vigia.zig");
 const c = @import("c");
 const builtin_themes = @import("builtin_themes");
 const theme = @import("theme.zig");
+const bases = @import("bases.zig");
 const Rgba = theme.Rgba;
 
 pub const Preview = struct {
     name: []const u8,
     description: []const u8,
     description_en: []const u8 = "",
-    kind: enum { classic, glass, terminal, bubbles, zen, mirror, office, desktop },
+    kind: @import("schema.zig").Preview,
     bg: Rgba,
     rail: Rgba,
     sidebar: Rgba,
@@ -53,6 +54,11 @@ pub const Manager = struct {
     choices: std.StringHashMapUnmanaged(std.StringHashMapUnmanaged(bool)) = .empty,
     err_buf: [200]u8 = undefined,
     last_error: ?[]const u8 = null,
+    /// O primeiro aviso do esquema do tema carregado (`arquivo:linha:coluna: mensagem`) e
+    /// quantos são: o tema carregou, mas tem o que o app não conhece.
+    warn_buf: [200]u8 = undefined,
+    last_warning: ?[]const u8 = null,
+    warning_count: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator) !Manager {
         var m: Manager = .{ .gpa = gpa };
@@ -142,7 +148,10 @@ pub const Manager = struct {
                 owned = @as([*]u8, @ptrCast(data))[0..size];
                 break :blk owned.?;
             } else e.builtin.?;
-            var t = theme.loadWith(m.gpa, src, m.loadOptions(e.name), null) catch {
+            var order: [4][]const u8 = undefined;
+            const dirs = m.baseDirs(&order);
+            var idb: [80]u8 = undefined;
+            var t = theme.loadWith(m.gpa, src, m.withBases(m.loadOptions(e.name), &dirs, e, &idb), null) catch {
                 m.previews.append(m.gpa, .{ .name = e.name, .description = "(erro ao carregar)", .kind = .classic, .bg = Rgba.black, .rail = Rgba.black, .sidebar = Rgba.black, .surface = Rgba.black, .elevated = Rgba.black, .accent = Rgba.white, .text = Rgba.white, .bubble = Rgba.white, .transparent = false }) catch {};
                 continue;
             };
@@ -167,6 +176,27 @@ pub const Manager = struct {
 
     fn loadOptions(m: *const Manager, theme_name: []const u8) theme.LoadOptions {
         return .{ .wal = if (m.wal) |*w| w else null, .mode = m.mode, .overrides = m.choices.getPtr(theme_name) };
+    }
+
+    /// As pastas de temas na ordem em que `extends` procura (a que vence primeiro: a do
+    /// usuário, depois ./themes; os embutidos vêm por último, em bases.zig).
+    fn baseDirs(m: *const Manager, order: *[4][]const u8) bases.Dirs {
+        var n: usize = 0;
+        var i = m.dirs.items.len;
+        while (i > 0 and n < order.len) {
+            i -= 1;
+            order[n] = m.dirs.items[i];
+            n += 1;
+        }
+        return .{ .dirs = order[0..n], .read = readFile };
+    }
+
+    /// `extends` acha as bases nas pastas; um nome igual ao do próprio tema leva ao de baixo.
+    fn withBases(_: *const Manager, lo_in: theme.LoadOptions, dirs: *const bases.Dirs, e: Entry, idb: []u8) theme.LoadOptions {
+        var lo = lo_in;
+        lo.bases = dirs.bases();
+        lo.self = if (e.path) |p| p else bases.builtinId(idb, e.name);
+        return lo;
     }
 
     /// Guarda a escolha de uma opção do tema (não recarrega).
@@ -225,14 +255,30 @@ pub const Manager = struct {
         } else e.builtin.?;
 
         var diag: theme.Diagnostic = .{};
-        const t = theme.loadWith(m.gpa, src, m.loadOptions(e.name), &diag) catch {
-            m.last_error = std.fmt.bufPrint(&m.err_buf, "{s}.kdl:{d}:{d}: {s}", .{ e.name, diag.line, diag.column, diag.message }) catch null;
+        var order: [4][]const u8 = undefined;
+        const dirs = m.baseDirs(&order);
+        var idb: [80]u8 = undefined;
+        const t = theme.loadWith(m.gpa, src, m.withBases(m.loadOptions(e.name), &dirs, e, &idb), &diag) catch {
+            // Erro na base de `extends`: o arquivo dela, não o do tema.
+            m.last_error = if (diag.file.len > 0)
+                std.fmt.bufPrint(&m.err_buf, "{s}:{d}:{d}: {s}", .{ diag.file, diag.line, diag.column, diag.message }) catch null
+            else
+                std.fmt.bufPrint(&m.err_buf, "{s}.kdl:{d}:{d}: {s}", .{ e.name, diag.line, diag.column, diag.message }) catch null;
             return false;
         };
         if (m.active) |*old| old.deinit();
         m.active = t;
         m.current = i;
         m.last_error = null;
+        m.warning_count = t.warnings.len;
+        m.last_warning = null;
+        var nb: [128]u8 = undefined;
+        const own = std.fmt.bufPrint(&nb, "{s}.kdl", .{e.name}) catch e.name;
+        for (t.warnings, 0..) |w, k| {
+            const file = if (w.file.len > 0) w.file else own;
+            std.log.warn("tema {s}:{d}:{d}: {s}", .{ file, w.line, w.col, w.message });
+            if (k == 0) m.last_warning = std.fmt.bufPrint(&m.warn_buf, "{s}:{d}:{d}: {s}", .{ file, w.line, w.col, w.message }) catch null;
+        }
         return true;
     }
 
@@ -264,10 +310,20 @@ fn isDir(path: [:0]const u8) bool {
     return c.SDL_GetPathInfo(path.ptr, &info) and info.type == c.SDL_PATHTYPE_DIRECTORY;
 }
 
-fn configDir(gpa: std.mem.Allocator) ?[:0]u8 {
+pub fn configDir(gpa: std.mem.Allocator) ?[:0]u8 {
     var hb: [512]u8 = undefined;
     const base = sys.configHome(&hb) orelse return null;
     return std.fmt.allocPrintSentinel(gpa, "{s}/larpercord/themes", .{base}, 0) catch null;
+}
+
+/// Lê um tema inteiro para `a` (as bases de `extends`, o --theme-check, o LSP).
+pub fn readFile(a: std.mem.Allocator, path: []const u8) ?[]const u8 {
+    var buf: [1024]u8 = undefined;
+    const z = std.fmt.bufPrintSentinel(&buf, "{s}", .{path}, 0) catch return null;
+    var size: usize = 0;
+    const data = c.SDL_LoadFile(z.ptr, &size) orelse return null;
+    defer c.SDL_free(data);
+    return a.dupe(u8, @as([*]const u8, @ptrCast(data))[0..size]) catch null;
 }
 
 fn walDir(buf: []u8) ?[:0]const u8 {

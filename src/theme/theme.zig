@@ -4,6 +4,10 @@ const std = @import("std");
 const kdl = @import("kdl.zig");
 const color = @import("color.zig");
 pub const fx = @import("fx.zig");
+pub const schema = @import("schema.zig");
+pub const heranca = @import("heranca.zig");
+/// De onde vêm os temas de `extends` (bases.zig tem os de sempre).
+pub const Bases = heranca.Bases;
 pub const Rgba = color.Rgba;
 
 pub const Token = enum {
@@ -67,6 +71,13 @@ pub const LoadOptions = struct {
     mode: Mode = .dark,
     /// Valores escolhidos pelo usuário para as opções do tema.
     overrides: ?*const std.StringHashMapUnmanaged(bool) = null,
+    /// Recebe os avisos da checagem do esquema com linha e coluna (--theme-check, LSP).
+    report: ?*schema.Report = null,
+    /// De onde vêm as bases de `extends` (sem isto, `extends` é erro).
+    bases: ?Bases = null,
+    /// Quem é este tema (o caminho, ou "builtin:nome"): `extends` com o próprio nome
+    /// leva ao tema de baixo com esse nome (o embutido), não a ele mesmo.
+    self: []const u8 = "",
 };
 
 /// Cor sobrescrita num pedaço do layout (`c-text="#fff"` num nó).
@@ -101,6 +112,11 @@ pub const Theme = struct {
     mode: Mode = .dark,
     options: []const Option = &.{},
     option_values: std.StringHashMapUnmanaged(bool) = .empty,
+    /// O que o esquema não conhece (componente, propriedade, valor fora da faixa): o
+    /// tema carrega assim mesmo, e o app mostra o primeiro aviso (schema.zig).
+    warnings: []const schema.Issue = &.{},
+    /// Variáveis de `vars` (com as da base), para completar `$` no editor.
+    var_names: []const []const u8 = &.{},
 
     /// Valor de uma opção do tema (`$nome` nas propriedades, `when="nome"`).
     pub fn option(t: *const Theme, name: []const u8) ?bool {
@@ -174,6 +190,24 @@ pub const Diagnostic = struct {
     line: u32 = 0,
     column: u32 = 0,
     message: []const u8 = "",
+    /// Arquivo do erro quando ele está na base de `extends` (vazio = o próprio tema).
+    file: []const u8 = "",
+    /// Onde ficam `message` e `file` montados na hora (não copie o Diagnostic depois do erro).
+    msg_buf: [240]u8 = undefined,
+    file_buf: [200]u8 = undefined,
+    /// Os arquivos da corrente enquanto o tema carrega: `fail` acha de onde veio o nó.
+    files: []const heranca.File = &.{},
+
+    fn set(d: *Diagnostic, file: []const u8, line: u32, col: u32, msg: []const u8) void {
+        d.line = line;
+        d.column = col;
+        const m = @min(msg.len, d.msg_buf.len);
+        @memcpy(d.msg_buf[0..m], msg[0..m]);
+        d.message = d.msg_buf[0..m];
+        const f = @min(file.len, d.file_buf.len);
+        @memcpy(d.file_buf[0..f], file[0..f]);
+        d.file = d.file_buf[0..f];
+    }
 };
 
 /// Carrega um tema. `wal` é a paleta do pywal (se houver); o tema decide se
@@ -220,9 +254,23 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
     // Os nós do KDL apontam para o texto: guarda uma cópia junto do tema.
     const owned_src = try a.dupe(u8, src);
     var kd: kdl.Diagnostic = .{};
-    const nodes = kdl.parse(a, owned_src, &kd) catch |err| {
+    const own = kdl.parse(a, owned_src, &kd) catch |err| {
         if (diag) |d| d.* = .{ .line = kd.line, .column = kd.column, .message = kd.message };
         return err;
+    };
+    // `extends`, `vars` e a checagem do esquema (heranca.zig, schema.zig): daqui em diante
+    // os nós já vêm com a base e as variáveis trocadas.
+    var problem: heranca.Problem = .{};
+    const prep = heranca.prepare(a, own, .{ .bases = lo.bases, .self = lo.self, .light = lo.mode == .light, .report = lo.report }, &problem) catch |err| {
+        if (err == error.InvalidTheme) if (diag) |d| d.set(problem.file, problem.line, problem.col, problem.message);
+        return err;
+    };
+    const nodes = prep.nodes;
+    t.warnings = prep.warnings;
+    t.var_names = prep.var_names;
+    if (diag) |d| d.files = prep.files;
+    defer if (diag) |d| {
+        d.files = &.{};
     };
 
     // Paleta: do pywal, do próprio tema ou a padrão.
@@ -242,7 +290,13 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
                 .description_en = ch.str("description-en") orelse "",
                 .default = ch.flag("default") orelse true,
             };
-            try opts.append(a, o);
+            // Com `extends`, a opção do tema troca a da base com o mesmo nome, no lugar dela.
+            for (opts.items) |*old| {
+                if (std.mem.eql(u8, old.name, oname)) {
+                    old.* = o;
+                    break;
+                }
+            } else try opts.append(a, o);
             const value = if (lo.overrides) |ov| ov.get(oname) orelse o.default else o.default;
             try t.option_values.put(a, oname, value);
         }
@@ -281,6 +335,8 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
     };
     const resolver: color.Resolver = .{ .palette = &pal, .ctx = &t, .lookup = Look.f };
     var fcx: fx.Cx = .{ .a = a, .palette = &pal, .tokens = tokenIndex };
+    // O último nó de cada estilo: com `extends`, o do tema junta as propriedades às da base.
+    var style_nodes: std.StringHashMapUnmanaged(*const kdl.Node) = .empty;
 
     for (nodes) |*n| {
         if (!applies(&t, n, lo.mode)) continue;
@@ -313,8 +369,9 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
         } else if (std.mem.eql(u8, n.name, "window")) {
             if (n.flag("transparent")) |v| t.transparent = v;
         } else if (std.mem.eql(u8, n.name, "styles")) {
-            for (n.children) |*ch| {
-                const sname = (ch.arg(0) orelse return fail(diag, ch, "estilo sem nome")).asString() orelse return fail(diag, ch, "nome do estilo deve ser string");
+            for (n.children) |*child| {
+                const sname = (child.arg(0) orelse return fail(diag, child, "estilo sem nome")).asString() orelse return fail(diag, child, "nome do estilo deve ser string");
+                const ch = try withBaseStyle(a, &style_nodes, sname, child);
                 var st: Style = .{};
                 if (ch.str("bg")) |e| st.bg = color.eval(e, resolver) catch return fail(diag, ch, "bg inválido");
                 if (ch.str("border")) |e| st.border = color.eval(e, resolver) catch return fail(diag, ch, "border inválido");
@@ -386,8 +443,28 @@ fn tokenIndex(name: []const u8) ?u8 {
 }
 
 fn fail(diag: ?*Diagnostic, n: ?*const kdl.Node, msg: []const u8) LoadError {
-    if (diag) |d| d.* = .{ .line = if (n) |x| x.line else 0, .message = msg };
+    if (diag) |d| {
+        // O nó pode ser da base de `extends`: o erro aponta o arquivo dela.
+        const file = if (n) |x| (if (x.file > 0 and x.file < d.files.len) d.files[x.file].label else "") else "";
+        d.set(file, if (n) |x| x.line else 0, if (n) |x| x.col else 0, msg);
+    }
     return error.InvalidTheme;
+}
+
+/// O estilo `name` deste nó, com as propriedades do estilo de mesmo nome da base de
+/// `extends` antes das dele (as dele vencem). No mesmo arquivo, o último troca o anterior
+/// inteiro, como sempre.
+fn withBaseStyle(a: std.mem.Allocator, seen: *std.StringHashMapUnmanaged(*const kdl.Node), name: []const u8, n: *const kdl.Node) LoadError!*const kdl.Node {
+    const prev = seen.get(name);
+    var out = n;
+    if (prev) |p| if (p.file != n.file) {
+        const joined = try a.create(kdl.Node);
+        joined.* = n.*;
+        joined.props = try std.mem.concat(a, kdl.Prop, &.{ p.props, n.props });
+        out = joined;
+    };
+    try seen.put(a, name, out);
+    return out;
 }
 
 pub fn tokenFromName(name: []const u8) ?Token {
@@ -521,6 +598,20 @@ test "erro de tema aponta a linha" {
     var d: Diagnostic = .{};
     try std.testing.expectError(error.InvalidTheme, load(std.testing.allocator, "colors {\n  nao-existe \"#fff\"\n}\nlayout { messages }", null, &d));
     try std.testing.expectEqual(@as(u32, 2), d.line);
+}
+
+test "o que o esquema não conhece vira aviso, e o tema carrega assim mesmo" {
+    var r: schema.Report = .{ .gpa = std.testing.allocator };
+    defer r.deinit();
+    var t = try loadWith(std.testing.allocator, "layout {\n  row {\n    messages tamanho=3\n    coisa\n  }\n}", .{ .report = &r }, null);
+    defer t.deinit();
+    try std.testing.expectEqual(@as(usize, 2), t.warnings.len);
+    try std.testing.expectEqual(@as(u32, 3), t.warnings[0].line);
+    try std.testing.expectEqual(@as(u32, 14), t.warnings[0].col);
+    try std.testing.expectEqual(schema.Severity.warning, t.warnings[0].severity);
+    try std.testing.expectEqual(@as(u32, 4), t.warnings[1].line);
+    try std.testing.expectEqual(@as(u32, 5), t.warnings[1].col);
+    try std.testing.expectEqual(@as(usize, 2), r.items.items.len);
 }
 
 test "cores sobrescritas valem para os filhos" {

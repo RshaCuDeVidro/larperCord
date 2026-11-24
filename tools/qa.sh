@@ -50,6 +50,8 @@ fi
 if [ -z "$parte" ] || [ "$parte" = outras ]; then
 QA_SUITE=extras LARPER_NO_FFMPEG=1 run "extras" $bin --qa --theme classico
 QA_SUITE=envio run "envio" $bin --qa --theme classico
+# Um tema da pasta do usuário que estende outro (extends, vars) e recarrega quando a base muda.
+QA_SUITE=tema-herda run "tema que estende outro" $bin --qa --theme classico
 QA_SUITE=limites run "limites" $bin --qa --theme classico
 # Pedidos de mensagem e grupo: aceitar, recusar e sair mudam a lista de DMs para o resto.
 QA_SUITE=social run "social" $bin --qa --theme classico

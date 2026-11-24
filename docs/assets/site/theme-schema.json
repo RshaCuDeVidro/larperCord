@@ -1,0 +1,592 @@
+{
+  "format": 1,
+  "theme-api": 2,
+  "tokens": [
+    {"name": "bg", "desc": "Window background, behind the chat."},
+    {"name": "rail", "desc": "Background of the server bar."},
+    {"name": "sidebar", "desc": "Background of the channel list and the member list."},
+    {"name": "surface", "desc": "Background of the chat and of cards."},
+    {"name": "elevated", "desc": "Raised surfaces: inputs, popups, hovered cards."},
+    {"name": "overlay", "desc": "Menus and dialogs."},
+    {"name": "text", "desc": "Main text."},
+    {"name": "muted", "desc": "Secondary text (channel names, times). The app raises its contrast when it's too low."},
+    {"name": "faint", "desc": "Tertiary text and hints. The app raises its contrast when it's too low."},
+    {"name": "accent", "desc": "The highlight color: selection, buttons, focus."},
+    {"name": "accent-text", "desc": "Text drawn on top of accent."},
+    {"name": "border", "desc": "Lines and borders."},
+    {"name": "hover", "desc": "Background under the mouse."},
+    {"name": "selected", "desc": "Background of the selected item."},
+    {"name": "online", "desc": "Online status, and the ring around who is speaking."},
+    {"name": "idle", "desc": "Idle status (and the mention highlight in some layouts)."},
+    {"name": "dnd", "desc": "Do-not-disturb status."},
+    {"name": "danger", "desc": "Destructive actions and errors."},
+    {"name": "mention", "desc": "Mention highlight."},
+    {"name": "link", "desc": "Links."},
+    {"name": "code-bg", "desc": "Background of code blocks."},
+    {"name": "bubble-self", "desc": "Your chat bubbles (messages variant=bubbles)."},
+    {"name": "bubble-self-text", "desc": "Text in your chat bubbles."},
+    {"name": "bubble-other", "desc": "Other people's chat bubbles."},
+    {"name": "shadow", "desc": "Shadow color."}
+  ],
+  "previews": ["classic", "glass", "terminal", "bubbles", "zen", "mirror", "office", "desktop"],
+  "patterns": [
+    {"prefix": "c-", "type": "color", "sets": ["node"], "desc": "Overrides a color token on this node and its children: c-text=\"#fff\"."},
+    {"prefix": "cl-", "type": "color", "sets": ["node"], "desc": "Like c-, only in light mode."},
+    {"prefix": "cd-", "type": "color", "sets": ["node"], "desc": "Like c-, only in dark mode."}
+  ],
+  "sets": {
+    "condition": [
+      {"key": "mode", "type": "enum", "values": ["dark", "light"], "desc": "The node only applies in this mode."},
+      {"key": "when", "type": "option", "desc": "The node only applies when this theme option is on (modo-claro and modo-escuro also work)."},
+      {"key": "unless", "type": "option", "desc": "The node only applies when this theme option is off."}
+    ],
+    "node": [
+      {"key": "width", "type": "number", "min": -20000, "max": 20000, "range": [40, 520, 1], "desc": "Fixed width (in a row: the size along the row)."},
+      {"key": "height", "type": "number", "min": -20000, "max": 20000, "range": [16, 240, 1], "desc": "Fixed height (in a column: the size along the column)."},
+      {"key": "flex", "type": "number", "min": -20000, "max": 20000, "range": [0, 10, 0.5], "default": 1, "desc": "Weight in the space left over by the fixed sizes."},
+      {"key": "max-width", "type": "number", "min": -20000, "max": 20000, "range": [320, 1600, 10], "desc": "Limits the width and centers the node."},
+      {"key": "hide-below", "type": "number", "min": -20000, "max": 20000, "range": [400, 1600, 10], "desc": "Hides the node when the window is narrower than this."},
+      {"key": "hide-below-height", "type": "number", "min": -20000, "max": 20000, "range": [300, 1200, 10], "desc": "Hides the node when the window is shorter than this."},
+      {"key": "only-below-height", "type": "number", "min": -20000, "max": 20000, "range": [300, 1200, 10], "desc": "Shows the node only when the window is shorter than this."},
+      {"key": "show", "type": "boolean", "default": true, "desc": "#false hides the node."},
+      {"key": "when", "type": "option", "desc": "Shows the node only when this theme option is on (modo-claro and modo-escuro also work)."},
+      {"key": "unless", "type": "option", "desc": "Shows the node only when this theme option is off."},
+      {"key": "style", "type": "style", "desc": "A named style from styles, drawn behind the node."},
+      {"key": "bg", "type": "color", "desc": "Background: a token name or a color expression."},
+      {"key": "radius", "type": "number", "range": [0, 32, 1], "default": 0, "desc": "Corner radius of bg and of the primitives on this node."},
+      {"key": "border", "type": "color", "desc": "Full border around the node."}
+    ],
+    "container": [
+      {"key": "gap", "type": "number", "min": -20000, "max": 20000, "range": [0, 40, 1], "default": 0, "desc": "Space between the children."},
+      {"key": "padding", "type": "number", "min": -20000, "max": 20000, "range": [0, 64, 1], "default": 0, "desc": "Inner space on every side."},
+      {"key": "padding-x", "type": "number", "min": -20000, "max": 20000, "range": [0, 64, 1], "desc": "Inner space on the left and right (instead of padding)."},
+      {"key": "padding-y", "type": "number", "min": -20000, "max": 20000, "range": [0, 64, 1], "desc": "Inner space at the top and bottom (instead of padding)."}
+    ],
+    "component": [
+      {"key": "inset-x", "type": "number", "min": -20000, "max": 20000, "range": [0, 48, 1], "default": 0, "desc": "Inner margin of the component, left and right."},
+      {"key": "inset-y", "type": "number", "min": -20000, "max": 20000, "range": [0, 48, 1], "default": 0, "desc": "Inner margin of the component, top and bottom."},
+      {"key": "font", "type": "font", "desc": "The component's font: mono, ui or any installed family."},
+      {"key": "autohide", "type": "boolean", "default": false, "option": true, "desc": "The component fades out until the mouse gets close."}
+    ],
+    "box": [
+      {"key": "gradient", "type": "colors", "desc": "Gradient of 2 or 3 colors separated by spaces."},
+      {"key": "gradient-angle", "type": "number", "range": [0, 360, 1], "default": 90, "desc": "Gradient angle in degrees: 0 left to right, 90 top to bottom."},
+      {"key": "pattern", "type": "enum", "values": ["dots", "lines", "grid", "diagonal"], "desc": "Repeating pattern; needs pattern-color."},
+      {"key": "pattern-color", "type": "color", "desc": "Color of the pattern."},
+      {"key": "pattern-size", "type": "number", "min": 2, "max": 128, "range": [4, 64, 1], "default": 16, "desc": "Distance between repeats of the pattern."},
+      {"key": "pattern-width", "type": "number", "min": 0.5, "max": 32, "range": [0.5, 8, 0.5], "default": 1, "desc": "Stroke thickness (or dot radius) of the pattern."},
+      {"key": "grain", "type": "color", "desc": "Fine noise tinted by this color."},
+      {"key": "vignette", "type": "color", "desc": "Darkens (or tints) the edges."},
+      {"key": "vignette-size", "type": "number", "min": 0, "max": 0.95, "range": [0, 0.95, 0.05], "default": 0.55, "desc": "Where the vignette starts: 0 at the center, 1 only in the corners."},
+      {"key": "inner-shadow", "type": "color", "desc": "Inward shadow."},
+      {"key": "inner-shadow-size", "type": "number", "range": [0, 48, 1], "default": 14, "desc": "Size of the inward shadow."},
+      {"key": "drop-shadow", "type": "color", "desc": "Soft hollow shadow: it doesn't darken what's under a translucent panel."},
+      {"key": "drop-shadow-size", "type": "number", "min": 1, "range": [1, 80, 1], "default": 32, "desc": "Size of the drop shadow."},
+      {"key": "drop-shadow-y", "type": "number", "range": [-40, 40, 1], "default": 10, "desc": "Vertical offset of the drop shadow."},
+      {"key": "hover-bg", "type": "color", "desc": "Background drawn on top when the mouse is over it, with a transition."},
+      {"key": "border-gradient", "type": "colors", "desc": "Gradient border of 2 or 3 colors."},
+      {"key": "border-gradient-angle", "type": "number", "range": [0, 360, 1], "default": 90, "desc": "Angle of the gradient border, in degrees."},
+      {"key": "border-width", "type": "number", "range": [0, 8, 0.5], "default": 1, "desc": "Border thickness."},
+      {"key": "border-top", "type": "color", "desc": "Border on the top side only."},
+      {"key": "border-right", "type": "color", "desc": "Border on the right side only."},
+      {"key": "border-bottom", "type": "color", "desc": "Border on the bottom side only."},
+      {"key": "border-left", "type": "color", "desc": "Border on the left side only."},
+      {"key": "border-top-width", "type": "number", "range": [0, 8, 0.5], "desc": "Thickness of the top border (default: border-width, or 1)."},
+      {"key": "border-right-width", "type": "number", "range": [0, 8, 0.5], "desc": "Thickness of the right border (default: border-width, or 1)."},
+      {"key": "border-bottom-width", "type": "number", "range": [0, 8, 0.5], "desc": "Thickness of the bottom border (default: border-width, or 1)."},
+      {"key": "border-left-width", "type": "number", "range": [0, 8, 0.5], "desc": "Thickness of the left border (default: border-width, or 1)."},
+      {"key": "corners", "type": "enum", "values": ["all", "left", "right", "top", "bottom"], "default": "all", "desc": "Which corners the fill rounds."}
+    ]
+  },
+  "top": [
+    {
+      "name": "theme",
+      "desc": "Metadata: the name and what shows in Settings.",
+      "pt": "Metadados: o nome e o que aparece nas Configurações.",
+      "args": {"type": "string", "min": 1, "max": 1, "desc": "The theme's name."},
+      "sets": ["condition"],
+      "props": [
+        {"key": "description", "type": "string", "desc": "Description in Portuguese (shown in Settings)."},
+        {"key": "description-en", "type": "string", "desc": "Description in English."},
+        {"key": "author", "type": "string", "desc": "Who made the theme."},
+        {"key": "license", "type": "string", "desc": "SPDX license identifier (the community gallery asks for one; the app ignores it)."},
+        {"key": "preview", "type": "enum", "values": ["classic", "glass", "terminal", "bubbles", "zen", "mirror", "office", "desktop"], "default": "classic", "desc": "Which thumbnail Settings draws for the theme."}
+      ]
+    },
+    {
+      "name": "theme-api",
+      "desc": "Version of the theme format. 2 = strict: unknown components, properties and values are errors. Without it, 1: they're warnings.",
+      "pt": "Versão do formato do tema. 2 = estrito: componentes, propriedades e valores desconhecidos são erros. Sem ele, 1: são avisos.",
+      "args": {"type": "number", "min": 1, "max": 1, "desc": "1 or 2."}
+    },
+    {
+      "name": "extends",
+      "desc": "Starts from another theme (built-in or in your themes folder) and changes only what differs.",
+      "pt": "Parte de outro tema (embutido ou da sua pasta de temas) e muda só o que for diferente.",
+      "args": {"type": "string", "min": 1, "max": 1, "desc": "Name of the base theme, like \"classico\"."}
+    },
+    {
+      "name": "palette",
+      "desc": "The 16 base colors (wal:0 … wal:15): \"wal\" for pywal's, or up to 16 hex colors.",
+      "pt": "As 16 cores base (wal:0 … wal:15): \"wal\" para as do pywal, ou até 16 cores hex.",
+      "args": {"type": "string", "min": 1, "max": 16, "desc": "\"wal\", or hex colors."},
+      "sets": ["condition"]
+    },
+    {
+      "name": "colors",
+      "desc": "Overrides color tokens: one child per token, with a color expression.",
+      "pt": "Sobrescreve tokens de cor: um filho por token, com uma expressão de cor.",
+      "sets": ["condition"],
+      "children": "tokens"
+    },
+    {
+      "name": "roles",
+      "desc": "Up to 8 role colors (usernames, server icons).",
+      "pt": "Até 8 cores de cargo (nomes, ícones de servidor).",
+      "args": {"type": "color", "min": 1, "max": 8, "desc": "Color expressions."},
+      "sets": ["condition"]
+    },
+    {
+      "name": "fonts",
+      "desc": "Font families and the base size.",
+      "pt": "Famílias de fonte e o tamanho base.",
+      "sets": ["condition"],
+      "props": [
+        {"key": "ui", "type": "string", "default": "Inter", "desc": "Interface font family."},
+        {"key": "mono", "type": "string", "default": "JetBrains Mono", "desc": "Monospace font family (code, mono)."},
+        {"key": "size", "type": "number", "min": 6, "max": 72, "range": [10, 24, 0.5], "default": 16, "desc": "Base text size."}
+      ]
+    },
+    {
+      "name": "metrics",
+      "desc": "Default rounding of rows and buttons.",
+      "pt": "Arredondamento padrão de linhas e botões.",
+      "sets": ["condition"],
+      "props": [
+        {"key": "radius", "type": "number", "min": 0, "max": 64, "range": [0, 24, 1], "default": 6, "desc": "Default corner radius."}
+      ]
+    },
+    {
+      "name": "window",
+      "desc": "Window settings.",
+      "pt": "Ajustes da janela.",
+      "sets": ["condition"],
+      "props": [
+        {"key": "transparent", "type": "boolean", "default": false, "desc": "Transparent window background (the compositor can blur what's behind it on Linux)."}
+      ]
+    },
+    {
+      "name": "styles",
+      "desc": "Named styles to use with style=name.",
+      "pt": "Estilos nomeados para usar com style=nome.",
+      "sets": ["condition"],
+      "children": ["style"]
+    },
+    {
+      "name": "options",
+      "desc": "On/off switches the theme offers in Settings → Appearance.",
+      "pt": "Chaves liga/desliga que o tema oferece em Configurações → Aparência.",
+      "children": ["option"]
+    },
+    {
+      "name": "vars",
+      "desc": "Variables: one child per variable (a number, a string or a color expression), used as $name in values. A theme that extends this one can change them.",
+      "pt": "Variáveis: um filho por variável (número, texto ou expressão de cor), usadas como $nome nos valores. Um tema que estende este pode trocá-las.",
+      "children": "free",
+      "props": [
+        {"key": "mode", "type": "enum", "values": ["dark", "light"], "desc": "The variables only apply in this mode."}
+      ]
+    },
+    {
+      "name": "layout",
+      "desc": "The interface tree, with a single root (row, column, stack or a component).",
+      "pt": "A árvore da interface, com uma raiz só (row, column, stack ou um componente).",
+      "sets": ["condition"],
+      "children": "layout_root"
+    }
+  ],
+  "children": [
+    {
+      "name": "style",
+      "parent": "styles",
+      "desc": "A named style.",
+      "pt": "Um estilo nomeado.",
+      "args": {"type": "string", "min": 1, "max": 1, "desc": "The style's name."},
+      "sets": ["box"],
+      "props": [
+        {"key": "bg", "type": "color", "desc": "Background color."},
+        {"key": "radius", "type": "number", "range": [0, 32, 1], "default": 0, "desc": "Corner radius."},
+        {"key": "border", "type": "color", "desc": "Border color."},
+        {"key": "shadow", "type": "number", "range": [0, 48, 1], "default": 0, "desc": "Shadow size (0 = none)."},
+        {"key": "glow", "type": "color", "desc": "Border color when the mouse is over it."},
+        {"key": "sheen", "type": "boolean", "default": false, "option": true, "desc": "Glass reflection at the top of the card."}
+      ]
+    },
+    {
+      "name": "option",
+      "parent": "options",
+      "desc": "An on/off switch in Settings → Appearance.",
+      "pt": "Uma chave liga/desliga em Configurações → Aparência.",
+      "args": {"type": "string", "min": 1, "max": 1, "desc": "The option's name (used as when=name and $name)."},
+      "props": [
+        {"key": "label", "type": "string", "desc": "Label in Portuguese."},
+        {"key": "label-en", "type": "string", "desc": "Label in English."},
+        {"key": "description", "type": "string", "desc": "Description in Portuguese."},
+        {"key": "description-en", "type": "string", "desc": "Description in English."},
+        {"key": "default", "type": "boolean", "default": true, "desc": "Starts on or off."}
+      ]
+    },
+    {
+      "name": "span",
+      "parent": "label",
+      "desc": "A piece of the label's line, with its own color, weight, size or font.",
+      "pt": "Um pedaço da linha do label, com cor, peso, tamanho ou fonte próprios.",
+      "args": {"type": "string", "min": 0, "max": 1, "desc": "The text."},
+      "props": [
+        {"key": "text", "type": "string", "desc": "The text (instead of the argument)."},
+        {"key": "en", "type": "string", "desc": "English version of the text."},
+        {"key": "text-en", "type": "string", "desc": "English version of the text."},
+        {"key": "font", "type": "font", "desc": "Font (inherits from the label)."},
+        {"key": "weight", "type": "enum", "values": ["regular", "medium", "semibold", "bold", "italic"], "desc": "Weight (inherits from the label)."},
+        {"key": "size", "type": "number", "range": [8, 48, 1], "desc": "Size (inherits from the label)."},
+        {"key": "color", "type": "color", "desc": "Color (inherits from the label)."},
+        {"key": "tracking", "type": "number", "range": [-2, 16, 0.5], "desc": "Extra space between letters (inherits from the label)."}
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "name": "row",
+      "desc": "Children side by side.",
+      "pt": "Filhos lado a lado.",
+      "sets": ["node", "container", "box"],
+      "children": "layout"
+    },
+    {
+      "name": "column",
+      "desc": "Children one under the other.",
+      "pt": "Filhos um embaixo do outro.",
+      "sets": ["node", "container", "box"],
+      "children": "layout"
+    },
+    {
+      "name": "stack",
+      "desc": "Children on top of each other (the first one is drawn first).",
+      "pt": "Filhos um por cima do outro (o primeiro é desenhado antes).",
+      "sets": ["node", "container", "box"],
+      "children": "layout"
+    }
+  ],
+  "components": [
+    {
+      "name": "guild-bar",
+      "desc": "The server bar.",
+      "pt": "A barra de servidores.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["bar", "dock", "list"], "default": "bar", "tweak": true, "desc": "Bar, macOS-style dock or list with names."},
+        {"key": "icon-style", "type": "enum", "values": ["fill", "soft", "outline"], "default": "fill", "tweak": true, "desc": "How the server icons are filled."},
+        {"key": "orientation", "type": "enum", "values": ["vertical", "horizontal"], "tweak": true, "desc": "Direction (default: by the node's shape)."},
+        {"key": "shape", "type": "enum", "values": ["circle", "squircle", "square", "text"], "default": "circle", "tweak": true, "desc": "Shape of the icons; text = tabs with the names."},
+        {"key": "size", "type": "number", "range": [16, 80, 1], "default": 48, "tweak": true, "desc": "Icon size (default 48; 36 horizontal, 40 dock, 26 list)."},
+        {"key": "labels", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Names under the icons (horizontal bar)."},
+        {"key": "home", "type": "boolean", "default": true, "option": true, "tweak": true, "desc": "The home (DMs) button."},
+        {"key": "indicators", "type": "boolean", "default": true, "option": true, "tweak": true, "desc": "Unread and selection marks."},
+        {"key": "font-size", "type": "number", "range": [10, 24, 0.5], "desc": "Text size of shape=text tabs."}
+      ]
+    },
+    {
+      "name": "channel-list",
+      "desc": "The server's channels (or the DM list).",
+      "pt": "Os canais do servidor (ou a lista de DMs).",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["discord", "tree", "pills"], "default": "discord", "tweak": true, "desc": "Look of the list."},
+        {"key": "header", "type": "boolean", "default": true, "option": true, "tweak": true, "desc": "Server name at the top."},
+        {"key": "banner", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Colored banner with the server name (variant=discord)."}
+      ]
+    },
+    {
+      "name": "user-panel",
+      "desc": "Your name, status, mute/deafen and the settings button.",
+      "pt": "Seu nome, status, mudo/surdo e o botão de configurações.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["discord", "tty"], "default": "discord", "tweak": true, "desc": "Look of the panel."}
+      ]
+    },
+    {
+      "name": "header",
+      "desc": "Channel name, topic and buttons above the chat.",
+      "pt": "Nome do canal, tópico e botões em cima da conversa.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["discord", "minimal", "tty"], "default": "discord", "tweak": true, "desc": "Look of the header."},
+        {"key": "divider", "type": "boolean", "default": true, "option": true, "tweak": true, "desc": "Line under the header."}
+      ]
+    },
+    {
+      "name": "tabs",
+      "desc": "Open conversations as tabs.",
+      "pt": "Conversas abertas em abas.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["pills", "underline", "tty"], "default": "pills", "tweak": true, "desc": "Look of the tabs."}
+      ]
+    },
+    {
+      "name": "messages",
+      "desc": "The conversation (and the call screen when a voice channel is open).",
+      "pt": "A conversa (e a tela da call quando um canal de voz está aberto).",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["cozy", "irc", "bubbles"], "default": "cozy", "tweak": true, "desc": "Layout of the messages."},
+        {"key": "avatar", "type": "enum", "values": ["circle", "squircle", "square", "none"], "default": "circle", "tweak": true, "desc": "Shape of the photos."},
+        {"key": "avatar-size", "type": "number", "range": [16, 72, 1], "default": 40, "tweak": true, "desc": "Photo size (default 40; 30 with bubbles)."},
+        {"key": "spacing", "type": "number", "range": [0, 48, 1], "default": 16, "tweak": true, "desc": "Space between groups of messages."},
+        {"key": "font-size", "type": "number", "range": [10, 24, 0.5], "tweak": true, "desc": "Text size (default: the fonts size)."},
+        {"key": "ruled", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Ruled paper."},
+        {"key": "margin-line", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Red margin line."},
+        {"key": "ticks", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "\"Delivered ✓✓\" under your messages."},
+        {"key": "typing-bubble", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Typing bubble (variant=bubbles)."},
+        {"key": "call-style", "type": "style", "desc": "Named style for each tile of the call screen."},
+        {"key": "call-tint", "type": "number", "min": 0, "max": 1, "range": [0, 1, 0.01], "default": 0.22, "desc": "How much of each person's photo color goes into the call tile."}
+      ]
+    },
+    {
+      "name": "composer",
+      "desc": "The text box.",
+      "pt": "A caixa de texto.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["box", "pill", "prompt"], "default": "box", "tweak": true, "desc": "Look of the box."},
+        {"key": "typing", "type": "boolean", "default": true, "option": true, "tweak": true, "desc": "\"x is typing…\" above the box."}
+      ]
+    },
+    {
+      "name": "member-list",
+      "desc": "Members of the server (or the profile in a DM).",
+      "pt": "Membros do servidor (ou o perfil numa DM).",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["discord", "tty"], "default": "discord", "tweak": true, "desc": "Look of the list."}
+      ]
+    },
+    {
+      "name": "status-bar",
+      "desc": "A status line: connection, ping, memory, voice, theme, keys, clock.",
+      "pt": "Uma linha de status: conexão, ping, memória, voz, tema, atalhos, relógio.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["pills", "tty", "plain"], "default": "pills", "tweak": true, "desc": "Look of the bar."},
+        {"key": "items", "type": "words", "values": ["conn", "ping", "ram", "frame", "voice", "theme", "keys", "clock", "me", "mic", "deaf", "spacer"], "default": "conn ping ram voice spacer theme keys clock", "tweak": true, "desc": "What the bar shows, in order; after spacer it goes to the right. me, mic and deaf: your status and the mute/deafen buttons."}
+      ]
+    },
+    {
+      "name": "label",
+      "desc": "A line of text, with display typography (tracking, spans, shadow, outline, gradient).",
+      "pt": "Uma linha de texto, com tipografia de display (tracking, spans, sombra, contorno, degradê).",
+      "sets": ["node", "component", "box"],
+      "children": ["span"],
+      "props": [
+        {"key": "text", "type": "string", "desc": "The text."},
+        {"key": "text-en", "type": "string", "desc": "English version of the text."},
+        {"key": "size", "type": "number", "range": [8, 48, 1], "default": 14, "desc": "Text size."},
+        {"key": "weight", "type": "enum", "values": ["regular", "medium", "semibold", "bold", "italic"], "default": "semibold", "desc": "Weight."},
+        {"key": "color", "type": "color", "default": "muted", "desc": "Text color: a token name or a color expression."},
+        {"key": "align", "type": "enum", "values": ["left", "center", "right"], "default": "left", "desc": "Alignment."},
+        {"key": "tracking", "type": "number", "range": [-2, 16, 0.5], "default": 0, "desc": "Extra space between letters, in pixels (can be negative)."},
+        {"key": "span-gap", "type": "number", "range": [0, 32, 1], "default": 0, "desc": "Space between spans."},
+        {"key": "shadow", "type": "color", "desc": "Text shadow; with shadow-blur it becomes a soft halo."},
+        {"key": "shadow-x", "type": "number", "range": [-8, 8, 0.5], "default": 0, "desc": "Horizontal offset of the shadow."},
+        {"key": "shadow-y", "type": "number", "range": [-8, 8, 0.5], "default": 1, "desc": "Vertical offset of the shadow (default 1, or 0 with shadow-blur)."},
+        {"key": "shadow-blur", "type": "number", "range": [0, 12, 0.5], "default": 0, "desc": "Blur of the shadow."},
+        {"key": "outline", "type": "color", "desc": "Text outline."},
+        {"key": "outline-width", "type": "number", "range": [0.5, 6, 0.5], "default": 1, "desc": "Outline thickness."},
+        {"key": "text-gradient", "type": "colors", "desc": "Gradient on the text, 2 or 3 colors."},
+        {"key": "text-gradient-angle", "type": "number", "range": [0, 360, 1], "default": 0, "desc": "Angle of the text gradient (default: horizontal)."}
+      ]
+    },
+    {
+      "name": "logo",
+      "desc": "The app logo, in ASCII or as a wordmark.",
+      "pt": "O logo do app, em ASCII ou como texto.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "variant", "type": "enum", "values": ["wordmark", "ascii"], "default": "wordmark", "tweak": true, "desc": "ASCII art or text."},
+        {"key": "size", "type": "number", "range": [8, 40, 1], "default": 17, "tweak": true, "desc": "Text size (default 17; 13 in ASCII)."}
+      ]
+    },
+    {
+      "name": "topbar",
+      "desc": "Top bar: back/forward between tabs, search and help.",
+      "pt": "Barra de cima: voltar/avançar entre abas, busca e ajuda.",
+      "sets": ["node", "component", "box"]
+    },
+    {
+      "name": "crt",
+      "desc": "Scanlines and vignette on top of everything (use it in a stack).",
+      "pt": "Linhas de varredura e vinheta por cima de tudo (use num stack).",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "spacing", "type": "number", "min": 1, "range": [1, 10, 1], "default": 3, "tweak": true, "desc": "Distance between the scanlines."},
+        {"key": "strength", "type": "number", "range": [0, 0.4, 0.01], "default": 0.08, "tweak": true, "desc": "How dark the scanlines are."}
+      ]
+    },
+    {
+      "name": "shape",
+      "desc": "A drawn shape: circle, ring, arc, rounded rectangle or line.",
+      "pt": "Uma forma desenhada: círculo, anel, arco, retângulo arredondado ou linha.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "kind", "type": "enum", "values": ["circle", "ring", "arc", "rounded", "line"], "default": "circle", "desc": "Which shape."},
+        {"key": "color", "type": "color", "desc": "Stroke color."},
+        {"key": "thickness", "type": "number", "range": [0.5, 8, 0.5], "default": 1.5, "desc": "Stroke thickness."},
+        {"key": "size", "type": "number", "range": [2, 120, 1], "desc": "Diameter (default: the node's shorter side); on line, the length."},
+        {"key": "fill", "type": "color", "desc": "Fill of ring and rounded."},
+        {"key": "start", "type": "number", "range": [-360, 360, 1], "default": -90, "desc": "Start of the arc, in degrees."},
+        {"key": "sweep", "type": "number", "range": [0, 360, 1], "default": 270, "desc": "Opening of the arc, in degrees."},
+        {"key": "dot", "type": "color", "desc": "A dot at the tip of the arc."},
+        {"key": "dot-size", "type": "number", "range": [1, 12, 0.5], "desc": "Size of the dot (default: thickness × 1.6)."},
+        {"key": "radius", "type": "number", "range": [0, 32, 1], "default": 6, "desc": "Corners of rounded."},
+        {"key": "angle", "type": "number", "range": [-180, 180, 1], "default": 0, "desc": "Tilt of the line, in degrees."},
+        {"key": "align", "type": "enum", "values": ["left", "center", "right"], "default": "center", "desc": "Position inside the node."},
+        {"key": "offset-x", "type": "number", "range": [-40, 40, 1], "default": 0, "desc": "Horizontal offset inside the node."},
+        {"key": "offset-y", "type": "number", "range": [-40, 40, 1], "default": 0, "desc": "Vertical offset inside the node."}
+      ]
+    },
+    {
+      "name": "rule",
+      "desc": "A rule: plain, dashed, dotted, double, newspaper or ornamented.",
+      "pt": "Uma régua: lisa, tracejada, pontilhada, dupla, de jornal ou com ornamento.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "kind", "type": "enum", "values": ["solid", "dashed", "dotted", "double", "oxford"], "default": "solid", "desc": "Which rule."},
+        {"key": "color", "type": "color", "desc": "Rule color."},
+        {"key": "thickness", "type": "number", "range": [0.5, 8, 0.5], "default": 1, "desc": "Thickness."},
+        {"key": "dash", "type": "number", "range": [1, 24, 1], "default": 6, "desc": "Dash size (dashed)."},
+        {"key": "gap", "type": "number", "range": [1, 24, 1], "default": 4, "desc": "Gap between dashes (dashed)."},
+        {"key": "vertical", "type": "boolean", "default": false, "option": true, "desc": "From top to bottom (give the node a width)."},
+        {"key": "fade", "type": "boolean", "default": false, "option": true, "desc": "Fades out at both ends."},
+        {"key": "ornament", "type": "enum", "values": ["none", "diamond", "dot", "ring", "star"], "default": "none", "desc": "A shape in the middle of the rule."},
+        {"key": "ornament-text", "type": "string", "desc": "A character in the middle, instead of the shape (uses the node's font)."},
+        {"key": "ornament-color", "type": "color", "desc": "Color of the ornament."},
+        {"key": "ornament-size", "type": "number", "range": [4, 32, 1], "default": 8, "desc": "Size of the ornament."},
+        {"key": "ornament-gap", "type": "number", "range": [0, 32, 1], "desc": "Gap in the rule around the ornament."}
+      ]
+    },
+    {
+      "name": "window-controls",
+      "desc": "The three window buttons (close, minimize, maximize), which really work.",
+      "pt": "Os três botões da janela (fechar, minimizar, maximizar), que funcionam de verdade.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "size", "type": "number", "range": [6, 24, 1], "default": 12, "tweak": true, "desc": "Button size."},
+        {"key": "gap", "type": "number", "range": [2, 24, 1], "default": 8, "tweak": true, "desc": "Space between the buttons."},
+        {"key": "color", "type": "color", "desc": "Close button (default: danger)."},
+        {"key": "color2", "type": "color", "desc": "Minimize button (default: idle)."},
+        {"key": "color3", "type": "color", "desc": "Maximize button (default: online)."},
+        {"key": "align", "type": "enum", "values": ["left", "center", "right"], "default": "left", "tweak": true, "desc": "Position inside the node."}
+      ]
+    },
+    {
+      "name": "starfield",
+      "desc": "Procedural background: stars (first child of a stack).",
+      "pt": "Fundo procedural: estrelas (primeiro filho de um stack).",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "Distant stars."},
+        {"key": "color2", "type": "color", "desc": "Near stars."},
+        {"key": "density", "type": "number", "min": 0.1, "max": 6, "range": [0.1, 6, 0.1], "default": 1, "tweak": true, "desc": "How many stars."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "orbit",
+      "desc": "Procedural background: orbits with moons.",
+      "pt": "Fundo procedural: órbitas com luas.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "The orbits."},
+        {"key": "color2", "type": "color", "desc": "The moons."},
+        {"key": "center-x", "type": "number", "min": -1, "max": 2, "range": [-1, 2, 0.01], "default": 0.7, "tweak": true, "desc": "Horizontal center, as a fraction of the width."},
+        {"key": "center-y", "type": "number", "min": -1, "max": 2, "range": [-1, 2, 0.01], "default": 0.35, "tweak": true, "desc": "Vertical center, as a fraction of the height."},
+        {"key": "rings", "type": "number", "min": 1, "max": 12, "range": [1, 12, 1], "default": 6, "tweak": true, "desc": "How many orbits."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "radar",
+      "desc": "Procedural background: radar rings and sweep.",
+      "pt": "Fundo procedural: anéis e varredura de radar.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "The rings."},
+        {"key": "color2", "type": "color", "desc": "The sweep."},
+        {"key": "center-x", "type": "number", "min": -1, "max": 2, "range": [-1, 2, 0.01], "default": 0.5, "tweak": true, "desc": "Horizontal center, as a fraction of the width."},
+        {"key": "center-y", "type": "number", "min": -1, "max": 2, "range": [-1, 2, 0.01], "default": 0.5, "tweak": true, "desc": "Vertical center, as a fraction of the height."},
+        {"key": "rings", "type": "number", "min": 1, "max": 12, "range": [1, 12, 1], "default": 5, "tweak": true, "desc": "How many rings."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "topography",
+      "desc": "Procedural background: contour lines (always still).",
+      "pt": "Fundo procedural: curvas de nível (sempre paradas).",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "The lines."},
+        {"key": "levels", "type": "number", "min": 4, "max": 40, "range": [4, 40, 1], "default": 14, "tweak": true, "desc": "How many contour lines."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."}
+      ]
+    },
+    {
+      "name": "aurora",
+      "desc": "Procedural background: two curtains of light.",
+      "pt": "Fundo procedural: duas cortinas de luz.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "First curtain."},
+        {"key": "color2", "type": "color", "desc": "Second curtain."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "dunes",
+      "desc": "Procedural background: hills from back to front (the sky is the gradient of the node around it).",
+      "pt": "Fundo procedural: morros do fundo para a frente (o céu é o gradiente do nó em volta).",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "Hills at the back."},
+        {"key": "color2", "type": "color", "desc": "Hills in the middle."},
+        {"key": "color3", "type": "color", "desc": "Hills in front."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "spacer",
+      "desc": "Empty space.",
+      "pt": "Espaço vazio.",
+      "sets": ["node", "component", "box"]
+    }
+  ]
+}
