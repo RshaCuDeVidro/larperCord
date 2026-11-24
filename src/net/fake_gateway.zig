@@ -3171,7 +3171,7 @@ fn buildHistory(channel: Id, now_ms: i64) ![]types.Message {
 pub const scripts_channel: Id = 502_008;
 pub const scripts_texts = [_][]const u8{
     "Հայերեն: Բարեւ ձեզ · Ελληνικά: Καλημέρα · Русский: Привет, мир · አማርኛ: ሰላም",
-    "ไทย: สวัสดีครับ · हिन्दी: नमस्ते दुनिया · ქართული: გამარჯობა",
+    "ไทย: สวัสดีครับ · हिन्दी: नमस्ते दुनिया · ქართული: გამარჯობა · ♡ ⛧",
 };
 
 /// #setups do "Zig Brasil" (onde somos da Moderação): uma mensagem de cada jeito

@@ -61,6 +61,8 @@ mkdir -p qa-out/run && chmod 700 qa-out/run
 QA_SUITE=presenca XDG_RUNTIME_DIR="$PWD/qa-out/run" run "presença" $bin --qa --theme classico
 QA_SUITE=moderacao run "moderação" $bin --qa --theme classico
 QA_SUITE=entrada run "entrada" $bin --qa --theme classico
+# Barra de formatação (#31): selecionar na caixa mostra B e I, que põem ** e * nas pontas.
+QA_SUITE=md-barra run "barra de formatação" $bin --qa --theme classico
 QA_SUITE=interacoes run "interações" $bin --qa --theme classico
 # Tempo da call nos canais de voz: op 43, formato, e quando o app acorda por ele.
 QA_SUITE=cronometro run "tempo da call" $bin --qa --theme classico

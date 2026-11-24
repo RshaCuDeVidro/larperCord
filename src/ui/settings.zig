@@ -1101,6 +1101,7 @@ fn page(p: *Page, previews: []const Preview) void {
             p.toggle(i18n.tr("Abrir na primeira não lida", "Open at the first unread"), i18n.tr("Canal com mensagens novas abre nelas, como no Discord. Desligado, abre no fim.", "A channel with new messages opens at them, like Discord. When off, it opens at the bottom."), &s.open_at_unread);
             p.heading(i18n.tr("Caixa de texto", "Text box"));
             p.toggle(i18n.tr("Prévia do markdown", "Markdown preview"), i18n.tr("Com **negrito**, `código`, ||spoiler||…, mostra acima da caixa como vai ficar.", "With **bold**, `code`, ||spoilers||…, shows above the box how it will look."), &s.md_preview);
+            p.toggle(i18n.tr("Barra de formatação", "Formatting bar"), i18n.tr("Com texto selecionado na caixa, B e I aparecem em cima do trecho e colocam ** e * nas pontas dele.", "With text selected in the box, B and I appear above the selection and put ** and * around it."), &s.md_bar);
             {
                 var fk: [48]u8 = undefined;
                 var cd: [400]u8 = undefined;

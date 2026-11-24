@@ -163,6 +163,8 @@ pub const Settings = struct {
     data_saver: bool = false,
     /// Prévia do markdown acima da caixa de texto, quando tem formatação.
     md_preview: bool = true,
+    /// Balança de Markdown: com texto selecionado na caixa, B e I colocam ** / * nas pontas.
+    md_bar: bool = true,
     /// O botão do microfone na caixa de texto (e o atalho dele): grava um áudio e
     /// manda como um anexo .ogg comum (ui/gravar_audio.zig).
     record_audio: bool = true,

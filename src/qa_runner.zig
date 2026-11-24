@@ -3318,6 +3318,7 @@ const ops_social = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @impor
 const ops_presenca = [_]Op{expect("carrega e mostra a conversa", ready)} ++ (if (@import("builtin").os.tag != .windows) @import("qa_presenca.zig").ops else [_]Op{}) ++ @import("qa_presenca.zig").ops_jogo;
 const ops_moderacao = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_moderacao.zig").ops;
 const ops_entrada = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_entrada.zig").ops;
+const ops_md_barra = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_mdbarra.zig").ops;
 const ops_proxy = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_proxy.zig").ops;
 const ops_sem_fontes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_sem_fontes.zig").ops;
 const ops_interacoes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_interacoes.zig").ops;
@@ -3430,6 +3431,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "presenca", &ops_presenca },
     .{ "moderacao", &ops_moderacao },
     .{ "entrada", &ops_entrada },
+    .{ "md-barra", &ops_md_barra },
     .{ "proxy", &ops_proxy },
     .{ "sem-fontes", &ops_sem_fontes },
     .{ "fontes", &ops_fontes },

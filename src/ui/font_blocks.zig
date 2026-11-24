@@ -115,6 +115,19 @@ pub const Misses = struct {
     want: [count]u32 = @splat(0),
     tried: std.StaticBitSet(count) = .empty,
     wanted_n: u16 = 0,
+    /// Letras sem fonte num bloco já procurado: a fonte que o bloco ganhou pode não ter todas
+    /// (o ⛧ não está na fonte que trouxe o ♡), e cada uma procura uma fonte só dela.
+    retry: [retry_max]u32 = undefined,
+    retry_n: u8 = 0,
+    /// As letras que já procuraram, pelo bloco ou sozinhas, achando fonte ou não: não procuram
+    /// de novo. O ImGui pergunta outra vez por uma letra sem fonte a cada vez que a fonte é
+    /// refeita (outra fonte entrou, o peso mudou), e a lista das sem fonte de ui/fonts.zig
+    /// enche. Cheia esta, nenhuma letra procura mais sozinha; os blocos novos continuam.
+    searched: [searched_max]u32 = undefined,
+    searched_n: u8 = 0,
+
+    pub const retry_max = 16;
+    pub const searched_max = 64;
 
     pub const Wanted = struct { block: Block, cp: u32 };
 
@@ -131,7 +144,37 @@ pub const Misses = struct {
     }
 
     pub fn anyWanted(m: *const Misses) bool {
-        return m.wanted_n > 0;
+        return m.wanted_n > 0 or m.retry_n > 0;
+    }
+
+    /// Uma letra sem fonte num bloco já procurado (`note` deu falso). Verdadeiro se ela vai
+    /// procurar uma fonte só dela (ver `takeRetries`); falso se já procurou, ou se não há mais
+    /// lugar: aí ela fica sem fonte.
+    pub fn noteRetry(m: *Misses, cp: u32) bool {
+        if (std.mem.indexOfScalar(u32, m.retry[0..m.retry_n], cp) != null) return true;
+        if (m.wasSearched(cp) or m.retry_n == m.retry.len or m.searched_n == m.searched.len) return false;
+        m.retry[m.retry_n] = cp;
+        m.retry_n += 1;
+        m.remember(cp);
+        return true;
+    }
+
+    /// As letras que vão procurar sozinhas (copiadas em `out`); a fila se esvazia.
+    pub fn takeRetries(m: *Misses, out: *[retry_max]u32) []const u32 {
+        const n = m.retry_n;
+        @memcpy(out[0..n], m.retry[0..n]);
+        m.retry_n = 0;
+        return out[0..n];
+    }
+
+    fn wasSearched(m: *const Misses, cp: u32) bool {
+        return std.mem.indexOfScalar(u32, m.searched[0..m.searched_n], cp) != null;
+    }
+
+    fn remember(m: *Misses, cp: u32) void {
+        if (m.searched_n == m.searched.len or m.wasSearched(cp)) return;
+        m.searched[m.searched_n] = cp;
+        m.searched_n += 1;
     }
 
     /// O próximo bloco a procurar. Ele passa a contar como procurado, ache fonte ou não.
@@ -142,6 +185,7 @@ pub const Misses = struct {
             w.* = 0;
             m.wanted_n -= 1;
             m.tried.set(i);
+            m.remember(cp);
             return .{ .block = @intCast(i), .cp = cp };
         };
         unreachable;
@@ -151,6 +195,17 @@ pub const Misses = struct {
         return m.tried.isSet(b);
     }
 };
+
+/// Põe o bloco `b` em `blocks[0..n.*]`, que fica em ordem crescente. Falso se ele já estava lá
+/// (a fonte já vale nele: se a letra mesmo assim faltou, não é ela que vai trazer) ou não cabe.
+pub fn addSorted(blocks: []Block, n: *usize, b: Block) bool {
+    if (n.* == blocks.len or std.mem.indexOfScalar(Block, blocks[0..n.*], b) != null) return false;
+    var at = n.*;
+    while (at > 0 and blocks[at - 1] > b) : (at -= 1) blocks[at] = blocks[at - 1];
+    blocks[at] = b;
+    n.* += 1;
+    return true;
+}
 
 /// Quantos lugares `exclude` pede para `n` blocos.
 pub fn excludeLen(n: usize) usize {
@@ -310,6 +365,64 @@ test "cada bloco é procurado uma vez só" {
     try std.testing.expect(!m.note(thai, 0x0E03));
     try std.testing.expect(!m.anyWanted());
     try std.testing.expect(!m.triedBlock(of(0x10D0).?));
+}
+
+test "a letra que falta na fonte do bloco procura sozinha uma vez só" {
+    var m: Misses = .{};
+    var buf: [Misses.retry_max]u32 = undefined;
+    const misc = of(0x26E7).?;
+    // O ♡ pede o bloco dos símbolos, e o bloco é procurado.
+    try std.testing.expect(m.note(misc, 0x2661));
+    _ = m.next().?;
+    // O ⛧, do mesmo bloco, não está na fonte que veio: procura uma só dele.
+    try std.testing.expect(!m.note(misc, 0x26E7));
+    try std.testing.expect(m.noteRetry(0x26E7));
+    try std.testing.expect(m.noteRetry(0x26E7));
+    try std.testing.expect(m.anyWanted());
+    try std.testing.expectEqualSlices(u32, &.{0x26E7}, m.takeRetries(&buf));
+    try std.testing.expect(!m.anyWanted());
+    // Procurou (achando fonte ou não): quando o ImGui pergunta de novo, depois de refazer a
+    // fonte, não procura outra vez. Nem a letra que procurou pelo bloco.
+    try std.testing.expect(!m.noteRetry(0x26E7));
+    try std.testing.expect(!m.noteRetry(0x2661));
+    try std.testing.expect(!m.anyWanted());
+}
+
+test "as letras que procuram sozinhas têm teto" {
+    var m: Misses = .{};
+    var buf: [Misses.retry_max]u32 = undefined;
+    var cp: u32 = 0x1F850;
+    // No máximo `retry_max` de cada vez: a que passa fica sem fonte agora e tenta na próxima.
+    for (0..Misses.retry_max) |_| {
+        try std.testing.expect(m.noteRetry(cp));
+        cp += 1;
+    }
+    try std.testing.expect(!m.noteRetry(cp));
+    try std.testing.expectEqual(Misses.retry_max, m.takeRetries(&buf).len);
+    try std.testing.expect(m.noteRetry(cp));
+    // Depois de `searched_max` letras lembradas, nenhuma procura mais sozinha.
+    while (m.searched_n < Misses.searched_max) {
+        if (m.retry_n == Misses.retry_max) _ = m.takeRetries(&buf);
+        cp += 1;
+        try std.testing.expect(m.noteRetry(cp));
+    }
+    _ = m.takeRetries(&buf);
+    try std.testing.expect(!m.noteRetry(cp + 1));
+    try std.testing.expect(!m.anyWanted());
+}
+
+test "o mesmo bloco não entra duas vezes na mesma fonte" {
+    var blocks: [3]Block = undefined;
+    var n: usize = 0;
+    try std.testing.expect(addSorted(&blocks, &n, 9));
+    try std.testing.expect(addSorted(&blocks, &n, 4));
+    try std.testing.expect(!addSorted(&blocks, &n, 9));
+    try std.testing.expectEqualSlices(Block, &.{ 4, 9 }, blocks[0..n]);
+    try std.testing.expect(addSorted(&blocks, &n, 6));
+    try std.testing.expectEqualSlices(Block, &.{ 4, 6, 9 }, blocks[0..n]);
+    // Cheia.
+    try std.testing.expect(!addSorted(&blocks, &n, 7));
+    try std.testing.expectEqual(@as(usize, 3), n);
 }
 
 test "a reserva vale só nos blocos dela" {
