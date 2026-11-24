@@ -394,7 +394,10 @@ derivadas de tokens: `@muted` no escuro são estrelas claras, e no claro viram t
 A imagem vem **só** do computador de quem usa: Configurações → Aparência → **Papel de parede** →
 **Escolher imagem…** (PNG, JPEG, WebP ou BMP, até 8192 pixels de lado). O caminho fica no `settings.kdl` e a
 imagem nunca sai do computador. Um tema não aponta para arquivo nem endereço: `src=` num `wallpaper` é erro.
-**Remover** tira a imagem, e **Escurecer** a escurece em direção ao `bg` do tema.
+**Remover** tira a imagem, **Escurecer** a escurece em direção ao `bg` do tema, e **Ajuste** escolhe como ela
+ocupa o espaço: **Do tema** (o `fit=` do nó, ou `cover` num tema sem ele), **Preencher** (`cover`), **Inteira**
+(`contain`), **Repetir** (`tile`) ou **Centro** (`center`). Os dois ficam no `settings.kdl` (`wallpaper_dim`,
+`wallpaper_fit`).
 
 O tema diz onde a imagem vai com um nó `wallpaper`, primeiro filho de um `stack`, como os fundos procedurais.
 Sem imagem escolhida, ele não desenha nada e o tema fica como sempre foi:
@@ -410,7 +413,7 @@ layout {
 
 | Propriedade | O que faz |
 |---|---|
-| `fit=cover\|contain\|tile\|center` | `cover` preenche o nó e corta o que sobra (padrão); `contain` mostra a imagem inteira; `tile` repete no tamanho dela; `center` põe no meio, no tamanho dela |
+| `fit=cover\|contain\|tile\|center` | `cover` preenche o nó e corta o que sobra (padrão); `contain` mostra a imagem inteira; `tile` repete no tamanho dela; `center` põe no meio, no tamanho dela. O **Ajuste** do usuário vale mais, menos em **Do tema** |
 | `dim=0` | quanto escurece em direção ao `bg`, de 0 a 1. É o mínimo do tema: o **Escurecer** do usuário só escurece mais |
 | `blur=0` | raio do desfoque, em pixels. Feito uma vez, numa cópia pequena da imagem, nunca por quadro |
 | `opacity=1` | opacidade da imagem (o que está atrás do nó aparece) |

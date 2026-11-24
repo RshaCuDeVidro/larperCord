@@ -1,5 +1,13 @@
 # What changed in each version
 
+## 0.7.0
+
+**Themes**
+- Vector shapes: `shape kind=path d="…"` draws SVG path data (`M`, `L`, `H`, `V`, `C`, `S`, `Q`, `T`, `A` and `Z`, uppercase absolute and lowercase relative), filled with `fill=` (`fill-rule=nonzero|evenodd`, holes included) and/or stroked with `color=` and `thickness=`. `viewbox=` says which part of the coordinates fits in the node, without distortion and at the interface scale. The path is read and turned into lines once, when the theme loads, and the fill becomes a mask made once per size; a mistake stops the theme with the line of the `shape` and the character of `d` where it is. Up to 1024 commands.
+- Four new procedural backgrounds: `rain` (the wind's tilt with `angle=`), `matrix` (columns of characters drawn by the app, so no font is needed), `waves` (`lines=`) and `particles` (fine dust and large blurred discs), with `density=`, `seed=` and `motion=` like the others. They are masks made once and tinted with the theme's colors: still, they never wake the app; moving, at most 15 frames per second, and they stop with "Reduce motion" and when the window is hidden or in the background.
+- Wallpaper: Settings → Appearance → Wallpaper → "Choose image…" puts a picture from your computer (PNG, JPEG, WebP or BMP) behind the theme. It's only ever a local file picked in the system's file dialog: a theme can't point to a file or an address, and nothing goes online. Fit (the theme's, Fill, Whole, Tile or Center) and Dim are saved in settings.kdl, and Remove takes it away. A theme places it with a `wallpaper` node (`fit=`, `dim=`, `blur=`, `opacity=`, `radius=`); in themes without one, like the bundled ones, it goes behind the whole layout and the panels turn translucent only as far as the text keeps its contrast, with the theme's animated background stepping aside. The picture is read in the background and shrunk to what covers the window, never asks for frames, and leaves memory while the window is hidden.
+- The theme creator on the site checks and previews the new nodes, and refuses what the app refuses. Guide: themes/README.md. Japanese follows the new texts; the new Russian ones are in English for now.
+
 ## 0.6.8
 
 **Control from outside**

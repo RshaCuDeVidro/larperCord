@@ -1097,12 +1097,13 @@ pub fn loadStill(path: [:0]const u8, cover_w: u32, cover_h: u32) ?Still {
         var comp: c_int = 0;
         if (c.stbi_info_from_memory(bytes.ptr, @intCast(bytes.len), &sw, &sh, &comp) == 0) return null;
     }
-    if (sw <= 0 or sh <= 0 or sw > 16384 or sh > 16384) return null;
+    // O mesmo limite do stb (STBI_MAX_DIMENSIONS) também para o WebP: é o que o aviso diz.
+    if (sw <= 0 or sh <= 0 or sw > 8192 or sh > 8192) return null;
     const fw: f32 = @floatFromInt(sw);
     const fh: f32 = @floatFromInt(sh);
     const k = @min(1.0, @max(@as(f32, @floatFromInt(@max(cover_w, 1))) / fw, @as(f32, @floatFromInt(@max(cover_h, 1))) / fh));
-    const mw: u16 = @intFromFloat(std.math.clamp(@ceil(fw * k), 1, 16384));
-    const mh: u16 = @intFromFloat(std.math.clamp(@ceil(fh * k), 1, 16384));
+    const mw: u16 = @intFromFloat(std.math.clamp(@ceil(fw * k), 1, 8192));
+    const mh: u16 = @intFromFloat(std.math.clamp(@ceil(fh * k), 1, 8192));
     var stop = std.atomic.Value(bool).init(false);
     var px = decode(bytes, mw, mh, &stop, false);
     if (px.frames.len == 0) return null;

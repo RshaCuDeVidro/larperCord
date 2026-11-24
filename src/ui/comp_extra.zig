@@ -182,6 +182,44 @@ pub fn shape(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
 /// Os pontos do traço já na tela: no quadro, o caminho só muda de escala e de lugar.
 var path_pts: [tpath.max_points]c.ImVec2 = undefined;
 
+/// O tamanho da máscara de cada `shape kind=path` desenhado, para o arrasto da janela
+/// não fazer uma máscara nova por degrau (como `orbit` e `radar` em ui/backdrop.zig).
+const PathSlot = struct { node: ?*const kdl.Node = null, w: u32 = 0, h: u32 = 0, since_ms: i64 = 0, shown_w: u32 = 0, shown_h: u32 = 0 };
+var path_slots: [8]PathSlot = @splat(.{});
+var path_next: usize = 0;
+
+/// A máscara do tamanho pedido; com o tamanho mudando há menos de 150 ms, a anterior
+/// esticada, e a certa sai quando ele parar.
+fn pathTexture(ctx: *const d.Ctx, n: *const kdl.Node, p: *const tpath.Path, w: u32, h: u32) ?*c.SDL_Texture {
+    const slot = for (&path_slots) |*sl| {
+        if (sl.node == n) break sl;
+    } else blk: {
+        const sl = &path_slots[path_next];
+        path_next = (path_next + 1) % path_slots.len;
+        sl.* = .{ .node = n };
+        break :blk sl;
+    };
+    if (slot.w != w or slot.h != h) {
+        slot.w = w;
+        slot.h = h;
+        slot.since_ms = ctx.now_ms;
+    }
+    if (fx.hasPathMask(p, w, h)) |tex| {
+        slot.shown_w = w;
+        slot.shown_h = h;
+        return tex;
+    }
+    if (slot.shown_w != 0 and ctx.now_ms - slot.since_ms < 150) {
+        if (fx.hasPathMask(p, slot.shown_w, slot.shown_h)) |old| {
+            anim.at(slot.since_ms + 150);
+            return old;
+        }
+    }
+    slot.shown_w = w;
+    slot.shown_h = h;
+    return fx.pathMask(ctx, p, w, h);
+}
+
 /// Caminho do SVG lido ao carregar o tema (`theme/path.zig`). O preenchimento é uma
 /// máscara guardada por tamanho (côncavo, com buraco, evenodd: tudo igual); o traço
 /// é uma polilinha do ImGui. `size=` é o lado do quadrado onde a caixa de visão cabe
@@ -211,7 +249,7 @@ fn pathShape(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
         const k = @min(1, @as(f32, 2048) / @max(m.w * sc.x, m.h * sc.y));
         const mw: u32 = @intFromFloat(@max(@ceil(m.w * sc.x * k), 1));
         const mh: u32 = @intFromFloat(@max(@ceil(m.h * sc.y * k), 1));
-        if (fx.pathMask(ctx, p, mw, mh)) |tex| {
+        if (pathTexture(ctx, n, p, mw, mh)) |tex| {
             const ox = @round(m.ox * sc.x) / sc.x;
             const oy = @round(m.oy * sc.y) / sc.y;
             const w = @as(f32, @floatFromInt(mw)) / (sc.x * k);

@@ -93,17 +93,26 @@ pub fn texture(ctx: *const d.Ctx, spec: procgen.Spec) ?*c.SDL_Texture {
 /// conteúdo do caminho, não o endereço dele.
 pub fn pathMask(ctx: *const d.Ctx, p: *const tpath.Path, w: u32, h: u32) ?*c.SDL_Texture {
     if (w == 0 or h == 0) return null;
-    var hs = std.hash.Wyhash.init(0x9a7e5);
-    std.hash.autoHash(&hs, p.hash);
-    std.hash.autoHash(&hs, w);
-    std.hash.autoHash(&hs, h);
-    const key = hs.final();
+    const key = pathKey(p, w, h);
     if (find(key)) |t| return t;
     const gpa = std.heap.c_allocator;
     const px = gpa.alloc(u8, w * h * 4) catch return null;
     defer gpa.free(px);
     tpath.rasterize(p, w, h, px, gpa) catch return null;
     return keep(ctx, key, w, h, px);
+}
+
+/// Já existe a máscara desse tamanho? (Sem gerar, como `has`.)
+pub fn hasPathMask(p: *const tpath.Path, w: u32, h: u32) ?*c.SDL_Texture {
+    return find(pathKey(p, w, h));
+}
+
+fn pathKey(p: *const tpath.Path, w: u32, h: u32) u64 {
+    var hs = std.hash.Wyhash.init(0x9a7e5);
+    std.hash.autoHash(&hs, p.hash);
+    std.hash.autoHash(&hs, w);
+    std.hash.autoHash(&hs, h);
+    return hs.final();
 }
 
 /// Sobe os pixels para uma textura nova e guarda na tabela.

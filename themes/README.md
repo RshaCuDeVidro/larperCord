@@ -393,7 +393,9 @@ derived from tokens: `@muted` in dark mode is light stars, and in light mode it 
 The picture comes **only** from the user's own computer: Settings → Appearance → **Wallpaper** →
 **Choose image…** (PNG, JPEG, WebP or BMP, up to 8192 pixels per side). The path is saved in `settings.kdl` and the
 picture never leaves the computer. A theme can't point to a file or an address: `src=` on a `wallpaper` is an
-error. **Remove** takes it away, and **Dim** darkens it toward the theme's `bg`.
+error. **Remove** takes it away, **Dim** darkens it toward the theme's `bg`, and **Fit** chooses how it fills
+the space: **Theme** (the node's `fit=`, or `cover` in a theme without one), **Fill** (`cover`), **Whole**
+(`contain`), **Tile** or **Center**. Both are saved in `settings.kdl` (`wallpaper_dim`, `wallpaper_fit`).
 
 A theme says where the picture goes with a `wallpaper` node, the first child of a `stack`, like the procedural
 backgrounds. When the user has no picture, it draws nothing and the theme looks as it always did:
@@ -409,7 +411,7 @@ layout {
 
 | Property | What it does |
 |---|---|
-| `fit=cover\|contain\|tile\|center` | `cover` fills the node and crops the excess (default); `contain` shows the whole picture; `tile` repeats it at its own size; `center` puts it in the middle at its own size |
+| `fit=cover\|contain\|tile\|center` | `cover` fills the node and crops the excess (default); `contain` shows the whole picture; `tile` repeats it at its own size; `center` puts it in the middle at its own size. The user's **Fit** wins over it, except on **Theme** |
 | `dim=0` | how much it darkens toward `bg`, from 0 to 1. It's the theme's minimum: the user's **Dim** can only darken further |
 | `blur=0` | blur radius, in pixels. It's made once, on a small copy of the picture, never per frame |
 | `opacity=1` | the picture's opacity (what's behind the node shows through) |

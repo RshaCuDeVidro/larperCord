@@ -15,6 +15,8 @@ const wallpaper = @import("ui/wallpaper.zig");
 const wf = @import("ui/wallpaper_fit.zig");
 const theme = @import("theme/theme.zig");
 const settings_state = @import("ui/settings_state.zig");
+const settings_ui = @import("ui/settings.zig");
+const i18n = @import("ui/i18n.zig");
 const Rect = @import("theme/layout.zig").Rect;
 
 fn s(name: []const u8) Op {
@@ -413,6 +415,72 @@ fn wallpaperDimmed(app: *App) bool {
     return near(pixel(app, l[0], l[1]), want, 4);
 }
 
+// O "Ajuste" das Configurações vence o `fit=` do tema (o tema de teste pede cover).
+fn fitIs(comptime n: u8) *const fn (*App) bool {
+    return struct {
+        fn f(app: *App) bool {
+            return app.st.settings.wallpaper_fit == n;
+        }
+    }.f;
+}
+fn fitTheme(app: *App) void {
+    app.st.settings.wallpaper_fit = 0;
+}
+fn fitCenter(app: *App) void {
+    app.st.settings.wallpaper_fit = 4;
+}
+
+/// A imagem caiu na tela onde `wf.place` diz para esse ajuste (a de 4000 × 3000 no
+/// tamanho próprio dela, um pixel da original num pixel da tela).
+fn placedAs(fit: wf.Fit) bool {
+    if (wallpaper.last_fit != fit) return false;
+    const r = qa.find("wallpaper:imagem") orelse return false;
+    const sc = c.ImGui_GetIO().*.DisplayFramebufferScale;
+    const want = wf.place(fit, 4000 / sc.x, 3000 / sc.y, r.x, r.y, r.w, r.h);
+    const got = wallpaper.last_quad;
+    const px = [_][2]f32{ .{ want.x0, got.x0 }, .{ want.y0, got.y0 }, .{ want.x1, got.x1 }, .{ want.y1, got.y1 } };
+    for (px) |v| if (@abs(v[0] - v[1]) > 0.5) return false;
+    const uv = [_][2]f32{ .{ want.u0, got.u0 }, .{ want.v0, got.v0 }, .{ want.u1, got.u1 }, .{ want.v1, got.v1 } };
+    for (uv) |v| if (@abs(v[0] - v[1]) > 1e-3) return false;
+    return true;
+}
+
+/// Inteira (contain): a imagem 4:3 numa janela mais larga deixa faixas dos lados, com
+/// o fundo do tema; logo depois da faixa, o vermelho da imagem.
+fn wholeShowsBars(app: *App) bool {
+    if (!placedAs(.contain)) return false;
+    const r = qa.find("wallpaper:imagem") orelse return false;
+    const q = wallpaper.last_quad;
+    if (q.x0 - r.x < 20 or q.x0 + 6 > 120) return false;
+    const bar = pixel(app, r.x + (q.x0 - r.x) / 2, 420);
+    const img = pixel(app, q.x0 + 6, 420);
+    return near(bar, rgb(0x101418), 6) and near(img, rgb(0xff0000), 3);
+}
+
+/// Repetir (tile): no tamanho próprio, a partir do canto; a metade vermelha da original
+/// (2000 pixels) passa da janela, então o lado direito também é vermelho.
+fn tiledFromCorner(app: *App) bool {
+    if (!placedAs(.tile)) return false;
+    const l = freeLeft();
+    const rr = freeRight() orelse return false;
+    return near(pixel(app, l[0], l[1]), rgb(0xff0000), 3) and near(pixel(app, rr[0], rr[1]), rgb(0xff0000), 3);
+}
+
+fn centered(_: *App) bool {
+    return placedAs(.center);
+}
+fn coverAgain(app: *App) bool {
+    return placedAs(.cover) and wallpaperPlain(app);
+}
+
+/// O ajuste vai para o settings.kdl.
+fn fitPersisted(app: *App) bool {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(app.gpa);
+    settings_state.write(&app.st.settings, "qa-vetores", &out, app.gpa) catch return false;
+    return std.mem.indexOf(u8, out.items, " wallpaper_fit=3") != null;
+}
+
 var no_wall: [3]f32 = undefined;
 fn rememberNoWall(app: *App) void {
     const l = freeLeft();
@@ -534,6 +602,58 @@ fn noMoreLoads(_: *App) bool {
     return wallpaper.loads == loads0 + 1;
 }
 
+// Japonês e russo com a interface em 125%: as linhas novas (o nome do arquivo, o
+// Escurecer, o Ajuste com cinco opções e a nota) cabem e nada sai cortado.
+fn startLang(l: i18n.Lang) void {
+    i18n.set(l);
+    i18n.cuts.store(0, .monotonic);
+    settings_ui.overflows.store(0, .monotonic);
+}
+fn langJa(app: *App) void {
+    startLang(.ja);
+    openAppearance(app);
+}
+fn langRu(app: *App) void {
+    startLang(.ru);
+    openAppearance(app);
+}
+fn langDone(app: *App) void {
+    i18n.set(.pt);
+    app.st.settings.open = false;
+    app.st.settings.ui_scale = 1;
+    app.st.settings.wallpaper_fit = 0;
+}
+fn scale125(app: *App) void {
+    app.st.settings.ui_scale = 1.25;
+}
+fn inScale125(app: *App) bool {
+    return app.ui_size == 1.25;
+}
+fn noCuts(_: *App) bool {
+    return i18n.cuts.load(.monotonic) == 0;
+}
+fn noOverflow(_: *App) bool {
+    if (settings_ui.overflows.load(.monotonic) == 0) return true;
+    std.log.warn("texto maior que a área: \"{s}\"", .{settings_ui.last_overflow[0..settings_ui.last_overflow_len]});
+    return false;
+}
+/// O botão de cada opção do Ajuste no idioma do momento (a marcação leva o texto).
+fn segWhole(_: *App, buf: []u8) []const u8 {
+    return std.fmt.bufPrint(buf, "seg:{s}", .{i18n.tr("Inteira", "Whole")}) catch "";
+}
+fn segTile(_: *App, buf: []u8) []const u8 {
+    return std.fmt.bufPrint(buf, "seg:{s}", .{i18n.tr("Repetir", "Tile")}) catch "";
+}
+/// As linhas novas aparecem na página, no idioma dela.
+fn rowsTranslated(_: *App) bool {
+    var b: [96]u8 = undefined;
+    const rm = std.fmt.bufPrint(&b, "button:{s}", .{i18n.tr("Remover", "Remove")}) catch return false;
+    if (qa.find(rm) == null) return false;
+    var b2: [96]u8 = undefined;
+    const sl = std.fmt.bufPrint(&b2, "slider:{s}", .{i18n.tr("Escurecer", "Dim")}) catch return false;
+    return qa.find(sl) != null;
+}
+
 fn missingRefused(app: *App) bool {
     // Não abriu: avisa, não guarda e não deixa uma imagem quebrada nas configurações.
     return app.st.settings.wallpaper.len == 0 and !wallpaper.ready() and app.st.toast.is_error;
@@ -594,6 +714,33 @@ pub const ops = [_]Op{
     .{ .wait = 150 },
     expect("\"Escurecer\" mistura a imagem com o fundo do tema", wallpaperDimmed),
     .{ .shot = "vetores-papel" },
+
+    s("ajuste da imagem"),
+    .{ .run = openAppearance },
+    .{ .wait = 150 },
+    click("seg:Inteira"),
+    expect("\"Inteira\" fica nas configurações", fitIs(2)),
+    .{ .shot = "vetores-papel-ajuste" },
+    .{ .run = closeSettings },
+    .{ .run = dimZero },
+    .{ .wait = 150 },
+    expect("Inteira: a imagem toda, com faixas do fundo do tema dos lados", wholeShowsBars),
+    .{ .shot = "vetores-papel-inteira" },
+    .{ .run = openAppearance },
+    .{ .wait = 150 },
+    click("seg:Repetir"),
+    expect("\"Repetir\" fica nas configurações", fitIs(3)),
+    expect("o ajuste vai para o settings.kdl", fitPersisted),
+    .{ .run = closeSettings },
+    .{ .wait = 150 },
+    expect("Repetir: no tamanho dela, a partir do canto", tiledFromCorner),
+    .{ .run = fitCenter },
+    .{ .wait = 150 },
+    expect("Centro: no tamanho dela, no meio", centered),
+    .{ .run = fitTheme },
+    .{ .wait = 150 },
+    expect("\"Do tema\": volta ao fit=cover do tema", coverAgain),
+    .{ .run = dimHalf },
     .{ .run = gifsOff },
     .{ .run = markFrames },
     expectLong("com a imagem parada, os quadros saem iguais e nada pede quadro", framesSettled, 15000),
@@ -659,4 +806,30 @@ pub const ops = [_]Op{
     .{ .run = pickMissing },
     expectLong("arquivo que não abre: avisa e não guarda", missingRefused, 6000),
     .{ .run = closeSettings },
+
+    s("japonês e russo, interface em 125%"),
+    .{ .run = restoreWallpaper },
+    expectLong("a imagem volta", wallpaperBack, 6000),
+    .{ .run = scale125 },
+    expectLong("interface em 125%", inScale125, 4000),
+    .{ .run = langJa },
+    .{ .wait = 200 },
+    .{ .click = .{ .dyn = segWhole } },
+    expect("japonês: \"全体を表示\" fica nas configurações", fitIs(2)),
+    expect("japonês: Remover e Escurecer traduzidos", rowsTranslated),
+    .{ .wait = 150 },
+    .{ .shot = "vetores-papel-ja-125" },
+    expect("japonês: nada maior que a área", noOverflow),
+    expect("japonês: nenhum texto cortado", noCuts),
+    .{ .run = langRu },
+    .{ .wait = 200 },
+    .{ .click = .{ .dyn = segTile } },
+    expect("russo: \"Tile\" fica nas configurações", fitIs(3)),
+    .{ .wait = 150 },
+    .{ .shot = "vetores-papel-ru-125" },
+    expect("russo: nada maior que a área", noOverflow),
+    expect("russo: nenhum texto cortado", noCuts),
+    .{ .run = langDone },
+    .{ .run = removeWallpaper },
+    expect("de volta: sem imagem", wallpaperGone),
 };

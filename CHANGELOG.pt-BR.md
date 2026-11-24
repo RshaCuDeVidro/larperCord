@@ -1,5 +1,13 @@
 # O que mudou em cada versão
 
+## 0.7.0
+
+**Temas**
+- Formas vetoriais: `shape kind=path d="…"` desenha o caminho do SVG (`M`, `L`, `H`, `V`, `C`, `S`, `Q`, `T`, `A` e `Z`, maiúscula absoluta e minúscula relativa), preenchido com `fill=` (`fill-rule=nonzero|evenodd`, com buraco e tudo) e/ou com traço de `color=` e `thickness=`. O `viewbox=` diz que parte das coordenadas cabe no nó, sem deformar e na escala da interface. O caminho é lido e vira retas uma vez, ao carregar o tema, e o preenchimento vira uma máscara feita uma vez por tamanho; um erro para o tema com a linha do `shape` e o caractere de `d` onde ele está. Até 1024 comandos.
+- Quatro fundos procedurais novos: `rain` (a inclinação do vento com `angle=`), `matrix` (colunas de caracteres desenhados pelo app, sem depender de fonte), `waves` (`lines=`) e `particles` (poeira fina e discos grandes desfocados), com `density=`, `seed=` e `motion=` como os outros. São máscaras feitas uma vez e tingidas com as cores do tema: parados, nunca acordam o app; em movimento, no máximo 15 quadros por segundo, e param com "Reduzir movimento" e com a janela escondida ou em segundo plano.
+- Papel de parede: Configurações → Aparência → Papel de parede → "Escolher imagem…" põe uma imagem do seu computador (PNG, JPEG, WebP ou BMP) atrás do tema. É sempre um arquivo local escolhido no seletor do sistema: tema nenhum aponta para arquivo ou endereço, e nada vai para a internet. O ajuste (o do tema, Preencher, Inteira, Repetir ou Centro) e o Escurecer ficam no settings.kdl, e Remover tira a imagem. Um tema decide onde ela cai com um nó `wallpaper` (`fit=`, `dim=`, `blur=`, `opacity=`, `radius=`); nos temas sem ele, como os que vêm com o app, ela vai atrás do layout inteiro e os painéis ficam translúcidos só até onde o texto mantém o contraste, com o fundo animado do tema saindo da frente. A imagem é lida em segundo plano e reduzida ao que cobre a janela, nunca pede quadro e sai da memória enquanto a janela está escondida.
+- O criador de temas do site confere e mostra os nós novos, e recusa o que o app recusa. Guia: themes/README.pt-BR.md. O japonês segue os textos novos; os novos em russo estão em inglês por enquanto.
+
 ## 0.6.8
 
 **Controle de fora**

@@ -253,6 +253,22 @@ fn userDim(ctx: *const d.Ctx) f32 {
     return std.math.clamp(@as(f32, @floatFromInt(ctx.st.settings.wallpaper_dim)) / 100, 0, 0.9);
 }
 
+/// O ajuste escolhido em Configurações; 0 (ou um número que não é opção, vindo de um
+/// settings.kdl editado à mão) fica com o do tema.
+pub fn fitFor(user: u8, theme_fit: wf.Fit) wf.Fit {
+    return switch (user) {
+        1 => .cover,
+        2 => .contain,
+        3 => .tile,
+        4 => .center,
+        else => theme_fit,
+    };
+}
+
+/// QA: onde a última imagem caiu na tela, e com que ajuste.
+pub var last_quad: wf.Quad = .{ .x0 = 0, .y0 = 0, .x1 = 0, .y1 = 0 };
+pub var last_fit: wf.Fit = .cover;
+
 /// A textura desfocada, feita uma vez da cópia pequena (raio em pixels dela).
 fn blurred(ctx: *const d.Ctx, blur: f32, shown_w: f32) ?*c.SDL_Texture {
     if (wp.small.len == 0) return wp.tex;
@@ -280,6 +296,8 @@ fn paint(ctx: *d.Ctx, r: Rect, fit: wf.Fit, dim: f32, blur: f32, opacity: f32, r
     const nat_h = @as(f32, @floatFromInt(wp.src_h)) / sc.y;
     const q = wf.place(fit, nat_w, nat_h, r.x, r.y, r.w, r.h);
     if (q.x1 <= q.x0 or q.y1 <= q.y0) return;
+    last_quad = q;
+    last_fit = fit;
     const tex = (if (blur >= 0.5) blurred(ctx, blur, q.x1 - q.x0) else wp.tex) orelse return;
     const ref = fx.refOf(tex);
     const col = d.Rgba.white.alpha(opacity).u();
@@ -306,13 +324,15 @@ fn paint(ctx: *d.Ctx, r: Rect, fit: wf.Fit, dim: f32, blur: f32, opacity: f32, r
 
 /// `wallpaper fit=cover|contain|tile|center dim=0.3 blur=8 opacity=1 radius=0`
 /// O `dim` do tema é o mínimo: o "Escurecer" das Configurações pode escurecer mais.
+/// O `fit` do tema vale enquanto o "Ajuste" das Configurações está em "Do tema".
 pub fn draw(ctx: *d.Ctx, n: *const kdl.Node, r: Rect) void {
     if (wp.tex == null) {
         if (qa.on()) qa.mark(r, "wallpaper:vazio", .{});
         return;
     }
     if (qa.on()) qa.mark(r, "wallpaper:imagem", .{});
-    const fit = std.meta.stringToEnum(wf.Fit, d.pstr(n, "fit", "cover")) orelse .cover;
+    const theme_fit = std.meta.stringToEnum(wf.Fit, d.pstr(n, "fit", "cover")) orelse .cover;
+    const fit = fitFor(ctx.st.settings.wallpaper_fit, theme_fit);
     const dim = @max(std.math.clamp(d.pnum(n, "dim", 0), 0, 1), userDim(ctx));
     const blur = std.math.clamp(d.pnum(n, "blur", 0), 0, 64);
     const opacity = std.math.clamp(d.pnum(n, "opacity", 1), 0, 1);
@@ -346,7 +366,7 @@ pub fn behind(ctx: *d.Ctx, r: Rect) ?f32 {
     // Por baixo, o fundo opaco: num tema de janela transparente, a imagem cobre o desktop.
     const bg = ctx.col(.bg);
     d.rect(ctx.dl, r, .{ .r = bg.r, .g = bg.g, .b = bg.b }, 0);
-    paint(ctx, r, .cover, g.dim, 0, 1, 0);
+    paint(ctx, r, fitFor(ctx.st.settings.wallpaper_fit, .cover), g.dim, 0, 1, 0);
     return g.alpha;
 }
 
@@ -448,11 +468,15 @@ pub fn section(p: anytype) void {
         ctx.act(.save_settings);
         return;
     }
-    var dim: f32 = @as(f32, @floatFromInt(set.wallpaper_dim)) / 100;
+    var dim: f32 = @as(f32, @floatFromInt(@min(set.wallpaper_dim, 90))) / 100;
     p.slider(i18n.tr("Escurecer", "Dim"), &dim, 0, 0.9, "{d:.0}%", 100);
     set.wallpaper_dim = @intFromFloat(std.math.clamp(@round(dim * 100), 0, 90));
+    // (Grava ao fechar as Configurações, como os outros seletores desta página.)
+    p.line(.medium, 16, ctx.col(.text), i18n.tr("Ajuste", "Fit"), 30);
+    if (set.wallpaper_fit > 4) set.wallpaper_fit = 0;
+    p.segmented(&.{ i18n.tr("Do tema", "Theme"), i18n.tr("Preencher", "Fill"), i18n.tr("Inteira", "Whole"), i18n.tr("Repetir", "Tile"), i18n.tr("Centro", "Center") }, &set.wallpaper_fit);
     if (themeDeclares(ctx)) {
-        p.note(i18n.tr("Este tema tem um lugar para a imagem e decide como ela aparece; \"Escurecer\" só escurece mais.", "This theme has a place for the image and decides how it looks; \"Dim\" only darkens it further."));
+        p.note(i18n.tr("Este tema tem um lugar para a imagem e escolhe o ajuste dela em \"Do tema\"; \"Escurecer\" só escurece mais do que ele pede.", "This theme has a place for the image and picks its fit under \"Theme\"; \"Dim\" only darkens it further than the theme does."));
     } else {
         p.note(i18n.tr("Ela fica atrás dos painéis, que ficam translúcidos só até onde o texto continua fácil de ler. O fundo animado do tema sai enquanto houver imagem.", "It sits behind the panels, which turn translucent only as far as text stays easy to read. The theme's animated background steps aside while there's an image."));
     }

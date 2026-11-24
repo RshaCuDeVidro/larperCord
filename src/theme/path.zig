@@ -716,6 +716,14 @@ test "caminho: erros dizem o que e onde" {
         .{ .d = "M 0 0 L 1e9 0", .at = 9 },
         .{ .d = "M 0 0 L # 0", .at = 9 },
         .{ .d = "M 1 1", .at = 6 },
+        // Texto que acaba no meio de um comando: antes das bandeiras do arco, entre elas,
+        // antes do ponto final, no meio de uma curva.
+        .{ .d = "M0 0 A5 5 0", .at = 12 },
+        .{ .d = "M0 0 A5 5 0 1", .at = 14 },
+        .{ .d = "M0 0 A5 5 0 1 1", .at = 16 },
+        .{ .d = "M0 0 C1 1 2", .at = 12 },
+        .{ .d = "M0 0 Q1", .at = 8 },
+        .{ .d = "M0 0 L1e", .at = 8 },
     };
     for (casos) |cs| {
         var pr: ?Problem = null;
@@ -740,6 +748,42 @@ test "caminho: erros dizem o que e onde" {
     pr = null;
     try testing.expectError(error.Invalid, parse(a, many.items, null, .nonzero, &pr));
     try testing.expect(std.mem.indexOf(u8, pr.?.msg, "4096") != null);
+}
+
+test "caminho: lixo de todo tipo vira erro com lugar, nunca pânico" {
+    // Comandos seguidos de 0 a 8 números (quase certos, então o texto acaba em qualquer
+    // ponto de um comando), com pedaços quebrados no meio: ou lê, ou recusa dizendo onde.
+    // Em Debug, um índice fora do texto ou uma conta que estoura param o teste aqui.
+    const cmds = [_][]const u8{ "M", "m", "L", "l", "H", "v", "C", "s", "Q", "t", "A", "a", "Z", "z" };
+    const nums = [_][]const u8{ " 0", " 1", "1", ",1", "-2", " .5", "5.5.5", "-.5", " 120", "-3e2", " 0 1", "10", " 1e-3", "+7" };
+    // Raros, senão quase todo texto para no primeiro erro e nunca chega ao fim de um comando.
+    const junk = [_][]const u8{ " 1e", "1e+", " 99999999", " 1e38", " nan", " inf", "#", "\x00", "\xff", "é", ",", ",,", "" };
+    var prng = std.Random.DefaultPrng.init(0x5eed);
+    const rnd = prng.random();
+    var buf: [96]u8 = undefined;
+    for (0..20000) |_| {
+        var n: usize = 0;
+        const count = rnd.uintLessThan(usize, 40);
+        for (0..count) |_| {
+            const roll = rnd.uintLessThan(u8, 40);
+            const pc = if (roll < 8) cmds[rnd.uintLessThan(usize, cmds.len)] else if (roll == 8) junk[rnd.uintLessThan(usize, junk.len)] else nums[rnd.uintLessThan(usize, nums.len)];
+            if (n + pc.len > buf.len) break;
+            @memcpy(buf[n..][0..pc.len], pc);
+            n += pc.len;
+        }
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        var pr: ?Problem = null;
+        if (parse(arena.allocator(), buf[0..n], null, .nonzero, &pr)) |p| {
+            for (p.pts) |q| try testing.expect(std.math.isFinite(q[0]) and std.math.isFinite(q[1]));
+            try testing.expect(p.view[2] > 0 and p.view[3] > 0);
+        } else |err| {
+            try testing.expectEqual(error.Invalid, err);
+            const got = pr orelse return error.SemProblema;
+            try testing.expect(got.at >= 1 and got.at <= n + 1);
+            try testing.expect(got.msg.len > 0);
+        }
+    }
 }
 
 test "achatamento: a tolerância segue a caixa de visão" {
