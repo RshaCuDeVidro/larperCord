@@ -378,18 +378,29 @@ def no_windows():
     wait_until(lambda: not windows(), 5)
 
 
-def fresh_home(settings=None):
+def fresh_home(settings="", opening=False):
     d = Path(tempfile.mkdtemp(prefix="larper-qa-"))
     (d / "config" / "larpercord").mkdir(parents=True)
-    if settings:
-        (d / "config/larpercord/settings.kdl").write_text(f"settings {settings}\n")
+    # Sem a abertura do mascote. A demonstração a mostra inteira antes de entrar, e o
+    # relógio dela anda por quadro (no máximo 1/30 s cada): aqui (build de debug,
+    # renderizador por software, Xvfb, máquina ocupada) saem 2 ou 3 quadros por
+    # segundo, e os 3,4 s da abertura viram quase um minuto. Até ela acabar o app não
+    # entrou, e fechar sai de propósito (janela.wantsTray), com painel ou sem: o teste
+    # fecharia um app que ainda não entrou, e o "fechar sai" passaria pelo motivo
+    # errado. Com Reduzir movimento a demonstração entra direto, como no QA e nos
+    # prints. `opening`: com a abertura (ver `opening_closes`).
+    if not opening:
+        settings = f"reduce_motion=#true {settings}"
+    if settings.strip():
+        (d / "config/larpercord/settings.kdl").write_text(f"settings {settings.strip()}\n")
     return d
 
 
 def start(home, *args, **kw):
     """Abre e espera a janela aparecer de verdade (já pintada)."""
     a = App(home, *args, **kw)
-    # Pintada já tem o app de pé: antes disso, fechar seria sair (sem conexão).
+    # Pintada (e sem a abertura, ver fresh_home) já tem o app de pé: antes disso,
+    # fechar seria sair (sem conexão).
     wait_until(lambda: painted() or not a.alive(), 20)
     time.sleep(1.0)
     return a
@@ -413,6 +424,15 @@ def wakeups_of(pid):
         for line in (t / "status").read_text().splitlines():
             if line.startswith(("voluntary_ctxt_switches:", "nonvoluntary_ctxt_switches:")):
                 n += int(line.split()[1])
+    return n
+
+
+def main_wakeups(a):
+    """Vezes que a thread principal do app foi acordada (trocas de contexto)."""
+    n = 0
+    for line in Path(f"/proc/{a.p.pid}/task/{a.p.pid}/status").read_text().splitlines():
+        if line.startswith(("voluntary_ctxt_switches:", "nonvoluntary_ctxt_switches:")):
+            n += int(line.split()[1])
     return n
 
 
@@ -460,6 +480,22 @@ def option_off():
     code = a.wait(5)
     check("fechar encerra o processo", code == 0, f"código {code}")
     check("nenhum ícone foi criado", not panel.items())
+    a.kill()
+    shutil.rmtree(home)
+
+
+def opening_closes():
+    section("com a abertura da demonstração na tela (antes de entrar): fechar sai, mesmo com painel")
+    panel.up()
+    panel.clear()
+    home = fresh_home(opening=True)
+    a = start(home)
+    icons = len(panel.items())
+    t = time.time()
+    close_window()
+    code = a.wait(8)
+    check("fechar antes de entrar encerra o processo, sem ir para a bandeja", code == 0, f"código {code}, {time.time() - t:.2f} s, {icons} ícone(s) no painel")
+    check("sem passar pelo vigia", "encerramento demorou" not in a.output())
     a.kill()
     shutil.rmtree(home)
 
@@ -523,8 +559,12 @@ def full_flow():
     # Na bandeja a janela vai embora com o renderizador e as texturas, não só se esconde.
     check("na bandeja, a janela sai do X (destruída, não só escondida)", wait_until(lambda: not windows(), 3) is True, f"{len(windows())} janela(s)")
     time.sleep(2)
+    w0 = main_wakeups(a)
     cpu_hidden = cpu_percent(a, 10)
+    wake_main = (main_wakeups(a) - w0) / 10
     check("escondido: quase nada de CPU", cpu_hidden < 1.0, f"{cpu_hidden:.2f}% com a janela escondida, {cpu_open:.2f}% com ela aberta")
+    # Sem janela nenhuma, o SDL_WaitEvent olharia a fila a cada 1 ms (uns mil por segundo).
+    check("e o laço dorme: a thread principal quase não acorda", wake_main <= 10, f"{wake_main:.1f} despertares/s")
     pss_tray, rss_tray = a.pss_kb(), rss_of(a.p.pid)
     print(f"       RAM: PSS {pss_open} KB aberta, {pss_tray} KB na bandeja; RSS {rss_open} KB aberta, {rss_tray} KB na bandeja")
     check("na bandeja usa menos memória que aberta", pss_tray < pss_open - 2048, f"{pss_open - pss_tray} KB a menos")
@@ -757,6 +797,7 @@ def panel_dies():
 try:
     no_panel()
     option_off()
+    opening_closes()
     full_flow()
     restarted()
     demo_not_gated()

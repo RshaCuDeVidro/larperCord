@@ -314,8 +314,10 @@ fn rememberReleases(app: *App) void {
 }
 /// Fechou a flutuante com a principal na bandeja: aí sim a parte da GPU da principal sai.
 fn trayReleased(app: *App) bool {
+    // Fica só a janela escondida de 1×1 da bandeja (Window.ancora), para o laço dormir.
+    const anchor_only = if (app.win.ancora) |a| windowCount() == 1 and c.SDL_GetWindowFlags(a) & c.SDL_WINDOW_HIDDEN != 0 else false;
     return app.pip.win == null and app.in_tray and app.win.window == null and app.win.renderer == null and
-        app.gpu_releases == releases0 + 1 and windowCount() == 0;
+        app.gpu_releases == releases0 + 1 and anchor_only;
 }
 /// Abriu de novo com a principal na bandeja: o renderizador volta, e a principal continua escondida.
 fn pipBackInTray(app: *App) bool {

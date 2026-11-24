@@ -382,4 +382,10 @@ test "os dois CHANGELOGs têm as mesmas versões, com o mesmo tanto em cada seç
         try std.testing.expectEqual(a.sections.len, b.sections.len);
         for (a.sections, b.sections) |sa, sb| try std.testing.expectEqual(sa.items.len, sb.items.len);
     }
+    // A página de novidades marca cada título como "changelog-section:<título>" para o QA,
+    // numa chave de 56 bytes: um título maior some da varredura e o QA da página falha
+    // quando a versão dele vira a instalada.
+    for (pt) |v| for (v.sections) |sec| {
+        try std.testing.expect("changelog-section:".len + sec.title.len <= 56);
+    };
 }

@@ -474,11 +474,29 @@ fn countBefore(app: *App) void {
     unparked0 = app.images.unparked;
 }
 
+fn windowCount() usize {
+    var n: c_int = 0;
+    const list = c.SDL_GetWindows(&n);
+    if (list != null) c.SDL_free(@ptrCast(list));
+    return @intCast(@max(n, 0));
+}
+
+/// A única janela que sobra na bandeja: a escondida de 1×1, sem renderizador.
+fn onlyAnchor(app: *App) bool {
+    const a = app.win.ancora orelse return false;
+    var w: c_int = 0;
+    var h: c_int = 0;
+    _ = c.SDL_GetWindowSize(a, &w, &h);
+    return windowCount() == 1 and c.SDL_GetWindowFlags(a) & c.SDL_WINDOW_HIDDEN != 0 and
+        c.SDL_GetRenderer(a) == null and w == 1 and h == 1;
+}
+
 /// Na bandeja, nada da GPU fica: nem janela, nem renderizador, nem textura de imagem
-/// (as pequenas que estavam na tela ficam em pixels), nem o atlas das fontes.
+/// (as pequenas que estavam na tela ficam em pixels), nem o atlas das fontes. Só a
+/// janela escondida de 1×1, sem renderizador, para o laço dormir (Window.ancora).
 fn gpuGone(app: *App) bool {
     const atlas = app.io.*.Fonts.*.TexData;
-    return isHidden(app) and app.in_tray and app.win.window == null and app.win.renderer == null and
+    return isHidden(app) and app.in_tray and app.win.window == null and app.win.renderer == null and onlyAnchor(app) and
         app.gpu_releases == releases0 + 1 and app.images.renderer == null and app.images.textureCount() == 0 and
         // O ImGui guarda os pixels do atlas: sem a textura, ele fica pedindo outra (WantCreate).
         app.images.parkedCount() > 0 and atlas.*.TexID == 0 and atlas.*.Status == c.ImTextureStatus_WantCreate;
@@ -561,6 +579,8 @@ fn endNotify(_: *App) void {
 /// guardados em pixels de volta na GPU sem baixar de novo.
 fn gpuBack(app: *App) bool {
     if (app.win.window == null or app.win.renderer == null or app.in_tray or hiddenFlag(app)) return false;
+    // A janela escondida da bandeja sai junto: fica uma janela só.
+    if (app.win.ancora != null or windowCount() != 1) return false;
     if (app.gpu_restores != restores0 + 1 or app.images.renderer != app.win.renderer) return false;
     const atlas = app.io.*.Fonts.*.TexData;
     if (atlas.*.Status != c.ImTextureStatus_OK or atlas.*.TexID == 0) return false;
@@ -758,7 +778,7 @@ pub const ops = [_]Op{
     run(memOpen),
     run(countBefore),
     run(pushClose),
-    expect("fechar: sem janela, sem renderizador, sem textura (os avatares ficam em pixels) e sem o atlas na GPU", gpuGone),
+    expect("fechar: sem janela (só a escondida de 1×1, sem renderizador), sem renderizador, sem textura (os avatares ficam em pixels) e sem o atlas na GPU", gpuGone),
     // O tique de 2 s devolve ao sistema o que saiu.
     .{ .wait = 2500 },
     run(memTray),

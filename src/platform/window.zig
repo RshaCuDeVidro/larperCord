@@ -61,6 +61,11 @@ pub const Window = struct {
     geo: Geo = .{},
     /// A escala da tela da janela que foi embora (`scale` devolve esta sem janela).
     last_scale: f32 = 1,
+    /// Só enquanto a principal está fora (na bandeja): uma janela escondida de 1×1, sem
+    /// renderizador. Sem nenhuma janela, o SDL_WaitEvent não dorme no sistema (X11,
+    /// Wayland e Windows acordam o laço por uma janela): ele olha a fila a cada 1 ms, uns
+    /// mil despertares por segundo parado na bandeja. Com esta, dorme como antes.
+    ancora: ?*c.SDL_Window = null,
 
     /// `wanted`: o renderizador das configurações (null = automático).
     pub fn init(title: [*:0]const u8, w: c_int, h: c_int, wanted: ?[*:0]const u8) !Window {
@@ -122,6 +127,7 @@ pub const Window = struct {
     pub fn deinit(win: *Window) void {
         if (win.renderer) |r| c.SDL_DestroyRenderer(r);
         if (win.window) |w| c.SDL_DestroyWindow(w);
+        if (win.ancora) |a| c.SDL_DestroyWindow(a);
         c.SDL_Quit();
     }
 
@@ -164,6 +170,11 @@ pub const Window = struct {
         const w = win.window orelse return;
         win.remember();
         win.last_scale = contentScale(w);
+        // Antes de a principal sair: o laço nunca fica sem janela (ver `ancora`).
+        if (win.ancora == null) {
+            win.ancora = c.SDL_CreateWindow("", 1, 1, c.SDL_WINDOW_HIDDEN);
+            if (win.ancora == null) std.log.warn("bandeja: sem a janela escondida, o laço acorda a cada 1 ms ({s})", .{c.SDL_GetError()});
+        }
         if (win.renderer) |r| c.SDL_DestroyRenderer(r);
         c.SDL_DestroyWindow(w);
         win.renderer = null;
@@ -207,6 +218,8 @@ pub const Window = struct {
         setupRenderer(renderer);
         win.window = window;
         win.renderer = renderer;
+        if (win.ancora) |a| c.SDL_DestroyWindow(a);
+        win.ancora = null;
         return true;
     }
 
