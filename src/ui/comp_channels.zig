@@ -422,7 +422,6 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
             parts.mark(vr, .channel_voice_member, vst);
             const v_radius: f32 = if (variant == .tree) 0 else ctx.th.radius;
             if (!parts.fill(ctx, dl, vl, vr, v_radius) and vh.hovered and variant != .tree) d.rect(dl, vr, ctx.col(.hover), vl.radius orelse v_radius);
-            parts.border(ctx, dl, vl, vr, v_radius);
             // Segurar e arrastar move a pessoa de call (com "Mover membros"); só clicar abre o perfil.
             if (vh.hovered and c.ImGui_IsMouseClicked(0) and popup.movable(ctx, uid) != null) arrastar.press(ctx, uid, ch.guild, ch.id);
             if (vh.clicked and !arrastar.engoleClique()) ctx.popup(.{ .profile = .{ .user = uid, .x = vr.right() + 8, .y = vr.y } });
@@ -447,6 +446,8 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
                     y2 += 28;
                 },
             }
+            // A borda por cima: o anel de quem fala e o ◉ do tree encostam na beirada esquerda.
+            parts.border(ctx, dl, vl, vr, v_radius);
         }
         if (cs.voice_members.items.len > 0) y2 += 4;
         // Soltar alguém aqui (o canal e quem já está nele).

@@ -74,6 +74,13 @@ QA_SUITE=ctl LARPER_CTL=1 run "controle externo" $bin --qa --theme classico
 # editor num tema claro, em japonês e com a interface em 125%.
 QA_SUITE=imagem run "imagem privada" $bin --qa --theme classico
 QA_SUITE=imagem-tema QA_PREFIX=papel-claro-ja- run "imagem (japonês, 125%)" $bin --qa --theme papel --mode claro --lang ja
+# Partes do tema (theme/parts.zig): três temas feitos na hora com o mesmo bloco parts (cozy,
+# irc e bolhas; canais discord, tree e pills; membros discord e tty; caixa box, prompt e pill),
+# conferidos pelos pixels em 100% e 125% (cada estado, também self, muted e offline), e os
+# embutidos sem parts desenhando o mesmo quadro que uma cópia com um parts que não vale em
+# nada; a segunda vez no claro e em japonês. Contra o executável de antes: tools/pixels_antes.sh.
+QA_SUITE=partes run "partes do tema" $bin --qa --theme classico
+QA_SUITE=partes QA_PREFIX=claro-ja- run "partes (claro, japonês)" $bin --qa --theme classico --mode claro --lang ja
 # Inspetor (F12): elementos, escolher na tela, comandos, rede, gateway, eventos, fechar.
 QA_SUITE=inspetor run "inspetor" $bin --qa --theme classico
 # Arrastar alguém da call para outro canal de voz (e soltar fora não mover).

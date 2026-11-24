@@ -1,5 +1,11 @@
 # O que mudou em cada versão
 
+## 0.7.0
+
+**Partes do tema**
+- Um bloco `parts` muda os pedaços de dentro dos componentes, e cada pedaço em cada estado: `part "message.author:hover" color="@accent"`, `part "channel.item:selected" bg="@selected" radius=4`. Os pedaços são a linha da mensagem e o autor, o horário, o texto e a linha da resposta dela; a linha do canal, a categoria, o sinal de não lida, o selo de menções e quem está embaixo de um canal de voz; a linha do membro, o nome e o título do grupo; a caixa de mensagem e a dica dela. Os estados são hover, selected, unread, mention, speaking, muted, offline e self, e se combinam (`channel.item:selected:hover`). Um pedaço aceita fundo, cor do texto, borda, cantos, uma faixa do lado em que o texto começa (o direito em árabe ou hebraico), opacidade e peso da fonte, com cores que acompanham o modo claro ou escuro e a cor de destaque escolhida nas Configurações. Funciona em todas as variantes do layout (mensagens cozy, irc e bolhas; canais discord, tree e pills; membros discord e tty; caixa box, pill e prompt), é resolvido uma vez ao carregar o tema, e um tema sem `parts` desenha exatamente como antes. Guia: "Partes e estados" no themes/README.pt-BR.md, e o Studio Ink da galeria da comunidade usa quase todas.
+- O Inspetor mostra a parte do tema embaixo de cada elemento, com os estados dela naquela hora, pronta para colar num tema (o `larpercord ctl inspect el` devolve ela também).
+
 ## 0.6.8
 
 **Controle de fora**
