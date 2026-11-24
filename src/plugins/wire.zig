@@ -6,6 +6,8 @@ const lsp_core = @import("../core/lsp.zig");
 const deco = @import("deco.zig");
 const panel = @import("panel.zig");
 const rewrite = @import("rewrite.zig");
+const loc = @import("loc.zig");
+const http_policy = @import("http_policy.zig");
 
 /// Onde a pessoa está (canal e servidor abertos). Textos emprestados.
 pub const Where = struct {
@@ -133,44 +135,40 @@ pub const LspServer = struct { lang: lsp_core.Short, cmd: lsp_core.Command };
 pub const MenuKind = enum(u8) { message, user };
 
 /// Uma escolha da segunda lista de uma entrada de menu.
-pub const MenuChoice = struct { value: []u8, pt: []u8, en: []u8 };
+pub const MenuChoice = struct { value: []u8, label: loc.Text = .{} };
 
 /// Entrada num menu de botão direito.
 pub const MenuEntry = struct {
     kind: MenuKind,
     /// Posição da função em registry.larper.menus.
     slot: u32,
-    pt: []u8,
-    en: []u8,
+    /// O rótulo em cada idioma que o plugin deu: a interface escolhe ao desenhar.
+    label: loc.Text = .{},
     /// Com alguma: clicar abre a segunda lista, e a escolha vai para a função.
     choices: []MenuChoice = &.{},
     /// Também um botão na barra da mensagem, com este emoji ("" = só no menu).
     toolbar: []u8 = &.{},
 
     pub fn free(m: *const MenuEntry, gpa: std.mem.Allocator) void {
-        gpa.free(m.pt);
-        gpa.free(m.en);
+        m.label.free(gpa);
         gpa.free(m.toolbar);
         for (m.choices) |ch| {
             gpa.free(ch.value);
-            gpa.free(ch.pt);
-            gpa.free(ch.en);
+            ch.label.free(gpa);
         }
         gpa.free(m.choices);
     }
 
     pub fn dup(m: *const MenuEntry, gpa: std.mem.Allocator) !MenuEntry {
-        var out: MenuEntry = .{ .kind = m.kind, .slot = m.slot, .pt = &.{}, .en = &.{} };
+        var out: MenuEntry = .{ .kind = m.kind, .slot = m.slot };
         errdefer out.free(gpa);
-        out.pt = try gpa.dupe(u8, m.pt);
-        out.en = try gpa.dupe(u8, m.en);
+        out.label = try m.label.dup(gpa);
         out.toolbar = try gpa.dupe(u8, m.toolbar);
         out.choices = try gpa.alloc(MenuChoice, m.choices.len);
-        for (out.choices) |*ch| ch.* = .{ .value = &.{}, .pt = &.{}, .en = &.{} };
+        for (out.choices) |*ch| ch.* = .{ .value = &.{} };
         for (m.choices, out.choices) |ch, *to| {
             to.value = try gpa.dupe(u8, ch.value);
-            to.pt = try gpa.dupe(u8, ch.pt);
-            to.en = try gpa.dupe(u8, ch.en);
+            to.label = try ch.label.dup(gpa);
         }
         return out;
     }
@@ -231,19 +229,29 @@ pub const HttpError = enum(u8) {
     /// A resposta passou do tamanho máximo.
     too_big,
     network,
+    /// Redirecionou para um host não aprovado, para fora do HTTPS ou vezes demais.
+    redirect,
 };
+
+pub const Method = http_policy.Method;
 
 pub const HttpReq = struct {
     gpa: std.mem.Allocator,
     run: u32,
     id: u32,
-    post: bool,
+    method: Method = .GET,
     /// O gesto que pediu: a resposta ainda pode pôr texto na caixa.
     token: u32 = 0,
     url: [:0]u8,
     body: []u8,
     /// Só os cabeçalhos da lista permitida, prontos ("Nome: valor").
     headers: [][:0]u8,
+    /// Os hosts aprovados (nomes ou curingas): um redirecionamento só segue para eles.
+    allow: [][]u8 = &.{},
+    /// Os aprovados que podem receber credenciais: indo para outro, elas ficam para trás.
+    creds: [][]u8 = &.{},
+    /// A linha do registro de rede, já com o método, o host e o caminho.
+    log: NetEntry = .{},
     /// Chamar quando acabar, de qualquer thread (assume a resposta).
     done_ctx: *anyopaque,
     done: *const fn (ctx: *anyopaque, res: *HttpRes) void,
@@ -254,6 +262,10 @@ pub const HttpReq = struct {
         gpa.free(r.body);
         for (r.headers) |h| gpa.free(h);
         gpa.free(r.headers);
+        for (r.allow) |h| gpa.free(h);
+        gpa.free(r.allow);
+        for (r.creds) |h| gpa.free(h);
+        gpa.free(r.creds);
         gpa.destroy(r);
     }
 };
@@ -263,10 +275,83 @@ pub const HttpRes = struct {
     id: u32,
     status: u16 = 0,
     body: []u8 = &.{},
+    /// Os cabeçalhos da resposta que o plugin pode ler ("nome\x00valor\x00…", nomes em
+    /// minúsculas; http_policy.responseHeader).
+    headers: []u8 = &.{},
     err: HttpError = .none,
     /// Nem chegou a sair (recusado aqui mesmo).
     refused: bool = false,
     token: u32 = 0,
+    /// Quanto levou, do começo ao fim (com os redirecionamentos).
+    ms: u32 = 0,
+    /// A linha do registro de rede que veio com o pedido.
+    log: NetEntry = .{},
+};
+
+/// Uma linha do registro de rede de um plugin (Configurações → Plugins): o que saiu,
+/// para onde e o que voltou. Nunca o valor de um cabeçalho, o corpo ou a busca da URL.
+pub const NetEntry = struct {
+    method: Method = .GET,
+    status: u16 = 0,
+    err: HttpError = .none,
+    bytes: u32 = 0,
+    ms: u32 = 0,
+    /// Segundos desde 1970.
+    time: i64 = 0,
+    host_buf: [64]u8 = undefined,
+    host_len: u8 = 0,
+    path_buf: [96]u8 = undefined,
+    path_len: u8 = 0,
+
+    pub fn host(e: *const NetEntry) []const u8 {
+        return e.host_buf[0..e.host_len];
+    }
+
+    pub fn path(e: *const NetEntry) []const u8 {
+        return e.path_buf[0..e.path_len];
+    }
+
+    /// Host e caminho de uma URL https:// já conferida, sem a busca (`?…`).
+    pub fn setUrl(e: *NetEntry, url: []const u8) void {
+        const after = if (std.ascii.startsWithIgnoreCase(url, "https://")) url[8..] else url;
+        const cut = std.mem.indexOfAny(u8, after, "/?#") orelse after.len;
+        e.host_len = put(&e.host_buf, after[0..cut]);
+        const rest = after[cut..];
+        const path_end = std.mem.indexOfAny(u8, rest, "?#") orelse rest.len;
+        e.path_len = put(&e.path_buf, if (path_end == 0) "/" else rest[0..path_end]);
+    }
+
+    fn put(buf: []u8, s: []const u8) u8 {
+        var n = @min(s.len, buf.len);
+        while (n > 0 and n < s.len and (s[n] & 0xC0) == 0x80) n -= 1;
+        @memcpy(buf[0..n], s[0..n]);
+        return @intCast(n);
+    }
+};
+
+// --- Ações na conta -----------------------------------------------------------------
+
+/// O que um plugin pede para fazer numa mensagem, sempre direto de um gesto. A
+/// interface confere de novo (a mensagem existe, é sua, há permissão) e faz pelo
+/// mesmo caminho dos botões do app. Apagar e anexar pedem confirmação na tela.
+pub const Action = union(enum) {
+    /// `emoji`: o emoji em texto ou um personalizado ("nome:id").
+    react: struct { id: u64, emoji: []u8 },
+    edit: struct { id: u64, text: []u8 },
+    delete: struct { id: u64 },
+    pin: struct { id: u64, add: bool },
+    thread: struct { id: u64, name: []u8 },
+    /// Abre o seletor de arquivos do app para a caixa deste canal (0 = o aberto).
+    attach: struct { channel: u64 },
+
+    pub fn free(a: *const Action, gpa: std.mem.Allocator) void {
+        switch (a.*) {
+            .react => |x| gpa.free(x.emoji),
+            .edit => |x| gpa.free(x.text),
+            .thread => |x| gpa.free(x.name),
+            .delete, .pin, .attach => {},
+        }
+    }
 };
 
 // --- O app oferece aos plugins ---------------------------------------------------
@@ -277,8 +362,12 @@ pub const Host = struct {
     /// Aviso na interface. `desktop`: também uma notificação do sistema com a
     /// janela em foco (sem ele, só com a janela fora de foco).
     notify: *const fn (ctx: *anyopaque, plugin: []const u8, text: []const u8, desktop: bool) void,
-    /// Manda uma mensagem (channel 0 = o canal aberto). false = canal não existe.
-    send: *const fn (ctx: *anyopaque, channel: u64, text: []const u8) bool,
+    /// Manda uma mensagem (channel 0 = o canal aberto; com `reply_to`, o canal da
+    /// mensagem respondida). false = canal ou mensagem não existe.
+    send: *const fn (ctx: *anyopaque, channel: u64, text: []const u8, reply_to: u64) bool,
+    /// Uma ação numa mensagem (ver `Action`). Devolve o motivo de não fazer (null =
+    /// feito, ou esperando a confirmação da pessoa). `plugin` é o nome do arquivo.
+    action: *const fn (ctx: *anyopaque, plugin: []const u8, title: []const u8, a: *const Action) ?[]const u8,
     where: *const fn (ctx: *anyopaque) Where,
     /// Lê a pasta de novo e chama `load` (botão Recarregar).
     rescan: *const fn (ctx: *anyopaque) void,
@@ -309,6 +398,11 @@ pub const Host = struct {
     keep_broken_data: *const fn (ctx: *anyopaque, account: u64, plugin: []const u8) void,
     /// Começa um pedido (assume `req`; a resposta chega por `req.done`).
     http_start: *const fn (req: *HttpReq) bool,
+    /// larper.secrets, no chaveiro do sistema, separado por plugin (`plugin` só tem
+    /// letras, números, ".", "_" e "-"; `key` também). get: null = não tem.
+    secret_get: *const fn (ctx: *anyopaque, gpa: std.mem.Allocator, plugin: []const u8, key: []const u8) ?[]u8,
+    secret_set: *const fn (ctx: *anyopaque, plugin: []const u8, key: []const u8, value: []const u8) bool,
+    secret_delete: *const fn (ctx: *anyopaque, plugin: []const u8, key: []const u8) void,
     /// Cancela o que estiver no ar e espera acabar (ao fechar).
     http_stop: *const fn () void,
 };
@@ -396,7 +490,10 @@ pub const CmdWhat = union(enum) {
     /// Erro. `stopped`: o plugin parou.
     failed: struct { msg: []u8, stopped: bool },
     notify: struct { text: []u8, desktop: bool },
-    send: struct { channel: u64, text: []u8, token: u32 },
+    send: struct { channel: u64, text: []u8, token: u32, reply_to: u64 = 0 },
+    action: struct { what: Action, token: u32 },
+    /// Mais uma linha do registro de rede do plugin.
+    net_log: NetEntry,
     insert: struct { text: []u8, token: u32 },
     jump: struct { channel: u64, id: u64, token: u32 },
     copy: struct { text: []u8, token: u32 },
@@ -413,3 +510,12 @@ pub const CmdWhat = union(enum) {
 };
 
 pub const Cmd = struct { run: u32, what: CmdWhat };
+
+test "registro de rede: host e caminho, nunca a busca" {
+    var e: NetEntry = .{};
+    e.setUrl("https://api.exemplo.com/v1/itens?token=segredo#x");
+    try std.testing.expectEqualStrings("api.exemplo.com", e.host());
+    try std.testing.expectEqualStrings("/v1/itens", e.path());
+    e.setUrl("https://api.exemplo.com?q=1");
+    try std.testing.expectEqualStrings("/", e.path());
+}

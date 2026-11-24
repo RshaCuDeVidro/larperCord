@@ -159,6 +159,9 @@ test {
     _ = @import("plugins/panel.zig");
     _ = @import("plugins/rewrite.zig");
     _ = @import("plugins/json.zig");
+    _ = @import("plugins/loc.zig");
+    _ = @import("plugins/http_policy.zig");
+    _ = @import("plugins/wire.zig");
 }
 
 // Exportar uma conversa não pede nada ao Discord (a conta de quem usa já foi

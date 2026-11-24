@@ -12,6 +12,7 @@ const engine = @import("../plugins/engine.zig");
 const manifest = @import("../plugins/manifest.zig");
 const version = @import("../core/version.zig");
 const exemplos = @import("plugin_examples");
+const widgets = @import("widgets.zig");
 const c = @import("c");
 
 const Plugin = engine.Plugin;
@@ -34,6 +35,8 @@ const labels = [_]Label{
     .{ .cap = .links, .pt = "Abre links", .en = "Opens links", .tip_pt = "Abre endereços no navegador quando você clica em algo dele", .tip_en = "Opens addresses in the browser when you click something of its own", .strong = true },
     .{ .cap = .completions, .pt = "Sugere ao digitar", .en = "Suggests as you type", .tip_pt = "Uma lista na caixa de mensagem; o que você escolhe vai para a caixa, nunca é enviado sozinho", .tip_en = "A list in the message box; what you pick goes in the box and is never sent on its own" },
     .{ .cap = .settings, .pt = "Opções", .en = "Options", .tip_pt = "As opções dele aparecem neste cartão", .tip_en = "Its options show up on this card" },
+    .{ .cap = .secrets, .pt = "Guarda segredos", .en = "Keeps secrets", .tip_pt = "Senhas e chaves de API no chaveiro do sistema, separadas por plugin", .tip_en = "Passwords and API keys in the system keyring, kept apart per plugin", .strong = true },
+    .{ .cap = .actions, .pt = "Age nas mensagens", .en = "Acts on messages", .tip_pt = "Reage, edita as suas, fixa e cria threads quando você pede; apagar sempre pergunta antes", .tip_en = "Reacts, edits yours, pins and starts threads when you ask; deleting always asks you first", .strong = true },
 };
 
 /// Vinham com o app e saíram: uns viraram funções do próprio app, outros eram só
@@ -156,6 +159,7 @@ fn card(p: anytype, e: *engine.Engine, pl: *Plugin) void {
     // O que pede.
     y = chips(p, pl, x, y, w);
     y = alertLine(p, pl, x, y, w);
+    y = credentialsLine(p, pl, x, y, w);
 
     // Comandos e atalhos, se está rodando.
     if (pl.isRunning() and (pl.commands.items.len > 0 or pl.keys.items.len > 0)) {
@@ -166,6 +170,8 @@ fn card(p: anytype, e: *engine.Engine, pl: *Plugin) void {
 
     // Hosts: a aprovação é por plugin e por host.
     for (pl.man.hostList(), 0..) |h, i| y = hostRow(p, e, pl, h, i, x, y, w);
+    // O que ele pediu à internet (só quem pode pedir).
+    if (pl.man.has(.http)) y = netLog(p, pl, x, y, w);
 
     // Opções do próprio plugin (só ligado: desligado não tem quem responda).
     if (pl.settings) |tree| {
@@ -298,6 +304,23 @@ fn alertLine(p: anytype, pl: *const Plugin, x: f32, y: f32, w: f32) f32 {
     return y + h + 8;
 }
 
+/// Manda credenciais para algum host: uma linha em vermelho, antes de a pessoa aprovar.
+fn credentialsLine(p: anytype, pl: *const Plugin, x: f32, y: f32, w: f32) f32 {
+    if (pl.man.legacy or pl.man.n_creds == 0) return y;
+    var hb: [400]u8 = undefined;
+    var at: usize = 0;
+    for (pl.man.credList()) |h| {
+        const piece = std.fmt.bufPrint(hb[at..], "{s}{s}", .{ if (at > 0) ", " else "", h }) catch break;
+        at += piece.len;
+    }
+    var tb: [600]u8 = undefined;
+    const text = i18n.fmt(&tb, "Manda credenciais (Authorization, X-API-Key) para {s}. Só aprove se confiar nele com essa conta.", "Sends credentials (Authorization, X-API-Key) to {s}. Only approve if you trust it with that account.", .{hb[0..at]});
+    const ctx = p.ctx;
+    const h = inbox.wrapText(p.dl, p.font(.medium), 12.5, x, y, w, text, 3, ctx.col(.danger));
+    qa.mark(.{ .x = x, .y = y, .w = w, .h = h }, "plugin-creds:{s}", .{pl.name});
+    return y + h + 8;
+}
+
 fn hostRow(p: anytype, e: *engine.Engine, pl: *Plugin, host: []const u8, i: usize, x: f32, y: f32, w: f32) f32 {
     const ctx = p.ctx;
     const dl = p.dl;
@@ -306,8 +329,16 @@ fn hostRow(p: anytype, e: *engine.Engine, pl: *Plugin, host: []const u8, i: usiz
     d.rect(dl, row, ctx.col(.elevated).alpha(0.7), 6);
     const sw: d.Rect = .{ .x = row.right() - 50, .y = row.y + 10, .w = 40, .h = 24 };
     _ = d.textClipped(dl, p.font(.semibold), 13, row.x + 10, row.y + 6, ctx.col(.text), host, row.w - 70);
-    const hint = if (ok) i18n.tr("Aprovado: o plugin pode falar com este endereço", "Approved: the plugin can talk to this address") else i18n.tr("Não aprovado: nada sai enquanto estiver desligado", "Not approved: nothing goes out while this is off");
-    _ = d.textClipped(dl, p.font(.regular), 12, row.x + 10, row.y + 24, if (ok) ctx.col(.online) else ctx.col(.faint), hint, row.w - 70);
+    const creds = pl.man.credentialPattern(host);
+    const wild = engine.http_policy.isWildcard(host);
+    const hint = if (ok)
+        (if (creds) i18n.tr("Aprovado, com credenciais: o plugin manda a chave dele para cá", "Approved, with credentials: the plugin sends its key here") else if (wild) i18n.tr("Aprovado: o plugin pode falar com os subdomínios deste domínio", "Approved: the plugin can talk to the subdomains of this domain") else i18n.tr("Aprovado: o plugin pode falar com este endereço", "Approved: the plugin can talk to this address"))
+    else if (creds)
+        i18n.tr("Não aprovado: nada sai, nem as credenciais", "Not approved: nothing goes out, credentials included")
+    else
+        i18n.tr("Não aprovado: nada sai enquanto estiver desligado", "Not approved: nothing goes out while this is off");
+    const hint_col = if (ok and creds) ctx.col(.danger) else if (ok) ctx.col(.online) else ctx.col(.faint);
+    _ = d.textClipped(dl, p.font(.regular), 12, row.x + 10, row.y + 24, hint_col, hint, row.w - 70);
     const id = 0xC4000 + @as(usize, pl.slot) * 16 + i;
     const hb = d.hit(ctx, id, sw);
     qa.mark(sw, "host:{s}:{s}", .{ pl.name, host });
@@ -317,6 +348,43 @@ fn hostRow(p: anytype, e: *engine.Engine, pl: *Plugin, host: []const u8, i: usiz
     d.tip(ctx, sw, if (ok) i18n.tr("Tirar a aprovação", "Remove approval") else i18n.tr("Aprovar este host", "Approve this host"), hb.hovered);
     if (hb.clicked) e.setApproved(pl, host, !ok);
     return y + row.h + 8;
+}
+
+/// O registro de rede do plugin: um botão que abre a lista dos últimos pedidos
+/// (método, host, caminho sem a busca, status, tamanho, tempo e hora). Nunca o valor
+/// de um cabeçalho nem o corpo.
+fn netLog(p: anytype, pl: *Plugin, x: f32, y_in: f32, w: f32) f32 {
+    const ctx = p.ctx;
+    const dl = p.dl;
+    var y = y_in;
+    var lb: [80]u8 = undefined;
+    const lbl = if (pl.net_open) i18n.tr("Esconder a rede", "Hide network log") else i18n.fmt(&lb, "Rede: últimos pedidos ({d})", "Network log: recent requests ({d})", .{pl.net_n});
+    const r: d.Rect = .{ .x = x, .y = y, .w = inbox.buttonWidth(ctx, lbl), .h = 28 };
+    qa.mark(r, "plugin-net:{s}", .{pl.name});
+    if (inbox.button(ctx, dl, 0xCE000 + @as(usize, pl.slot) * 16, r, lbl, false)) pl.net_open = !pl.net_open;
+    y += 36;
+    if (!pl.net_open) return y;
+    if (pl.net_n == 0) {
+        y += inbox.wrapText(dl, p.font(.regular), 12.5, x, y, w, i18n.tr("Nenhum pedido ainda.", "No requests yet."), 2, ctx.col(.faint)) + 8;
+        return y;
+    }
+    const f = p.font(.regular);
+    var i: usize = 0;
+    while (pl.netEntry(i)) |ent| : (i += 1) {
+        var tb: [16]u8 = undefined;
+        var sb: [24]u8 = undefined;
+        var zb: [24]u8 = undefined;
+        const status: []const u8 = if (ent.err != .none) @tagName(ent.err) else std.fmt.bufPrint(&sb, "{d}", .{ent.status}) catch "";
+        const size = if (ent.bytes >= 1024) std.fmt.bufPrint(&zb, "{d:.1} KB", .{@as(f32, @floatFromInt(ent.bytes)) / 1024}) catch "" else std.fmt.bufPrint(&zb, "{d} B", .{ent.bytes}) catch "";
+        var line: [320]u8 = undefined;
+        const text = std.fmt.bufPrint(&line, "{s}  {t}  {s}{s}  ·  {s}  ·  {s}  ·  {d} ms", .{ widgets.clock(&tb, ent.time), ent.method, ent.host(), ent.path(), status, size, ent.ms }) catch "";
+        const bad = ent.err != .none or ent.status >= 400;
+        const row: d.Rect = .{ .x = x, .y = y, .w = w, .h = 20 };
+        _ = d.textClipped(dl, f, 12, row.x, row.y + 2, if (bad) ctx.col(.danger) else ctx.col(.muted), text, row.w);
+        qa.mark(row, "plugin-net-row:{s}:{d}", .{ pl.name, i });
+        y += 22;
+    }
+    return y + 6;
 }
 
 fn loaded(e: *const engine.Engine, name: []const u8) bool {

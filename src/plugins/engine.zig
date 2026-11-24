@@ -38,8 +38,18 @@ pub const MsgList = wire.MsgList;
 pub const HttpReq = wire.HttpReq;
 pub const HttpRes = wire.HttpRes;
 pub const HttpError = wire.HttpError;
+pub const NetEntry = wire.NetEntry;
+pub const Action = wire.Action;
 pub const Cap = manifest.Cap;
 pub const parseKeys = runtime.parseKeys;
+pub const loc = @import("loc.zig");
+pub const http_policy = @import("http_policy.zig");
+
+/// O idioma da interface como os plugins veem ("pt", "en", "ja"…): os rótulos em
+/// vários idiomas escolhem por ele (loc.zig).
+pub fn uiLang() []const u8 {
+    return std.mem.span(runtime.lang_code());
+}
 
 /// O plugin aberto na página de configurações e os ganchos do app.
 pub var current: ?*Engine = null;
@@ -49,6 +59,8 @@ pub var current: ?*Engine = null;
 const drain_budget = 512;
 /// Gestos lembrados por plugin (a resposta de um pode chegar depois do próximo).
 const token_ring = 4;
+/// Linhas do registro de rede de cada plugin (as mais novas ficam).
+pub const net_log_max = 32;
 
 pub const Status = enum { off, running, failed, waiting };
 
@@ -89,6 +101,13 @@ pub const Plugin = struct {
     /// Gestos da pessoa neste plugin: só eles liberam enviar, inserir e pular.
     tokens: [token_ring]u32 = @splat(0),
     token_at: u8 = 0,
+    /// Os últimos pedidos HTTP (Configurações → Plugins): método, host, caminho sem a
+    /// busca, status, tamanho e tempo. Nunca cabeçalhos nem corpo.
+    net: [net_log_max]NetEntry = undefined,
+    net_n: u16 = 0,
+    net_at: u16 = 0,
+    /// O registro aberto no cartão.
+    net_open: bool = false,
 
     pub fn isRunning(p: *const Plugin) bool {
         return p.run != 0;
@@ -117,11 +136,24 @@ pub const Plugin = struct {
     }
 
     pub fn title(p: *const Plugin) []const u8 {
-        return p.man.title(runtime.lang_en(), p.name);
+        return p.man.title(uiLang(), p.name);
     }
 
     pub fn about(p: *const Plugin) []const u8 {
-        return p.man.about(runtime.lang_en());
+        return p.man.about(uiLang());
+    }
+
+    /// A linha `i` do registro de rede, da mais nova (0) para a mais velha.
+    pub fn netEntry(p: *const Plugin, i: usize) ?*const NetEntry {
+        if (i >= p.net_n) return null;
+        const at = (@as(usize, p.net_at) + net_log_max - 1 - i) % net_log_max;
+        return &p.net[at];
+    }
+
+    fn netPush(p: *Plugin, e: NetEntry) void {
+        p.net[p.net_at] = e;
+        p.net_at = (p.net_at + 1) % net_log_max;
+        if (p.net_n < net_log_max) p.net_n += 1;
     }
 
     fn setErr(p: *Plugin, msg: []const u8) void {
@@ -775,12 +807,26 @@ pub const Engine = struct {
                 e.gpa.free(n.text);
             },
             .send => |s| {
-                if (p.validToken(s.token) and !e.host.send(e.host.ctx, s.channel, s.text)) {
-                    p.setErr(runtime_tr("larper.send: canal não encontrado", "larper.send: channel not found"));
+                if (p.validToken(s.token) and !e.host.send(e.host.ctx, s.channel, s.text, s.reply_to)) {
+                    p.setErr(if (s.reply_to != 0) runtime_tr("larper.reply: mensagem não encontrada", "larper.reply: message not found") else runtime_tr("larper.send: canal não encontrado", "larper.send: channel not found"));
                     e.generation +%= 1;
                     e.host.failed(e.host.ctx, p.name, p.err() orelse "");
                 }
                 e.gpa.free(s.text);
+            },
+            .action => |a| {
+                defer a.what.free(e.gpa);
+                // Sem o gesto de verdade (de outra partida, ou forjado), nada acontece.
+                if (!p.validToken(a.token)) return;
+                if (e.host.action(e.host.ctx, p.name, p.title(), &a.what)) |why| {
+                    p.setErr(why);
+                    e.generation +%= 1;
+                    e.host.failed(e.host.ctx, p.name, p.err() orelse "");
+                }
+            },
+            .net_log => |entry| {
+                p.netPush(entry);
+                e.generation +%= 1;
             },
             .insert => |s| {
                 if (p.validToken(s.token)) e.host.insert(e.host.ctx, s.text);
@@ -966,6 +1012,17 @@ const T = struct {
     // Pedidos HTTP: o teste responde com `respond`.
     var http_reqs: [8]?*HttpReq = @splat(null);
     var http_n: usize = 0;
+    var replied_to: u64 = 0;
+    // Ações que a interface recebeu (o tipo e a mensagem), e o motivo para recusar.
+    var actions: [16]std.meta.Tag(Action) = undefined;
+    var action_ids: [16]u64 = @splat(0);
+    var action_text: [64]u8 = undefined;
+    var action_text_len: usize = 0;
+    var n_actions: usize = 0;
+    var refuse_action: ?[]const u8 = null;
+    // O "chaveiro": "plugin\x00chave" -> valor (usado na thread dos plugins).
+    var secrets: [8]struct { k: [96]u8 = undefined, k_len: usize = 0, v: [256]u8 = undefined, v_len: usize = 0 } = undefined;
+    var secrets_n: usize = 0;
 
     fn lock() *sync.Lock {
         if (disk_lock == null) disk_lock = sync.lockInit();
@@ -981,6 +1038,10 @@ const T = struct {
         copied_len = 0;
         opened_len = 0;
         loaded = &.{};
+        replied_to = 0;
+        n_actions = 0;
+        action_text_len = 0;
+        refuse_action = null;
     }
     fn wipeDisk() void {
         const l = lock();
@@ -1000,8 +1061,9 @@ const T = struct {
         notes_desktop[n_notes] = desktop;
         n_notes += 1;
     }
-    fn send(_: *anyopaque, ch: u64, text: []const u8) bool {
+    fn send(_: *anyopaque, ch: u64, text: []const u8, reply_to: u64) bool {
         if (n_sent == sent.len) return false;
+        replied_to = reply_to;
         const k = @min(text.len, 128);
         @memcpy(sent[n_sent][0..k], text[0..k]);
         sent_len[n_sent] = k;
@@ -1077,6 +1139,69 @@ const T = struct {
     fn keepBroken(_: *anyopaque, _: u64, _: []const u8) void {
         broken += 1;
     }
+    fn action(_: *anyopaque, _: []const u8, _: []const u8, a: *const Action) ?[]const u8 {
+        if (refuse_action) |why| return why;
+        if (n_actions == actions.len) return null;
+        actions[n_actions] = std.meta.activeTag(a.*);
+        action_ids[n_actions] = switch (a.*) {
+            .react => |x| x.id,
+            .edit => |x| x.id,
+            .delete => |x| x.id,
+            .pin => |x| x.id,
+            .thread => |x| x.id,
+            .attach => |x| x.channel,
+        };
+        const text: []const u8 = switch (a.*) {
+            .react => |x| x.emoji,
+            .edit => |x| x.text,
+            .thread => |x| x.name,
+            .pin => |x| if (x.add) "+" else "-",
+            .delete, .attach => "",
+        };
+        action_text_len = @min(text.len, action_text.len);
+        @memcpy(action_text[0..action_text_len], text[0..action_text_len]);
+        n_actions += 1;
+        return null;
+    }
+    fn secretKey(buf: []u8, plugin: []const u8, k: []const u8) []const u8 {
+        return std.fmt.bufPrint(buf, "{s}\x00{s}", .{ plugin, k }) catch "";
+    }
+    fn secretGet(_: *anyopaque, gpa: std.mem.Allocator, plugin: []const u8, k: []const u8) ?[]u8 {
+        const l = lock();
+        l.lock();
+        defer l.unlock();
+        var kb: [96]u8 = undefined;
+        const key_ = secretKey(&kb, plugin, k);
+        for (secrets[0..secrets_n]) |*x| if (std.mem.eql(u8, x.k[0..x.k_len], key_)) {
+            if (x.v_len == 0) return null;
+            return gpa.dupe(u8, x.v[0..x.v_len]) catch null;
+        };
+        return null;
+    }
+    fn secretSet(_: *anyopaque, plugin: []const u8, k: []const u8, v: []const u8) bool {
+        const l = lock();
+        l.lock();
+        defer l.unlock();
+        var kb: [96]u8 = undefined;
+        const key_ = secretKey(&kb, plugin, k);
+        const slot = for (secrets[0..secrets_n]) |*x| {
+            if (std.mem.eql(u8, x.k[0..x.k_len], key_)) break x;
+        } else blk: {
+            if (secrets_n == secrets.len) return false;
+            const x = &secrets[secrets_n];
+            secrets_n += 1;
+            @memcpy(x.k[0..key_.len], key_);
+            x.k_len = key_.len;
+            break :blk x;
+        };
+        if (v.len > slot.v.len) return false;
+        @memcpy(slot.v[0..v.len], v);
+        slot.v_len = v.len;
+        return true;
+    }
+    fn secretDelete(ctx: *anyopaque, plugin: []const u8, k: []const u8) void {
+        _ = secretSet(ctx, plugin, k, "");
+    }
     fn httpStart(req: *HttpReq) bool {
         const l = lock();
         l.lock();
@@ -1102,7 +1227,21 @@ const T = struct {
             break :blk http_reqs[http_n].?;
         };
         const res = req.gpa.create(HttpRes) catch unreachable;
-        res.* = .{ .run = req.run, .id = req.id, .token = req.token, .status = status, .body = req.gpa.dupe(u8, body) catch unreachable };
+        res.* = .{ .run = req.run, .id = req.id, .token = req.token, .status = status, .body = req.gpa.dupe(u8, body) catch unreachable, .log = req.log };
+        req.done(req.done_ctx, res);
+        req.free();
+    }
+    /// Resposta com cabeçalhos já filtrados ("nome\x00valor\x00…") ou um erro.
+    fn respondWith(status: u16, body: []const u8, headers: []const u8, err: HttpError) void {
+        const req = blk: {
+            const l = lock();
+            l.lock();
+            defer l.unlock();
+            http_n -= 1;
+            break :blk http_reqs[http_n].?;
+        };
+        const res = req.gpa.create(HttpRes) catch unreachable;
+        res.* = .{ .run = req.run, .id = req.id, .token = req.token, .status = status, .err = err, .body = req.gpa.dupe(u8, body) catch unreachable, .headers = req.gpa.dupe(u8, headers) catch unreachable, .log = req.log, .ms = 12 };
         req.done(req.done_ctx, res);
         req.free();
     }
@@ -1128,6 +1267,10 @@ const T = struct {
             .keep_broken_data = &keepBroken,
             .http_start = &httpStart,
             .http_stop = &httpStop,
+            .action = &action,
+            .secret_get = &secretGet,
+            .secret_set = &secretSet,
+            .secret_delete = &secretDelete,
         });
         e.account = 1;
         return e;
@@ -1859,8 +2002,8 @@ test "plugins: menus e decoração, com o plugin parado levando tudo" {
     );
     try std.testing.expectEqual(Status.running, p.status());
     try std.testing.expectEqual(@as(usize, 2), p.menus.items.len);
-    try std.testing.expectEqualStrings("Marcar", p.menus.items[0].pt);
-    try std.testing.expectEqualStrings("Mark", p.menus.items[0].en);
+    try std.testing.expectEqualStrings("Marcar", p.menus.items[0].label.get("pt"));
+    try std.testing.expectEqualStrings("Mark", p.menus.items[0].label.get("en"));
     const m: Message = .{ .id = 10, .content = "oi", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
     e.menuMessage(p, &p.menus.items[0], &m, null);
     e.waitIdle();
@@ -1946,7 +2089,7 @@ test "plugins: HTTP só com host declarado e aprovado, e sem cabeçalhos da cont
         \\larper.command("/get", function() larper.http.get("https://api.exemplo.com/x?q=1", resposta) end)
         \\larper.command("/post", function()
         \\  larper.http.post("https://api.exemplo.com/y", {body = "corpo", headers = {
-        \\    ["Content-Type"] = "text/plain", Cookie = "a=b", Authorization = "x",
+        \\    ["Content-Type"] = "text/plain", Cookie = "a=b",
         \\    ["X-Super-Properties"] = "z", Accept = "a\r\nCookie: b"}}, resposta)
         \\end)
         \\larper.command("/fora", function()
@@ -1972,7 +2115,7 @@ test "plugins: HTTP só com host declarado e aprovado, e sem cabeçalhos da cont
     try cmdOk(&e, "/get");
     try std.testing.expectEqual(@as(usize, 1), T.http_n);
     try std.testing.expectEqualStrings("https://api.exemplo.com/x?q=1", T.http_reqs[0].?.url);
-    try std.testing.expect(!T.http_reqs[0].?.post);
+    try std.testing.expectEqual(wire.Method.GET, T.http_reqs[0].?.method);
     // A resposta chega fora de um gesto: mandar mensagem não vale.
     T.respond(200, "manda");
     e.waitIdle();
@@ -1982,7 +2125,7 @@ test "plugins: HTTP só com host declarado e aprovado, e sem cabeçalhos da cont
     // Só os cabeçalhos da lista, e sem quebra de linha.
     try cmdOk(&e, "/post");
     const req = T.http_reqs[0].?;
-    try std.testing.expect(req.post);
+    try std.testing.expectEqual(wire.Method.POST, req.method);
     try std.testing.expectEqualStrings("corpo", req.body);
     try std.testing.expectEqual(@as(usize, 1), req.headers.len);
     try std.testing.expectEqualStrings("Content-Type: text/plain", req.headers[0]);
@@ -2339,8 +2482,8 @@ test "plugins incluídos: todos ligam, com cabeçalho completo e nos dois idioma
         }
         try std.testing.expectEqual(Status.running, p.status());
         try std.testing.expect(!p.man.legacy);
-        try std.testing.expect(p.man.name.len > 0 and p.man.name_pt.len > 0);
-        try std.testing.expect(p.man.description.len > 0 and p.man.description_pt.len > 0);
+        try std.testing.expect(p.man.name.len > 0 and p.man.nameIn("pt") != null);
+        try std.testing.expect(p.man.description.len > 0 and p.man.descriptionIn("pt") != null);
         try std.testing.expect(p.man.version.len > 0);
         // Estes não precisam de painel: menu, regras ou comando.
         const no_panel = std.mem.eql(u8, ex.name, "translate.lua") or std.mem.eql(u8, ex.name, "cleanlinks.lua") or std.mem.eql(u8, ex.name, "github.lua");
@@ -2477,8 +2620,10 @@ test "plugins: escolhas de menu chegam como segundo argumento" {
     const to = &p.menus.items[1];
     try std.testing.expectEqual(@as(usize, 2), to.choices.len);
     try std.testing.expectEqualStrings("es", to.choices[0].value);
-    // Rótulo em um idioma só vale para os dois.
-    try std.testing.expectEqualStrings("French", to.choices[1].pt);
+    // Rótulo em um idioma só vale para todos.
+    try std.testing.expectEqualStrings("French", to.choices[1].label.get("pt"));
+    try std.testing.expectEqualStrings("Espanhol", to.choices[0].label.get("pt"));
+    try std.testing.expectEqualStrings("Spanish", to.choices[0].label.get("ja"));
     try std.testing.expectEqualStrings("🌐", to.toolbar);
     try std.testing.expectEqual(@as(u32, 1), e.n_toolbar);
     const m: Message = .{ .id = 9, .content = "oi", .author = 7, .author_name = "ana", .channel = 42, .channel_name = "geral" };
@@ -4051,4 +4196,383 @@ test "cartões do GitHub: passado o limite, espera sem insistir nem mostrar o av
         }
     }
     try std.testing.expectEqual(@as(usize, 30), made);
+}
+
+// --- 0.7: idiomas, HTTP de verdade, segredos e ações ------------------------------
+
+const Lang = struct {
+    var code: [*:0]const u8 = "pt";
+    fn get() [*:0]const u8 {
+        return code;
+    }
+    fn en() bool {
+        return code[0] != 'p' or code[1] != 't';
+    }
+    /// Troca o idioma dos plugins até o `restore`.
+    fn set(c: [*:0]const u8) void {
+        code = c;
+        runtime.lang_code = &get;
+        runtime.lang_en = &en;
+    }
+};
+
+test "plugins: larper.tr com tabela escolhe o idioma de verdade, e a forma antiga cai no inglês" {
+    var e = T.engine();
+    defer e.deinit();
+    const saved_code = runtime.lang_code;
+    const saved_en = runtime.lang_en;
+    defer {
+        runtime.lang_code = saved_code;
+        runtime.lang_en = saved_en;
+    }
+    const p = testOne(&e,
+        \\-- @capabilities notify
+        \\larper.command("/fala", function()
+        \\  larper.notify(larper.lang() .. "|" .. larper.tr{pt = "oi", en = "hi", ja = "やあ", ["pt-PT"] = "olá"} .. "|" .. larper.tr("oi", "hi")
+        \\    .. "|" .. larper.tr{["pt-BR"] = "só brasil", de = "hallo"} .. "|" .. larper.tr{de = "hallo", fr = "salut"})
+        \\end)
+        \\larper.command("/vazio", function() larper.notify(tostring(pcall(larper.tr, {valor = "x"}))) end)
+    );
+    try std.testing.expectEqual(Status.running, p.status());
+    for ([_]struct { code: [*:0]const u8, want: []const u8 }{
+        .{ .code = "pt", .want = "pt|oi|oi|só brasil|hallo" },
+        .{ .code = "en", .want = "en|hi|hi|hallo|hallo" },
+        .{ .code = "ja", .want = "ja|やあ|hi|hallo|hallo" },
+        // Russo não veio: o inglês, nunca o português.
+        .{ .code = "ru", .want = "ru|hi|hi|hallo|hallo" },
+        .{ .code = "pt-PT", .want = "pt-PT|olá|oi|só brasil|hallo" },
+    }) |case| {
+        Lang.set(case.code);
+        T.reset();
+        try cmdOk(&e, "/fala");
+        try std.testing.expectEqualStrings(case.want, T.note(0));
+    }
+    T.reset();
+    try cmdOk(&e, "/vazio");
+    try std.testing.expectEqualStrings("false", T.note(0));
+}
+
+test "plugins: nome, menus, escolhas, painel e opções em qualquer idioma" {
+    var e = T.engine();
+    defer e.deinit();
+    const saved_code = runtime.lang_code;
+    const saved_en = runtime.lang_en;
+    defer {
+        runtime.lang_code = saved_code;
+        runtime.lang_en = saved_en;
+    }
+    Lang.set("ja");
+    const p = testOne(&e,
+        \\-- @name Translate
+        \\-- @name:pt Tradutor
+        \\-- @name:ja 翻訳
+        \\-- @capabilities menu, panel, settings, completions
+        \\larper.menu("message", { pt = "Traduzir", en = "Translate", ja = "翻訳する" }, function() end,
+        \\  { choices = { { value = "es", pt = "Espanhol", en = "Spanish", ja = "スペイン語" }, { value = "fr", label = { en = "French", ru = "Французский" } } } })
+        \\local function draw()
+        \\  larper.panel.set({ title = { pt = "Painel", en = "Panel", ja = "パネル" },
+        \\    { type = "text", key = "t", text = { pt = "texto", en = "text", ja = "テキスト" } },
+        \\    { type = "button", key = "b", label = { en = "Go" } },
+        \\    { type = "list", key = "l", empty = { pt = "Nada", en = "Nothing" }, items = {} } })
+        \\  larper.settings.set({ { type = "toggle", key = "x", label = { pt = "Ligado", en = "On", ja = "オン" }, value = true, on_change = function() end } })
+        \\  larper.completions(";", { { name = "oi", text = "olá", hint = { pt = "saudação", en = "greeting", ja = "挨拶" } } })
+        \\end
+        \\larper.on("lang", draw)
+        \\draw()
+    );
+    if (p.err()) |m| std.debug.print("{s}\n", .{m});
+    try std.testing.expectEqual(Status.running, p.status());
+    try std.testing.expectEqualStrings("翻訳", p.title());
+    const entry = &p.menus.items[0];
+    try std.testing.expectEqualStrings("翻訳する", entry.label.get(uiLang()));
+    try std.testing.expectEqualStrings("Translate", entry.label.get("ru"));
+    try std.testing.expectEqualStrings("Traduzir", entry.label.get("pt-BR"));
+    try std.testing.expectEqualStrings("スペイン語", entry.choices[0].label.get("ja"));
+    try std.testing.expectEqualStrings("Французский", entry.choices[1].label.get("ru"));
+    try std.testing.expectEqualStrings("French", entry.choices[1].label.get("ja"));
+    try std.testing.expectEqualStrings("パネル", p.tree.?.title);
+    try std.testing.expectEqualStrings("テキスト", nodeKey(p.tree.?, "t").text);
+    try std.testing.expectEqualStrings("Go", nodeKey(p.tree.?, "b").text);
+    try std.testing.expectEqualStrings("Nothing", nodeKey(p.tree.?, "l").text);
+    try std.testing.expectEqualStrings("オン", nodeKey(p.settings.?, "x").text);
+    try std.testing.expectEqualStrings("挨拶", p.completions.?.items[0].hint);
+    // O app já mostrava japonês (o primeiro quadro guarda o idioma).
+    e.frameTick(42, true);
+    e.waitIdle();
+    // Trocou o idioma: o plugin publica de novo e tudo acompanha.
+    Lang.set("pt");
+    e.frameTick(42, false);
+    e.waitIdle();
+    try std.testing.expectEqualStrings("Tradutor", p.title());
+    try std.testing.expectEqualStrings("Painel", p.tree.?.title);
+    try std.testing.expectEqualStrings("Nada", nodeKey(p.tree.?, "l").text);
+    try std.testing.expectEqualStrings("Ligado", nodeKey(p.settings.?, "x").text);
+    try std.testing.expectEqualStrings("Traduzir", entry.label.get(uiLang()));
+}
+
+fn hasHeader(req: *const HttpReq, line: []const u8) bool {
+    for (req.headers) |h| if (std.mem.eql(u8, h, line)) return true;
+    return false;
+}
+
+test "plugins: HTTP com outros métodos, curinga, credenciais, cabeçalhos da resposta e registro de rede" {
+    var e = T.engine();
+    defer e.deinit();
+    const p = testOne(&e,
+        \\-- @name H2
+        \\-- @capabilities http, notify
+        \\-- @hosts api.a.com, *.cdn.a.com
+        \\-- @credentials api.a.com
+        \\local function mostra(r)
+        \\  larper.notify(tostring(r.ok) .. "|" .. tostring(r.status) .. "|" .. tostring(r.error) .. "|" .. r.body
+        \\    .. "|" .. tostring(r.headers.etag) .. "|" .. tostring(r.headers["x-ratelimit-remaining"]) .. "|" .. tostring(r.headers["set-cookie"]))
+        \\end
+        \\larper.command("/put", function() larper.http.put("https://api.a.com/item/1?token=nao-aparece", { body = "{}", headers = { ["Content-Type"] = "application/json" } }, mostra) end)
+        \\larper.command("/patch", function() larper.http.request("https://api.a.com/item/1", { method = "patch", body = "x" }, mostra) end)
+        \\larper.command("/del", function() larper.http.delete("https://api.a.com/item/1", mostra) end)
+        \\larper.command("/head", function() larper.http.head("https://img.cdn.a.com/a.png", mostra) end)
+        \\larper.command("/cred", function()
+        \\  larper.http.get("https://api.a.com/me", { headers = { Authorization = "Bearer abc", ["X-API-Key"] = "k1", Cookie = "c=1" } }, mostra)
+        \\end)
+        \\larper.command("/erros", function()
+        \\  larper.notify(tostring(pcall(larper.http.head, "https://api.a.com/", { body = "x" }, mostra)))
+        \\  larper.notify(tostring(pcall(larper.http.get, "https://img.cdn.a.com/", { headers = { Authorization = "x" } }, mostra)))
+        \\  larper.notify(tostring(pcall(larper.http.request, "https://api.a.com/", { method = "TRACE" }, mostra)))
+        \\  larper.notify(tostring(pcall(larper.http.get, "https://cdn.a.com/", mostra)))
+        \\  larper.notify(tostring(larper.http.allowed("*.cdn.a.com")) .. tostring(larper.http.allowed("img.cdn.a.com")))
+        \\end)
+    );
+    if (p.err()) |m| std.debug.print("{s}\n", .{m});
+    try std.testing.expectEqual(Status.running, p.status());
+    try cmdOk(&e, "/erros");
+    for (0..4) |i| try std.testing.expectEqualStrings("false", T.note(i));
+    try std.testing.expectEqualStrings("falsefalse", T.note(4));
+    try std.testing.expectEqual(@as(usize, 0), T.http_n);
+    // Sem aprovar a API, credencial nenhuma sai (e o registro conta a recusa).
+    T.reset();
+    try cmdOk(&e, "/cred");
+    try std.testing.expectEqual(@as(usize, 0), T.http_n);
+    try std.testing.expect(std.mem.startsWith(u8, T.note(0), "false|0|not_approved|"));
+    try std.testing.expectEqual(@as(u16, 1), p.net_n);
+    try std.testing.expectEqualStrings("/me", p.netEntry(0).?.path());
+    try std.testing.expectEqual(HttpError.not_approved, p.netEntry(0).?.err);
+    e.setApproved(p, "api.a.com", true);
+    e.setApproved(p, "*.cdn.a.com", true);
+    e.waitIdle();
+    T.reset();
+    try cmdOk(&e, "/cred");
+    try std.testing.expectEqual(@as(usize, 1), T.http_n);
+    const cred = T.http_reqs[0].?;
+    try std.testing.expect(hasHeader(cred, "Authorization: Bearer abc") and hasHeader(cred, "X-API-Key: k1"));
+    try std.testing.expect(!hasHeader(cred, "Cookie: c=1"));
+    // A thread do pedido recebe os aprovados: um redirecionamento só segue para eles,
+    // e as credenciais só para os que as levam.
+    try std.testing.expectEqual(@as(usize, 2), cred.allow.len);
+    try std.testing.expectEqual(@as(usize, 1), cred.creds.len);
+    try std.testing.expectEqualStrings("api.a.com", cred.creds[0]);
+    T.respondWith(200, "eu", "etag\x00\"v1\"\x00x-ratelimit-remaining\x0059\x00", .none);
+    e.waitIdle();
+    try std.testing.expectEqualStrings("true|200|nil|eu|\"v1\"|59|nil", T.note(0));
+    T.reset();
+    try cmdOk(&e, "/put");
+    const put = T.http_reqs[0].?;
+    try std.testing.expectEqual(wire.Method.PUT, put.method);
+    try std.testing.expectEqualStrings("{}", put.body);
+    T.respondWith(204, "", "", .none);
+    e.waitIdle();
+    try cmdOk(&e, "/patch");
+    try std.testing.expectEqual(wire.Method.PATCH, T.http_reqs[0].?.method);
+    T.respondWith(0, "", "", .redirect);
+    e.waitIdle();
+    try std.testing.expect(std.mem.startsWith(u8, lastNote(), "false|0|redirect|"));
+    try cmdOk(&e, "/del");
+    try std.testing.expectEqual(wire.Method.DELETE, T.http_reqs[0].?.method);
+    T.respondWith(404, "não", "", .none);
+    e.waitIdle();
+    try cmdOk(&e, "/head");
+    try std.testing.expectEqual(wire.Method.HEAD, T.http_reqs[0].?.method);
+    try std.testing.expectEqualStrings("https://img.cdn.a.com/a.png", T.http_reqs[0].?.url);
+    try std.testing.expectEqual(@as(usize, 0), T.http_reqs[0].?.headers.len);
+    T.respondWith(200, "", "content-length\x0012\x00", .none);
+    e.waitIdle();
+    // O registro: o mais novo primeiro, sem a busca da URL e sem conteúdo.
+    try std.testing.expectEqual(@as(u16, 6), p.net_n);
+    const newest = p.netEntry(0).?;
+    try std.testing.expectEqual(wire.Method.HEAD, newest.method);
+    try std.testing.expectEqualStrings("img.cdn.a.com", newest.host());
+    const put_entry = p.netEntry(3).?;
+    try std.testing.expectEqual(wire.Method.PUT, put_entry.method);
+    try std.testing.expectEqualStrings("/item/1", put_entry.path());
+    try std.testing.expectEqual(@as(u16, 204), put_entry.status);
+    try std.testing.expectEqual(@as(u32, 12), put_entry.ms);
+    try std.testing.expectEqual(@as(u32, 2), p.netEntry(4).?.bytes);
+    try std.testing.expectEqual(HttpError.redirect, p.netEntry(2).?.err);
+    try std.testing.expect(p.netEntry(6) == null);
+}
+
+test "plugins: segredos ficam no chaveiro, separados por plugin, e pedem a capacidade" {
+    var e = T.engine();
+    defer e.deinit();
+    T.secrets_n = 0;
+    const src =
+        \\-- @capabilities secrets, notify
+        \\larper.command("/guarda", function(a) larper.secrets.set("token", a) end)
+        \\larper.command("/le", function() larper.notify(tostring(larper.secrets.get("token"))) end)
+        \\larper.command("/apaga", function() larper.secrets.delete("token") end)
+        \\larper.command("/ruim", function()
+        \\  larper.notify(tostring(pcall(larper.secrets.set, "com espaço", "x")))
+        \\  larper.notify(tostring(pcall(larper.secrets.set, "k", "")))
+        \\  larper.notify(tostring(pcall(larper.secrets.get, string.rep("k", 65))))
+        \\end)
+    ;
+    e.load(&.{
+        .{ .name = "a.lua", .src = src },
+        .{ .name = "b.lua", .src = src },
+        .{ .name = "sem.lua", .src = "-- @capabilities notify\nlarper.command('/sem', function() larper.notify(tostring(pcall(larper.secrets.get, 'x'))) end)" },
+        .{ .name = "nome ruim.lua", .src = "-- @capabilities secrets, notify\nlarper.command('/nr', function() larper.notify(tostring(pcall(larper.secrets.get, 'x'))) end)" },
+    }, false);
+    e.waitIdle();
+    const a = e.list.items[0];
+    try std.testing.expectEqual(Status.running, a.status());
+    // Só um plugin tem o /guarda de cada vez (o primeiro): o b lê pelo armazenamento falso.
+    try cmdOk(&e, "/guarda s3cr3t");
+    try cmdOk(&e, "/le");
+    try std.testing.expectEqualStrings("s3cr3t", T.note(0));
+    try std.testing.expect(T.secretGet(&T.dummy, std.testing.allocator, "b.lua", "token") == null);
+    const got = T.secretGet(&T.dummy, std.testing.allocator, "a.lua", "token").?;
+    defer std.testing.allocator.free(got);
+    try std.testing.expectEqualStrings("s3cr3t", got);
+    // O b.lua, sozinho, não vê o do a.lua.
+    e.setEnabled(a, false);
+    e.waitIdle();
+    T.reset();
+    try cmdOk(&e, "/le");
+    try std.testing.expectEqualStrings("nil", T.note(0));
+    e.setEnabled(a, true);
+    e.waitIdle();
+    T.reset();
+    try cmdOk(&e, "/apaga");
+    try cmdOk(&e, "/le");
+    try std.testing.expectEqualStrings("nil", T.note(0));
+    T.reset();
+    try cmdOk(&e, "/ruim");
+    for (0..3) |i| try std.testing.expectEqualStrings("false", T.note(i));
+    T.reset();
+    try cmdOk(&e, "/sem");
+    try cmdOk(&e, "/nr");
+    try std.testing.expectEqualStrings("false", T.note(0));
+    try std.testing.expectEqualStrings("false", T.note(1));
+}
+
+test "plugins: ações só num gesto, com limite, e a interface recebe cada uma" {
+    var e = T.engine();
+    defer e.deinit();
+    const p = testOne(&e,
+        \\-- @name Acoes
+        \\-- @capabilities actions, send, composer, timers, messages, http, notify
+        \\-- @hosts api.a.com
+        \\local alvo = { id = "10", channel = { id = "42", name = "geral" } }
+        \\larper.command("/reage", function() larper.react(alvo, "👍") end)
+        \\larper.command("/reage-custom", function() larper.react("10", "<:blob:123>") end)
+        \\larper.command("/edita", function() larper.edit("10", "novo texto") end)
+        \\larper.command("/apaga", function() larper.delete(alvo) end)
+        \\larper.command("/apaga2", function() larper.delete("10"); larper.delete("11") end)
+        \\larper.command("/fixa", function() larper.pin("10"); larper.unpin("10") end)
+        \\larper.command("/thread", function() larper.thread("10", "  conversa  ") end)
+        \\larper.command("/anexa", function() larper.attach(nil) end)
+        \\larper.command("/responde", function() larper.reply(alvo, "concordo") end)
+        \\larper.command("/envia", function() larper.send(nil, "com resposta", { reply_to = "11" }) end)
+        \\larper.command("/depois", function() larper.after(0.01, function() larper.react("10", "👍") end) end)
+        \\larper.command("/http", function() larper.http.get("https://api.a.com/", function() larper.edit("10", "x") end) end)
+        \\larper.command("/ruins", function()
+        \\  larper.notify(tostring(pcall(larper.react, "10", "lol")))
+        \\  larper.notify(tostring(pcall(larper.react, nil, "👍")))
+        \\  larper.notify(tostring(pcall(larper.edit, "10", "")))
+        \\  larper.notify(tostring(pcall(larper.thread, "10", "   ")))
+        \\end)
+        \\larper.on("message", function(m) larper.delete(m) end)
+    );
+    if (p.err()) |m| std.debug.print("{s}\n", .{m});
+    try std.testing.expectEqual(Status.running, p.status());
+    const Tag = std.meta.Tag(Action);
+    try cmdOk(&e, "/reage");
+    try std.testing.expectEqual(@as(usize, 1), T.n_actions);
+    try std.testing.expectEqual(Tag.react, T.actions[0]);
+    try std.testing.expectEqual(@as(u64, 10), T.action_ids[0]);
+    try std.testing.expectEqualStrings("👍", T.action_text[0..T.action_text_len]);
+    try cmdOk(&e, "/reage-custom");
+    try std.testing.expectEqualStrings("<:blob:123>", T.action_text[0..T.action_text_len]);
+    try cmdOk(&e, "/edita");
+    try std.testing.expectEqual(Tag.edit, T.actions[2]);
+    try std.testing.expectEqualStrings("novo texto", T.action_text[0..T.action_text_len]);
+    try cmdOk(&e, "/apaga");
+    try std.testing.expectEqual(Tag.delete, T.actions[3]);
+    // Duas num gesto: a segunda é recusada, com o limite no erro.
+    try cmdOk(&e, "/apaga2");
+    try std.testing.expectEqual(@as(usize, 5), T.n_actions);
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "larper.delete") != null);
+    try cmdOk(&e, "/fixa");
+    try std.testing.expectEqual(Tag.pin, T.actions[5]);
+    try std.testing.expectEqualStrings("-", T.action_text[0..T.action_text_len]);
+    try cmdOk(&e, "/thread");
+    try std.testing.expectEqualStrings("conversa", T.action_text[0..T.action_text_len]);
+    try cmdOk(&e, "/anexa");
+    try std.testing.expectEqual(Tag.attach, T.actions[8]);
+    try std.testing.expectEqual(@as(u64, 0), T.action_ids[8]);
+    try cmdOk(&e, "/responde");
+    try std.testing.expectEqual(@as(u64, 10), T.replied_to);
+    try std.testing.expectEqual(@as(u64, 42), T.sent_ch[0]);
+    try std.testing.expectEqualStrings("concordo", T.sent[0][0..T.sent_len[0]]);
+    try cmdOk(&e, "/envia");
+    try std.testing.expectEqual(@as(u64, 11), T.replied_to);
+    // Fora de um gesto: temporizador, evento e resposta HTTP não fazem nada.
+    const before = T.n_actions;
+    try cmdOk(&e, "/depois");
+    sync.sleepMs(40);
+    e.waitIdle();
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "larper.react") != null);
+    const m: Message = .{ .id = 77, .content = "oi", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
+    e.onMessage(&m);
+    e.waitIdle();
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "larper.delete") != null);
+    e.setApproved(p, "api.a.com", true);
+    e.waitIdle();
+    try cmdOk(&e, "/http");
+    T.respond(200, "");
+    e.waitIdle();
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "larper.edit") != null);
+    try std.testing.expectEqual(before, T.n_actions);
+    T.reset();
+    try cmdOk(&e, "/ruins");
+    for (0..4) |i| try std.testing.expectEqualStrings("false", T.note(i));
+    // A interface recusou (não é sua, sem permissão…): o motivo vai para o cartão.
+    T.refuse_action = "larper.edit: só dá para editar mensagens suas";
+    try cmdOk(&e, "/edita");
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "mensagens suas") != null);
+    T.refuse_action = null;
+    // No máximo 5 apagadas por minuto, mesmo uma por gesto (já foram duas).
+    T.reset();
+    for (0..3) |_| try cmdOk(&e, "/apaga");
+    try std.testing.expectEqual(@as(usize, 3), T.n_actions);
+    try cmdOk(&e, "/apaga");
+    try std.testing.expectEqual(@as(usize, 3), T.n_actions);
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "5") != null);
+}
+
+test "plugins: ação sem a capacidade explica o que pedir" {
+    var e = T.engine();
+    defer e.deinit();
+    const p = testOne(&e,
+        \\-- @capabilities notify
+        \\larper.command("/x", function()
+        \\  larper.notify(select(2, pcall(larper.react, "1", "👍")))
+        \\  larper.notify(select(2, pcall(larper.attach, nil)))
+        \\  larper.notify(select(2, pcall(larper.reply, "1", "x")))
+        \\end)
+    );
+    try std.testing.expectEqual(Status.running, p.status());
+    try cmdOk(&e, "/x");
+    try std.testing.expect(std.mem.indexOf(u8, T.note(0), "actions") != null);
+    try std.testing.expect(std.mem.indexOf(u8, T.note(1), "composer") != null);
+    try std.testing.expect(std.mem.indexOf(u8, T.note(2), "send") != null);
 }

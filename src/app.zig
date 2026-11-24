@@ -1845,6 +1845,23 @@ pub const App = struct {
         return null;
     }
 
+    /// Troca o texto de uma mensagem (a caixa de texto editando, ou larper.edit de
+    /// um plugin): na tela na hora, e o pedido ao Discord. `tokens`: as menções que o
+    /// autocompletar escolheu.
+    pub fn editTo(app: *App, id: types.Id, typed: []const u8, tokens: []const mentions.Token) void {
+        const f = app.store.findAny(id) orelse return;
+        const ch = f.cs.info.id;
+        const text = mentions.expand(app.gpa, &app.store, f.cs.info.guild, typed, tokens) catch return;
+        defer app.gpa.free(text);
+        if (std.mem.eql(u8, f.m.msg.editable(), text)) return;
+        // Na tela o emoji personalizado continua como `:nome:`.
+        const shown = jsonx.simplifyContent(app.gpa, text) catch return;
+        defer app.gpa.free(shown);
+        app.store.editLocal(ch, id, shown, if (shown.len != text.len) text else null) catch return;
+        const copy = std.heap.c_allocator.dupe(u8, text) catch return;
+        app.cmd(.{ .edit_message = .{ .channel = ch, .id = id, .content = copy } });
+    }
+
     pub fn handle(app: *App, a: ev.Action) void {
         insp_reg.evento(.action, a);
         const st = &app.st;
@@ -2220,18 +2237,8 @@ pub const App = struct {
                 const id = st.editing;
                 st.editing = 0;
                 app.restoreDraft();
-                const f = app.store.findAny(id) orelse return;
-                const ch = f.cs.info.id;
-                const text = mentions.expand(app.gpa, &app.store, f.cs.info.guild, typed, autocomplete.tokens()) catch return;
-                defer app.gpa.free(text);
+                app.editTo(id, typed, autocomplete.tokens());
                 autocomplete.clearTokens();
-                if (std.mem.eql(u8, f.m.msg.editable(), text)) return;
-                // Na tela o emoji personalizado continua como `:nome:`.
-                const shown = jsonx.simplifyContent(app.gpa, text) catch return;
-                defer app.gpa.free(shown);
-                app.store.editLocal(ch, id, shown, if (shown.len != text.len) text else null) catch return;
-                const copy = std.heap.c_allocator.dupe(u8, text) catch return;
-                app.cmd(.{ .edit_message = .{ .channel = ch, .id = id, .content = copy } });
             },
             .cancel_compose => {
                 if (st.editing != 0) app.restoreDraft();

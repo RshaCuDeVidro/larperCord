@@ -149,6 +149,8 @@ QA_SUITE=voice run "mixer da call" $bin --qa --theme classico
 QA_SUITE=plugins-a run "plugins (antes)" $bin --qa
 sleep 2.5
 QA_SUITE=plugins-b run "plugins (depois)" $bin --qa
+# A API da 0.7: idiomas, HTTP completo, segredos, registro de rede e ações com confirmação.
+QA_SUITE=plugins-api run "plugins (api)" $bin --qa --theme classico
 for m in escuro claro; do
     QA_SUITE=login QA_PREFIX="$m-" run "login ($m)" $bin --qa --mode "$m"
 done

@@ -3336,6 +3336,8 @@ const ops_plugins_real = [_]Op{expect("carrega e mostra a conversa", ready)} ++ 
 const ops_vitrine = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_vitrine;
 const ops_plugins_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_a;
 const ops_plugins_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins.zig").ops_persist_b;
+/// O que os plugins ganharam na 0.7 (QA_SUITE=plugins-api): idiomas, HTTP, segredos e ações.
+const ops_plugins_api = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_plugins_api.zig").ops;
 const ops_fontes = [_]Op{
     expect("pronto", ready),
     click("user-btn:2"),
@@ -3437,6 +3439,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "vitrine", &ops_vitrine },
     .{ "plugins-a", &ops_plugins_a },
     .{ "plugins-b", &ops_plugins_b },
+    .{ "plugins-api", &ops_plugins_api },
     .{ "lembretes", &ops_lembretes },
     .{ "lembretes-a", &ops_lembretes_a },
     .{ "lembretes-b", &ops_lembretes_b },

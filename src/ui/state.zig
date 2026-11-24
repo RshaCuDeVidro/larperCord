@@ -76,6 +76,9 @@ pub const Popup = union(enum) {
     exportar: struct { channel: Id },
     /// Nome e cor de uma pasta da barra de servidores (ui/pastas.zig).
     folder_settings: struct { folder: u64 },
+    /// Um plugin pediu para apagar uma mensagem ou anexar um arquivo: a pessoa confirma
+    /// (o pedido fica em ui/plugin_confirm.zig).
+    plugin_confirm,
 };
 
 /// Seleção de texto entre mensagens: âncora e cabeça (mensagem + byte).

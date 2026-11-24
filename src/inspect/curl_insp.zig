@@ -19,6 +19,11 @@ pub fn requestLine(out: *std.ArrayList(u8), line: []const u8) void {
         out.appendSlice(gpa, "Authorization: (oculto pelo Inspetor)\n") catch return;
         return;
     }
+    // A chave de API que um plugin manda (larper.http com @credentials) também não.
+    if (std.ascii.startsWithIgnoreCase(line, "x-api-key:")) {
+        out.appendSlice(gpa, "X-API-Key: (oculto pelo Inspetor)\n") catch return;
+        return;
+    }
     // "Content-Type:" vazio é o jeito de pedir ao curl que não invente um.
     if (std.mem.endsWith(u8, line, ":")) return;
     out.appendSlice(gpa, line) catch return;
@@ -80,7 +85,7 @@ const t = std.testing;
 test "cabeçalhos do pedido: o Authorization nunca entra" {
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(gpa);
-    for ([_][]const u8{ "Authorization: segredo.de.verdade", "Accept: */*", "Content-Type:" }) |l| requestLine(&out, l);
+    for ([_][]const u8{ "Authorization: segredo.de.verdade", "X-API-Key: outro.segredo", "Accept: */*", "Content-Type:" }) |l| requestLine(&out, l);
     userAgent(&out, "UA/1");
     try t.expect(std.mem.indexOf(u8, out.items, "segredo") == null);
     try t.expect(std.mem.indexOf(u8, out.items, "Accept: */*\n") != null);

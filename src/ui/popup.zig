@@ -147,6 +147,7 @@ fn popupKey(p: state.Popup) u64 {
         .exportar => |t| 27 +% t.channel *% 31,
         .editar_imagem => |t| 28 +% @as(u64, t.index) *% 31,
         .folder_settings => |t| 29 +% t.folder *% 31,
+        .plugin_confirm => 29 +% @as(u64, @import("plugin_confirm.zig").key()) *% 31,
     };
 }
 
@@ -233,6 +234,7 @@ pub fn draw(ctx: *d.Ctx) void {
         .exportar => |t| exportar_ui.drawDialog(ctx, t.channel),
         .editar_imagem => |t| @import("editor_imagem.zig").draw(ctx, t.index),
         .folder_settings => |t| pastas_ui.drawSettings(ctx, t.folder),
+        .plugin_confirm => @import("plugin_confirm.zig").draw(ctx),
         .none => {},
     }
     animateOpen(ctx);
@@ -354,7 +356,9 @@ fn pluginItems(items: *[32]Item, n: *usize, kind: state.MenuKind) void {
         for (p.menus.items) |*m| {
             if (m.kind != want) continue;
             if (n.* < items.len and i < 32) {
-                items[n.*] = .{ .label = m.pt, .en = m.en, .id = @intCast(200 + i), .sep = first };
+                // O rótulo no idioma da interface, do jeito que o plugin escreveu.
+                const lbl = m.label.get(engine.uiLang());
+                items[n.*] = .{ .label = lbl, .en = lbl, .id = @intCast(200 + i), .sep = first, .raw = true };
                 n.* += 1;
                 first = false;
             }
@@ -553,7 +557,10 @@ fn menu(ctx: *d.Ctx, kind: state.MenuKind, id: Id, x: f32, y: f32) void {
             // O plugin recarregou com a lista aberta: as posições já não valem.
             if (host.appOf().plugins.menu_gen != choice_gen) return close(ctx);
             const hit = host.menuEntry(host.appOf(), choice_kind, choice_index) orelse return close(ctx);
-            for (hit.entry.choices, 0..) |ch, i| add(&items, &n, .{ .label = ch.pt, .en = ch.en, .id = @intCast(100 + i) });
+            for (hit.entry.choices, 0..) |*ch, i| {
+                const lbl = ch.label.get(engine.uiLang());
+                add(&items, &n, .{ .label = lbl, .en = lbl, .id = @intCast(100 + i), .raw = true });
+            }
             if (n == 0) return close(ctx);
         },
         .guild => {
@@ -844,7 +851,7 @@ fn choose(ctx: *d.Ctx, kind: state.MenuKind, id: Id, item: u8, r: d.Rect) void {
             st.popup = .{ .threads = .{ .parent = parent, .archived = item == 48 } };
             if (item == 48 and cs.info.thread != null and cs.info.thread.?.private) st.popup.threads.private = true;
         },
-        80, 81, 82, 83 => ctx.act(.{ .set_status = @enumFromInt(item - 80) }),
+        80, 81, 82, 83 => ctx.act(.{ .set_status = @fromBackingInt(@intCast(item - 80)) }),
         84 => st.popup = .{ .profile = .{ .user = id, .x = r.x, .y = r.y - 200 } },
         85 => {
             st.filtros.endFocus(ctx.store);
