@@ -115,19 +115,57 @@ pub fn prepare(a: std.mem.Allocator, own: []const kdl.Node, o: Options, problem:
     }
     try resolveVars(&cx, vars.items, options.items);
 
-    // Troca as variáveis e confere cada arquivo com o esquema.
+    // Troca as variáveis e confere cada arquivo com o esquema. Num arquivo com
+    // `theme-api 2` (estrito), o que seria aviso é erro, e o tema não carrega.
     var warnings: std.ArrayList(schema.Issue) = .empty;
     for (cx.files.items, 0..) |*f, i| {
-        var sub: Subst = .{ .cx = &cx, .vars = vars.items, .options = options.items, .out = &warnings, .file = @intCast(i) };
+        const strict = try apiOf(&cx, @intCast(i)) >= 2;
+        var sub: Subst = .{ .cx = &cx, .vars = vars.items, .options = options.items, .out = &warnings, .file = @intCast(i), .strict = strict };
         if (vars.items.len > 0) f.nodes = try sub.list(f.nodes);
-        var ck: schema.Checker = .{ .a = a, .out = &warnings, .options = options.items, .styles = styles.items, .file = f.label };
+        var ck: schema.Checker = .{ .a = a, .out = &warnings, .options = options.items, .styles = styles.items, .file = f.label, .strict = strict };
         for (f.nodes) |*n| try ck.topNode(n);
     }
     if (o.report) |r| for (warnings.items) |it| try r.add(it);
+    // O erro que para o carregamento: o primeiro (pela linha) do arquivo mais perto do tema,
+    // o próprio e depois as bases. O --theme-check e o LSP já receberam todos no `report`.
+    var first: ?schema.Issue = null;
+    for (cx.files.items) |f| {
+        for (warnings.items) |it| {
+            if (it.severity != .@"error" or !std.mem.eql(u8, it.file, f.label)) continue;
+            if (first) |x| if (x.line < it.line or (x.line == it.line and x.col <= it.col)) continue;
+            first = it;
+        }
+        if (first != null) break;
+    }
+    if (first) |e| {
+        problem.* = .{ .file = e.file, .line = e.line, .col = e.col, .message = e.message };
+        return error.InvalidTheme;
+    }
 
     var names: std.ArrayList([]const u8) = .empty;
     for (vars.items) |v| try names.append(a, v.name);
     return .{ .nodes = try merge(&cx), .files = cx.files.items, .var_names = names.items, .warnings = warnings.items };
+}
+
+// --- theme-api ----------------------------------------------------------------------------
+
+/// A versão do formato que o arquivo diz (`theme-api 2`); sem o nó, 1. Vale só para o
+/// próprio arquivo: uma base sem ele continua com avisos num tema estrito, e vice-versa.
+fn apiOf(cx: *Cx, file: u8) Error!u8 {
+    var found: ?*const kdl.Node = null;
+    for (cx.files.items[file].nodes) |*n| {
+        if (!std.mem.eql(u8, n.name, "theme-api")) continue;
+        if (found != null) return cx.fail(file, n.line, n.col, "theme-api goes once per file", .{});
+        found = n;
+    }
+    const n = found orelse return 1;
+    const v = (if (n.arg(0)) |x| x.asNumber() else null) orelse
+        return cx.fail(file, n.line, n.col, "theme-api needs the version as a number: theme-api 2", .{});
+    if (v < 1 or v != @floor(v))
+        return cx.fail(file, n.line, n.col, "theme-api {d} isn't a version (1 or {d})", .{ v, schema.api_supported });
+    if (v > schema.api_supported)
+        return cx.fail(file, n.line, n.col, "theme-api {d} needs a newer larperCord (this one reads up to {d})", .{ v, schema.api_supported });
+    return @intFromFloat(v);
 }
 
 // --- extends ------------------------------------------------------------------------------
@@ -381,6 +419,8 @@ const Subst = struct {
     /// Onde vão os avisos (null nas próprias variáveis: o aviso sai onde ela é usada).
     out: ?*std.ArrayList(schema.Issue),
     file: u8,
+    /// `theme-api 2` no arquivo: o `$` desconhecido é erro.
+    strict: bool = false,
 
     fn list(sb: *Subst, nodes: []const kdl.Node) Error![]const kdl.Node {
         const out = try sb.cx.a.alloc(kdl.Node, nodes.len);
@@ -460,7 +500,7 @@ const Subst = struct {
     fn warn(sb: *Subst, line: u32, col: u32, comptime fmt: []const u8, args: anytype) Error!void {
         const out = sb.out orelse return;
         try out.append(sb.cx.a, .{
-            .severity = .warning,
+            .severity = if (sb.strict) .@"error" else .warning,
             .file = sb.cx.files.items[sb.file].label,
             .line = line,
             .col = col,
@@ -705,4 +745,77 @@ test "temas sem extends nem vars ficam como eram (mesma ordem dos nós)" {
     var t = try load("styles { style \"s\" bg=\"@accent\" }\ncolors { accent \"#ff0000\" }\nlayout { messages }", .dark, &mem, null);
     defer t.deinit();
     try testing.expect(t.style("s").?.bg.?.r < 0.9);
+}
+
+test "theme-api 2: o que seria aviso é erro e o tema não carrega; sem ele, ou com 1, é aviso" {
+    const mem: Mem = .{ .files = &.{} };
+    const body = "layout {\n  row {\n    messages varient=cozy\n  }\n}";
+    inline for (.{ "", "theme-api 1\n" }) |head| {
+        var t = try load(head ++ body, .dark, &mem, null);
+        defer t.deinit();
+        try testing.expectEqual(@as(usize, 1), t.warnings.len);
+        try testing.expectEqual(schema.Severity.warning, t.warnings[0].severity);
+    }
+    // Estrito: o erro na linha e na coluna do nome desconhecido, e o report tem ele como erro.
+    var d: theme.Diagnostic = .{};
+    var r: schema.Report = .{ .gpa = testing.allocator };
+    defer r.deinit();
+    try testing.expectError(error.InvalidTheme, theme.loadWith(testing.allocator, "theme-api 2\n" ++ body, .{ .bases = mem.bases_(), .self = "mem:filho", .report = &r }, &d));
+    try testing.expectEqual(@as(u32, 4), d.line);
+    try testing.expectEqual(@as(u32, 14), d.column);
+    try testing.expect(std.mem.indexOf(u8, d.message, "unknown property 'varient' on messages") != null);
+    try testing.expectEqual(@as(usize, 1), r.items.items.len);
+    try testing.expectEqual(schema.Severity.@"error", r.items.items[0].severity);
+    // Todos os erros vão para o report; o que para o carregamento é o de cima.
+    var r2: schema.Report = .{ .gpa = testing.allocator };
+    defer r2.deinit();
+    try testing.expectError(error.InvalidTheme, theme.loadWith(testing.allocator, "theme-api 2\nlayout {\n  mesages\n  row tamanho=1 { messages }\n}", .{ .report = &r2 }, &d));
+    try testing.expectEqual(@as(usize, 2), r2.errors());
+    try testing.expectEqual(@as(u32, 3), d.line);
+    // Variável ou opção desconhecida, num argumento e numa propriedade.
+    try testing.expectError(error.InvalidTheme, load("theme-api 2\nvars { a 1 }\nlayout {\n  row gap=$nada { messages }\n}", .dark, &mem, &d));
+    try testing.expect(std.mem.indexOf(u8, d.message, "'$nada'") != null);
+    try testing.expectEqual(@as(u32, 4), d.line);
+    try testing.expectError(error.InvalidTheme, load("theme-api 2\nvars { a 1 }\ncolors { accent \"$nada\" }\nlayout { messages }", .dark, &mem, &d));
+    try testing.expect(std.mem.indexOf(u8, d.message, "'$nada'") != null);
+    // Um tema estrito sem nada errado carrega sem aviso nenhum.
+    var ok = try load("theme-api 2\noptions { option \"brilho\" }\nstyles { style \"card\" sheen=\"$brilho\" }\nlayout { messages style=card }", .dark, &mem, null);
+    defer ok.deinit();
+    try testing.expectEqual(@as(usize, 0), ok.warnings.len);
+}
+
+test "theme-api: versão que o app não lê, ou que não é um número, é erro no nó" {
+    const mem: Mem = .{ .files = &.{} };
+    var d: theme.Diagnostic = .{};
+    try testing.expectError(error.InvalidTheme, load("layout { messages }\ntheme-api 3", .dark, &mem, &d));
+    try testing.expectEqual(@as(u32, 2), d.line);
+    try testing.expect(std.mem.indexOf(u8, d.message, "needs a newer larperCord (this one reads up to 2)") != null);
+    try testing.expectError(error.InvalidTheme, load("theme-api \"2\"\nlayout { messages }", .dark, &mem, &d));
+    try testing.expect(std.mem.indexOf(u8, d.message, "as a number") != null);
+    try testing.expectError(error.InvalidTheme, load("theme-api 1.5\nlayout { messages }", .dark, &mem, &d));
+    try testing.expect(std.mem.indexOf(u8, d.message, "isn't a version") != null);
+    try testing.expectError(error.InvalidTheme, load("theme-api 2\ntheme-api 2\nlayout { messages }", .dark, &mem, &d));
+    try testing.expectEqual(@as(u32, 2), d.line);
+}
+
+test "theme-api vale só para o próprio arquivo, não para a base nem para quem a estende" {
+    const mem: Mem = .{ .files = &.{
+        .{ "base-estrita", "theme-api 2\nlayout {\n  messages tamanho=3\n}" },
+        .{ "base-solta", "layout {\n  messages tamanho=3\n}" },
+    } };
+    var d: theme.Diagnostic = .{};
+    // A base estrita com um erro não carrega nem por baixo de um tema sem theme-api.
+    try testing.expectError(error.InvalidTheme, load("extends \"base-estrita\"", .dark, &mem, &d));
+    try testing.expectEqualStrings("base-estrita.kdl", d.file);
+    try testing.expectEqual(@as(u32, 3), d.line);
+    // Um tema estrito em cima de uma base solta: o que a base tem continua aviso.
+    var t = try load("theme-api 2\nextends \"base-solta\"\ncolors { accent \"#ff0000\" }", .dark, &mem, null);
+    defer t.deinit();
+    try testing.expectEqual(@as(usize, 1), t.warnings.len);
+    try testing.expectEqual(schema.Severity.warning, t.warnings[0].severity);
+    try testing.expectEqualStrings("base-solta.kdl", t.warnings[0].file);
+    // O erro do próprio tema estrito aparece com o arquivo dele (vazio).
+    try testing.expectError(error.InvalidTheme, load("theme-api 2\nextends \"base-solta\"\nlayout {\n  mesages\n}", .dark, &mem, &d));
+    try testing.expectEqualStrings("", d.file);
+    try testing.expectEqual(@as(u32, 4), d.line);
 }

@@ -636,7 +636,8 @@
       } else head.push(text(base, nd));
     });
     nodes.forEach(function (nd) {
-      if (nd.name === "extends" || nd.name === "theme-api") return;
+      // O `theme-api` do tema fica (o da base, não): o arquivo que sai é dele.
+      if (nd.name === "extends") return;
       if (nd.name === "styles") childStyles.push(nd);
       else if (nd.name === "options") head.push(cut(src, nd, nd.kids, function (ch) { return !(typeof arg(ch, 0) === "string" && used[arg(ch, 0)]) || ""; }));
       else head.push(text(src, nd));

@@ -544,11 +544,77 @@ It loads the file with the app's own loader, in both modes and with the options 
 too (CI checks the bundled and the community themes this way). On Windows, run it from PowerShell in the app's folder:
 `.\larpercord.exe --theme-check $env:APPDATA\larpercord\themes\meu-tema.kdl`.
 
+### Strict mode: `theme-api 2`
+
+A theme whose file says `theme-api 2` asks for the strict check: what would be a warning is an **error**, and the app
+doesn't load the theme until it's fixed (it says why, with the line, like a syntax error). It's for a theme you're
+writing, or for the CI of a theme repository, so a typo never ships. Without that line, or with `theme-api 1`, a
+theme works as always: warnings, and it loads.
+
+```kdl
+theme-api 2
+theme "meu-tema" description-en="My theme."
+```
+
+```
+meu-tema.kdl:14:18: error: unknown property 'varient' on messages (did you mean 'variant'?)
+```
+
+It applies to the file that says it, wherever that file is used: a strict theme can extend a bundled theme (what the
+base has stays a warning), and a strict base is strict under any theme that extends it. A version newer than the app
+reads (`theme-api 3` in an app that reads up to 2) is an error that asks for a newer larperCord.
+
 The schema is also published as JSON, for editors and tools:
 [`docs/assets/site/theme-schema.json`](../docs/assets/site/theme-schema.json) (the site's theme builder reads it).
 `larpercord --theme-schema` prints the same JSON. For each component it lists the properties with their type
 (`number` with `min`/`max` where the app clamps, `boolean`, `enum` with its `values`, `color`, `style`, `option`…),
 the default and a description; `sets` holds the properties every layout node, container or component has.
+
+### In your editor
+
+`larpercord --theme-lsp` is a language server for theme files: the same errors and warnings while you type,
+completion (the nodes that fit where the cursor is, the properties of the node, the values after `key=`, color tokens
+after `@`, options and variables after `$`) and the description of a node or property when the mouse is over it. It
+talks over stdin and stdout, like any language server, and finds the base of `extends` in the file's folder, in your
+themes folder and among the bundled themes.
+
+Other programs use KDL too (niri and zellij configs, for example), and the server checks everything it gets as a
+theme, so hook it to theme files only where the editor allows it.
+
+**Neovim** (0.11 or newer), in `init.lua`. It starts only for `.kdl` files inside a `themes` folder:
+
+```lua
+vim.filetype.add({ extension = { kdl = "kdl" } })
+vim.lsp.config("larpercord", {
+  cmd = { "larpercord", "--theme-lsp" },
+  filetypes = { "kdl" },
+  root_dir = function(bufnr, on_dir)
+    local path = vim.api.nvim_buf_get_name(bufnr)
+    if path:find("[/\\]themes[/\\]") then on_dir(vim.fs.dirname(path)) end
+  end,
+})
+vim.lsp.enable("larpercord")
+```
+
+**Helix** already knows `.kdl`. Put this in `.helix/languages.toml` inside your themes folder (only there), or in
+`~/.config/helix/languages.toml` (every `.kdl` file):
+
+```toml
+[language-server.larpercord]
+command = "larpercord"
+args = ["--theme-lsp"]
+
+[[language]]
+name = "kdl"
+language-servers = ["larpercord"]
+```
+
+**VS Code** doesn't start a language server on its own: use an extension that runs any command as one (search the
+marketplace for "generic LSP client"), with the command `larpercord --theme-lsp`, the stdio transport and the
+`kdl` language (or files matching `**/themes/*.kdl`).
+
+On Windows the command is the full path of `larpercord.exe`, for example
+`%LOCALAPPDATA%\Programs\larperCord\larpercord.exe`, with the same `--theme-lsp`.
 
 ## Sharing your theme
 

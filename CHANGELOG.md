@@ -1,5 +1,13 @@
 # What changed in each version
 
+## 0.7.0
+
+**Writing themes**
+- Every component, property and value a theme can use is now listed in one place, the theme schema, and the app checks each theme against it when it loads: a name it doesn't know, a property a component doesn't have, a value that isn't one of the choices or a number out of range shows as a warning with the line and the column, and a typo gets a suggestion (`unknown property 'varient' on messages (did you mean 'variant'?)`). A theme that loaded before still loads. `larpercord --theme-check FILE.kdl` lists every warning and error in the terminal, in both modes and with the options on and off, without opening a window (`--strict` fails on warnings too; CI checks the bundled and community themes this way), and `--theme-schema` prints the schema as JSON, which the site's theme builder now reads.
+- `extends "classico"` starts a theme from another one, bundled or in your themes folder, and changes only what differs: colors token by token, fonts and metrics property by property, styles style by style, options by name, and the layout, palette and roles whole. `vars { gap 8 }` gives names to values, used as `$gap` in any property or inside a color expression, and a theme that extends a base can change the base's variables, also where the base uses them. The theme builder and the community gallery understand both.
+- `theme-api 2` at the top of a theme turns the check strict: what would be a warning is an error, and the app doesn't load the theme until it's fixed. Themes without it work as before.
+- `larpercord --theme-lsp` is a language server for theme files: Neovim, Helix, VS Code and other editors show the errors and warnings while you type, complete components, properties, values, color tokens, options and variables, and show the description of each on hover. It talks over stdin and stdout and opens no window, on Linux and Windows. Setup snippets are in themes/README.md.
+
 ## 0.6.8
 
 **Control from outside**

@@ -1,5 +1,13 @@
 # O que mudou em cada versão
 
+## 0.7.0
+
+**Escrever temas**
+- Cada componente, propriedade e valor que um tema pode usar agora está listado num lugar só, o esquema dos temas, e o app confere cada tema com ele ao carregar: um nome que ele não conhece, uma propriedade que o componente não tem, um valor que não é uma das escolhas ou um número fora da faixa vira um aviso com a linha e a coluna, e um erro de digitação ganha uma sugestão (`unknown property 'varient' on messages (did you mean 'variant'?)`). Um tema que carregava antes continua carregando. `larpercord --theme-check ARQUIVO.kdl` lista todos os avisos e erros no terminal, nos dois modos e com as opções ligadas e desligadas, sem abrir janela (`--strict` falha também com aviso; o CI confere assim os temas embutidos e os da comunidade), e `--theme-schema` mostra o esquema em JSON, que o criador de temas do site agora lê.
+- `extends "classico"` começa um tema a partir de outro, embutido ou da sua pasta de temas, e muda só o que for diferente: cores token por token, fontes e métricas propriedade por propriedade, estilos estilo por estilo, opções pelo nome, e o layout, a paleta e os cargos inteiros. `vars { gap 8 }` dá nome a valores, usados como `$gap` em qualquer propriedade ou dentro de uma expressão de cor, e um tema que estende uma base pode trocar as variáveis dela, também onde a base as usa. O criador de temas e a galeria da comunidade entendem os dois.
+- `theme-api 2` no começo de um tema deixa a checagem estrita: o que seria aviso vira erro, e o app não carrega o tema até ele ser corrigido. Temas sem ele funcionam como antes.
+- `larpercord --theme-lsp` é um servidor de linguagem para arquivos de tema: o Neovim, o Helix, o VS Code e outros editores mostram os erros e avisos enquanto você digita, completam componentes, propriedades, valores, tokens de cor, opções e variáveis, e mostram a descrição de cada um com o mouse em cima. Ele fala pela entrada e saída padrão e não abre janela, no Linux e no Windows. Os trechos para configurar estão em themes/README.pt-BR.md.
+
 ## 0.6.8
 
 **Controle de fora**

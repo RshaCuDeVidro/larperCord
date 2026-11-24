@@ -41,6 +41,7 @@ for (const t of THEMES) sources[t] = fs.readFileSync(path.join(ROOT, "themes", t
 const FAKES = {
   "ciclo-a": 'extends "ciclo-b"', "ciclo-b": 'extends "ciclo-a"',
   "fundo-1": 'extends "fundo-2"', "fundo-2": 'extends "fundo-3"', "fundo-3": 'extends "fundo-4"', "fundo-4": 'extends "fundo-5"', "fundo-5": "layout { messages }",
+  "base-estrita": 'theme-api 2\nlayout { messages }',
   "base-x": [
     'theme "base-x" author="eu" preview=glass',
     'palette "#101010" "#ff0000"',
@@ -1373,6 +1374,12 @@ tasks.push(test("extends and vars: the builder joins the base like the app and e
     assert.strictEqual(TB.num(th.layout.kids[0], "gap"), 11);
     if (mode === "light") assert.strictEqual(TB.toHex(th.tokens.link), "#010203");
   }
+  // `theme-api` vale para o arquivo que o diz (heranca.zig): o que sai fica com o do tema, nunca o da base.
+  const solto = TB.flatten('extends "base-estrita"\ncolors { accent "#ff0000" }');
+  assert.ok(!/theme-api/.test(solto), solto);
+  const estrito = TB.flatten('theme-api 2\nextends "classico"\ncolors { accent "#ff0000" }');
+  assert.strictEqual((estrito.match(/^theme-api 2$/gm) || []).length, 1, estrito);
+  checkLoads(estrito, "estrito");
   const own = TB.loadTheme('extends "base-x"\npalette "#000000" "#00ffff"\nlayout { row { messages } }', { mode: "dark" });
   assert.strictEqual(own.layout.kids[0].name, "row");
   assert.strictEqual(TB.toHex(own.palette[1]), "#00ffff");

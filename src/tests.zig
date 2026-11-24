@@ -107,6 +107,7 @@ test {
     _ = @import("theme/schema.zig");
     _ = @import("theme/heranca.zig");
     _ = @import("theme/bases.zig");
+    _ = @import("theme/lsp_tema.zig");
     _ = @import("ui/procgen.zig");
     _ = @import("theme/custom.zig");
     _ = @import("theme/layout.zig");

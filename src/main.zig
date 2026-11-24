@@ -33,6 +33,7 @@ const usage =
     \\  --list-themes     lista os temas embutidos
     \\  --theme-check ARQ…  confere arquivos de tema (--strict: aviso também falha)
     \\  --theme-schema    mostra o esquema dos temas em JSON
+    \\  --theme-lsp       servidor de linguagem para editar temas (entrada e saída padrão)
     \\  --settings        abre já nas configurações
     \\  --shot ARQ.png    salva um print quando a tela estabilizar e sai
     \\  --mode MODO       claro ou escuro (ignora as configurações)
@@ -98,6 +99,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
         } else if (std.mem.eql(u8, arg, "--theme-schema")) {
             // O esquema dos temas em JSON (theme_cli.zig), sem SDL nem janela.
             std.process.exit(@import("theme_cli.zig").printSchema());
+        } else if (std.mem.eql(u8, arg, "--theme-lsp")) {
+            // Servidor de linguagem dos .kdl de tema na entrada e saída padrão, sem janela.
+            std.process.exit(@import("theme_cli.zig").serveLsp());
         } else if (std.mem.eql(u8, arg, "--theme-check")) {
             var paths: [256][:0]const u8 = undefined;
             var n: usize = 0;

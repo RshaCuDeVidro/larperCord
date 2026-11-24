@@ -4,8 +4,12 @@
 //!                               modos e com as opções ligadas e desligadas, e mostra
 //!                               `arquivo:linha:coluna: error|warning: mensagem`
 //! Sai com 1 quando há erro (com --strict, também com aviso).
+//!   --theme-lsp                 servidor de linguagem dos .kdl de tema na entrada e saída
+//!                               padrão (theme/lsp_tema.zig), até o `exit` do editor
 const std = @import("std");
 const c = @import("c");
+const sys = @import("platform/sys.zig");
+const lsp_tema = @import("theme/lsp_tema.zig");
 const theme = @import("theme/theme.zig");
 const schema = @import("theme/schema.zig");
 const bases = @import("theme/bases.zig");
@@ -88,4 +92,42 @@ fn checkFile(path: [:0]const u8, report: *schema.Report) !void {
         // Sem opções, as outras duas voltas seriam iguais à primeira.
         if (names.items.len == 0) break;
     };
+}
+
+/// `--theme-lsp`: o servidor (theme/lsp_tema.zig) na entrada e saída padrão. Termina com
+/// o `exit` do editor (0 depois do `shutdown`) ou quando a entrada fecha.
+pub fn serveLsp() u8 {
+    const config = manager.configDir(gpa);
+    defer if (config) |cfg| gpa.free(cfg);
+    var extra: [1][]const u8 = undefined;
+    var n: usize = 0;
+    if (config) |cfg| {
+        extra[0] = cfg;
+        n = 1;
+    }
+    var server: lsp_tema.Server = .{ .gpa = gpa, .read = manager.readFile, .dirs = extra[0..n] };
+    defer server.deinit();
+    var none: u8 = 0;
+    return lsp_tema.serve(&server, .{ .ctx = &none, .read = readIn, .write = writeOut });
+}
+
+fn writeOut(_: *anyopaque, bytes: []const u8) bool {
+    return ctl_cli.write(.out, bytes);
+}
+
+/// O que chegou na entrada padrão (0 = fechou). No Windows, pelo ReadFile: o editor passa
+/// um cano, e o app sem console ainda recebe esse cano.
+fn readIn(_: *anyopaque, buf: []u8) usize {
+    if (sys.windows) {
+        const h = c.GetStdHandle(c.STD_INPUT_HANDLE);
+        if (h == null or h == c.INVALID_HANDLE_VALUE) return 0;
+        var got: c.DWORD = 0;
+        if (c.ReadFile(h, buf.ptr, @intCast(buf.len), &got, null) == 0) return 0;
+        return got;
+    }
+    while (true) {
+        const n = c.read(0, buf.ptr, buf.len);
+        if (n < 0 and std.c._errno().* == @backingInt(std.c.E.INTR)) continue;
+        return if (n <= 0) 0 else @intCast(n);
+    }
 }
