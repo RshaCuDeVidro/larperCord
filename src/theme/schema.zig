@@ -11,6 +11,8 @@ const std = @import("std");
 const kdl = @import("kdl.zig");
 const theme = @import("theme.zig");
 const fx = @import("fx.zig");
+const parts = @import("parts.zig");
+const tpath = @import("path.zig");
 const jsonx = @import("../net/jsonx.zig");
 
 /// A versão mais nova do formato que este app entende (`theme-api N`). Sem o nó, 1:
@@ -422,6 +424,14 @@ pub const top = [_]NodeSpec{
         .sets = cond,
         .children = .layout_root,
     },
+    .{
+        .name = "parts",
+        .role = .top,
+        .desc = "Pieces inside the components (message rows, channel rows, member rows, the message box), each with its own look per state: hover, selected, unread, mention, speaking, muted, offline, self. One part child per rule.",
+        .pt = "Partes de dentro dos componentes (linhas de mensagem, de canal, de membro, a caixa de texto), cada uma com o visual de cada estado: hover, selected, unread, mention, speaking, muted, offline, self. Um filho part por regra.",
+        .sets = cond,
+        .children = .{ .named = &.{"part"} },
+    },
 };
 
 // --- Filhos dos blocos -------------------------------------------------------------
@@ -477,6 +487,40 @@ pub const child_specs = [_]NodeSpec{
             num("tracking", "Extra space between letters (inherits from the label).", .{ .range = .{ -2, 16, 0.5 } }),
         },
     },
+    .{
+        .name = "part",
+        .role = .child,
+        .parent = "parts",
+        .desc = "How a part looks, in all its states or only in some (\"message:hover\", \"channel.item:selected:hover\"). Each part takes only some of the properties: the list is in themes/README.md (Parts and states).",
+        .pt = "Como uma parte fica, em todos os estados ou só em alguns (\"message:hover\", \"channel.item:selected:hover\"). Cada parte aceita só algumas das propriedades: a lista está em themes/README.md (Partes e estados).",
+        .args = .{ .kind = .string, .desc = part_selector_desc },
+        .props = &part_props,
+    },
+};
+
+/// O nome do `part`: a parte e os estados, separados por `:` (de parts.zig).
+const part_selector_desc = blk: {
+    @setEvalBranchQuota(100_000);
+    var out: []const u8 = "The part, then its states separated by colons. Parts: ";
+    for (parts.partes, 0..) |p, i| out = std.fmt.comptimePrint("{s}{s}{s}", .{ out, if (i > 0) ", " else "", p.name });
+    out = std.fmt.comptimePrint("{s}. States: ", .{out});
+    for (parts.estados, 0..) |st, i| out = std.fmt.comptimePrint("{s}{s}{s}", .{ out, if (i > 0) ", " else "", st.name });
+    break :blk std.fmt.comptimePrint("{s}.", .{out});
+};
+
+/// As propriedades de `part`, com o tipo e a faixa da tabela `props` de parts.zig.
+const part_props = blk: {
+    @setEvalBranchQuota(100_000);
+    var out: [parts.props.len]Prop = undefined;
+    for (parts.props, 0..) |p, i| {
+        const desc = std.fmt.comptimePrint("{c}{s}.", .{ std.ascii.toUpper(p.desc[0]), p.desc[1..] });
+        out[i] = switch (p.kind) {
+            .color => of(.color, p.name, desc, .{}),
+            .number => num(p.name, desc, .{ .min = p.min, .max = p.max }),
+            .weight => pick(p.name, weights, desc, .{}),
+        };
+    }
+    break :blk out;
 };
 
 // --- Layout ------------------------------------------------------------------------
@@ -670,16 +714,16 @@ pub const components = [_]NodeSpec{
     .{
         .name = "shape",
         .role = .component,
-        .desc = "A drawn shape: circle, ring, arc, rounded rectangle or line.",
-        .pt = "Uma forma desenhada: círculo, anel, arco, retângulo arredondado ou linha.",
+        .desc = "A drawn shape: circle, ring, arc, rounded rectangle, line or an SVG path.",
+        .pt = "Uma forma desenhada: círculo, anel, arco, retângulo arredondado, linha ou um caminho do SVG.",
         .sets = layout_sets,
         .paints = true,
         .props = &.{
-            pick("kind", &.{ "circle", "ring", "arc", "rounded", "line" }, "Which shape.", .{ .def = .{ .text = "circle" } }),
+            pick("kind", &.{ "circle", "ring", "arc", "rounded", "line", "path" }, "Which shape.", .{ .def = .{ .text = "circle" } }),
             color1("Stroke color."),
             num("thickness", "Stroke thickness.", .{ .range = .{ 0.5, 8, 0.5 }, .def = .{ .num = 1.5 } }),
-            num("size", "Diameter (default: the node's shorter side); on line, the length.", .{ .range = .{ 2, 120, 1 } }),
-            of(.color, "fill", "Fill of ring and rounded.", .{}),
+            num("size", "Diameter (default: the node's shorter side); on line, the length; on path, the side of the square the viewbox fits in (default: the whole node).", .{ .range = .{ 2, 120, 1 } }),
+            of(.color, "fill", "Fill of ring, rounded and path.", .{}),
             num("start", "Start of the arc, in degrees.", .{ .range = .{ -360, 360, 1 }, .def = .{ .num = -90 } }),
             num("sweep", "Opening of the arc, in degrees.", .{ .range = .{ 0, 360, 1 }, .def = .{ .num = 270 } }),
             of(.color, "dot", "A dot at the tip of the arc.", .{}),
@@ -689,6 +733,9 @@ pub const components = [_]NodeSpec{
             pick("align", align3, "Position inside the node.", .{ .def = .{ .text = "center" } }),
             num("offset-x", "Horizontal offset inside the node.", .{ .range = .{ -40, 40, 1 }, .def = .{ .num = 0 } }),
             num("offset-y", "Vertical offset inside the node.", .{ .range = .{ -40, 40, 1 }, .def = .{ .num = 0 } }),
+            of(.string, "d", "The path of kind=path: SVG path data (M L H V C S Q T A Z, up to 1024 commands), read when the theme loads.", .{}),
+            of(.string, "viewbox", "\"x y w h\": the part of the path's coordinates that fits in the node, keeping the proportions (default: the path's own bounds).", .{}),
+            pick("fill-rule", fieldNames(tpath.FillRule), "Which parts of a path that crosses itself or has holes get filled.", .{ .def = .{ .text = "nonzero" } }),
         },
     },
     .{
@@ -802,6 +849,72 @@ pub const components = [_]NodeSpec{
         .sets = layout_sets,
         .paints = true,
         .props = &([_]Prop{ color1("Hills at the back."), color2("Hills in the middle."), color3("Hills in front.") } ++ motion_props),
+    },
+    .{
+        .name = "rain",
+        .role = .component,
+        .desc = "Procedural background: rain, the far drops slower than the near ones.",
+        .pt = "Fundo procedural: chuva, as gotas de longe mais devagar que as de perto.",
+        .sets = layout_sets,
+        .paints = true,
+        .props = &([_]Prop{
+            color1("Far drops."),
+            color2("Near drops."),
+            num("density", "How many drops.", .{ .min = 0.1, .max = 6, .range = .{ 0.1, 6, 0.1 }, .def = .{ .num = 1 }, .tweak = true }),
+            num("angle", "The wind's tilt, in degrees.", .{ .min = -45, .max = 45, .range = .{ -45, 45, 1 }, .def = .{ .num = 10 }, .tweak = true }),
+        } ++ motion_props),
+    },
+    .{
+        .name = "matrix",
+        .role = .component,
+        .desc = "Procedural background: falling columns of characters drawn by the app.",
+        .pt = "Fundo procedural: colunas de caracteres caindo, desenhados pelo app.",
+        .sets = layout_sets,
+        .paints = true,
+        .props = &([_]Prop{
+            color1("The trails."),
+            color2("The bright head of each column."),
+            num("density", "How many columns.", .{ .min = 0.1, .max = 6, .range = .{ 0.1, 6, 0.1 }, .def = .{ .num = 1 }, .tweak = true }),
+        } ++ motion_props),
+    },
+    .{
+        .name = "waves",
+        .role = .component,
+        .desc = "Procedural background: waves stretched over the whole area.",
+        .pt = "Fundo procedural: ondas esticadas na área inteira.",
+        .sets = layout_sets,
+        .paints = true,
+        .props = &([_]Prop{
+            color1("The waves."),
+            color2("The crests."),
+            num("lines", "How many waves.", .{ .min = 2, .max = 24, .range = .{ 2, 24, 1 }, .def = .{ .num = 9 }, .tweak = true }),
+        } ++ motion_props),
+    },
+    .{
+        .name = "particles",
+        .role = .component,
+        .desc = "Procedural background: fine dust and large blurred discs.",
+        .pt = "Fundo procedural: poeira fina e discos grandes desfocados.",
+        .sets = layout_sets,
+        .paints = true,
+        .props = &([_]Prop{
+            color1("Fine dust."),
+            color2("Large blurred discs."),
+            num("density", "How many particles.", .{ .min = 0.1, .max = 6, .range = .{ 0.1, 6, 0.1 }, .def = .{ .num = 1 }, .tweak = true }),
+        } ++ motion_props),
+    },
+    .{
+        .name = "wallpaper",
+        .role = .component,
+        .desc = "The picture the user chose in Settings → Appearance (first child of a stack), or nothing. The theme can't choose the picture: src, path, url, file and image are errors.",
+        .pt = "A imagem que quem usa escolheu em Configurações → Aparência (primeiro filho de um stack), ou nada. O tema não escolhe a imagem: src, path, url, file e image são erros.",
+        .sets = layout_sets,
+        .props = &.{
+            pick("fit", &.{ "cover", "contain", "tile", "center" }, "cover fills and crops, contain shows the whole picture, tile repeats it, center puts it in the middle. The user's Fit wins, except on Theme.", .{ .def = .{ .text = "cover" }, .tweak = true }),
+            num("dim", "How much it darkens toward bg; the user's Dim can only darken further.", .{ .min = 0, .max = 1, .range = .{ 0, 1, 0.05 }, .def = .{ .num = 0 }, .tweak = true }),
+            num("blur", "Blur radius, in pixels (made once, never per frame).", .{ .min = 0, .max = 64, .range = .{ 0, 64, 1 }, .def = .{ .num = 0 }, .tweak = true }),
+            num("opacity", "The picture's opacity.", .{ .min = 0, .max = 1, .range = .{ 0, 1, 0.05 }, .def = .{ .num = 1 }, .tweak = true }),
+        },
     },
     .{ .name = "spacer", .role = .component, .desc = "Empty space.", .pt = "Espaço vazio.", .sets = layout_sets },
 };
@@ -1372,6 +1485,63 @@ test "checagem estrita vira erro; tema certo não tem nada" {
     , true, &out, a);
     for (out.items) |it| std.debug.print("{d}:{d} {s}\n", .{ it.line, it.col, it.message });
     try testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "os componentes com cor são os de fx.zig, e as cores deles são as que fx.zig guarda" {
+    for (components) |s| {
+        if (s.paints != fx.painted.has(s.name)) {
+            std.debug.print("{s}: paints={} no esquema, {} em fx.zig\n", .{ s.name, s.paints, fx.painted.has(s.name) });
+            return error.Diferente;
+        }
+        if (!s.paints) continue;
+        props: for (s.props) |p| {
+            if (p.kind != .color) continue;
+            for (fx.color_keys) |k| if (std.mem.eql(u8, k, p.key)) continue :props;
+            std.debug.print("{s}.{s}: fx.zig não guarda esta cor\n", .{ s.name, p.key });
+            return error.Diferente;
+        }
+    }
+    for (fx.painted.keys()) |name| try testing.expect(layoutSpec(name) != null);
+}
+
+test "wallpaper: a imagem não é propriedade dele (o carregamento recusa)" {
+    const wp = layoutSpec("wallpaper").?;
+    for (fx.wallpaper_banned) |k| try testing.expect(findProp(wp, k) == null);
+    try testing.expect(findProp(wp, "fit") != null and findProp(wp, "radius") != null);
+}
+
+test "parts: as partes, os estados e as propriedades de parts.zig" {
+    try testing.expect(topSpec("parts") != null);
+    const part = childSpec("parts", "part").?;
+    try testing.expectEqual(parts.props.len, part.props.len);
+    for (parts.partes) |p| try testing.expect(std.mem.indexOf(u8, part.args.?.desc, p.name) != null);
+    for (parts.estados) |st| try testing.expect(std.mem.indexOf(u8, part.args.?.desc, st.name) != null);
+    try testing.expectEqual(@as(?f64, 64), findProp(part, "radius").?.max);
+    try testing.expectEqual(Kind.@"enum", findProp(part, "weight").?.kind);
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var out: std.ArrayList(Issue) = .empty;
+    try checkSrc(
+        \\parts mode=dark {
+        \\    part "message:hover" bg="@hover" radius=6 bar=accent
+        \\    part "member.name:offline" color=muted weight=bold opacity=0.5
+        \\}
+        \\layout { stack { rain color=faint angle=-20 motion="$brilho"; wallpaper fit=tile dim=0.3; shape kind=path d="M0 0 L1 1" viewbox="0 0 1 1" fill-rule=evenodd } }
+    , true, &out, a);
+    for (out.items) |it| std.debug.print("{d}:{d} {s}\n", .{ it.line, it.col, it.message });
+    try testing.expectEqual(@as(usize, 0), out.items.len);
+    try checkSrc(
+        \\parts {
+        \\    part "message" tamanho=3 weight=pesado
+        \\    estilo "x"
+        \\}
+    , false, &out, a);
+    try testing.expectEqual(@as(usize, 3), out.items.len);
+    try testing.expect(std.mem.indexOf(u8, out.items[0].message, "unknown property 'tamanho' on part") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items[1].message, "'pesado' isn't a value of 'weight'") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items[2].message, "only part nodes go inside parts") != null);
 }
 
 test "o JSON abre e tem os componentes" {

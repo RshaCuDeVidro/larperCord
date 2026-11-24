@@ -316,12 +316,17 @@ pub fn parseText(cx: *Cx, n: *const kdl.Node, color_is_expr: bool) Error!?*const
     return out;
 }
 
-/// Componentes que guardam cores (o resto das propriedades é lido ao desenhar).
-const painted = std.StaticStringMap(void).initComptime(.{
+/// Componentes que guardam cores (o resto das propriedades é lido ao desenhar). Os mesmos
+/// que têm `paints` em schema.zig (o teste de lá confere).
+pub const painted = std.StaticStringMap(void).initComptime(.{
     .{"shape"},     .{"rule"},  .{"starfield"}, .{"orbit"}, .{"aurora"},    .{"dunes"},           .{"topography"},
     .{"radar"},     .{"rain"},  .{"matrix"},    .{"waves"}, .{"particles"}, .{"window-controls"},
 });
-const color_keys = [_][]const u8{ "color", "color2", "color3", "fill", "dot", "ornament-color" };
+pub const color_keys = [_][]const u8{ "color", "color2", "color3", "fill", "dot", "ornament-color" };
+
+/// O que o `wallpaper` recusa: a imagem vem só das Configurações. Fora do esquema de
+/// propósito (lá, nenhuma delas é propriedade do `wallpaper`).
+pub const wallpaper_banned = [_][]const u8{ "src", "path", "url", "file", "image" };
 
 /// Lê o que um nó do layout tem de novo. null = nada (o caso de quase todos).
 pub fn parseNode(cx: *Cx, n: *const kdl.Node, bg_is_token: bool) Error!?*const NodeFx {
@@ -337,7 +342,7 @@ pub fn parseNode(cx: *Cx, n: *const kdl.Node, bg_is_token: bool) Error!?*const N
     }
     // A imagem do papel de parede vem só das Configurações, nunca do tema.
     if (std.mem.eql(u8, n.name, "wallpaper")) {
-        for ([_][]const u8{ "src", "path", "url", "file", "image" }) |k| if (n.prop(k) != null)
+        for (wallpaper_banned) |k| if (n.prop(k) != null)
             return cx.fail(n, "wallpaper não aceita imagem no tema: quem usa escolhe a dela em Configurações → Aparência");
     }
     if (std.mem.eql(u8, n.name, "shape") and std.mem.eql(u8, n.str("kind") orelse "", "path")) {

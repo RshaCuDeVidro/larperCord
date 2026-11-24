@@ -203,6 +203,13 @@
       "pt": "A árvore da interface, com uma raiz só (row, column, stack ou um componente).",
       "sets": ["condition"],
       "children": "layout_root"
+    },
+    {
+      "name": "parts",
+      "desc": "Pieces inside the components (message rows, channel rows, member rows, the message box), each with its own look per state: hover, selected, unread, mention, speaking, muted, offline, self. One part child per rule.",
+      "pt": "Partes de dentro dos componentes (linhas de mensagem, de canal, de membro, a caixa de texto), cada uma com o visual de cada estado: hover, selected, unread, mention, speaking, muted, offline, self. Um filho part por regra.",
+      "sets": ["condition"],
+      "children": ["part"]
     }
   ],
   "children": [
@@ -251,6 +258,24 @@
         {"key": "size", "type": "number", "range": [8, 48, 1], "desc": "Size (inherits from the label)."},
         {"key": "color", "type": "color", "desc": "Color (inherits from the label)."},
         {"key": "tracking", "type": "number", "range": [-2, 16, 0.5], "desc": "Extra space between letters (inherits from the label)."}
+      ]
+    },
+    {
+      "name": "part",
+      "parent": "parts",
+      "desc": "How a part looks, in all its states or only in some (\"message:hover\", \"channel.item:selected:hover\"). Each part takes only some of the properties: the list is in themes/README.md (Parts and states).",
+      "pt": "Como uma parte fica, em todos os estados ou só em alguns (\"message:hover\", \"channel.item:selected:hover\"). Cada parte aceita só algumas das propriedades: a lista está em themes/README.md (Partes e estados).",
+      "args": {"type": "string", "min": 1, "max": 1, "desc": "The part, then its states separated by colons. Parts: message, message.author, message.time, message.body, message.reply, channel.item, channel.category, channel.unread, channel.badge, channel.voice-member, member.row, member.name, member.role-header, composer.box, composer.placeholder. States: self, muted, offline, hover, unread, mention, selected, speaking."},
+      "props": [
+        {"key": "bg", "type": "color", "desc": "Background."},
+        {"key": "color", "type": "color", "desc": "Text color."},
+        {"key": "border", "type": "color", "desc": "Border all around."},
+        {"key": "border-width", "type": "number", "min": 0.5, "max": 8, "desc": "Border thickness in pixels (1 when not set)."},
+        {"key": "radius", "type": "number", "min": 0, "max": 64, "desc": "Rounding of the background and the border."},
+        {"key": "bar", "type": "color", "desc": "A stripe along the side where the text starts."},
+        {"key": "bar-width", "type": "number", "min": 1, "max": 16, "desc": "Stripe thickness in pixels (3 when not set)."},
+        {"key": "opacity", "type": "number", "min": 0, "max": 1, "desc": "Opacity of everything drawn in the part, from 0 to 1."},
+        {"key": "weight", "type": "enum", "values": ["regular", "medium", "semibold", "bold", "italic"], "desc": "Font weight: regular, medium, semibold, bold or italic."}
       ]
     }
   ],
@@ -435,16 +460,16 @@
     },
     {
       "name": "shape",
-      "desc": "A drawn shape: circle, ring, arc, rounded rectangle or line.",
-      "pt": "Uma forma desenhada: círculo, anel, arco, retângulo arredondado ou linha.",
+      "desc": "A drawn shape: circle, ring, arc, rounded rectangle, line or an SVG path.",
+      "pt": "Uma forma desenhada: círculo, anel, arco, retângulo arredondado, linha ou um caminho do SVG.",
       "sets": ["node", "component", "box"],
       "paints": true,
       "props": [
-        {"key": "kind", "type": "enum", "values": ["circle", "ring", "arc", "rounded", "line"], "default": "circle", "desc": "Which shape."},
+        {"key": "kind", "type": "enum", "values": ["circle", "ring", "arc", "rounded", "line", "path"], "default": "circle", "desc": "Which shape."},
         {"key": "color", "type": "color", "desc": "Stroke color."},
         {"key": "thickness", "type": "number", "range": [0.5, 8, 0.5], "default": 1.5, "desc": "Stroke thickness."},
-        {"key": "size", "type": "number", "range": [2, 120, 1], "desc": "Diameter (default: the node's shorter side); on line, the length."},
-        {"key": "fill", "type": "color", "desc": "Fill of ring and rounded."},
+        {"key": "size", "type": "number", "range": [2, 120, 1], "desc": "Diameter (default: the node's shorter side); on line, the length; on path, the side of the square the viewbox fits in (default: the whole node)."},
+        {"key": "fill", "type": "color", "desc": "Fill of ring, rounded and path."},
         {"key": "start", "type": "number", "range": [-360, 360, 1], "default": -90, "desc": "Start of the arc, in degrees."},
         {"key": "sweep", "type": "number", "range": [0, 360, 1], "default": 270, "desc": "Opening of the arc, in degrees."},
         {"key": "dot", "type": "color", "desc": "A dot at the tip of the arc."},
@@ -453,7 +478,10 @@
         {"key": "angle", "type": "number", "range": [-180, 180, 1], "default": 0, "desc": "Tilt of the line, in degrees."},
         {"key": "align", "type": "enum", "values": ["left", "center", "right"], "default": "center", "desc": "Position inside the node."},
         {"key": "offset-x", "type": "number", "range": [-40, 40, 1], "default": 0, "desc": "Horizontal offset inside the node."},
-        {"key": "offset-y", "type": "number", "range": [-40, 40, 1], "default": 0, "desc": "Vertical offset inside the node."}
+        {"key": "offset-y", "type": "number", "range": [-40, 40, 1], "default": 0, "desc": "Vertical offset inside the node."},
+        {"key": "d", "type": "string", "desc": "The path of kind=path: SVG path data (M L H V C S Q T A Z, up to 1024 commands), read when the theme loads."},
+        {"key": "viewbox", "type": "string", "desc": "\"x y w h\": the part of the path's coordinates that fits in the node, keeping the proportions (default: the path's own bounds)."},
+        {"key": "fill-rule", "type": "enum", "values": ["nonzero", "evenodd"], "default": "nonzero", "desc": "Which parts of a path that crosses itself or has holes get filled."}
       ]
     },
     {
@@ -580,6 +608,79 @@
         {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
         {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
         {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "rain",
+      "desc": "Procedural background: rain, the far drops slower than the near ones.",
+      "pt": "Fundo procedural: chuva, as gotas de longe mais devagar que as de perto.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "Far drops."},
+        {"key": "color2", "type": "color", "desc": "Near drops."},
+        {"key": "density", "type": "number", "min": 0.1, "max": 6, "range": [0.1, 6, 0.1], "default": 1, "tweak": true, "desc": "How many drops."},
+        {"key": "angle", "type": "number", "min": -45, "max": 45, "range": [-45, 45, 1], "default": 10, "tweak": true, "desc": "The wind's tilt, in degrees."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "matrix",
+      "desc": "Procedural background: falling columns of characters drawn by the app.",
+      "pt": "Fundo procedural: colunas de caracteres caindo, desenhados pelo app.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "The trails."},
+        {"key": "color2", "type": "color", "desc": "The bright head of each column."},
+        {"key": "density", "type": "number", "min": 0.1, "max": 6, "range": [0.1, 6, 0.1], "default": 1, "tweak": true, "desc": "How many columns."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "waves",
+      "desc": "Procedural background: waves stretched over the whole area.",
+      "pt": "Fundo procedural: ondas esticadas na área inteira.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "The waves."},
+        {"key": "color2", "type": "color", "desc": "The crests."},
+        {"key": "lines", "type": "number", "min": 2, "max": 24, "range": [2, 24, 1], "default": 9, "tweak": true, "desc": "How many waves."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "particles",
+      "desc": "Procedural background: fine dust and large blurred discs.",
+      "pt": "Fundo procedural: poeira fina e discos grandes desfocados.",
+      "sets": ["node", "component", "box"],
+      "paints": true,
+      "props": [
+        {"key": "color", "type": "color", "desc": "Fine dust."},
+        {"key": "color2", "type": "color", "desc": "Large blurred discs."},
+        {"key": "density", "type": "number", "min": 0.1, "max": 6, "range": [0.1, 6, 0.1], "default": 1, "tweak": true, "desc": "How many particles."},
+        {"key": "seed", "type": "number", "range": [1, 999, 1], "default": 7, "tweak": true, "desc": "A different drawing."},
+        {"key": "motion", "type": "boolean", "default": false, "option": true, "tweak": true, "desc": "Moves slowly (stops with Reduce motion, minimized or out of focus). Best as \"$option\"."},
+        {"key": "motion-fps", "type": "number", "min": 1, "max": 15, "range": [1, 15, 1], "default": 10, "desc": "Frames per second of the motion."}
+      ]
+    },
+    {
+      "name": "wallpaper",
+      "desc": "The picture the user chose in Settings → Appearance (first child of a stack), or nothing. The theme can't choose the picture: src, path, url, file and image are errors.",
+      "pt": "A imagem que quem usa escolheu em Configurações → Aparência (primeiro filho de um stack), ou nada. O tema não escolhe a imagem: src, path, url, file e image são erros.",
+      "sets": ["node", "component", "box"],
+      "props": [
+        {"key": "fit", "type": "enum", "values": ["cover", "contain", "tile", "center"], "default": "cover", "tweak": true, "desc": "cover fills and crops, contain shows the whole picture, tile repeats it, center puts it in the middle. The user's Fit wins, except on Theme."},
+        {"key": "dim", "type": "number", "min": 0, "max": 1, "range": [0, 1, 0.05], "default": 0, "tweak": true, "desc": "How much it darkens toward bg; the user's Dim can only darken further."},
+        {"key": "blur", "type": "number", "min": 0, "max": 64, "range": [0, 64, 1], "default": 0, "tweak": true, "desc": "Blur radius, in pixels (made once, never per frame)."},
+        {"key": "opacity", "type": "number", "min": 0, "max": 1, "range": [0, 1, 0.05], "default": 1, "tweak": true, "desc": "The picture's opacity."}
       ]
     },
     {
