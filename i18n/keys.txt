@@ -97,6 +97,7 @@ A little pot next to it that it waters and that grows a bit each day you use the
 A MAGAZINE OF TALK
 A message with the whole word (any case) counts as a mention.
 A name is required.
+A picture from your computer behind the theme. It stays here: nothing goes online.
 a plural form is a text in quotes
 A Santa hat at Christmas, a witch hat at Halloween and a party hat at New Year, when it has no hat picked.
 A short cue for direct messages and mentions, also while the window is unfocused or in the tray. Silent for the conversation you're looking at and in Do Not Disturb.
@@ -130,6 +131,7 @@ Active
 Active Now
 ACTIVITY
 Activity
+Acts on messages
 Add
 Add a note
 Add Account
@@ -143,6 +145,7 @@ Add Reaction
 Add role
 Add running process
 Add to Favorites
+Add to Folder…
 Address
 Advanced
 after
@@ -158,7 +161,6 @@ all marked as read ✓
 All Messages
 All your friends are already here.
 Allocated / free not returned
-Allocated in total
 Also records with the Inspector closed (click to record only while open)
 Also works while another window is focused, and that app still gets the key.
 Alt text
@@ -185,6 +187,8 @@ appearance
 Applies to the next message only.
 Apply
 Approve this host
+Approved, with credentials: the plugin sends its key here
+Approved: the plugin can talk to the subdomains of this domain
 Approved: the plugin can talk to this address
 Arabic
 Archive after inactivity
@@ -289,7 +293,9 @@ Capturing the first frame…
 Caramel
 Card sheen
 Cat eyes
+Center
 Change Image
+Change image…
 Change status
 Changes apply right away, even in the middle of a call.
 Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one.
@@ -312,12 +318,15 @@ Check when opening
 Checking…
 Chef
 Cherokee
+Choose a file?
 Choose a file…
 Choose an option
 Choose another file…
 Choose executable
 Choose FFmpeg folder…
 Choose file
+Choose file…
+Choose image…
 Choose the folder with the libraries of a "shared" FFmpeg build (on Windows, the bin folder with avcodec and the other DLLs).
 Choose…
 Chosen folder: {s}
@@ -390,6 +399,7 @@ Connection, ping, RAM and clock at the bottom.
 Connection, ping, RAM and clock in the top bar.
 Connection, theme, ping and clock at the bottom of the page.
 CONNECTIONS
+Connections (curl)
 Console
 Console scanlines
 Content
@@ -483,6 +493,8 @@ couldn't mark as unread
 couldn't move the member
 Couldn't open a connection to Discord.
 couldn't open that file
+couldn't open that image (PNG, JPEG, WebP or BMP, up to 8192 pixels per side)
+Couldn't open that image: was it deleted or moved?
 couldn't open the call UDP
 couldn't open the conversation
 couldn't open the floating window
@@ -498,6 +510,7 @@ couldn't publish the post
 Couldn't reach GitHub. Try again later.
 couldn't react
 couldn't read that file's name
+couldn't read the account's folders
 couldn't read the file
 couldn't read the image
 couldn't read the settings
@@ -512,6 +525,7 @@ couldn't save the audio to send
 couldn't save the edited image
 couldn't save the favorite GIF
 couldn't save the file
+couldn't save the folders
 couldn't save the note
 couldn't save the onboarding answers
 couldn't save the profile
@@ -595,6 +609,7 @@ Delete Message
 DELETE MESSAGE HISTORY
 Delete Tab Set
 Delete the tab set
+Delete this message?
 Delete Thread…
 Delete “{s}” for good
 Deleted messages stay visible (marked) and edits keep the original. Local only.
@@ -614,6 +629,7 @@ Developer Mode
 Developer tools: click an element to see which theme line it comes from, what went to and came from the network and the gateway (without your token), the log and the cost of each frame. Stays in memory only.
 Devil horns
 did not answer on startup
+Dim
 Direct message
 direct message
 DIRECT MESSAGES
@@ -689,7 +705,6 @@ Drag the edge between panels to resize the channel list, the member list and spl
 Drag to crop; the corners and edges adjust it.
 Drag to resize. Double-click to reset.
 Draw lists
-Driver, libraries and fonts
 Drop on a voice channel
 due {s}
 DURATION
@@ -700,6 +715,7 @@ E.g. your name, a project, "good morning"
 Each .kdl file in the folder becomes a look: it picks parts and colors or draws its own, per expression. Saving the file updates it right away.
 Each GIF
 Each language is a .kdl file with the English text and the translation next to it, and the percentage is how much of the app's text it translates. A file in the translations folder applies right away (saving updates the app): with a new code it's a new language; with the code of one in the list, it fixes just what's in it.
+Each part comes from the process memory map and from what malloc and the libraries count, and the parts add up to the total. Values with ~ are estimates (the rest of the heap gets the difference).
 each person's volume · 100% = normal
 Each sound can be turned off, swapped for another built-in one or for a file of yours: WAV (PCM) or Ogg Opus, up to 2 MB and 5 s (the ringtone, up to 15 s). The file is copied into larperCord's folder.
 Each theme changes the whole layout, not just the colors. All of them come in light and dark.
@@ -732,6 +748,7 @@ Emoji and text
 empty = your username
 Empty response.
 en-US
+Encryption (OpenSSL)
 End Focus Mode
 Entries on the right-click menu of messages and people
 error
@@ -747,6 +764,7 @@ every connection
 Every update is signed; a version without the right signature isn't installed.
 Everyone can send one message every {s} in this channel.
 Everything else (images, avatars) only comes from Discord's servers.
+Exit fullscreen (Esc)
 exited by itself (code {d})
 expected "English" "translation"
 expected a name
@@ -775,6 +793,7 @@ failed
 Failed. Try again
 Fair connection to the voice server
 False
+Favorite GIFs kept to open instantly: {d}, {s} on disk.
 Favorites
 Feedback
 FFmpeg installed. Videos now play in the app.
@@ -792,6 +811,7 @@ file too large for Discord (10 MB limit without Nitro)
 File upload in modals: use the official app.
 File without a manifest: it works with the old API (messages, commands, sending and notices). To use panels, menus and the rest, see docs/plugins.md.
 File: {s}
+Fill
 Filter
 Filter by name or path
 Filter URL or method
@@ -800,6 +820,7 @@ FILTERS
 Filters
 Final results
 Find or start a conversation
+Fit
 Fixed rules applied to the text as you send; the plugin doesn't see what you write
 Flagged by Discord as sensitive. Click to show.
 Flash taskbar
@@ -818,11 +839,15 @@ Focus mode: until I turn it off
 Focus · {d} min
 Focus: a centered column, bigger text and navigation that hides itself.
 Folder
+Folder Color
+Folder Name
+Folder name
 folder saved: applies the next time the app starts
+Folder Settings
+Folder Settings…
 Folder: {s}
 Follow system
 Font
-Font atlas
 Font scaling
 font-script: a code like "ja", "zh" or "ko"
 Fonts
@@ -846,7 +871,7 @@ frame {d} · {d} elements · {d} layout pieces · built in {d} µs
 Frames by type
 Frames in the last second
 Freckles
-Free, not returned yet
+Free heap, not returned yet
 Fri
 friend request refused
 friend request sent to {s}
@@ -860,6 +885,8 @@ from someone
 From the file
 Full fit
 Fullscreen
+Fullscreen (F)
+Fullscreen video volume
 Games
 Games and apps with Rich Presence show what you're doing, like the Discord desktop app. Off: nothing listens.
 Garden
@@ -871,6 +898,7 @@ Getting your channels ready
 GIFs
 Glass cards over the wallpaper, with a sheen. On Linux your compositor blurs what's behind.
 Glasses
+Glyphs (FreeType)
 Go to a channel, server, DM, theme, action or option…
 Go to server
 Go to tab N
@@ -898,6 +926,7 @@ has
 has a link, image, file…
 Hat
 Headers
+Heap in use (malloc)
 Heartbeat latency
 Heartbeats
 Hearts
@@ -909,6 +938,7 @@ Hide
 Hide for 1 Hour
 Hide help
 Hide Member List
+Hide network log
 Hide servers
 Hide the password
 hides to the tray (without a tray, minimizes)
@@ -941,11 +971,13 @@ image
 image copied
 image too large to edit here (up to {d} megapixels)
 image unavailable
+Image: {s}
 Images
 Images ({d})
 Images and GIFs from links posted in chat.
 Images in cache
 Images in memory
+Images live in video memory, outside the count above; with the software renderer, they are part of SDL.
 Images, profile pictures and attachments only download when you click. Good on bad networks.
 in
 In 1 hour
@@ -1001,6 +1033,7 @@ Installing FFmpeg…
 Installing version {s}; it opens next time.
 Instruction and memory limits per plugin: whoever goes over is stopped, and the error shows up here.
 Interaction
+Interface (Dear ImGui)
 Interface at normal size
 interface at {d:.0}%
 Interface font
@@ -1037,6 +1070,7 @@ it doesn't fit in the box
 It doesn't see your token or email, and can't open files, programs or connections on its own.
 It doesn't write to your account in the background: sending a message only works directly from its command, keybind, button or menu.
 It has grown for {d} of 30 days.
+It sits behind the panels, which turn translucent only as far as text stays easy to read. The theme's animated background steps aside while there's an image.
 It's archived: saving also unarchives it.
 It's quiet for now…
 Its default is now the shortcut for "{s}": change that one first.
@@ -1066,6 +1100,7 @@ just you here
 KDL syntax error
 KDL themes that rearrange the whole interface, reloaded on save.
 Keep messages on disk
+Keeps secrets
 Keybinds
 Khmer
 Kick
@@ -1076,6 +1111,15 @@ Kitty :3
 Label
 Language
 Lao
+larper.attach: channel not found
+larper.attach: no channel open
+larper.attach: no permission to attach files in this channel
+larper.attach: that channel doesn't take messages
+larper.delete: no permission to delete that message
+larper.edit: only your own messages can be edited
+larper.pin: no permission to pin in this channel
+larper.thread: no permission to create threads in this channel
+larper.thread: that message already has a thread
 LARPER_NO_FFMPEG is set: the app doesn't load FFmpeg.
 LARPERCORD
 larperCord closes right after.
@@ -1108,6 +1152,7 @@ Leave call
 Leave Group
 Leave Server
 Leave Tab Set
+Leave the fullscreen video
 Leave the tab set
 Leave the text box
 Leave Thread
@@ -1150,6 +1195,7 @@ LOADING MEMBERS…
 Loading mentions…
 Loading servers and direct messages
 Loading sticker packs…
+Loading the image…
 loading the profile…
 loading the questions…
 loading the rules…
@@ -1178,6 +1224,7 @@ mark as read
 Mark as spoiler
 Mark channel as read
 Mark everything as read
+Mark Folder as Read
 Mark server as read
 Mark Unread
 Markdown preview
@@ -1189,6 +1236,7 @@ math symbols
 Matrix
 MAX USES
 me
+Measuring…
 Media
 Media: the content isn't recorded (see the size and type in the headers).
 Member list
@@ -1211,6 +1259,7 @@ Message display
 message forwarded
 Message from someone you ignored — 
 Message log
+message not found
 Message notifications get Mark as read and Reply buttons, which work with the window in the tray. Where the notification has a text box (KDE Plasma, Windows), the reply goes out from there; elsewhere, Reply opens the conversation ready to reply.
 message pinned
 Message Requests
@@ -1269,6 +1318,7 @@ Mute Channel
 Mute Conversation
 Mute for Me
 Mute or unmute
+Mute or unmute the fullscreen video
 Mute Server
 Muted
 muted
@@ -1283,7 +1333,9 @@ Native Discord client: Zig + SDL3 + Dear ImGui + FreeType.
 Natural
 Nerd
 Network
+Network log: recent requests ({d})
 Never
+New Folder
 New larperCord version: {s}
 New line
 New message (DM or mention)
@@ -1310,6 +1362,7 @@ No archived threads.
 No body (the request is just the URL).
 no captured frame to answer with
 no channel from “{s}” is available
+No color
 No component cost more than 1 µs.
 No connection to Discord
 No connection to Discord.
@@ -1353,6 +1406,7 @@ No proxy: direct connection.
 No published version yet.
 No recent mentions.
 No reminders.
+No requests yet.
 No requests yet. They show up here while the Inspector is open.
 No results
 No running process matches that.
@@ -1380,6 +1434,7 @@ Not a field, shown as text: {s}
 not a text channel
 not a UTF-8 text file
 Not approved: nothing goes out while this is off
+Not approved: nothing goes out, credentials included
 Not checked yet in this session.
 not connected
 not connected to Discord yet
@@ -1506,6 +1561,7 @@ Or paste the token of another account.
 Orbit system
 Origin
 Original message could not be loaded
+Other files
 Others see "typing…" while you write.
 out of memory opening the sound
 Out of memory.
@@ -1514,6 +1570,7 @@ Output
 OUTPUT DEVICE
 Output device and volume
 Output volume
+Outside malloc (video driver and libraries)
 Ovals
 Overdue reminder
 owner
@@ -1525,6 +1582,7 @@ Parent
 Party hat
 Password (optional)
 Password without a login: fill in the login too.
+Passwords and API keys in the system keyring, kept apart per plugin
 Paste
 Paste a copied image
 Paste the token in the field above.
@@ -1562,6 +1620,7 @@ Pixelate
 Pixels
 Play audio
 Play or pause the audio under the mouse
+Play or pause the fullscreen video
 Play video
 Play voice message
 Playing
@@ -1574,6 +1633,7 @@ Plugin panels
 PLUGIN SUGGESTIONS
 plugin {s}: {s}
 Plugins
+Plugins (Lua)
 Plugins can also propose a server, with larper.lsp. Guide: docs/lsp.md
 plurals: a language code the app knows
 Pointy
@@ -1604,6 +1664,7 @@ Private
 Process CPU
 Profile
 profile saved
+Program (the executable)
 Pronouns
 Propeller
 Proposed by plugins
@@ -1627,6 +1688,7 @@ Raw
 react
 Reactions {d}
 Reacts to what you type
+Reacts, edits yours, pins and starts threads when you ask; deleting always asks you first
 Read and answer each item. Nothing is filled in for you.
 Read the rules
 Read up to
@@ -1672,7 +1734,9 @@ Reminders
 Remove
 Remove Account
 Remove approval
+Remove Folder
 Remove from Favorites
+Remove from Folder
 Remove from Saved
 Remove location and camera details from photos and videos
 Remove noise
@@ -1802,6 +1866,7 @@ Search stickers
 Search this list…
 Search {s}
 Searching Discord…
+searching the server…
 seconds of the minute (0 to 59)
 SECTIONS
 See releases on GitHub
@@ -1822,6 +1887,7 @@ Send typing indicator
 Sending continues for a moment after you release, so the last word isn't cut.
 Sending too fast: Discord asks for {s} before the next one.
 Sending…
+Sends credentials (Authorization, X-API-Key) to {s}. Only approve if you trust it with that account.
 Sends when you ask
 Sensitive content
 SENSITIVITY
@@ -1902,6 +1968,7 @@ Sits on top of the message box and reacts to what you do. You can grab and throw
 Size
 Size (points)
 Skip back or forward 5 s in the audio under the mouse
+Skip back or forward 5 s in the fullscreen video
 Sleep
 Sleepy
 Slowmode: wait {s} to send
@@ -1987,6 +2054,7 @@ Switch Mascot
 Switch to this account
 System
 System default
+System libraries
 Tab set in use: click to switch or leave
 tab set renamed to “{s}”
 tab set “{s}” deleted
@@ -2020,6 +2088,7 @@ That conversation isn't available on this account.
 That doesn't look like a Discord token.
 That folder
 that folder's path is too long
+that image's path is too long
 That member is no longer in the server.
 that mention someone
 that message is already saved
@@ -2034,6 +2103,7 @@ That's already the shortcut for "{s}".
 That's your own username.
 That's {d} sets already: delete one to save another.
 The "Index" title at the top of the right margin.
+the app isn't connected yet
 The app name drawn above the channel list.
 The app name drawn in characters above the channels.
 The application did not respond
@@ -2089,10 +2159,14 @@ The new message sound is turned on and off in Notifications, apart from the call
 The open tab goes into the set. While it's in use, whatever you open or close is saved in it.
 The orbit diagram in the background.
 the pinned rule is this one: https://discord.com/channels/{d}/{d}/{d}
+The plugin {s} asked to attach a file in #{s}.
+The plugin {s} asked to delete the message below. This can't be undone.
 The previous link stays valid.
 The proxy (HTTP, HTTPS, SOCKS5 or Tor) is on the Network page.
 The proxy address is missing.
 The proxy didn't answer or refused the connection. Check the address, port and login.
+The rest (the app, the video driver and the system)
+The rest of the app and libraries
 The saved login and password didn't fit in the fields and are hidden. To change the proxy, type both again.
 The saved proxy is invalid and is being ignored.
 The saved renderer, "{s}", doesn't exist on this computer: the automatic one is in use.
@@ -2122,7 +2196,9 @@ Theme
 Theme color
 Theme colors — {s} ({s})
 theme error
+Theme part
 theme reloaded: {s}
+theme warnings ({d}): {s}
 theme: {s}
 There are no pending friend requests.
 There's already a set with that name.
@@ -2151,14 +2227,17 @@ This server didn't show onboarding questions to this account.
 This server has no onboarding questions right now.
 This server has no rules to answer right now.
 This system's notification server doesn't show buttons.
+This theme has a place for the image and picks its fit under "Theme"; "Dim" only darkens it further than the theme does.
 This thread is locked.
 Thread name
 Thread options
+Thread stacks
 Threads in {s}{s}
 Throw the recording away  (Esc)
 Thu
 Tiara
 Tibetan
+Tile
 Time
 Time of each frame (the last 300)
 Time Out
@@ -2208,6 +2287,8 @@ Top hat
 Top telemetry
 Topographic map
 Total
+Total (private memory)
+Total (PSS, the sum of the parts)
 total hours
 Total minutes
 total minutes
@@ -2219,6 +2300,7 @@ Translations
 Transmitting
 Tree
 Trending
+Tricks
 True
 Try again
 Try again: {s}
@@ -2319,7 +2401,6 @@ Username, like ana.exe
 Usernames have at most {d} characters.
 Using the file {s}
 uwu
-Values with ~ are estimates. Images may live in video memory rather than RAM.
 Vampire
 Verbose
 Verification requests
@@ -2332,6 +2413,8 @@ Vertices / indices
 Very discreet raked lines and an enso behind the conversation, still.
 Video
 video
+Video driver
+Video in fullscreen (the one under the mouse or playing)
 video too large to play here
 Videos
 View Banner
@@ -2369,6 +2452,7 @@ Waited on the rate limit
 Waiting for the response
 Waiting for the response…
 Waits for you to come back
+Wallpaper
 Wanders around the window
 Wants to message you
 Warn before joining a server
@@ -2401,9 +2485,11 @@ Where do I find my token?
 Where the memory goes
 While the window is focused, like Discord. When off, a GIF plays while you hover it.
 Whistle
+Whole
 whole number
 Why remember?
 Window
+Window and textures (SDL)
 Window and theme
 Windows didn't accept notifications with buttons: they go out as before, without buttons.
 Wink
@@ -2458,6 +2544,7 @@ You have no favorite GIFs yet.
 You haven't blocked anyone.
 You joined a call
 You left a call
+You pick the file, and it waits in the message box until you send it. The plugin never learns which one.
 you're alone in the call
 You're already friends with that user!
 You're in demo mode. Logging out takes you to the sign-in screen.
