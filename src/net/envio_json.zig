@@ -197,7 +197,7 @@ pub fn pollEmbed(p: *const polls.Poll) !types.Embed {
         .provider = provider,
         .title = title,
         .description = desc,
-        .footer = try alloc.dupe(u8, i18n.fmt(&fb, "{d} votos", "{d} votes", .{p.total()})),
+        .footer = try alloc.dupe(u8, i18n.plural(&fb, p.total(), "{d} voto", "{d} votos", "{d} vote", "{d} votes", .{p.total()})),
         .poll = true,
     };
 }

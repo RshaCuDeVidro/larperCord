@@ -21,6 +21,8 @@ const teclas = @import("teclas.zig");
 const atalhos_mod = @import("atalhos.zig");
 const sys = @import("../platform/sys.zig");
 const mascote = @import("mascote.zig");
+const i18n_pasta = @import("i18n_pasta.zig");
+const attachments = @import("attachments.zig");
 
 // O `label` (português) é também a marca do QA (settings:…); os outros idiomas
 // saem de `label_en` pelo i18n/<idioma>.kdl.
@@ -98,6 +100,72 @@ pub fn fitSize(font: *c.ImFont, size: f32, min: f32, text: []const u8, avail: f3
     const k = @max(min, @floor(size * avail / tw * 2) / 2);
     if (d.width(font, k, text) > avail) noteOverflow(text);
     return k;
+}
+
+/// A lista de idiomas: seguir o sistema, português e inglês (no código) e cada arquivo de
+/// tradução (os embutidos e os da pasta), com quanto dos textos do app ele traduz. Nada
+/// aqui sabe quais idiomas existem: a lista vem de ui/i18n.zig.
+fn languageRows(p: *Page, s: *S.Settings) void {
+    const ctx = p.ctx;
+    const langs = i18n.languages();
+    const saved = s.language_code.slice();
+    // A linha marcada: seguir o sistema, ou o idioma salvo (um arquivo que saiu da pasta
+    // não marca nenhuma).
+    const sel: ?usize = if (saved.len == 0) 0 else if (i18n.match(saved)) |i| i + 1 else null;
+    for (0..langs.len + 1) |row| {
+        const l: ?*const i18n.Info = if (row == 0) null else &langs[row - 1];
+        var nb: [192]u8 = undefined;
+        var db: [192]u8 = undefined;
+        // Os nomes ficam sempre na própria língua (com o inglês ao lado, se o arquivo diz).
+        const label: []const u8 = if (l) |x|
+            (if (x.english.len > 0 and x.kind == .file) std.fmt.bufPrint(&nb, "{s} ({s})", .{ x.name, x.english }) catch x.name else x.name)
+        else
+            i18n.tr("Seguir o sistema", "Follow system");
+        // A segunda linha: o idioma que "seguir o sistema" dá agora, ou de onde vem o arquivo.
+        const desc: []const u8 = if (l) |x| blk: {
+            if (x.user_name.len == 0) break :blk "";
+            break :blk if (x.packed_data != null)
+                i18n.fmt(&db, "Com {s} da pasta de traduções por cima", "With {s} from the translations folder on top", .{x.user_name})
+            else
+                i18n.fmt(&db, "{s}, da pasta de traduções", "{s}, from the translations folder", .{x.user_name});
+        } else blk: {
+            const now = i18n.match(i18n.system()) orelse 1;
+            break :blk i18n.fmt(&db, "Agora: {s}", "Now: {s}", .{langs[now].name});
+        };
+        const r: d.Rect = .{ .x = p.x, .y = p.y, .w = p.w, .h = if (desc.len > 0) @as(f32, 60) else 44 };
+        const hb = d.hit(ctx, p.id(), r);
+        qa.mark(r, "lang:{s}", .{if (l) |x| x.code else "system"});
+        if (hb.clicked) {
+            const code: []const u8 = if (l) |x| x.code else "";
+            s.language_code.set(code);
+            s.language = i18n.legacyNumber(code);
+        }
+        const on = sel != null and sel.? == row;
+        d.rect(p.dl, r, if (on) ctx.col(.selected) else if (hb.hovered) ctx.col(.hover) else ctx.col(.rail).alpha(0.5), ctx.th.radius);
+        const cx = r.x + 22;
+        const cy = r.y + 22;
+        c.ImDrawList_AddCircleEx(p.dl, d.v(cx, cy), 9, (if (on) ctx.col(.accent) else ctx.col(.muted)).u(), 0, 2, 0);
+        if (on) d.circle(p.dl, cx, cy, 5, ctx.col(.accent));
+        // Quanto está traduzido, à direita.
+        var avail = r.w - 56;
+        if (row > 0) {
+            if (i18n.coverage(row - 1)) |pm| {
+                var pb: [8]u8 = undefined;
+                const pct = std.fmt.bufPrint(&pb, "{d}%", .{pm / 10}) catch "";
+                const pw = d.width(p.font(.semibold), 14, pct);
+                d.text(p.dl, p.font(.semibold), 14, r.right() - 14 - pw, r.y + 13, if (pm >= 1000) ctx.col(.muted) else ctx.col(.faint), pct);
+                avail -= pw + 16;
+            }
+        }
+        if (d.width(p.font(.medium), 15, label) > avail) noteOverflow(label);
+        _ = d.textClipped(p.dl, p.font(.medium), 15, r.x + 44, r.y + 12, ctx.col(.text), label, avail);
+        if (desc.len > 0) {
+            if (d.width(p.font(.regular), 13, desc) > r.w - 56) noteOverflow(desc);
+            _ = d.textClipped(p.dl, p.font(.regular), 13, r.x + 44, r.y + 34, ctx.col(.muted), desc, r.w - 56);
+        }
+        p.y += r.h + 8;
+    }
+    p.y += 8;
 }
 
 /// Estado de desenho de uma página (posição corrente, largura útil).
@@ -1106,14 +1174,7 @@ fn page(p: *Page, previews: []const Preview) void {
         },
         .idioma => {
             p.title(i18n.tr("Idioma", "Language"));
-            // Os nomes dos idiomas ficam sempre na própria língua.
-            p.radio(&.{
-                i18n.tr("Seguir o sistema", "Follow system"),
-                "Português (Brasil)",
-                "English (US)",
-                "日本語 (Japanese)",
-                "Русский (Russian)",
-            }, &.{}, &s.language);
+            languageRows(p, s);
             p.note(i18n.tr(
                 "Por padrão o app segue o idioma do sistema. A troca vale na hora.",
                 "By default the app follows your system language. Changes apply right away.",
@@ -1126,6 +1187,23 @@ fn page(p: *Page, previews: []const Preview) void {
                 "Nenhuma fonte de japonês, coreano ou chinês foi encontrada neste sistema, e esses textos aparecem como ???. Instale uma, como a Noto Sans CJK (pacote noto-fonts-cjk ou fonts-noto-cjk).",
                 "No Japanese, Korean or Chinese font was found on this system, so those texts show as ???. Install one, such as Noto Sans CJK (package noto-fonts-cjk or fonts-noto-cjk).",
             ));
+            p.divider();
+            p.heading(i18n.tr("Traduções", "Translations"));
+            p.note(i18n.tr(
+                "Cada idioma é um arquivo .kdl com o texto em inglês e a tradução ao lado, e a porcentagem diz quanto dos textos do app ele traduz. Um arquivo na pasta de traduções vale na hora (salvar já atualiza o app): com um código novo é um idioma novo; com o código de um da lista, corrige só o que estiver nele.",
+                "Each language is a .kdl file with the English text and the translation next to it, and the percentage is how much of the app's text it translates. A file in the translations folder applies right away (saving updates the app): with a new code it's a new language; with the code of one in the list, it fixes just what's in it.",
+            ));
+            // O problema de cada arquivo da pasta (o idioma fica com o que abriu antes).
+            for (i18n.languages()) |l| {
+                const pr = l.problem orelse continue;
+                const h = inbox.wrapText(p.dl, p.font(.regular), 13.5, p.x, p.y, p.w, pr, 8, ctx.col(.danger));
+                qa.mark(.{ .x = p.x, .y = p.y, .w = p.w, .h = h }, "lang-problem:{s}", .{l.code});
+                p.y += @round(h + 7.4);
+            }
+            if (p.buttonSoft(i18n.tr("Abrir a pasta de traduções", "Open the translations folder")) and !qa.on()) i18n_pasta.openFolder();
+            p.sameLine();
+            if (p.buttonSoft(i18n.tr("Editor de traduções", "Translation editor")))
+                attachments.openUrl(if (i18n.is("pt")) "https://rshacudevidro.github.io/larperCord/pt/translate.html" else "https://rshacudevidro.github.io/larperCord/translate.html");
         },
         .avancado => {
             p.title(i18n.tr("Avançado", "Advanced"));

@@ -49,7 +49,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     while (it.next()) |arg| {
         if (std.mem.eql(u8, arg, "--lang")) {
             const l = it.next() orelse break;
-            opts.lang = if (std.mem.startsWith(u8, l, "pt")) .pt else if (std.mem.startsWith(u8, l, "ja")) .ja else if (std.mem.startsWith(u8, l, "ru")) .ru else .en;
+            opts.lang = l;
         } else if (std.mem.eql(u8, arg, "--mode")) {
             const m = it.next() orelse break;
             opts.mode = if (std.mem.eql(u8, m, "light") or std.mem.eql(u8, m, "claro")) .light else .dark;
@@ -74,12 +74,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
     // são as Configurações (Aparência e Idioma), como no app instalado. Forçados, os dois
     // botões ficavam marcados sem mudar nada.
     if (a.opts.mode) |m| a.st.settings.color_mode = if (m == .light) 1 else 0;
-    if (a.opts.lang) |l| a.st.settings.language = switch (l) {
-        .pt => 1,
-        .en => 2,
-        .ja => 3,
-        .ru => 4,
-    };
+    if (a.opts.lang) |l| {
+        a.st.settings.language_code.set(l);
+        a.st.settings.language = @import("ui/i18n.zig").legacyNumber(l);
+    }
     a.opts.mode = null;
     a.opts.lang = null;
     if (emscripten) {

@@ -337,7 +337,7 @@ fn inviteCard(ctx: *d.Ctx, dl: *c.ImDrawList, url: []const u8, x: f32, y_top: f3
             }
             if (inv.?.members > 0) {
                 d.circle(dl, cx + 4, y + 60, 4, ctx.col(.faint).alpha(alpha));
-                const t = i18n.fmt(&cb, "{d} membros", "{d} members", .{inv.?.members});
+                const t = i18n.plural(&cb, inv.?.members, "{d} membro", "{d} membros", "{d} member", "{d} members", .{inv.?.members});
                 _ = d.textClipped(dl, fam.get(.regular), 12.5, cx + 12, y + 52, ctx.col(.muted).alpha(alpha), t, @max(0, rx - cx - 20));
             }
         },

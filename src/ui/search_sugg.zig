@@ -182,7 +182,7 @@ fn channels(ctx: *d.Ctx, key: []const u8, val: []const u8) void {
 /// português e inglês, então nos outros idiomas vai a inglesa. Ela nunca passa pela
 /// tradução (`has:изображение` não seria entendido); só o rótulo ao lado passa.
 fn word(pt: []const u8, en: []const u8) []const u8 {
-    return if (i18n.current() == .pt) pt else en;
+    return if (i18n.is("pt")) pt else en;
 }
 
 fn hasValues(key: []const u8, val: []const u8) void {
@@ -209,7 +209,7 @@ fn dateValues(key: []const u8, val: []const u8) void {
     const today = word("hoje", "today");
     const yesterday = word("ontem", "yesterday");
     // Fora do português e do inglês, o dia no idioma da interface vai ao lado.
-    const other = i18n.current() != .pt and i18n.current() != .en;
+    const other = !i18n.is("pt") and !i18n.is("en");
     if (std.ascii.startsWithIgnoreCase(today, val)) add(.value, 0, 0, today, if (other) i18n.tr("hoje", "today") else "", valueInsert(&ib, key, today));
     if (std.ascii.startsWithIgnoreCase(yesterday, val)) add(.value, 0, 0, yesterday, if (other) i18n.tr("ontem", "yesterday") else "", valueInsert(&ib, key, yesterday));
 }

@@ -111,25 +111,34 @@ const freetype_sources = [_][]const u8{
 
 const theme_names = [_][]const u8{ "classico", "vidro", "terminal", "subsolo", "orbital", "editorial", "bolhas", "zen", "papel", "escritorio", "cupertino" };
 
-/// Os textos grandes que vão dentro do executável (as traduções, o changelog, a tabela de
-/// emoji), comprimidos na hora do build (tools/comprimir.zig): abrem quando alguém
-/// precisa (src/core/embutido.zig). Uma vez só por build, para todos os módulos.
+/// Os textos grandes que vão dentro do executável (o changelog, a tabela de emoji e as
+/// traduções, em `i18nModule`), comprimidos na hora do build (tools/comprimir.zig): abrem
+/// quando alguém precisa (src/core/embutido.zig). Uma vez só por build, para todos os módulos.
 const packed_files = [_][3][]const u8{
     .{ "changelog_en_z", "CHANGELOG.md", "changelog_en.z" },
     .{ "changelog_pt_z", "CHANGELOG.pt-BR.md", "changelog_pt.z" },
-    .{ "i18n_ja_z", "i18n/ja.kdl", "ja.kdl.z" },
-    .{ "i18n_ru_z", "i18n/ru.kdl", "ru.kdl.z" },
     .{ "emoji_blob", "src/ui/emoji_blob.txt", "emoji_blob.z" },
 };
 var packed_paths: ?[packed_files.len]std.Build.LazyPath = null;
+var comprimir_tool: ?*std.Build.Step.Compile = null;
+var i18n_module: ?*std.Build.Module = null;
+
+fn comprimir(b: *std.Build) *std.Build.Step.Compile {
+    if (comprimir_tool) |t| return t;
+    const m = b.createModule(.{
+        .root_source_file = b.path("tools/comprimir.zig"),
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    });
+    m.addAnonymousImport("cabecalho", .{ .root_source_file = b.path("src/core/i18n_cabecalho.zig") });
+    const tool = b.addExecutable(.{ .name = "comprimir", .root_module = m });
+    comprimir_tool = tool;
+    return tool;
+}
 
 fn addPacked(b: *std.Build, m: *std.Build.Module) void {
     const paths = packed_paths orelse blk: {
-        const tool = b.addExecutable(.{ .name = "comprimir", .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/comprimir.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseSafe,
-        }) });
+        const tool = comprimir(b);
         var out: [packed_files.len]std.Build.LazyPath = undefined;
         for (packed_files, &out) |f, *o| {
             const run = b.addRunArtifact(tool);
@@ -140,6 +149,56 @@ fn addPacked(b: *std.Build, m: *std.Build.Module) void {
         break :blk out;
     };
     for (packed_files, paths) |f, path| m.addAnonymousImport(f[0], .{ .root_source_file = path });
+    m.addImport("i18n_embutidos", i18nModule(b));
+}
+
+/// As traduções embutidas: cada i18n/<código>.kdl é um idioma, sem lista no código. Um
+/// arquivo novo na pasta entra no próximo build (o arquivo diz o nome e o código do idioma,
+/// src/ui/i18n.zig). Cada um vai comprimido, com o cabeçalho na frente (tools/comprimir.zig
+/// --i18n), junto com i18n/keys.txt, os textos em inglês do código (a porcentagem traduzida).
+fn i18nModule(b: *std.Build) *std.Build.Module {
+    if (i18n_module) |m| return m;
+    const io = b.graph.io;
+    // A lista muda quando um arquivo entra ou sai da pasta: o build relê.
+    b.dependOnDirectoryContents(b.path("i18n"));
+    var dir = b.root.openDir(io, "i18n", .{ .iterate = true }) catch @panic("sem a pasta i18n/");
+    defer dir.close(io);
+    var names: std.ArrayList([]const u8) = .empty;
+    var it = dir.iterate();
+    while (it.next(io) catch @panic("i18n/ ilegível")) |e| {
+        if (e.kind != .file or !std.mem.endsWith(u8, e.name, ".kdl")) continue;
+        names.append(b.allocator, b.dupe(e.name)) catch @panic("OOM");
+    }
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lt(_: void, a: []const u8, z: []const u8) bool {
+            return std.mem.lessThan(u8, a, z);
+        }
+    }.lt);
+    const wf = b.addWriteFiles();
+    var src: std.ArrayList(u8) = .empty;
+    src.appendSlice(b.allocator,
+        \\//! Gerado pelo build.zig: os arquivos de i18n/, comprimidos (ver src/ui/i18n.zig).
+        \\pub const File = struct { name: []const u8, data: []const u8 };
+        \\pub const files = [_]File{
+        \\
+    ) catch @panic("OOM");
+    const tool = comprimir(b);
+    for (names.items) |name| {
+        const run = b.addRunArtifact(tool);
+        run.addArg("--i18n");
+        run.addFileArg(b.path(b.fmt("i18n/{s}", .{name})));
+        const out = run.addOutputFileArg(b.fmt("{s}.z", .{name}));
+        _ = wf.addCopyFile(out, b.fmt("{s}.z", .{name}));
+        src.appendSlice(b.allocator, b.fmt("    .{{ .name = \"{s}\", .data = @embedFile(\"{s}.z\") }},\n", .{ name[0 .. name.len - 4], name })) catch @panic("OOM");
+    }
+    const keys = b.addRunArtifact(tool);
+    keys.addFileArg(b.path("i18n/keys.txt"));
+    _ = wf.addCopyFile(keys.addOutputFileArg("keys.txt.z"), "keys.txt.z");
+    src.appendSlice(b.allocator, "};\npub const keys = @embedFile(\"keys.txt.z\");\n") catch @panic("OOM");
+    const root = wf.add("i18n_embutidos.zig", src.items);
+    const m = b.createModule(.{ .root_source_file = root });
+    i18n_module = m;
+    return m;
 }
 
 pub fn build(b: *std.Build) void {
@@ -216,9 +275,6 @@ pub fn build(b: *std.Build) void {
     mod.addOptions("build_options", build_options);
     mod.addAnonymousImport("changelog_en", .{ .root_source_file = b.path("CHANGELOG.md") });
     mod.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
-    // Traduções além do português e do inglês: um arquivo por idioma (src/ui/i18n.zig).
-    mod.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
-    mod.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     addPacked(b, mod);
     mod.addImport("c", translate.createModule());
     mod.addImport("builtin_themes", builtin_themes);
@@ -415,8 +471,6 @@ pub fn build(b: *std.Build) void {
     test_mod.addImport("plugin_examples", plugin_examples);
     test_mod.addAnonymousImport("changelog_en", .{ .root_source_file = b.path("CHANGELOG.md") });
     test_mod.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
-    test_mod.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
-    test_mod.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     addPacked(b, test_mod);
     addLua(b, test_mod);
     addRnnoise(b, test_mod);
@@ -676,8 +730,6 @@ fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     m.addImport("plugin_examples", examples_mod);
     m.addAnonymousImport("changelog_en", .{ .root_source_file = b.path("CHANGELOG.md") });
     m.addAnonymousImport("changelog_pt", .{ .root_source_file = b.path("CHANGELOG.pt-BR.md") });
-    m.addAnonymousImport("i18n_ja", .{ .root_source_file = b.path("i18n/ja.kdl") });
-    m.addAnonymousImport("i18n_ru", .{ .root_source_file = b.path("i18n/ru.kdl") });
     addPacked(b, m);
     m.addAnonymousImport("icon_64", .{ .root_source_file = b.path("assets/icon-64.png") });
     m.addAnonymousImport("icon_32", .{ .root_source_file = b.path("assets/icon-32.png") });

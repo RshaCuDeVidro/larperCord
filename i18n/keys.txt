@@ -1,0 +1,2584 @@
+\nPush to talk from a system shortcut: ptt-down on key press and ptt-up on release\n(Settings → Voice → Push to talk). Needs Settings → Advanced → External control on.\nExits with 0 when it worked, 1 when it didn't.\nLARPER_CTL=1 on both sides talks to a demo (--demo) started with it.\nExamples (Hyprland, Sway, KDE, GNOME, waybar, polybar, Windows): docs/ctl.md\n
+  (same, not drawn)
+  [LIVE]
+  ·  partly clipped
+ (muted)
+ [deaf:srv]
+ [deaf]
+ [mute:srv]
+ [mute]
+ or 
+ · not found
+#RRGGBB or #RRGGBBAA. Applies only to this theme and mode.
+(deleted)
+(edited)
+(no text)
+(outside the layout)
+**{s}** added **{s}** to the group.
+**{s}** changed the channel name to **{s}**.
+**{s}** changed the group icon.
+**{s}** followed an announcement channel here.
+**{s}** joined the server.
+**{s}** just boosted the server!
+**{s}** just boosted the server! It reached **Level {d}**!
+**{s}** left the group.
+**{s}** pinned a message to this channel.
+**{s}** removed **{s}** from the group.
+**{s}** started a call.
+**{s}** started a thread: **{s}**
++ Add a note
++{d}
++{d} in Settings → Voice
++{d} in this block
+// NODE 01 · LEVEL -3
+0 no blush · 6 strongest
+0% (sleeps until there are events)
+1 day
+1 h
+1 hour
+1 new message · jump to the first
+1 week
+1.5×
+10 min
+10 min limit
+12 hours
+15 min
+24 hours
+24-hour clock
+3 days
+30 days
+30 min
+4 h
+5 min
+6 hours
+60 sec
+7 days
+8 accounts saved already; remove one to save this one
+@ OFF
+@ ON
+@mentions stay in the text, without pinging
+[a]
+[attachment]
+[attachments]
+[audio]
+[call]
+[chat]
+[file] {s}
+[hang up]
+[image]
+[invite]
+[leave]
+[m]
+[mic]
+[mixer]
+[no text]
+[poll] {s}
+[pop out]
+[sticker: {s}]
+[sticker] {s}
+[video]
+[view]
+[voice message]
+_files
+A channel with new messages opens at them, like Discord. When off, it opens at the bottom.
+A colored strip with the server name above the channels.
+A copy goes without the GPS, the camera model and the rest hidden in the file (JPEG, PNG, WebP, MP4 and MOV). The file on your computer stays as it is.
+A curtain of light in the theme colors behind the cards. Still: generated once.
+A downloaded file doesn't match: nothing was installed.
+a file
+A life of its own
+a light, native Discord, your way
+a link
+a link preview
+A list in the message box; what you pick goes in the box and is never sent on its own
+A little pot next to it that it waters and that grows a bit each day you use the app. Stay away too long and it wilts, until it waters it again.
+A MAGAZINE OF TALK
+A message with the whole word (any case) counts as a mention.
+A name is required.
+A Santa hat at Christmas, a witch hat at Halloween and a party hat at New Year, when it has no hat picked.
+A short cue for direct messages and mentions, also while the window is unfocused or in the tray. Silent for the conversation you're looking at and in Do Not Disturb.
+A single page that opens offline, in the theme's colors.
+A small neural network that runs on this computer, no internet. Hear it with Test microphone.
+a sound
+a sticker
+A still phosphor radar behind the windows.
+A strip of light at the top of each card, like real glass.
+A strip with the server name above the channels.
+A subtle ship-screen effect over everything.
+A title is required.
+A very fine grain on the surfaces, so they don't look flat.
+a video
+About
+ABOUT ME
+About me
+Accent color
+Accept
+Accept Request
+Accessibility
+Accessories
+account
+account connected
+account removed
+ACCOUNTS
+action
+Actions
+Active
+Active Now
+ACTIVITY
+Activity
+Add
+Add a note
+Add Account
+Add alert
+Add Ctrl or Alt (or use an F key): a letter alone would fire while typing.
+Add filter
+ADD FRIEND
+Add Friend
+ADD FRIENDS
+Add Reaction
+Add role
+Add running process
+Add to Favorites
+Address
+Advanced
+after
+after a date
+Alert words
+Alerts & Filters
+Aligned stems
+All
+All caught up!
+All files
+ALL FRIENDS — {d}
+all marked as read ✓
+All Messages
+All your friends are already here.
+Allocated / free not returned
+Allocated in total
+Also records with the Inspector closed (click to record only while open)
+Also works while another window is focused, and that app still gets the key.
+Alt text
+Always show spoilers
+an argument can't have a line break
+An export is already running.
+an image
+Angry
+Animate Tenor and Giphy GIFs
+animation (not shown)
+Answer the items marked *.
+Answer the questions marked *.
+Answers sent. The server's moderators still need to approve you.
+Answers sent: the server's moderators still need to approve them.
+Antennae
+Anyone with your token has your account. Never share it.
+API
+API guide and examples: docs/plugins.md
+app overlay (not from the theme)
+APP SETTINGS
+Appearance
+appearance
+Applies to the next message only.
+Apply
+Approve this host
+Approved: the plugin can talk to this address
+Arabic
+Archive after inactivity
+Archive Thread
+Archive to antigos/ ({d})
+Archived
+Archived private threads
+Archived Threads
+Armenian
+ASCII logo
+Asks GitHub for the latest version when the app opens. No account data is sent.
+Asleep
+Astronaut
+at most 10 files per message
+Attach File
+Attach file
+Attempt
+Audio
+audio
+Audio output didn't open: click to check
+audio too large to play here
+Audio visualizer
+Aurora backdrop
+Automatic
+Automatic sensitivity
+Automatically play GIFs
+AutoMod quarantined you in this server.
+Avatars
+Average / p95
+Back
+Back to chat
+Back to chat (Esc)
+Back to the main window
+Back to the text box
+Back to voting
+Back to {s}
+Back/forward between tabs, server search and help.
+Back/forward, search and help at the top.
+Background
+Background below
+Bad connection: voice may drop or lag
+Badges, notes and collapsing, only on your screen
+Ban
+Ban {s}?
+Band-aid
+Bandana
+Banner
+Bans
+Ban…
+Beanie
+before
+before a date
+Before you join
+before: {s}{s}
+below AA
+Beret
+Binary
+Binder holes
+Black bar
+Block
+Block {s}
+Blocked
+BLOCKED — {d}
+Block…
+Blue
+Blush
+Body (bottom)
+Body (top)
+Body width
+Boot
+BOT
+Bot
+Bots can't be added as friends.
+Bow
+Bow tie
+Braille
+Bubbles
+Buck teeth
+Built with
+Built-in theme: copy it to the themes folder to edit it.
+Bunny
+By default the app follows your system language. Changes apply right away.
+by {s} · {s}.kdl
+cache cleared
+Call in floating window
+Call mixer
+Call mixer · right-click: devices
+Call someone
+Call sounds
+Call timer
+Call timer on voice channels
+Calm
+Came from cache
+Can't reach Discord — try a proxy?
+Cancel
+Cancel a reply or edit
+Cancel Request
+Cancelled
+Cap
+Captcha requests
+Capturing the first frame…
+Caramel
+Card sheen
+Cat eyes
+Change Image
+Change status
+Changes apply right away, even in the middle of a call.
+Changes the opening animation and the app icon: window, taskbar, tray and app menu. On Windows, the app file's own icon stays the Terminal one.
+Changes what you send
+changes your status
+CHANNEL
+Channel
+channel not in the list
+Channel Notifications…
+Channel tabs
+CHANNELS
+Chat
+Chats open instantly and search ({s}) works offline. Only your user can read it.
+check <#{d}> and talk to <@1001>; the other channel: https://ptb.discord.com/channels/{d}/{d}
+Check again
+Check for FFmpeg
+Check for updates
+Check the proxy
+Check when opening
+Checking…
+Chef
+Cherokee
+Choose a file…
+Choose an option
+Choose another file…
+Choose executable
+Choose FFmpeg folder…
+Choose file
+Choose the folder with the libraries of a "shared" FFmpeg build (on Windows, the bin folder with avcodec and the other DLLs).
+Choose…
+Chosen folder: {s}
+Classic
+Clear
+Clear after
+Clear cache ({s})
+Clear Custom Status
+Clear status
+Clear the console
+Clear the list
+Clear this color
+Click
+Click a frame to see its content.
+Click to add a note
+Click to change
+click to change
+Click to change or turn off
+click to load
+click to load · {s}
+click to reveal
+Click to see attachment
+Click to see message
+Click to show the spoiler
+Climbs onto the member list, sits on the last message, hangs from the header, peeks out from behind the channel list. When you switch channels, it jumps along.
+Close
+Close (the dot on settings stays)
+Close and reopen to try again.
+Close pane
+Close panel
+Close tab
+Close tab with the mouse
+Close the floating window
+Close the Inspector (F12)
+Close to tray
+Closes and reopens larperCord. If you're in a call, you'll leave it.
+Code
+Code diagnostics
+Code font
+Collapse threads
+collapsed message
+Colophon
+Color
+Colorful backdrop
+Colors
+command
+command (help lists them all)
+Command palette
+command too long
+COMMANDS
+Commands
+Commands / texture switches
+Comment
+Compact
+Compact mode
+Compact with seconds
+Competing
+Competing in 
+Connect
+Connect through a proxy
+Connecting to Discord...
+Connecting to Discord{s}
+Connecting to the call…
+Connecting… you can send once connected
+Connection
+connection, account, call and unread, as JSON
+Connection, ping, RAM and clock (when the theme has one).
+Connection, ping, RAM and clock at the bottom.
+Connection, ping, RAM and clock in the top bar.
+Connection, theme, ping and clock at the bottom of the page.
+CONNECTIONS
+Console
+Console scanlines
+Content
+Contour lines behind the windows.
+Contrast
+CONTRIBUTORS
+Conversation exported: {s}
+Conversation exported: {s} · {d} files in the folder next to it
+Conversation exported: {s} · {d} files in the folder next to it, {d} stayed as links
+Conversation exported: {s} · {d} files stayed as links
+Copied
+copied ✓
+Copy
+Copy as curl
+Copy Channel ID
+Copy Image
+Copy JSON
+Copy Link
+Copy link
+Copy Message ID
+Copy Message Link
+Copy Server ID
+Copy the file path
+Copy the text selected in messages
+Copy User ID
+Copy Username
+Corner mascot
+Corners
+Cost of each component (last frame)
+Cost this frame
+Cotton candy
+could not start: check the command
+couldn't accept the request
+couldn't add to the group
+couldn't block
+couldn't change notifications
+couldn't change the name
+couldn't change the role
+Couldn't connect to Discord.
+couldn't copy the file into larperCord's folder
+couldn't copy the image
+couldn't create the invite
+Couldn't create the invite.
+couldn't create the thread
+couldn't decline the request
+couldn't decompress the gateway (zlib {d})
+couldn't delete
+couldn't delete the thread
+Couldn't download FFmpeg. Check your connection and try again.
+couldn't download the audio
+couldn't download the video
+couldn't edit
+couldn't edit the group
+couldn't edit the server
+couldn't edit the thread
+Couldn't export (no space or no permission in that folder?)
+Couldn't find "{s}" among the people the app has loaded.
+Couldn't find channel "{s}" in this server.
+couldn't find that account's token in the keyring
+Couldn't find that account's token in the keyring.
+couldn't find the Downloads folder
+couldn't forward the message
+couldn't ignore
+couldn't join the thread
+Couldn't join. Try again in a moment.
+couldn't leave the group
+couldn't leave the server
+couldn't leave the thread
+couldn't load more pinned messages
+couldn't load that message
+Couldn't load the bans.
+Couldn't load the GIFs.
+couldn't load the history
+couldn't load the image
+couldn't load the invite
+Couldn't load the list.
+couldn't load the mentions
+Couldn't load the messages.
+Couldn't load the pinned messages.
+couldn't load the private threads
+Couldn't load the questions.
+Couldn't load the rules.
+Couldn't load the sticker packs.
+couldn't load the stickers
+couldn't load the threads
+couldn't load who reacted
+couldn't load who voted
+Couldn't load.
+couldn't mark as read
+couldn't mark as unread
+couldn't move the member
+Couldn't open a connection to Discord.
+couldn't open that file
+couldn't open the call UDP
+couldn't open the conversation
+couldn't open the floating window
+couldn't open the image
+couldn't open the voice connection
+couldn't paste the image
+couldn't pin
+couldn't play the audio
+couldn't play the voice message
+couldn't play this video
+couldn't prepare the export
+couldn't publish the post
+Couldn't reach GitHub. Try again later.
+couldn't react
+couldn't read that file's name
+couldn't read the file
+couldn't read the image
+couldn't read the settings
+couldn't read this audio
+couldn't record the audio
+couldn't remove from the group
+couldn't remove the location from {s}; the message wasn't sent
+couldn't remove the vote
+couldn't ring
+couldn't save
+couldn't save the audio to send
+couldn't save the edited image
+couldn't save the favorite GIF
+couldn't save the file
+couldn't save the note
+couldn't save the onboarding answers
+couldn't save the profile
+couldn't save the status
+couldn't save the status to the account
+couldn't save the token
+Couldn't save {s}
+Couldn't save. Try again.
+Couldn't search
+couldn't search Discord
+couldn't send
+Couldn't send it right now.
+couldn't send the answers to the rules
+Couldn't send the friend request.
+couldn't send the sticker
+Couldn't sign in with that token.
+couldn't start recording
+Couldn't start the connection.
+couldn't start the export
+Couldn't submit. Try again.
+couldn't unignore
+couldn't unpin
+couldn't update the friendship
+couldn't vote
+Couldn't write FFmpeg to disk.
+Couldn't write the update files.
+Covers its ears at ALL CAPS, covers its eyes at a ||spoiler||, puts on glasses to review a code block, holds a scroll for a long message (and pulls back worried near the limit), points at the lists for @ and #, opens a tiny terminal for / at the start and offers tea when you delete a lot. And it has a few secrets. All worked out from the text on your computer.
+Cowboy
+CPU time per frame
+Create
+Create Thread
+Creating the link…
+CREW
+Crop
+Crop and hide parts of the image
+Crown
+CRT effect
+Crystal
+Ctrl+Alt with a letter, number or symbol is AltGr on many keyboards: it would fire while typing.
+Ctrl+Click
+current
+CURRENT ACTIVITY
+Current version
+Cursor
+Custom
+Custom colors take priority over the accent color.
+Custom status
+Customize
+Cutie
+Cuts lows below 90 Hz: wind, fans, mains hum.
+Cyclops
+Cyrillic
+Dark
+dark
+Dark mode
+Data on this computer
+Data saver
+data saver off
+Data saver: click to download
+data saver: images load on click
+DATE  (or 2026-11-06, 06/11/2026)
+DATE RANGE
+days
+Deafen
+Deafen  ({s})
+Deafen / undeafen
+Deafen or undeafen
+Deafened
+deafened
+deafens (no sound in or out)
+deafens or undeafens (like Ctrl+Shift+D)
+Debugging
+Decline
+Decorates messages
+Default
+Default color
+Delete
+Delete all data…
+Delete everything and close
+Delete Message
+DELETE MESSAGE HISTORY
+Delete Tab Set
+Delete the tab set
+Delete Thread…
+Delete “{s}” for good
+Deleted messages stay visible (marked) and edits keep the original. Local only.
+Delivered ✓✓
+Delivery receipt
+demo
+demo file
+demo image
+Demo mode
+demo video (no FFmpeg)
+Describes the file for people using screen readers.
+Description
+Desktop notifications
+Details
+Devanagari
+Developer Mode
+Developer tools: click an element to see which theme line it comes from, what went to and came from the network and the gateway (without your token), the log and the cost of each frame. Stays in memory only.
+Devil horns
+did not answer on startup
+Direct message
+direct message
+DIRECT MESSAGES
+Direct Messages
+Direct messages
+Direct3D 11
+Direct3D 12
+Direct3D 9
+disable accounts on third-party clients.
+Discard
+Disconnect
+Discord asked for a captcha, which can only be solved there: the invite is open in your browser.
+Discord asked for a captcha: send the request from the official app or website.
+Discord asked for a captcha: send the request to {s} from the official app or website
+Discord asked us to slow down: waiting {d} ms
+Discord blocked requests for {d} min; will try again after that
+Discord blocked this friend request.
+Discord challenges
+Discord didn't let this account join. It may be banned from the server or need verification.
+Discord didn't let this account search this server or conversation.
+Discord didn't show this server's rules to this account.
+Discord filtered these conversations as spam.
+Discord is preparing search here
+Discord may ask for a captcha. If it does, the invite opens in your browser.
+Discord member since
+Discord refused the connection (code {d}).
+Discord refused the last message for sending too fast in this channel.
+Discord refused the message. It's in the conversation to try again.
+Discord refused the request.
+Discord refused the voice session (4004).
+Discord refused: forbidden.
+Discord rejected that token (test).
+Discord rejected the session.
+Discord requires E2EE (DAVE) and negotiation failed ({d}).
+Discord search
+Discord too: API, images, videos and the gateway (from the next connection). Voice calls always connect directly.
+Discord wants you to verify your account (email or phone) first.
+Discord's address couldn't be found (DNS): the network may be blocking Discord.
+Dismiss
+Dismiss message
+Display name
+Dizzy
+DNS lookup
+Do a Trick
+Do Not Disturb
+Dock
+Dock on the left
+Dock on the right
+Dock to bottom
+Dock to right
+Don't clear
+Don't ping anyone
+Don't show this again (turn it back on in Privacy)
+DONE
+Done
+done {s}
+Done: the rules are answered. You can talk in the server now.
+Done: your choices are saved.
+Dots
+Doubling the letter always gives two digits: 07 instead of 7. Everything else shows as you typed it.
+Download (opens in the browser)
+Download and install
+Download FFmpeg
+Download now
+Downloading
+Downloading FFmpeg: {d}%
+Downloading {s}… {d}%
+Downloads from their site, which sees your IP (the official app does too). Off: still preview via Discord.
+Drag over what you want to hide: it turns into a black bar.
+Drag over what you want to hide: it turns into big blocks, for good.
+Drag the edge between panels to resize the channel list, the member list and split view. Double-click an edge to go back to the theme's default.
+Drag to crop; the corners and edges adjust it.
+Drag to resize. Double-click to reset.
+Draw lists
+Driver, libraries and fonts
+Drop on a voice channel
+due {s}
+DURATION
+during
+E.g. 21:30 instead of 9:30 PM.
+E.g. spoiler, a topic
+E.g. your name, a project, "good morning"
+Each .kdl file in the folder becomes a look: it picks parts and colors or draws its own, per expression. Saving the file updates it right away.
+Each GIF
+Each language is a .kdl file with the English text and the translation next to it, and the percentage is how much of the app's text it translates. A file in the translations folder applies right away (saving updates the app): with a new code it's a new language; with the code of one in the list, it fixes just what's in it.
+each person's volume · 100% = normal
+Each sound can be turned off, swapped for another built-in one or for a file of yours: WAV (PCM) or Ogg Opus, up to 2 MB and 5 s (the ringtone, up to 15 s). The file is copied into larperCord's folder.
+Each theme changes the whole layout, not just the colors. All of them come in light and dark.
+Ear angle
+Ear size
+earlier message (not in this file)
+Earring
+Ears
+Edit
+Edit alt text
+Edit Custom Status…
+Edit Group
+Edit Group…
+Edit image
+Edit Message
+Edit note
+Edit reminder
+Edit Reminder…
+Edit Server
+Edit Server…
+Edit Thread
+Edit Thread…
+Edit your last message (empty box)
+Editing message  ·  Esc to cancel  ·  Enter to save
+Elements
+EMAIL
+EMOJI
+Emoji
+Emoji and text
+empty = your username
+Empty response.
+en-US
+End Focus Mode
+Entries on the right-click menu of messages and people
+error
+error('file larger than 256 KB')
+Errors
+Errors only
+Ethiopic
+Even out volume
+event
+Event, op or text
+Events
+every connection
+Every update is signed; a version without the right signature isn't installed.
+Everyone can send one message every {s} in this channel.
+Everything else (images, avatars) only comes from Discord's servers.
+exited by itself (code {d})
+EXPIRES AFTER
+Explore the demo
+Export cancelled
+Export conversation
+Export Conversation…
+Exported by larperCord {s} on {s} {d:0>2}:{d:0>2}.
+Exporting: files {d} of {d}
+Exporting: messages {d} of {d}
+Export…
+External control (larpercord ctl)
+Eye height
+Eye patch
+Eye position
+Eye size
+Eye spacing
+Eyes
+Face
+failed
+Failed. Try again
+Fair connection to the voice server
+False
+Favorites
+Feedback
+FFmpeg installed. Videos now play in the app.
+FFmpeg not found: videos open in the browser.
+FFmpeg {d} found: videos play in the app.
+FFmpeg {d} loaded from the folder
+FFmpeg {d}, from the chosen folder: videos play in the app.
+FFmpeg {d}, from {s} (on PATH): videos play in the app.
+File
+file
+file larger than 10 MB (Discord's limit without Nitro)
+file larger than 64 KB
+File too big to save from here (over 500 MB)
+file too large for Discord (10 MB limit without Nitro)
+File upload in modals: use the official app.
+File without a manifest: it works with the old API (messages, commands, sending and notices). To use panels, menus and the rest, see docs/plugins.md.
+File: {s}
+Filter
+Filter by name or path
+Filter URL or method
+Filtered message — 
+FILTERS
+Filters
+Final results
+Find or start a conversation
+Fixed rules applied to the text as you send; the plugin doesn't see what you write
+Flagged by Discord as sensitive. Click to show.
+Flash taskbar
+Flat
+Floating
+Floppy
+Flower crown
+Focus
+Focus mode
+focus mode off
+Focus mode: 1 h
+Focus mode: 15 min
+Focus mode: 30 min
+focus mode: only DMs and mentions notify
+Focus mode: until I turn it off
+Focus · {d} min
+Focus: a centered column, bigger text and navigation that hides itself.
+Folder
+folder saved: applies the next time the app starts
+Folder: {s}
+Follow system
+Font
+Font atlas
+Font scaling
+Fonts
+Footer
+For 1 Hour
+For 15 Minutes
+For 24 Hours
+For 3 Days
+For 8 Hours
+For a while, only direct messages and mentions notify and mark unread.
+For direct messages and mentions, when you're not looking at the conversation.
+Forest
+Forget the folder
+FORMAT
+Forward
+Forward to which channel or DM?
+Forwarded
+Found on PATH (not run): {s}
+Frame (last)
+frame {d} · {d} elements · {d} layout pieces · built in {d} µs
+Frames by type
+Frames in the last second
+Freckles
+Free, not returned yet
+Fri
+friend request refused
+friend request sent to {s}
+Friends
+FRIENDS SINCE
+FROM
+From
+from
+From a message in {s}{s}
+from someone
+From the file
+Full fit
+Fullscreen
+Games
+Games and apps with Rich Presence show what you're doing, like the Discord desktop app. Off: nothing listens.
+Garden
+Gateway
+General
+Generate a New Link
+Georgian
+Getting your channels ready
+GIFs
+Glass cards over the wallpaper, with a sheen. On Linux your compositor blurs what's behind.
+Glasses
+Go to a channel, server, DM, theme, action or option…
+Go to server
+Go to tab N
+Good connection to the voice server
+GPU and memory
+Grape
+Graphite
+Graticule
+Greek
+Green
+Green phosphor
+Group
+group
+Group call
+group call…
+Group Members
+Group Members…
+Group name
+Hacker
+Half page down / up
+Halo
+Happy
+HAS
+has
+has a link, image, file…
+Hat
+Headers
+Heartbeat latency
+Heartbeats
+Hearts
+Hebrew
+here I look after larperCord's **themes** 🎨
+Here the proxy is used for everything, including signing in to Discord. You can change it later in Settings → Network.
+hi! I'm **{s}** 👋\ninto zig, ricing and coffee.
+Hide
+Hide for 1 Hour
+Hide help
+Hide Member List
+Hide servers
+Hide the password
+hides to the tray (without a tray, minimizes)
+Hides your email and username in settings.
+hint
+History
+Hit area
+Hm, didn't work. Double check that the username is correct.
+Hold {s} to talk
+Holiday hats
+hours of the day (0 to 23)
+Hours only
+Hover to see the name
+How letters fit the pixel grid. Natural keeps the font's design. The others make strokes harder, and text may get wider.
+How to update
+How to write a mascot
+HTTP, HTTPS, SOCKS5 or SOCKS5h proxy, with a login and password if it asks for one. Tor: SOCKS5h, 127.0.0.1, port 9050. Pasting the full URL into the address fills in every field.
+HTTPS only, only to the hosts below, and after you approve
+I didn't understand this filter: {s}. Dates look like 2026-11-06 or 06/11/2026.
+I've read and agree to the rules
+Icon
+Idle
+Idle CPU
+If the language also has your own command on above, yours wins.
+Ignore
+Ignored people
+Ignoring isn't blocking: it's saved to your account, like in the official app, and messages are collapsed.
+ignoring {s} on your account: their messages are collapsed
+image
+image copied
+image too large to edit here (up to {d} megapixels)
+image unavailable
+Images
+Images ({d})
+Images and GIFs from links posted in chat.
+Images in cache
+Images in memory
+Images, profile pictures and attachments only download when you click. Good on bad networks.
+in
+In 1 hour
+In 20 minutes
+In 3 hours
+In a call
+In a call the microphone is in use: leave the call to record audio.
+in a channel
+In a folder next to it: profile pictures and images the app already downloaded. Nothing is downloaded now; the rest stays as links.
+In call: {s}
+in Credential Manager
+In the demo, only with LARPER_CTL=1 (for testing).
+IN THE GROUP — {d}
+In the preview
+in the system keyring
+IN THREAD — {d}
+In use
+in use
+In use now: {s}. A change applies the next time larperCord opens.
+In use: {s} ({s}).
+In voice
+IN WHICH CHANNEL
+in {d} days
+in {d} hours
+in {d} minutes
+in {d} months
+in {d} seconds
+in {d} years
+in {s}
+In {s}, they can't send messages, react or speak in voice until it ends.
+In-app notices and desktop notifications
+Inbox
+Inbox  {s}
+Inbox (mentions and unreads)
+Include images and files already on this computer
+Incoming call
+Incoming call (ringtone)
+Incoming Friend Request
+INDEX
+Index
+Info
+INPUT DEVICE
+Input device and volume
+Input mode
+Input volume
+Inside
+Inspector (developer tools)
+Install bundled plugins
+Install copies the missing ones to the folder: translate, reminders, highlights, links and files, clean links, scam guard, CVE radar, GitHub cards and what did I miss. What you already have is left alone.
+Install your system's ffmpeg package (pacman -S ffmpeg, apt install ffmpeg or dnf install ffmpeg). If your system's is too old, choose the folder of a newer "shared" build below.
+Installed by a package manager: update through it.
+Installing FFmpeg…
+Installing version {s}; it opens next time.
+Instruction and memory limits per plugin: whoever goes over is stopped, and the error shows up here.
+Interaction
+Interface at normal size
+interface at {d:.0}%
+Interface font
+Interface scale
+Interface size
+Internet
+Invalid address: just the proxy's name or IP, or paste the full URL (scheme://host:port, with http, https, socks5 or socks5h).
+invalid color (use #RRGGBB, ink, body-top, body-bottom, tufts, accent, white, black or none)
+Invalid command: check the quotes. The text doesn't go through a shell.
+invalid hex — use #RRGGBB or #RRGGBBAA
+Invalid or expired invite
+invalid or expired token (4004). Update the token and restart.
+invalid path (commands M L H V Q C Z)
+invalid point list (pairs of numbers: "x y x y …")
+Invalid port: a number from 1 to 65535.
+invalid proxy
+invalid text
+invalid token
+invalid voice endpoint
+invalid voice UDP address
+Invisible
+Invite link
+Invite people
+Invite people to this server
+Invite people to {s}
+Invite People…
+Invites are disabled in this server.
+is calling you…
+ISSUE
+it didn't work
+it doesn't fit in the box
+It doesn't see your token or email, and can't open files, programs or connections on its own.
+It doesn't write to your account in the background: sending a message only works directly from its command, keybind, button or menu.
+It has grown for {d} of 30 days.
+It's archived: saving also unarchives it.
+It's quiet for now…
+Its default is now the shortcut for "{s}": change that one first.
+Its options show up on this card
+Its own side panel
+Javanese
+Join
+Join a server
+Join a server with an invite
+Join anyway
+Join call
+Join Thread
+join us: https://discord.gg/larper
+Joined
+joined the call
+Joining and leaving many servers in a row is what most often gets third-party client accounts locked.
+Joining or leaving many servers in a short time is the most common reason accounts on third-party clients like this one get locked by Discord. Only join servers you really want, one at a time.
+Joining the call: {s}
+Joining…
+Jump
+Jump to message
+Jump to present
+just now
+just you
+Just you here
+just you here
+KDL syntax error
+KDL themes that rearrange the whole interface, reloaded on save.
+Keep messages on disk
+Keybinds
+Khmer
+Kick
+Kick {s}?
+Kick…
+Kitty
+Kitty :3
+Label
+Language
+Lao
+LARPER_NO_FFMPEG is set: the app doesn't load FFmpeg.
+LARPERCORD
+larperCord closes right after.
+larpercord ctl may click and type on your account until you close the app
+larpercord ctl — controls the larperCord that is running\n\nusage: larpercord ctl COMMAND [ARGUMENTS]\n\n
+larperCord didn't answer
+larperCord didn't answer in time
+larperCord doesn't ship or download servers: it's your own program, and it only runs if you turn it on here.
+larperCord is closing
+larperCord isn't running
+larperCord isn't running (or Settings → Advanced → External control is off)
+larperCord keeps everything in {s} and {s}.
+larperCord refused the connection (is the port file from an older run?)
+larperCord — not connected
+larpercord-pasted-{d}-{d}.{s}
+Lashes
+Last 24 hours
+Last 7 days
+Last hour
+Last message
+Latency
+Laughing
+Lava
+Layer
+Layout
+Learns the background noise and sets the threshold by itself.
+Leave
+Leave Call
+Leave call
+Leave Group
+Leave Server
+Leave Tab Set
+Leave the tab set
+Leave the text box
+Leave Thread
+Leave “{s}”
+left tab set “{s}”
+Less memory costs a little network and CPU: what left is fetched again when it comes back on screen, and big GIFs skip frames.
+Less space between groups and smaller avatars.
+less than 1 min
+Let ctl click and type
+Level: {d:.0} dB
+Level: {d:.0} dB · learned threshold: {d:.0} dB
+Level: {d:.0} dB · threshold: {d:.0} dB (drag the handle)
+libavformat {d} loaded, but the version inside it doesn't match the file name.
+Light
+light
+Light mode
+Light/dark: follow system
+lightweight client · zig
+Lime
+limit of {d} reminders
+limit of {d} saved messages
+Line: 16.7 ms (60 per second). Light bar: the frame came out the same and wasn't drawn.
+Links are sent without the preview card
+list is full ({d} at most)
+Listening to
+Listening to 
+Little angel
+Little bars that dance to the sound while audio or a voice message plays, with the window focused. When off, only the progress bar moves, with far fewer frames per second.
+Little devil
+Little dots and a soft glow behind the cards.
+Little fang
+Little plant
+LIVE
+Live numbers from this process.
+Lively
+Load more
+Load picture
+loading
+LOADING MEMBERS…
+Loading mentions…
+Loading servers and direct messages
+Loading sticker packs…
+loading the profile…
+loading the questions…
+loading the rules…
+Loading…
+loading…
+Lock Thread
+Locked
+Log Out
+Logging out disconnects and deletes this account's token from this computer (other saved accounts stay).
+Login (optional)
+Look
+Looked for {s}.
+Looking on this computer…
+low
+Lowers the sound while the mic only picks up background noise.
+Lua scripts that add features to the app, no rebuild needed. In the browser demo they run alongside the page: a stuck plugin holds up the screen until the instruction limit stops it.
+Lua scripts that add features to the app, no rebuild needed. They run on a thread of their own: a slow or stuck plugin can't hold up the interface.
+Mac-style desktop: wallpaper, floating window with traffic lights, translucent sidebar and a magnifying Dock.
+Make a selection
+Make the interface bigger or smaller
+Makes everything bigger, not just the text. Applies when you let go of the mouse.
+Mark all as read
+Mark As Read
+Mark as read
+mark as read
+Mark as spoiler
+Mark channel as read
+Mark everything as read
+Mark server as read
+Mark Unread
+Markdown preview
+Mascot
+Mascot files
+mascot reloaded: {s}
+Masthead
+math symbols
+Matrix
+MAX USES
+me
+Media
+Media: the content isn't recorded (see the size and type in the headers).
+Member list
+MEMBER SINCE
+MEMBERS — {d}
+Memory limits
+Mention
+MENTIONING
+Mentions
+mentions
+mentions someone
+Mentions: {d} · unread DMs: {d} · unread channels: {d}
+Menus
+meow!
+Message
+Message @{s}
+Message box
+message deleted
+Message display
+message forwarded
+Message from someone you ignored — 
+Message log
+Message notifications get Mark as read and Reply buttons, which work with the window in the tray. Where the notification has a text box (KDE Plasma, Windows), the reply goes out from there; elsewhere, Reply opens the conversation ready to reply.
+message pinned
+Message Requests
+message saved ✓ ({s} shows them)
+message too long to edit here
+message unpinned
+Message {s}{s}
+Messages ({d})
+messages from someone
+Messages in memory
+Messages loaded
+Messages per channel
+Messages per channel (cap)
+Messages with these words are collapsed (click to show) and never notify.
+Messenger: chat bubbles, "Delivered ✓✓" and a typing bubble.
+met at the game jam
+Metal
+Method
+MICROPHONE
+Microphone
+Microphone didn't open: click to check
+middle button
+Middle click
+Midnight
+Minimize
+Mint
+minutes of the hour (0 to 59)
+Missed you!
+Missing access to this server.
+missing or invalid number
+Missing permissions: their role may be above yours.
+Mode
+Mon
+Monocle
+More
+more
+More tweaks
+Motion
+mouse button {d}
+mouse wheel: zoom
+Mouth
+Mouth height
+Mouth position
+Mouth size
+Move to {s}
+Move To…
+Moving background
+Moving wallpaper
+Must be a number.
+Must be a whole number.
+Mustache
+Mute
+Mute  ({s})
+Mute / unmute microphone
+Mute Channel
+Mute Conversation
+Mute for Me
+Mute or unmute
+Mute Server
+Muted
+muted
+Muted channels (right-click → Mute) never notify.
+mutes or unmutes (like Ctrl+Shift+M)
+mutes the microphone
+My Account
+My mascot
+Name
+Name (e.g. work, games)
+Native Discord client: Zig + SDL3 + Dear ImGui + FreeType.
+Natural
+Nerd
+Network
+Never
+New larperCord version: {s}
+New line
+New message (DM or mention)
+New message sound
+NEW MESSAGES
+New Post
+New post in {s}
+Newest
+Next  ›
+Next / previous channel
+NEXT MESSAGE
+Next tab
+Next tab  ({s})
+Next tab set
+Next theme
+Next week
+no
+No active threads.
+No activity right now.
+No answer from Discord
+No archived posts.
+No archived private threads.
+No archived threads.
+No body (the request is just the URL).
+no captured frame to answer with
+no channel from “{s}” is available
+No component cost more than 1 µs.
+No connection to Discord
+No connection to Discord.
+no connection to the Discord API
+No connection. Trying again…
+no connection: not saved
+no connection: nothing changed
+no connection: the message wasn't forwarded
+no connection: the vote didn't go through
+no connection: you didn't leave the server
+No conversation open.
+No ears
+no FFmpeg, opened in the browser. To play here: Settings → Chat → Videos
+no file
+No files yet. "Save as file" makes the first one.
+No font in this app yet, so these show as ?: {s}.
+No fonts found on the system.
+No frames yet.
+No friend with that name.
+No friends yet.
+No Japanese, Korean or Chinese font was found in C:\\Windows\\Fonts, so those texts show as ???. The app looks for Yu Gothic, Meiryo or MS Gothic (Japanese), Malgun Gothic or Gulim (Korean) and Microsoft YaHei, SimSun or SimHei (Chinese). Add that language's supplemental fonts in Windows' Optional features.
+No Japanese, Korean or Chinese font was found on this system, so those texts show as ???. Install one, such as Noto Sans CJK (package noto-fonts-cjk or fonts-noto-cjk).
+No link previews
+No longer bundled with the app: {s}. They keep working; archiving only moves them out of the folder, nothing is deleted.
+no longer ignoring {s}
+No message requests.
+No messages · created {s}
+No mutual friends.
+No mutual servers.
+No name
+No one's around right now.
+No permission to search here
+No permission to write to the app's folder. Update with the install script.
+no pings
+No plugins found. Put .lua files in the folder above and click Reload.
+No posts yet.
+no preview: click the channel to open it
+no previews
+No programs running besides the system's.
+No proxy: direct connection.
+No published version yet.
+No recent mentions.
+No reminders.
+No requests yet. They show up here while the Inspector is open.
+No results
+No running process matches that.
+No saved messages yet.
+No sound from the microphone.
+No stickers here.
+no tab sets saved
+No timings (the request didn't finish or failed before connecting).
+No transparency: solid cards (lighter). The best look on Windows, which has no blur.
+No unread DMs or mentions.
+No. 08
+Nobody gets a notification (like @silent)
+Nobody here.
+Nobody ignored.
+Nobody is banned from this server.
+Noise gate
+Noise suppression
+None
+None of this conversation's messages are on this computer yet.
+None of your servers have emoji.
+None yet.
+None: click to choose
+Normal
+Not a field, shown as text: {s}
+not a text channel
+not a UTF-8 text file
+Not approved: nothing goes out while this is off
+Not checked yet in this session.
+not connected
+not connected to Discord yet
+not enough memory to edit this image
+Not found on Discord.
+Not found: using the default until it comes back.
+not in a call
+not loaded yet: click to open the server
+Not on screen in this frame.
+not running
+not saved
+Not sent
+NOTE (ONLY VISIBLE TO YOU)
+Note (optional)
+Notebook lines behind the conversation.
+Notebook: ruled paper with a red margin, serif headings and an index.
+Nothing
+nothing changed
+Nothing found
+Nothing found.
+Nothing here yet. Type help below to see the commands.
+Nothing in spam.
+Nothing in this frame matches.
+Nothing matches the filter.
+Nothing on this computer
+Nothing pinned in this channel.
+Nothing to undo
+Nothing yet: use the app (open a channel, send a message) and the events show up here.
+Notifications
+Notifications…
+notify everyone in this channel
+notify everyone online
+NOW
+Now and then it rolls a d20 when you send a message. Drag an emoji from the picker or a reaction onto it and it eats it; a link dropped on it goes into a portal and an image becomes a framed picture. Every so often it hides behind a panel: click the tips of its ears to find it. And it reacts to Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V and Esc, without changing what the keys do.
+Now: {s}
+number
+Ocean
+Off
+off
+off now
+Off. You can also turn it on by clicking your name, bottom left.
+Off: stays on the list without showing up
+Offline
+Old API
+Oldest
+on
+on a day
+on now
+on this computer
+On until you turn it off. What arrives in channels shows as unread at the end.
+on Wayland, staying above other windows is up to the compositor
+On: shows up while it's running
+On: starts when you type a block in this language.
+On: {d} min left. What arrives in channels shows as unread at the end.
+One color per part, in hex (#RRGGBB). Changing a color leaves the palette.
+One item can only be answered in the official app.
+one line per change (status, unread, call)
+Online
+ONLINE — {d}
+Online, idle and do-not-disturb as a ring around the picture.
+Only @mentions
+Only Discord can apply this filter
+Only from its command, keybind, button or menu; never on its own
+Only games on this list show up; nothing else you have open leaves your computer. With several running, the first on the list wins.
+only GIFs and media from outside Discord
+Only members who can manage threads can change this tag
+only not pinned
+Only on this computer: none of this goes to Discord.
+only pinned
+Only runs if you turn it on under Code diagnostics
+Only the block you're typing goes to it, never other people's messages.
+Only the executable at this path counts, not another with the same name
+Only the messages that were on this computer: nothing was requested from Discord to export.
+Only the name changes: the tabs stay the same.
+Only this file
+Only turn on if you trust the program below. If the plugin changes the command, it goes back to off.
+Only while the window is unfocused or hidden in the tray.
+Only works while the larperCord window is focused: outside it the app can't see the key.
+Only you can see this ·
+Opaque background
+Open
+Open a server or a conversation to search Discord.
+Open at least one channel before saving.
+Open at the first unread
+Open channel in a new tab
+Open channels as a table of contents above the conversation.
+Open channels as tabs above the conversation.
+Open conversation
+Open conversation in floating window
+Open discord.com/app in your browser and log in.
+Open folder
+Open grin
+Open in Browser
+Open in browser
+Open in Floating Window
+Open in New Tab
+Open larperCord
+Open Network
+Open panel
+open the Elements tab to capture frames
+Open the Inspector ({s})
+Open the log folder
+Open the theme file
+Open the translations folder
+Open this channel
+Open Thread
+Open to the Side
+Open video in browser
+opened from cache, waiting for READY
+OpenGL
+OpenGL ES 2
+Opening
+opening the conversation… send it again once it opens
+Opening the gateway connection
+Opening the microphone…
+opens a Discord link or a channel ID
+Opens addresses in the browser when you click something of its own
+Opens links
+Optional
+Options
+or
+Or paste the token of another account.
+Orbit system
+Origin
+Original message could not be loaded
+Others see "typing…" while you write.
+out of memory opening the sound
+Out of memory.
+Outgoing Friend Request
+Output
+OUTPUT DEVICE
+Output device and volume
+Output volume
+Ovals
+Overdue reminder
+owner
+Page {d} of {d}
+Palette, actions first
+Panel
+Panel: {s}
+Parent
+Party hat
+Password (optional)
+Password without a login: fill in the login too.
+Paste
+Paste a copied image
+Paste the token in the field above.
+Paste your Discord account token to get started.
+Paste your token here
+Pause
+Payload
+Pending
+pending
+PENDING — {d}
+People
+People ({d})
+PEOPLE AND ROLES
+People who can manage messages pin from the message menu.
+Performance
+Pick a date and time
+Pick an element in the tree or on screen (Ctrl+Shift+E).
+Pick as many as you like
+Pick at least one tag.
+Pick from the @, #, :ab or / list
+Pick from the fonts installed on your device; "Theme" keeps what each theme asks for.
+Pick more options.
+Pick one
+Pick up to 2 colors
+Picture, banner and password are changed in the official app or website.
+Piece
+Pin Message
+PINNED
+pinned
+Pinned messages
+pinned or not
+Pirate
+Pixel
+Pixelate
+Pixels
+Play audio
+Play or pause the audio under the mouse
+Play video
+Play voice message
+Playing
+Playing 
+playing here needs FFmpeg
+Plays back what you say, with the filters. Use headphones to avoid feedback.
+Plays with the interface
+Plays with the mouse
+Plugin panels
+PLUGIN SUGGESTIONS
+plugin {s}: {s}
+Plugins
+Plugins can also propose a server, with larper.lsp. Guide: docs/lsp.md
+Pointy
+Poll
+Poll closed
+Pong! 🏓 Only you can see this reply.
+Port
+Portal
+Possible spam
+Post
+Pout
+Press a key or a mouse button… (Esc cancels)
+Press Enter to search Discord.
+Press Enter to search the whole history on Discord.
+Press F12 and go to the Network tab.
+Press the keys… (Esc cancels)
+presses or releases (for shortcuts without a key release)
+presses push to talk (until ptt-up)
+PREVIEW
+Preview
+Previews are hosted by Tenor, which sees your IP.
+Previous tab
+Previous tab  ({s})
+Previous theme
+Print magazine: serif masthead, conversation column in the middle and an index on the right.
+Privacy
+Private
+Process CPU
+Profile
+profile saved
+Pronouns
+Propeller
+Proposed by plugins
+Proposes a program
+Proxy
+Proxy on · change
+proxy saved
+Purple
+Push to talk
+Push to talk: choose a shortcut
+Puts text in the message box when you ask; never sends it
+QA mark
+Quit
+Radar backdrop
+Raises a quiet voice and lowers a loud one, close to everyone else's level.
+RAM (private)
+Random look
+Rate limit
+Rating
+Raw
+react
+Reactions {d}
+Reacts to what you type
+Read and answer each item. Nothing is filled in for you.
+Read the rules
+Read up to
+Reading
+Reads messages
+Reads messages, sends when you ask, shows notices and proposes programs
+Reads your messages and opens addresses when you click. Only turn it on if you trust who made it.
+Reads your messages and talks to the internet. Only turn it on if you trust who made it.
+Ready-made looks
+Real transparency
+Reason
+REASON (OPTIONAL)
+REASON FOR UNBANNING (OPTIONAL)
+Received / sent
+RECENT
+RECENT SEARCHES
+Reconnecting to Discord…
+Record audio  ({s})
+Record audio (again: send)
+Record audio button
+recording discarded: you joined a call
+recording discarded: you left the conversation
+Recording is off.
+recording too short: nothing was sent
+Records only while the Inspector is open (click to always record)
+Rect
+Red margin
+Reduce motion
+Reduces steady noise: fans, hiss, air conditioning. Delays your mic by 20 ms.
+Refresh
+releases push to talk
+Relevant
+Reload
+Reload themes on save
+Remember on this computer
+Remind me
+Remind Me…
+Reminder
+reminder deleted
+reminder done ✓
+reminder set for {s} ✓
+Reminders
+Remove
+Remove Account
+Remove approval
+Remove from Favorites
+Remove from Saved
+Remove location and camera details from photos and videos
+Remove noise
+Remove proxy
+Remove role
+Remove rumble (high-pass)
+Remove spoiler
+Remove this filter
+Remove Timeout
+Remove timeout (ends {s})
+Remove Timeout…
+Remove vote
+Remove {s}'s timeout?
+removed from saved
+Removes hiss and background noise from this person's sound, only here. Uses a little CPU while they talk.
+Removes the wallpaper: yours shows behind the window, blurred by your compositor on Linux.
+Removing…
+Rename
+Rename tab set
+Rename Tab Set…
+Rename the tab set…
+Renderer
+Replay the opening
+Reply
+Reply from the notification
+Reply not sent
+Reply to {s}…
+Replying to a message
+Replying to {s}
+Request headers
+Request Sent
+Requested by
+Requests {d}
+Required.
+requires Nitro
+Resend
+Reset
+Reset panel sizes
+Reset theme
+Reset to default
+Response
+Response headers
+Restart
+Restart larperCord
+Restart now
+restarting
+Result: {d} × {d}
+RESULTS
+Results so far
+Retro
+Reused connection: no DNS, connect or TLS this time.
+Reveal
+Reveals ||hidden|| text without clicking.
+Rich Presence: couldn't open discord-ipc (is the official Discord using all of them?)
+right button
+Right eye
+Right-click a message → Remind Me…
+Right-click a message → Save Message.
+Right-click someone → Ignore. People ignored before stay on this computer only.
+Right-click: who reacted
+ringing…
+Robot
+role
+Role colors
+ROLES
+Roll call
+Round
+Roundness
+Royalty
+Ruled paper
+Runic
+Running {s}. Stops after 1 minute without typing.
+Runs after a delay, only while it's on
+Sad
+Sand garden
+Santa hat
+Sat
+Save
+Save as file
+Save debug log
+Save Message
+Save note
+Save profile
+Save proxy
+Save tabs as a set
+Save tabs as a set…
+Save Tabs as Set…
+Save to Downloads
+Saved
+Saved messages
+Saved messages  {s}
+Saved to Downloads: {s}
+saved to mascots/{s}.kdl
+saved ✓
+Saved: {s}
+Saved: {s} (the preview; for the original GIF, turn on Settings → Privacy → Animate Tenor and Giphy GIFs)
+Save…
+Saving a .kdl in themes/ or %APPDATA%\\larpercord\\themes applies it right away. A new folder only counts after restarting the app.
+Saving a .kdl in themes/ or ~/.config/larpercord/themes applies it right away. A new folder only counts after restarting the app.
+Saving {s}…
+Saving…
+Scanlines
+Scanlines and dark corners, like an old monitor.
+Scanlines and vignette, like a CRT.
+Scarf
+Scripts and system shortcuts control the running app with larpercord ctl: mute, push to talk, show the window, open a channel, count unread messages. Only your user on this computer can use it.
+Scroll down / up
+SDL GPU
+Search
+Search  {s}
+Search (palette)
+Search bar
+Search by text, component, color or mark
+Search Direct Messages
+Search Discord
+Search emoji
+Search friends to add
+Search GIFs
+Search JSON
+Search messages
+Search messages ({s})
+Search messages…
+Search more posts
+Search on this computer: {d} messages, {s} on disk, {s} in memory.
+Search PATH again
+Search stickers
+Search this list…
+Search {s}
+Searching Discord…
+seconds of the minute (0 to 59)
+SECTIONS
+See releases on GitHub
+See who voted
+See why
+Sees incoming and loaded messages, in any channel
+Segoe UI, Consolas, Segoe UI Emoji (Windows fonts)
+Select an element on screen ({s})
+Select an element to inspect
+Select one answer
+Select one or more answers
+Send
+Send  (Enter)
+Send as an .ogg file  (Enter)
+Send Friend Request
+Send options
+Send typing indicator
+Sending continues for a moment after you release, so the last word isn't cut.
+Sending too fast: Discord asks for {s} before the next one.
+Sending…
+Sends when you ask
+Sensitive content
+SENSITIVITY
+sent something that isn't LSP
+Server
+server
+Server banner
+Server Color
+Server Deafen
+Server deafened
+server deafened
+Server deafened: no sound and no mic
+SERVER INVITE
+Server list
+Server Mute
+Server muted
+server muted
+Server muted: nobody can hear you
+Server name
+Server names
+Server Onboarding…
+Server rules
+Server Rules…
+Server Undeafen
+Server Unmute
+SERVERS
+Servers
+Servers ({d}) and channels ({d})
+Servers / channels / people
+Servers in the Dock, with magnification. Off, they move to the sidebar.
+servers, channels and DMs with unread counts, as JSON (for a launcher)
+Session
+Session rejected (401)
+Set Custom Status…
+Set reminder
+Settings
+settings
+Settings: {s}
+Share my activity (Rich Presence)
+she/her, he/him…
+Ship console: graphite, mint, system numbering and servers in the bottom strip.
+Short cues when you join, leave, mute, deafen and when someone joins or leaves. The ringtone follows its own choice below.
+SHORTCUT
+show
+Show avatars
+Show images from links
+Show Member List
+Show more
+Show results
+Show the game you're running
+Show the password
+Show threads
+Showing what's on this computer.
+Shows "Delivered ✓✓" under your last message.
+Shows errors while you type a ```zig block in the message box, using an LSP server.
+Shows how long each voice channel's call has been going, next to the channel name, like Discord.
+Shows message IDs and adds "Copy ID" to menus.
+Shows names in their server role color.
+Shows open channels as tabs above the conversation.
+Shows open channels as tabs at the bottom.
+Shows open channels as tabs inside the chat card.
+shows or hides, like clicking the tray icon
+Shows profile pictures next to messages.
+Shows the name next to the icon in the top bar.
+Shows the profile picture next to the name.
+Shows the search/help bar below the wordmark (Ctrl+K still works).
+shows the window (also from the tray)
+Shows up in the audit log
+Shows who's in the server (when the theme has one).
+Shuffle
+Sign in
+Sign in as {s}
+silent
+Silent message
+Since the app opened. Each one also goes in the log when it's on.
+Sits on the "is typing…" line, takes deleted messages to the trash, erases edited ones, pushes the jump-to-present button, holds on when the window is resized and carries a letter to the DM icon.
+Sits on top of the message box and reacts to what you do. You can grab and throw it, pet it, poke it, and right-click it for more.
+Size
+Size (points)
+Skip back or forward 5 s in the audio under the mouse
+Sleep
+Sleepy
+Slowmode: wait {s} to send
+Slowmode: you can send again in {s}.
+Slowmode: {s}
+Slowmode: {s} · you're exempt
+Smile
+Smiling
+Smirk
+Snooze 10 min
+snoozed until {s}
+Snow
+So the app uses the FFmpeg it found elsewhere.
+Soft
+Software (slow, no graphics card)
+someone
+Someone joined your call
+Someone left your call
+someone's volume in the call, in percent (like the mixer)
+Sort by activity or creation
+sound changed: {s}
+Sounds
+Space
+Space helmet
+Spam {d}
+Sparkly
+speaking
+Speed
+Spoiler
+spoiler
+Sprout
+Square
+Starfield
+Stars
+Stars and moons drift very slowly, at 10 frames per second. Turns itself off with "Reduce motion" and when the window is in the background.
+Start call
+Started
+Starting {s}…
+Startled
+starts when you log in
+State
+Status
+Status bar
+Status ring
+Status: Do Not Disturb
+Status: Idle
+Status: Invisible
+Status: Online
+Sticker
+sticker
+Stickers
+Still connecting: your message stays in the box and you can send it once connected.
+Still phosphor contour lines behind the panels.
+Still stars behind the panels (generated once, costs nothing).
+Stop test
+Stop using the file
+stopped by an error
+stopped reading its input
+Stopped: {s}
+Stopping {s}…
+Stores data
+Strawberry
+Streamer Mode
+Streaming
+Streaming 
+Structured data (IDs, times, attachments, replies), for programs.
+Submit
+Subtle scanlines over everything.
+Subtle scanlines over the glass.
+Subtle texture
+Success! Your friend request to {s} was sent.
+Suggests as you type
+Sun
+Sunglasses
+Sunset
+Super Reactions {d}
+Suppress @everyone and @here
+Suppress All Role @mentions
+Swaps acid green for neon purple (deep web).
+Swaps amber for the green of classic terminals (dark mode).
+Switch channels and click a request to /api.
+Switch Mascot
+Switch to this account
+System
+System default
+Tab set in use: click to switch or leave
+tab set renamed to “{s}”
+tab set “{s}” deleted
+tab set “{s}” is already in use
+tab set “{s}” saved
+Tab set: {s}
+tab set: {s}
+Tabs
+Tags ({d}/{d})
+talking
+Tell us what you think of larperCord.
+Temporary: they leave on disconnect unless given a role
+Terminal
+Test microphone
+Text
+Text box
+Text inside
+Text is required.
+Text size
+text too long (name 32, pronouns 40, about me 190)
+Text weight
+Text with Discord's formatting, good for notes.
+Texture
+Thai
+That ban no longer exists.
+that channel isn't available on this account
+that channel isn't on this account
+that channel isn't on this account: opening in the browser
+That combination already belongs to something else in the app (copy, paste, new line, interface size…).
+That conversation isn't available on this account.
+That doesn't look like a Discord token.
+That folder
+that folder's path is too long
+That member is no longer in the server.
+that mention someone
+that message is already saved
+that message isn't loaded anymore
+that message no longer exists
+that one is already on the list
+That time has already passed.
+That user isn't accepting friend requests.
+that user isn't known yet
+That user no longer exists.
+That's already the shortcut for "{s}".
+That's your own username.
+That's {d} sets already: delete one to save another.
+The "Index" title at the top of the right margin.
+The app name drawn above the channel list.
+The app name drawn in characters above the channels.
+The application did not respond
+the audio output didn't open: you won't hear the call
+The author will be pinged
+The author won't be pinged
+The big header with the magazine name and servers.
+the call didn't answer on UDP (firewall/NAT?)
+the call dropped
+the call dropped (code {d}).
+the call dropped and didn't come back
+The channel filter only works inside a server.
+The chosen folder
+The chosen renderer didn't open on this computer, so the automatic one is in use.
+The connection dropped before Discord answered.
+the connection keeps dropping right after connecting; retrying more slowly
+The connection to Discord took too long and didn't complete.
+The connection to Discord was refused.
+The conversation in bubbles, like a messaging app.
+The custom look is for the Terminal mascot. Pick the Terminal above to see and use it.
+The demo has no real gateway: frames show up with an account connected.
+The double margin line, like a school notebook.
+The downloaded file doesn't match what was expected, so nothing was installed.
+the edited image is over 10 MB; crop a smaller part
+The familiar layout, in your wallpaper's colors, with a server banner.
+The ffmpeg in {s} is a static build: a single program without the libraries (libavcodec and the others) the app loads.
+The ffmpeg.exe in {s} is a static build: a single program without the libraries (DLLs) the app loads. winget, choco and gyan.dev's "essentials" and "full" builds install it this way. Use Download FFmpeg below, or choose the folder of a "shared" build, which comes with avcodec and the other DLLs.
+The file didn't open: playing the classic one
+the file has no sound
+the file is damaged or incomplete
+the file is over 2 MB
+The fine oscilloscope grid behind the text.
+the floating window isn't available in the browser
+The folder change applies the next time the app starts: the FFmpeg already loaded stays until then.
+the folder has FFmpeg, but it didn't load: the reason is under Videos
+The group already has {d} people, the limit.
+The hills drift very slowly, at 10 frames per second. Turns itself off with "Reduce motion" and when the window is in the background.
+the house favorite
+The icon stays in the system tray while the app runs: clicking it shows or hides the window, its menu has Open and Quit, and closing the window keeps the app connected there. When off, there's no icon and closing quits the app.
+the image is over 10 MB
+the Inspector: find and click elements, the tree, the network, the log… (inspect help)
+the interaction failed
+The LARPER_RENDERER variable is set and wins over this choice.
+The left strip disappears until the mouse gets close.
+the microphone didn't open (see Settings → Voice)
+The microphone didn't open. Check the device above and the system permission.
+the microphone didn't open: nobody can hear you
+the microphone isn't sending any sound (see Settings → Voice)
+The microphone next to the options records with the microphone from the Voice page, with its noise suppression, and sends it as a regular .ogg file. {s} starts and sends too.
+The most recent ones, from every server.
+The new message sound is turned on and off in Notifications, apart from the call sounds.
+The open tab goes into the set. While it's in use, whatever you open or close is saved in it.
+The orbit diagram in the background.
+the pinned rule is this one: https://discord.com/channels/{d}/{d}/{d}
+The previous link stays valid.
+The proxy (HTTP, HTTPS, SOCKS5 or Tor) is on the Network page.
+The proxy address is missing.
+The proxy didn't answer or refused the connection. Check the address, port and login.
+The saved login and password didn't fit in the fields and are hidden. To change the proxy, type both again.
+The saved proxy is invalid and is being ignored.
+The saved renderer, "{s}", doesn't exist on this computer: the automatic one is in use.
+The search retries on its own in a moment.
+The secure (TLS) connection to Discord failed: something along the way is interfering.
+the server deafened you in this call
+the server muted you in this call
+The server rejected the join request.
+The server shows up here before you join.
+the server unmuted you
+The servers at the top of the sidebar.
+the settings came in a format the app doesn't understand: nothing was changed
+the settings came in a format the app doesn't understand: the status only applies to this session
+the settings changed on another device: try again
+the sound is longer than {d} s
+the sticker wasn't sent
+The three dots show up as a bubble in the chat.
+The three holes at the edge of the page.
+The update didn't work.
+The update's signature doesn't match: nothing was installed.
+the voice mode isn't push to talk (Settings → Voice)
+the voice session is no longer valid; join the call again.
+The window asks for attention until you come back.
+the zig folks too: https://discord.gg/zigbr
+The {d} open tabs go into the set. While it's in use, whatever you open or close is saved in it.
+Theme
+Theme color
+Theme colors — {s} ({s})
+theme error
+theme reloaded: {s}
+theme: {s}
+There are no pending friend requests.
+There's already a set with that name.
+They can talk in {s} again right away.
+They'll leave {s} and can't come back, even with an invite, until the ban is revoked.
+They'll leave {s} but can come back with an invite.
+This account is already in the maximum number of servers.
+this computer
+This deletes from this computer your settings, your themes, mascots, sounds and plugins, drafts and saved messages, the conversation cache, the downloaded FFmpeg, the debug logs and the saved accounts, along with the tokens kept in the keyring. It can't be undone. Your Discord account doesn't change, and the program stays installed.
+This downloads {d} MB from {s}, a third-party project unrelated to larperCord. The app checks the file's SHA-256 and keeps only what it needs, about {d} MB on disk. Once installed, FFmpeg runs inside the app whenever a video plays.
+this emoji is unavailable in its server
+this emoji requires Nitro: it's animated or from another server
+this emoji {s}
+This interaction failed
+This invite no longer exists or has expired.
+this is **really** good 😍
+This is taking longer than usual. Check your connection.
+This is the beginning of your conversation with {s}.
+This is the start of #{s}.
+This is the start of the thread {s}
+This item can only be answered in the official Discord app.
+This key only works while the larperCord window is focused. To use it while another window is focused, pick another one, like a letter, F13 to F24 or a side mouse button.
+this list
+This search got too long.
+This server didn't show onboarding questions to this account.
+This server has no onboarding questions right now.
+This server has no rules to answer right now.
+This system's notification server doesn't show buttons.
+This thread is locked.
+Thread name
+Thread options
+Threads in {s}{s}
+Throw the recording away  (Esc)
+Thu
+Tiara
+Tibetan
+Time
+Time of each frame (the last 300)
+Time Out
+Time out {s}
+Timed out · {s}
+Timeout…
+Timers
+Timing
+Tiny
+Tiny o
+Title
+TLS
+tmux + IRC: monospace, channel tree, CRT effect and ASCII logo.
+To
+To include older messages, scroll up in the conversation before exporting. Nothing is requested from Discord to export.
+To report a problem: turn it on, make the problem happen and send the file. Stays on until you turn it off or close the app.
+To talk here, complete the server's rules.
+Today
+today
+Today at {s}
+Token
+token saved to Credential Manager
+token saved to the system keyring
+token saved to {s}
+tomorrow
+Tomorrow at 9:00
+tomorrow {s}
+Tongue out
+too large to play here
+Too large.
+Too long.
+Too long: the proxy URL goes over 255 characters.
+Too many actions in a row: try again shortly.
+too many connections at once
+Too many options.
+too many points (at most 4096 in the file and 256 per shape)
+too many requests right now: try again later
+Too many requests right now: try again later.
+too many shapes (at most 256)
+Too short.
+Too small.
+Toothy grin
+Top / bottom of the conversation
+Top bar
+Top hat
+Top telemetry
+Topographic map
+Total
+total hours
+Total minutes
+total minutes
+Total seconds
+total seconds
+Translation editor
+translation reloaded: {s}
+Translations
+Transmitting
+Tree
+Trending
+True
+Try again
+Try again: {s}
+Try other words or fewer filters.
+Tue
+Tufts
+Tunnel map
+Turn off
+Turn Off Data Saver
+Turn off: {s}
+Turn on
+Turn On Data Saver
+Turn on previews
+Turn on: {s}
+Turns off hover, scrolling and transition animations.
+TV
+Two-color eyes
+Type
+type a word or phrase
+type the {s} command before turning it on
+Type to see suggestions
+Typing and bangs may get through, other voices stay and yours may get a bit muffled.
+Typing bubble
+Ultraviolet
+Unarchive Thread
+unavailable
+unavailable in this server
+Unavailable: no system panel shows icons right now (StatusNotifier), so closing the window quits the app. While on, the icon appears once there is one.
+Unban
+Unbanning…
+Unblock
+Unchanged frames, not drawn
+Undeafen
+Undeafen  ({s})
+undeafens
+Under Headers, copy the Authorization value.
+Underground terminal: fossil black, acid phosphor, ultraviolet and scanlines.
+Underline links
+Undo
+Uneven eyes
+Unignore
+unknown
+unknown channel
+unknown command (see larpercord ctl help)
+unknown component: {s} (line {d})
+unknown expression
+unknown layer (front or back)
+unknown node
+unknown part
+unknown-role
+unknown-user
+Unlock Thread
+Unmute
+Unmute  ({s})
+Unmute Channel
+Unmute Conversation
+Unmute Server
+unmutes the microphone
+unofficial client · against Discord's Terms of Service, use at your own risk
+Unofficial client: using user accounts outside the official app is against Discord's terms.
+Unpin
+Unpin Message
+unread counts, as JSON
+unread DMs and mentions, with the start of each message, as JSON
+Unreads
+unsupported voice encryption mode ({s})
+Until I Change It
+Until I turn it off
+Until then you can read, but not write, react or join calls.
+until {1d:0>2}/{0d:0>2} {2s}
+until {s}
+Up to 1 MB on this computer, per account
+Up to 100 characters.
+up to {d} in memory
+UPCOMING
+Update automatically
+Update available: {s}
+Update now
+Update to v{s}
+Updates
+URL
+Use
+Use a proxy
+Use a secondary account: Discord can
+Use another token
+use PNG, JPG, GIF or WEBP
+Use the proxy for everything
+Use the Terminal
+Use this color
+use WAV (PCM) or Ogg Opus
+Use {s} and turn on
+USER SETTINGS
+User Settings  ({s})
+User Volume
+USERNAME
+Username, like ana.exe
+Usernames have at most {d} characters.
+Using the file {s}
+uwu
+Values with ~ are estimates. Images may live in video memory rather than RAM.
+Vampire
+Verbose
+Verification requests
+Verified bot
+Version
+Version {s}
+Version {s} is available. Open the app to update.
+Version {s} · voice with E2EE (DAVE), per-person mixer and Opus 48 kHz.
+Vertices / indices
+Very discreet raked lines and an enso behind the conversation, still.
+Video
+video
+video too large to play here
+Videos
+View Banner
+View banner
+View call
+View Full Profile
+View Icon
+View Picture
+View picture
+View Profile
+View Reactions
+View Threads
+Viking
+Vim navigation
+Vim-style navigation
+Visor
+Visual
+Voice
+Voice activity
+Voice channels
+Voice Connected
+Voice message
+Voice Settings
+Voice settings · right-click: devices
+Voice: received / sent
+Vote
+votes unknown
+Voting…
+Vulkan
+wait for the previous file to finish saving
+Wait {d} s to join another one: many joins in a row can count against the account.
+Wait {s} to send
+Wait: {s}
+Waited on the rate limit
+Waiting for the response
+Waiting for the response…
+Waits for you to come back
+Wanders around the window
+Wants to message you
+Warn before joining a server
+warning
+Warnings
+watch takes --waybar or --format json|waybar|text
+Watching
+Watching 
+Wavy
+Wed
+Welcome to {s}
+Went to the screen
+What a plugin never does
+What came from the network
+What people call you
+What the app asked the network
+What the interface asked the app
+What the server is about
+What you pick changes the channels and roles you get here.
+What's new
+What's on your mind?
+When a friend starts an activity, it'll show up here.
+When a game from the list is running, your status shows "Playing …" with the time played, like the Discord desktop app. Works for games without Rich Presence. Off: nothing looks at your processes.
+When a new version is found, it downloads and installs in the background; it opens the next time the app starts. Only versions with the right signature go in.
+when inside when
+When off, links are only underlined on hover.
+When someone mentions you, it shows up here.
+When you leave it alone, it does things on its own now and then: drinks coffee, reads, fishes an emoji out of the chat, chases a fly, stacks blocks. Only while the window is focused and only for a few seconds; after a few idle minutes it falls asleep and stops using anything.
+Where do I find my token?
+Where the memory goes
+While the window is focused, like Discord. When off, a GIF plays while you hover it.
+Whistle
+whole number
+Why remember?
+Window
+Window and theme
+Windows didn't accept notifications with buttons: they go out as before, without buttons.
+Wink
+Witch hat
+With "Reduce motion" on (Accessibility), it doesn't react to what you type or play games.
+With **bold**, `code`, ||spoilers||…, shows above the box how it will look.
+With a hat picked, the corner mascot doesn't switch to the holiday one.
+with a link, image, file, video…
+With FFmpeg, videos play in the app. Without it, they open in the browser.
+With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move).
+With the text box unfocused (Esc leaves it), the keys below navigate.
+With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you).
+With {s} from the translations folder on top
+Without a notification server on D-Bus, they go out through notify-send, without buttons.
+Without any field, the text never changes.
+Wizard
+Word filter
+Words and focus mode stay on this computer: nobody is told.
+Work tool: top bar with search, servers in a list.
+Works with every theme; "T" goes back to the theme's color.
+write
+Write a note… (Enter saves, Esc cancels)
+Write your post…
+Writes in the box
+wrong arguments (see larpercord ctl help)
+wrong or missing key
+wrote too much
+yes
+yesterday
+Yesterday at {s}
+yesterday {s}
+You called?
+You can add friends with their Discord username.
+You can manage messages or the channel: slowmode doesn't apply to you.
+You can reply by DM
+You can wear several. Glasses and neckwear: one at a time.
+you can't create invites here
+You can't create invites in this channel.
+You can't create posts in this channel.
+You can't join this channel
+you can't join {s}
+you don't have access to #{s}
+You don't have access to that conversation.
+You don't have access to this channel
+You don't have access to this thread
+You don't have permission to attach files in this channel.
+you don't have permission to read this channel
+You don't have permission to reply in this thread.
+You don't have permission to send messages in this channel.
+You found me!
+You have no favorite GIFs yet.
+You haven't blocked anyone.
+You joined a call
+You left a call
+you're alone in the call
+You're already friends with that user!
+You're in demo mode. Logging out takes you to the sign-in screen.
+You're on the latest version.
+You're timed out in this server: {s} left.
+You're viewing older messages
+Your account
+your account is quarantined: Discord won't let it start new conversations
+Your file
+Your friends list shows up here.
+Your mic (push to talk). Adjust it in Settings → Voice.
+Your mic: the bar is the level, the mark is the voice detection threshold. Adjust it in Settings → Voice.
+Your name
+Your name, nickname or server tag matched an AutoMod rule. Change it to talk again.
+Your own
+Your own colors
+Your status, mic and headphones, connection, theme, RAM and clock, tucked away at the bottom.
+Your token never goes in the file. It has channel and server IDs, media file names and call data, so take a look before you send it.
+your token stays on this computer and is only ever sent to Discord
+Zoom
+{0s} {2d:0>2}/{1d:0>2}
+{1d:0>2}/{0d:0>2} {2s}
+{1d:0>2}/{0d:0>2}/{2d} {3s}
+{1s} {0d}, {2d}
+{d} d ago
+{d} days ago
+{d} found
+{d} h ago
+{d} hours ago
+{d} members
+{d} members in total
+{d} mentions
+{d} mentions in {s}
+{d} messages in this range
+{d} messages on this computer, since {s}.
+{d} messages ready so far. The search retries on its own.
+{d} messages · last {s}
+{d} min ago
+{d} min left
+{d} minutes ago
+{d} months ago
+{d} more waiting
+{d} more…
+{d} Mutual Friends
+{d} Mutual Servers
+{d} on Discord · {d} on this computer
+{d} on this computer
+{d} online
+{d} online · {d} members
+{d} reminders
+{d} requests · {d} to the API · {s} received · {d} ms waiting on the rate limit
+{d} results
+{d} seconds ago
+{d} tabs
+{d} threads
+{d} unread
+{d} votes
+{d} years ago
+{d}d left
+{d}h left
+{d}{s} new messages · jump to the first
+{s}
+{s}  ·  right-click: who reacted
+{s}  ·  {s}  ·  {d} KB  ·  slow: skipped {d} messages
+{s} (HTTP {d})
+{s} [sticker: {s}]
+{s} added to the list
+{s} commands · {s} theme
+{s} doesn't have FFmpeg's libraries.
+{s} has FFmpeg {d} (libavformat {d}), and the app only works with FFmpeg {s}.
+{s} has FFmpeg {d}, but it didn't load.
+{s} has part of FFmpeg {d}: {s} is missing.
+{s} in {s}{s}
+{s} installed. Restart to use it.
+{s} is there, but the system couldn't load it: {s}
+{s} is thinking
+{s} is timed out
+{s} is typing
+{s} left
+{s} member since
+{s} only has ffmpeg.exe: it's a static build, a single program without the libraries (DLLs) the app loads.
+{s} only has ffmpeg: it's a static build, without the libraries (libavcodec and the others) the app loads.
+{s} rules
+{s} theme options
+{s} was banned
+{s} was kicked
+{s} was unbanned
+{s} · needs Nitro outside its server
+{s} · saver
+{s} · this channel doesn't allow external stickers
+{s} · unavailable (the server lost its boost)
+{s} · {d} messages from this computer, {s} to {s}
+{s}'s timeout was removed
+{s}, from the translations folder
+{s}, {s} at {s}
+{s}.kdl:{d}:{d}: {s}
+{s}: off
+{s}: on
+{s}: starting…
+{s}: the account settings came in a format the app doesn't understand
+{s}: {s}
+{s}: {s}. See Settings
+{s}: {s}; trying again
+{s}; trying again ({d}/3)
+— (demo)
+“{s}” is the only tab set
+“{s}”: one channel is no longer available and was left out
+“{s}”: {d} channels are no longer available and were left out
+‹  Previous
+↑ Sent
+↑↓ pick  ·  Enter open  ·  Esc close
+↑↓ pick  ·  Enter search Discord  ·  Esc close
+↓ Received
+− closer · + farther apart
+− inward · + outward
+− left one higher · + right one higher
+− lower · + higher
+− slimmer · + chubbier
+− smaller · + bigger
+− squarer · + rounder
+− to the left · + to the right
+⊘  Do Not Disturb
+─ friends ─
+┌ direct messages
+├ ☺ friends
+├ ✉ message requests
+○  Invisible
+◌ connecting…
+◌ reconnecting…
+●  Online
+● connected
+● demo
+◐  Idle
+⚡ {d}.{d:0>2} ms/frame
+✕ failed
+🍓 You picked: **{s}**
+🎨 Colors picked: 
+🎫 **radinho's desk**: try the buttons, the menus and the slash commands (`/ping`, `/eco`, `/fruta`, `/ticket`, `/avisar`).
+🎫 Ticket opened: {s} (priority: {s})
+📎 {s}
+📝 Thanks, **{s}**! Rating: {s}/5
+📣 <@{s}> was notified.
+📣 <@{s}>, someone called you here.
+🔒 Ticket closed.
+🔗 {s}

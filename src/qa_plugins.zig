@@ -917,14 +917,14 @@ fn stampReadable(_: *App) bool {
     const old = i18n.current();
     defer i18n.set(old);
     const when: u64 = 1_800_000_000;
-    for ([_]i18n.Lang{ .pt, .en, .ja, .ru }) |l| {
+    for ([_][]const u8{ "pt", "en", "ja", "ru" }) |l| {
         i18n.set(l);
         for ("tTdDfFR") |style| {
             var b: [96]u8 = undefined;
             const t = rich.stampText(&b, when << 8 | style);
             if (t.len < 2 or std.mem.indexOfScalar(u8, t, '+') != null or std.mem.eql(u8, t, "?")) return false;
             if (std.mem.indexOfScalar(u8, "dDfF", style) != null and std.mem.indexOf(u8, t, "2027") == null) return false;
-            if (style == 'R' and (l == .ja or l == .ru) and (std.mem.indexOf(u8, t, " ago") != null or std.mem.startsWith(u8, t, "in "))) return false;
+            if (style == 'R' and (std.mem.eql(u8, l, "ja") or std.mem.eql(u8, l, "ru")) and (std.mem.indexOf(u8, t, " ago") != null or std.mem.startsWith(u8, t, "in "))) return false;
         }
     }
     // Depois de 2262 a data por extenso não cabe no relógio do SDL: "?", sem estourar.

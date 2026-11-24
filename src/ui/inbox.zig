@@ -258,8 +258,9 @@ fn unreadList(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y0: f32) f32 {
         const cs = ctx.store.channel(g.channel) orelse continue;
         const dm = cs.info.guild == 0;
         const ct = if (g.total == 0) "" else if (dm)
-            (if (g.total == 1) i18n.tr("1 não lida", "1 unread") else i18n.fmt(&cb, "{d} não lidas", "{d} unread", .{g.total}))
-        else if (g.total == 1) i18n.tr("1 menção", "1 mention") else i18n.fmt(&cb, "{d} menções", "{d} mentions", .{g.total});
+            i18n.plural(&cb, g.total, "{d} não lida", "{d} não lidas", "{d} unread", "{d} unread", .{g.total})
+        else
+            i18n.plural(&cb, g.total, "{d} menção", "{d} menções", "{d} mention", "{d} mentions", .{g.total});
         groupHeader(ctx, dl, x, y, wd, g.channel, ct, true);
         y += 30;
         for (g.ids()) |id| {

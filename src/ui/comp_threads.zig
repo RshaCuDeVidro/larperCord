@@ -70,7 +70,7 @@ fn toggleRow(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, style: Style, paren
     const col = if (hb.hovered) ctx.col(.text) else ctx.col(.faint).mix(ctx.col(.muted), 0.4);
     const count = @as(u32, idx.n_shown) + idx.more;
     var buf: [48]u8 = undefined;
-    const lbl = if (count == 1) i18n.tr("1 thread", "1 thread") else i18n.fmt(&buf, "{d} threads", "{d} threads", .{count});
+    const lbl = i18n.plural(&buf, count, "{d} thread", "{d} threads", "{d} thread", "{d} threads", .{count});
     const fs: f32 = if (style == .tree) ctx.th.font_size - 2 else 12;
     if (style == .tree) {
         var tb: [64]u8 = undefined;
@@ -190,7 +190,8 @@ pub fn ago(buf: []u8, ts: i64, now_s: i64) []const u8 {
     if (dt < 3600) return i18n.fmt(buf, "há {d} min", "{d} min ago", .{@divTrunc(dt, 60)});
     if (dt < 86400) return i18n.fmt(buf, "há {d} h", "{d} h ago", .{@divTrunc(dt, 3600)});
     if (dt < 30 * 86400) return i18n.fmt(buf, "há {d} d", "{d} d ago", .{@divTrunc(dt, 86400)});
-    return i18n.fmt(buf, "há {d} meses", "{d} months ago", .{@max(@divTrunc(dt, 30 * 86400), 1)});
+    const months: u64 = @intCast(@max(@divTrunc(dt, 30 * 86400), 1));
+    return i18n.plural(buf, months, "há {d} mês", "há {d} meses", "{d} month ago", "{d} months ago", .{months});
 }
 
 /// "N mensagens · última há X".
@@ -199,8 +200,7 @@ pub fn activityLine(ctx: *const d.Ctx, buf: []u8, ch: *const types.Channel) []co
     var ab: [32]u8 = undefined;
     const when = ago(&ab, @divTrunc(types.snowflakeTime(store_mod.Store.threadActivity(ch)), 1000), @divTrunc(ctx.now_ms, 1000));
     if (t.message_count == 0) return i18n.fmt(buf, "Nenhuma mensagem · criada {s}", "No messages · created {s}", .{when});
-    if (t.message_count == 1) return i18n.fmt(buf, "1 mensagem · última {s}", "1 message · last {s}", .{when});
-    return i18n.fmt(buf, "{d} mensagens · última {s}", "{d} messages · last {s}", .{ t.message_count, when });
+    return i18n.plural(buf, t.message_count, "{d} mensagem · última {s}", "{d} mensagens · última {s}", "{d} message · last {s}", "{d} messages · last {s}", .{ t.message_count, when });
 }
 
 /// Desenha o cartão (clicar abre a thread) e devolve a altura com o espaço acima.

@@ -360,7 +360,7 @@ pub const ops_theme = [_]Op{
 
 // --- Configurações sem nada sobreposto ------------------------------------------
 
-const page_marks = [_][]const u8{ "pg:", "button:", "toggle:", "toggle-off:", "select:", "slider:", "seg:", "radio:", "accent:", "theme-card:", "theme-color:", "changelog-version:", "changelog-section:", "changelog-item:", "som-var:", "som-play:", "som-vol:", "som-nome:" };
+const page_marks = [_][]const u8{ "pg:", "button:", "toggle:", "toggle-off:", "select:", "slider:", "seg:", "radio:", "accent:", "theme-card:", "theme-color:", "changelog-version:", "changelog-section:", "changelog-item:", "som-var:", "som-play:", "som-vol:", "som-nome:", "lang:", "lang-problem:" };
 
 pub fn noOverlap(_: *App) bool {
     return qa.overlapping(&page_marks) == null;
@@ -1651,22 +1651,22 @@ fn openPage(comptime pg: S.Page) *const fn (*App) void {
     }.f;
 }
 /// Com o modo foco ligado, para a nota "Ligado: faltam N min…" aparecer.
-fn startCuts(app: *App, l: i18n.Lang) void {
+fn startCuts(app: *App, l: []const u8) void {
     i18n.set(l);
     i18n.cuts.store(0, .monotonic);
     settings_ui.overflows.store(0, .monotonic);
     app.st.filtros.startFocus(gw.nowMs(), 30);
 }
 fn cutsRu(app: *App) void {
-    startCuts(app, .ru);
+    startCuts(app, "ru");
 }
 fn cutsJa(app: *App) void {
-    startCuts(app, .ja);
+    startCuts(app, "ja");
 }
 fn cutsDone(app: *App) void {
     app.st.filtros.endFocus(&app.store);
     app.st.settings.open = false;
-    i18n.set(.pt);
+    i18n.set("pt");
 }
 fn noCuts(_: *App) bool {
     return i18n.cuts.load(.monotonic) == 0;

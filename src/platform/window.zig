@@ -30,6 +30,8 @@ pub const Wake = enum(i32) {
     ctl = 13,
     /// Clique, botão ou resposta numa notificação do sistema (app_notificacao.zig).
     notificacao = 14,
+    /// Um arquivo da pasta de traduções mudou (ui/i18n_pasta.zig).
+    i18n = 15,
 };
 
 /// O renderizador que abriu (para Configurações → Desempenho) e se o escolhido nas

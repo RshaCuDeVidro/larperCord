@@ -707,12 +707,9 @@ fn buildPlan(ctx: *d.Ctx, req: ExportReq, path_in: []const u8) ?job_mod.Plan {
             .subtitle = subtitle,
             .note = i18n.tr("Só as mensagens que estavam neste computador: nada foi pedido ao Discord para exportar.", "Only the messages that were on this computer: nothing was requested from Discord to export."),
             .footer = footer,
-            .lang = switch (i18n.current()) {
-                .pt => "pt-BR",
-                .en => "en",
-                .ja => "ja",
-                .ru => "ru",
-            },
+            // O código do idioma vive até o app fechar (i18n.zig).
+            .lang = if (i18n.is("pt")) "pt-BR" else i18n.current(),
+            .rtl = i18n.rtl(),
             .conversation = .{
                 .id = req.channel,
                 .name = a.dupe(u8, cs.info.name) catch return null,

@@ -83,6 +83,7 @@ const lsp_ui = @import("ui/lsp_ui.zig");
 const mem_tune = @import("platform/mem_tune.zig");
 const mascote = @import("ui/mascote.zig");
 const mascote_arquivos = @import("ui/mascote_arquivos.zig");
+const i18n_pasta = @import("ui/i18n_pasta.zig");
 const icone_sistema = @import("platform/icone_sistema.zig");
 const tray = @import("platform/tray.zig");
 const wl_ativacao = @import("platform/wl_ativacao.zig");
@@ -113,8 +114,9 @@ pub const Options = struct {
     qa: bool = false,
     /// Mostra a tela de login sem usar o token salvo.
     login: bool = false,
-    /// Força o idioma (ignora as configurações).
-    lang: ?@import("ui/i18n.zig").Lang = null,
+    /// Força o idioma: "pt", "en" ou o código de um arquivo de tradução (ignora as
+    /// configurações).
+    lang: ?[]const u8 = null,
     /// O controle de fora (app_ctl.zig): no app de verdade, ou na demonstração e no QA
     /// com LARPER_CTL (que usam outro arquivo da porta).
     ctl: enum { off, app, demo } = .off,
@@ -154,6 +156,10 @@ fn wakeMascot() void {
     platform.Window.wake(wake_type_global, .mascot);
 }
 
+fn wakeI18n() void {
+    platform.Window.wake(wake_type_global, .i18n);
+}
+
 /// Hora de tentar de novo o ícone da bandeja (ver App.syncTray).
 fn trayRetryWake(_: ?*anyopaque, _: c.SDL_TimerID, _: u32) callconv(.c) u32 {
     platform.Window.wake(wake_type_global, .tick);
@@ -187,6 +193,12 @@ pub const App = struct {
     ui_size: f32 = 1,
     /// O idioma mudou no meio do quadro: as fontes acompanham antes do próximo.
     fonts_lang_changed: bool = false,
+    /// A pasta de traduções foi relida: o idioma das configurações é conferido de novo (o
+    /// arquivo dele pode ter aparecido agora).
+    lang_recheck: bool = false,
+    /// O QA da página Idioma (qa_idioma.zig): o idioma segue as configurações, como no app
+    /// de verdade (o resto do QA fica em português).
+    qa_lang_settings: bool = false,
     /// Parar o laço e sair de verdade (nunca para a bandeja). Só da thread da
     /// interface: de outra, chame `Window.wake` em seguida para acordar o laço.
     restart_wanted: bool = false,
@@ -202,8 +214,8 @@ pub const App = struct {
     tray_kept: bool = false,
     /// A opção como estava na volta anterior do laço: ligar tenta na hora.
     tray_on_was: bool = false,
-    /// Idioma dos rótulos do menu do ícone que está lá.
-    tray_lang: i18n.Lang = .pt,
+    /// O texto da interface (i18n.stamp) quando o menu do ícone que está lá foi montado.
+    tray_lang: u32 = 0,
     /// O mascote cujos ícones (janela, bandeja, avisos, menu do sistema) estão de pé.
     mascot_applied: ?mascote.Kind = null,
     /// A abertura fica pelo menos até aqui (segundos) antes de sair para o app: no
@@ -375,12 +387,14 @@ pub const App = struct {
         voz_audio.force_dummy = opts.qa or opts.shot != null;
         voz_audio.qa_sounds_dir = opts.qa or opts.shot != null;
         app.themes.mode = app.wantedMode();
-        // Uma tradução na pasta de configurações vale por cima da embutida (fora dos
-        // prints da documentação e do QA, que saem sempre iguais).
-        if (!opts.qa and opts.shot == null) i18n.read_extra = &readLangFile;
+        // As traduções da pasta de configurações (um idioma novo, ou por cima de um
+        // embutido), fora dos prints da documentação e do QA, que saem sempre iguais.
+        const user_i18n = !opts.qa and opts.shot == null;
+        i18n_pasta.setup(wakeI18n, user_i18n);
+        if (user_i18n) _ = i18n_pasta.reload();
         // Já aqui: os dados da demonstração saem no idioma da interface.
-        i18n.set(if (opts.qa and opts.lang == null) .pt else opts.lang orelse i18n.fromSetting(app.st.settings.language));
-        app.fonts.preferLanguage(@tagName(i18n.current()));
+        i18n.set(app.wantedLang());
+        app.fonts.preferLanguage(i18n.fontScript());
         app.st.settings.open = opts.settings;
         var wall: c.SDL_Time = 0;
         _ = c.SDL_GetCurrentTime(&wall);
@@ -562,7 +576,7 @@ pub const App = struct {
 
     /// Põe o ícone, com o menu no idioma de agora (ver tray.show).
     fn trayShow(app: *App, wait: bool) bool {
-        app.tray_lang = i18n.current();
+        app.tray_lang = i18n.stamp();
         return tray.show(app.win.wake_type, i18n.trZ("Abrir o larperCord", "Open larperCord").ptr, i18n.trZ("Sair", "Quit").ptr, wait);
     }
 
@@ -609,7 +623,7 @@ pub const App = struct {
         const active = tray.active();
         // O ícone de uma ida à bandeja vira o da opção.
         if (on and active and !app.in_tray) app.tray_kept = true;
-        switch (janela.trayIcon(on, app.tray_kept, app.in_tray, active, app.tray_lang != i18n.current())) {
+        switch (janela.trayIcon(on, app.tray_kept, app.in_tray, active, app.tray_lang != i18n.stamp())) {
             .nada => {},
             .tirar => {
                 tray.hide();
@@ -1243,17 +1257,43 @@ pub const App = struct {
         st.voice_out_failed = !out_ok;
     }
 
-    /// larpercord/i18n/<idioma>.kdl na pasta de configurações (ver i18n/ja.kdl).
-    fn readLangFile(gpa: std.mem.Allocator, code: []const u8) ?[]const u8 {
-        var nb: [32]u8 = undefined;
-        const name = std.fmt.bufPrint(&nb, "i18n/{s}.kdl", .{code}) catch return null;
-        var buf: [512]u8 = undefined;
-        const path = fsutil.configPath(&buf, name) orelse return null;
-        var size: usize = 0;
-        const data = c.SDL_LoadFile(path.ptr, &size) orelse return null;
-        defer c.SDL_free(data);
-        std.log.info("tradução {s} por cima da embutida: {s}", .{ code, path });
-        return gpa.dupe(u8, @as([*]const u8, @ptrCast(data))[0..size]) catch null;
+    /// O idioma a usar: o forçado (--lang), o português do QA (as marcações usam os
+    /// rótulos), ou o das configurações ("" = o do sistema).
+    pub fn wantedLang(app: *const App) []const u8 {
+        if (app.opts.lang) |l| return l;
+        if (app.opts.qa and !app.qa_lang_settings) return "pt";
+        return i18n.fromSetting(app.st.settings.language_code.slice());
+    }
+
+    /// O idioma das configurações mudou (ou a pasta de traduções foi relida)? Aplica.
+    fn syncLang(app: *App, seen: *u64) void {
+        const key = std.hash.Wyhash.hash(@intFromBool(app.qa_lang_settings), app.st.settings.language_code.slice());
+        if (key == seen.* and !app.lang_recheck) return;
+        seen.* = key;
+        app.lang_recheck = false;
+        const want = app.wantedLang();
+        if (i18n.is(want)) return;
+        i18n.set(want);
+        app.fonts_lang_changed = true;
+        app.st.theme_gen +%= 1;
+    }
+
+    /// A pasta de traduções mudou: relê, e o texto do idioma em uso muda na hora. O arquivo
+    /// dele salvo com um erro avisa (e o idioma fica com o texto de antes).
+    pub fn i18nReloaded(app: *App) void {
+        const changed = i18n_pasta.reload();
+        if (changed) {
+            app.fonts_lang_changed = true;
+            app.st.theme_gen +%= 1;
+        }
+        for (i18n.languages()) |l| {
+            if (!i18n.is(l.code)) continue;
+            if (l.problem) |pr|
+                app.st.showToast(now(), true, "{s}", "{s}", .{pr})
+            else if (changed)
+                app.st.showToast(now(), false, "tradução recarregada: {s}", "translation reloaded: {s}", .{if (l.user_name.len > 0) l.user_name else l.code});
+        }
+        app.lang_recheck = true;
     }
 
     fn loadSettings(app: *App, arena: std.mem.Allocator) ?[]const u8 {
@@ -3188,7 +3228,7 @@ pub const App = struct {
         var settled_frames: u32 = 0;
         var first_frame_logged = false;
         var login_result: ?login_mod.Result = null;
-        var lang_setting: i16 = -1;
+        var lang_setting: u64 = 0;
         // LARPER_BENCH=1: redesenha sem parar (medir o custo de um quadro parado).
         const bench = c.SDL_getenv("LARPER_BENCH") != null;
         store_mod.read_debug = c.SDL_getenv("LARPER_READ_DEBUG") != null;
@@ -3362,6 +3402,11 @@ pub const App = struct {
                         .mascot => {
                             app.mascotReloaded();
                             pending = @max(pending, 2);
+                        },
+                        .i18n => {
+                            app.i18nReloaded();
+                            pending = @max(pending, 2);
+                            app_flutuante.marcar(app);
                         },
                         // O jogo aberto: olhar os processos não pede quadro (se o jogo
                         // mudou, a nossa linha nova chega pelo gateway e desenha).
@@ -3579,7 +3624,7 @@ pub const App = struct {
 
             if (app.fonts_lang_changed) {
                 app.fonts_lang_changed = false;
-                app.fonts.preferLanguage(@tagName(i18n.current()));
+                app.fonts.preferLanguage(i18n.fontScript());
             }
             if (app.fonts.loadWanted()) {
                 app.st.theme_gen +%= 1;
@@ -3627,12 +3672,7 @@ pub const App = struct {
                 if (debug_log.isOn()) std.log.info("registro ligado: larperCord {s}, {s} {s}, vídeo {s}, renderizador {s}", .{ @import("core/version.zig").number, @tagName(@import("builtin").os.tag), @tagName(@import("builtin").cpu.arch), if (c.SDL_GetCurrentVideoDriver()) |v| std.mem.span(v) else "?", if (c.SDL_GetRendererName(app.win.renderer)) |v| std.mem.span(v) else "?" });
             }
             // Idioma: o QA roda em português (as marcações usam os rótulos), salvo com --lang.
-            if (set.language != lang_setting) {
-                lang_setting = set.language;
-                i18n.set(if (app.opts.qa and app.opts.lang == null) .pt else app.opts.lang orelse i18n.fromSetting(set.language));
-                app.fonts_lang_changed = true;
-                app.st.theme_gen +%= 1;
-            }
+            app.syncLang(&lang_setting);
             anim.instant = set.reduce_motion;
             @import("net/media_url.zig").allow_gif_hosts.store(set.gif_hosts, .release);
             proxy.set(set.proxy.slice(), set.proxy_all);
@@ -3915,7 +3955,7 @@ pub const App = struct {
         pending: u32 = 3,
         last_ns: u64 = 0,
         typing_check_ms: i64 = 0,
-        lang_setting: i16 = -1,
+        lang_setting: u64 = 0,
         bg_dirty: bool = false,
         was_active: bool = false,
         login_result: ?login_mod.Result = null,
@@ -3954,7 +3994,7 @@ pub const App = struct {
                         wl.pending = @max(wl.pending, 2);
                     },
                     .quit => return false,
-                    .theme, .token, .show, .toggle, .tray_gone, .mascot, .jogo, .ctl, .notificacao => {},
+                    .theme, .token, .show, .toggle, .tray_gone, .mascot, .jogo, .ctl, .notificacao, .i18n => {},
                 }
                 continue;
             }
@@ -3997,7 +4037,7 @@ pub const App = struct {
 
         if (app.fonts_lang_changed) {
             app.fonts_lang_changed = false;
-            app.fonts.preferLanguage(@tagName(i18n.current()));
+            app.fonts.preferLanguage(i18n.fontScript());
         }
         if (app.fonts.loadWanted()) {
             app.st.theme_gen +%= 1;
@@ -4027,12 +4067,7 @@ pub const App = struct {
         app.images.budget_bytes = @as(usize, @intFromFloat(std.math.clamp(set.image_cache_mb, 16, 128))) * 1024 * 1024;
         @import("ui/images.zig").gif_limit_bytes.store(@as(usize, @intFromFloat(std.math.clamp(set.gif_limit_mb, 4, 32))) * 1024 * 1024, .monotonic);
         app.store.message_budget = @intFromFloat(std.math.clamp(set.message_budget, 500, 5000));
-        if (set.language != wl.lang_setting) {
-            wl.lang_setting = set.language;
-            i18n.set(app.opts.lang orelse i18n.fromSetting(set.language));
-            app.fonts_lang_changed = true;
-            app.st.theme_gen +%= 1;
-        }
+        app.syncLang(&wl.lang_setting);
         anim.instant = set.reduce_motion;
         mascote.sync(set.mascot_look.slice(), set.mascot_tweaks.slice(), set.mascot_name.slice(), set.mascot_file.slice(), app.themes.theme_().c(.accent));
         plugin_host.frame(app);

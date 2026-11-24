@@ -523,7 +523,7 @@ fn micBack(app: *App) bool {
 fn statusFits(_: *App) bool {
     return qa.find("voice-status-cut") == null;
 }
-fn lang(comptime l: @import("ui/i18n.zig").Lang) *const fn (*App) void {
+fn lang(comptime l: []const u8) *const fn (*App) void {
     return struct {
         fn f(_: *App) void {
             @import("ui/i18n.zig").set(l);
@@ -554,13 +554,13 @@ pub const ops_theme = [_]Op{
     expect("o botão do microfone da tela (texto nos temas de terminal) muta", micMuted),
     click("grid-mic"),
     expect("e desmuta", micBack),
-    run(lang(.en)),
+    run(lang("en")),
     .{ .wait = 100 },
     expect("\"Voice Connected\" cabe na faixa de voz", statusFits),
-    run(lang(.ru)),
+    run(lang("ru")),
     .{ .wait = 100 },
     expect("em russo também", statusFits),
-    run(lang(.pt)),
+    run(lang("pt")),
     .{ .wait = 100 },
     expect("\"Voz conectada\" também", statusFits),
     shot("call-grade"),

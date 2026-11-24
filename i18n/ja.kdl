@@ -1,6 +1,11 @@
 // larperCord — Japanese (日本語) interface text.
 //
-// One entry per line: the English text exactly as it is in the code, then the
+// The first line says which language this is (code: the ISO 639 code, with a region
+// if needed, like "pt-PT"; english: its name in English):
+//
+//     language "日本語" code="ja" english="Japanese"
+//
+// Then one entry per line: the English text exactly as it is in the code, then the
 // translation:
 //
 //     "Sign in" "ログイン"
@@ -16,13 +21,21 @@
 //   - every value of the English text must appear; {{ and }} are literal braces.
 // A translation that breaks these rules shows in English.
 //
+// Text with a count has one form per plural category of the language (CLDR), each
+// with the same placeholders:
+//
+//     "{d} votes" "{d}票"
+//
+// The guide: https://rshacudevidro.github.io/larperCord/guide/translating.html
 // The list of texts, what is still missing and a check of this file:
-//     python3 tools/i18n_strings.py --check
+//     python3 tools/i18n_strings.py --lang ja --check
 // To try changes without building, copy this file to larpercord/i18n/ja.kdl in the
-// settings folder (~/.config on Linux, %APPDATA% on Windows) and restart the app.
+// settings folder (~/.config on Linux, %APPDATA% on Windows): saving it updates the app.
 //
 // Português: o texto em inglês do código como chave, a tradução ao lado; o que
-// falta aparece em inglês. As regras dos marcadores {…} estão acima.
+// falta aparece em inglês. As regras dos marcadores {…} e do plural estão acima.
+
+language "日本語" code="ja" english="Japanese"
 
 "  (same, not drawn)" "  （同じ内容、未描画）"
 "  [LIVE]" "  [ライブ]"
@@ -61,16 +74,7 @@
 "1 day" "1日"
 "1 h" "1時間"
 "1 hour" "1時間"
-"1 mention" "メンション1件"
-"1 message · last {s}" "メッセージ1件 · 最終: {s}"
-"1 Mutual Friend" "共通のフレンド1人"
-"1 Mutual Server" "共通のサーバー1件"
 "1 new message · jump to the first" "新着メッセージ1件 · 最初にジャンプ"
-"1 result" "1件の結果"
-"1 tab" "タブ1個"
-"1 thread" "スレッド1件"
-"1 unread" "未読1件"
-"1 vote" "1票"
 "1 week" "1週間"
 "1.5×" "1.5×"
 "10 min" "10分"
@@ -727,6 +731,7 @@
 "E.g. your name, a project, \"good morning\"" "例: 自分の名前、プロジェクト名、「おはよう」"
 "Each .kdl file in the folder becomes a look: it picks parts and colors or draws its own, per expression. Saving the file updates it right away." "フォルダの .kdl ファイルがそれぞれ見た目になります。パーツと色を選んだり、表情ごとに自分で描いたりできます。ファイルを保存するとすぐ反映されます。"
 "Each GIF" "GIFごと"
+"Each language is a .kdl file with the English text and the translation next to it, and the percentage is how much of the app's text it translates. A file in the translations folder applies right away (saving updates the app): with a new code it's a new language; with the code of one in the list, it fixes just what's in it." "言語はそれぞれ1つの.kdlファイルで、英語のテキストの横に翻訳が書かれています。パーセンテージは、アプリのテキストのうち翻訳済みの割合です。翻訳フォルダーのファイルはすぐに反映されます（保存するとアプリが更新されます）。新しいコードなら新しい言語になり、リストにある言語のコードなら、そのファイルにある部分だけを修正します。"
 "each person's volume · 100% = normal" "ユーザーごとの音量 · 100% = 標準"
 "Each sound can be turned off, swapped for another built-in one or for a file of yours: WAV (PCM) or Ogg Opus, up to 2 MB and 5 s (the ringtone, up to 15 s). The file is copied into larperCord's folder." "各サウンドはオフにするか、別の内蔵サウンドや自分のファイルに置き換えられます。WAV（PCM）またはOgg Opus、最大2 MB・5秒（着信音は最大15秒）。ファイルはlarperCordのフォルダーにコピーされます。"
 "Each theme changes the whole layout, not just the colors. All of them come in light and dark." "各テーマは色だけでなくレイアウト全体を変更します。すべてライトとダークの両方があります。"
@@ -965,6 +970,12 @@
 "In a folder next to it: profile pictures and images the app already downloaded. Nothing is downloaded now; the rest stays as links." "隣のフォルダーに、アプリがすでにダウンロードしたプロフィール画像と画像を保存します。今は何もダウンロードせず、残りはリンクのままです。"
 "In call: {s}" "通話中: {s}"
 "In the demo, only with LARPER_CTL=1 (for testing)." "デモでは LARPER_CTL=1 のときだけ使えます (テスト用)。"
+"in {d} days" "{d}日後"
+"in {d} hours" "{d}時間後"
+"in {d} minutes" "{d}分後"
+"in {d} months" "{d}か月後"
+"in {d} seconds" "{d}秒後"
+"in {d} years" "{d}年後"
 "Include images and files already on this computer" "このコンピューターにある画像とファイルも含める"
 "Info" "情報"
 "Inside" "含まれる場所"
@@ -1426,6 +1437,7 @@
 "notify everyone online" "オンラインの全員に通知"
 "Now and then it rolls a d20 when you send a message. Drag an emoji from the picker or a reaction onto it and it eats it; a link dropped on it goes into a portal and an image becomes a framed picture. Every so often it hides behind a panel: click the tips of its ears to find it. And it reacts to Ctrl+K, Ctrl+S, Ctrl+P, Ctrl+X, Ctrl+V and Esc, without changing what the keys do." "メッセージを送ると、ときどき d20 を振ります。絵文字ピッカーやリアクションから絵文字をドラッグして重ねると食べ、リンクを落とすとポータルに吸い込み、画像は額縁に入れて見せてくれます。たまにパネルの後ろに隠れるので、はみ出た耳の先をクリックして見つけてください。Ctrl+K、Ctrl+S、Ctrl+P、Ctrl+X、Ctrl+V、Esc にも反応します（キー本来の動作はそのままです）。"
 "NOW" "期限"
+"Now: {s}" "現在: {s}"
 "number" "数値"
 "Ocean" "海"
 "Off" "オフ"
@@ -1494,6 +1506,7 @@
 "Open the Inspector ({s})" "インスペクターを開く（{s}）"
 "Open the log folder" "ログフォルダーを開く"
 "Open the theme file" "テーマファイルを開く"
+"Open the translations folder" "翻訳フォルダーを開く"
 "Open this channel" "このチャンネルを開く"
 "Open Thread" "スレッドを開く"
 "Open to the Side" "サイドで開く"
@@ -2219,6 +2232,9 @@
 "total minutes" "合計分数"
 "Total seconds" "合計秒数"
 "total seconds" "合計秒数"
+"Translation editor" "翻訳エディター"
+"translation reloaded: {s}" "翻訳を再読み込みしました: {s}"
+"Translations" "翻訳"
 "Transmitting" "発言中"
 "Tree" "ツリー"
 "Trending" "トレンド"
@@ -2418,6 +2434,7 @@
 "With the pointer resting near it, it tries to grab it; resting on top of it, it sits on it (and falls when you move)." "ポインターが近くで止まっていると捕まえようとし、上で止まっているとその上に座ります（動かすと落ちます）。"
 "With the text box unfocused (Esc leaves it), the keys below navigate." "入力欄からフォーカスを外した状態（Escで外れます）で、以下のキーで移動できます。"
 "With the window unfocused, it waits; if you're gone a long time, it sets up camp. When you come back, it runs to the mouse (and, after hours away, says it missed you)." "ウィンドウにフォーカスがないと待っていて、長く離れているとキャンプを始めます。戻ってくるとマウスのところまで走ってきます（何時間も離れていたら、会いたかったと言います）。"
+"With {s} from the translations folder on top" "翻訳フォルダーの{s}で上書き"
 "Without a notification server on D-Bus, they go out through notify-send, without buttons." "D-Busに通知サーバーがないため、通知はnotify-sendからボタンなしで表示されます。"
 "Without any field, the text never changes." "フィールドがないため、表示は変わりません。"
 "Wizard" "魔法使い"
@@ -2484,8 +2501,10 @@
 "{1d:0>2}/{0d:0>2}/{2d} {3s}" "{2}/{0}/{1} {3}"
 "{1s} {0d}, {2d}" "{2}年{0}{1}日"
 "{d} d ago" "{d}日前"
+"{d} days ago" "{d}日前"
 "{d} found" "{d}件見つかりました"
 "{d} h ago" "{d}時間前"
+"{d} hours ago" "{d}時間前"
 "{d} members" "{d}人のメンバー"
 "{d} members in total" "メンバー合計{d}人"
 "{d} mentions" "メンション{d}件"
@@ -2496,6 +2515,7 @@
 "{d} messages · last {s}" "メッセージ{d}件 · 最終: {s}"
 "{d} min ago" "{d}分前"
 "{d} min left" "残り{d}分"
+"{d} minutes ago" "{d}分前"
 "{d} months ago" "{d}か月前"
 "{d} more waiting" "ほかに{d}件が待機中"
 "{d} more…" "他{d}件…"
@@ -2508,10 +2528,12 @@
 "{d} reminders" "{d}件のリマインダー"
 "{d} requests · {d} to the API · {s} received · {d} ms waiting on the rate limit" "{d} 件のリクエスト · API へ {d} 件 · {s} 受信 · レート制限待ち {d} ms"
 "{d} results" "{d}件の結果"
+"{d} seconds ago" "{d}秒前"
 "{d} tabs" "タブ{d}個"
 "{d} threads" "スレッド{d}件"
 "{d} unread" "未読{d}件"
 "{d} votes" "{d}票"
+"{d} years ago" "{d}年前"
 "{d}d left" "残り{d}日"
 "{d}h left" "残り{d}時間"
 "{d}{s} new messages · jump to the first" "新着メッセージ{d}{s}件 · 最初にジャンプ"
@@ -2547,6 +2569,7 @@
 "{s} · unavailable (the server lost its boost)" "{s} · 利用不可（サーバーのブーストが失われました）"
 "{s} · {d} messages from this computer, {s} to {s}" "{s} · このコンピューターのメッセージ {d} 件、{s} 〜 {s}"
 "{s}'s timeout was removed" "{s}のタイムアウトを解除しました"
+"{s}, from the translations folder" "翻訳フォルダーの{s}"
 "{s}, {s} at {s}" "{1} {2} {0}"
 "{s}.kdl:{d}:{d}: {s}" "{s}.kdl:{d}:{d}: {s}"
 "{s}: off" "{s}: オフ"

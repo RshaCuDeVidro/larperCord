@@ -59,12 +59,8 @@ pub fn init(app: *App) void {
     runtime.lang_en = &i18n.en;
     runtime.lang_code = &struct {
         fn f() [*:0]const u8 {
-            return switch (i18n.current()) {
-                .pt => "pt",
-                .en => "en",
-                .ja => "ja",
-                .ru => "ru",
-            };
+            // Vive até o app fechar (i18n.zig): "pt", "en" ou o código de um arquivo.
+            return i18n.current().ptr;
         }
     }.f;
     // Prints da documentação: sempre iguais, sem os plugins de quem roda.

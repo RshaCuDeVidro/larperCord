@@ -80,7 +80,7 @@ pub fn draw(p: anytype) void {
         para(p, i18n.tr("Nenhum plugin encontrado. Ponha arquivos .lua na pasta acima e clique em Recarregar.", "No plugins found. Put .lua files in the folder above and click Reload."), .faint);
         para(p, i18n.tr("Guia da API e exemplos: docs/plugins.md", "API guide and examples: docs/plugins.md"), .faint);
     } else {
-        p.heading(i18n.fmt(&buf, "{d} encontrados", "{d} found", .{e.list.items.len}));
+        p.heading(i18n.plural(&buf, e.list.items.len, "{d} encontrado", "{d} encontrados", "{d} found", "{d} found", .{e.list.items.len}));
         for (e.list.items) |pl| card(p, e, pl);
         if (pending_update) |ex| {
             pending_update = null;

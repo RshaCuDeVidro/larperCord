@@ -334,19 +334,19 @@ fn pirateLook(app: *App) void {
     app.st.settings.mascot_file.set("");
 }
 fn langRu(app: *App) void {
-    i18n.set(.ru);
+    i18n.set("ru");
     settings_ui.overflows.store(0, .monotonic);
     i18n.cuts.store(0, .monotonic);
     openPage(app);
 }
 fn langJa(app: *App) void {
-    i18n.set(.ja);
+    i18n.set("ja");
     settings_ui.overflows.store(0, .monotonic);
     i18n.cuts.store(0, .monotonic);
     openPage(app);
 }
 fn langPt(_: *App) void {
-    i18n.set(.pt);
+    i18n.set("pt");
 }
 fn noOverflow(_: *App) bool {
     if (settings_ui.overflows.load(.monotonic) != 0) {

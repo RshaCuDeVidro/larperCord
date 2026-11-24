@@ -337,7 +337,7 @@ pub fn drawEditor(ctx: *d.Ctx, message: Id, edit: u32) void {
     var wb2: [48]u8 = undefined;
     if (future) {
         var rb: [48]u8 = undefined;
-        const rel = horario.relative(&rb, @divFloor(picked - now, 1000), i18n.current());
+        const rel = horario.relative(&rb, @divFloor(picked - now, 1000));
         d.text(dl, fam.get(.regular), 12, x, y, ctx.col(.faint), std.fmt.bufPrint(&tb, "{s}  ·  {s}", .{ whenLabel(&wb2, picked, now), rel }) catch "");
     } else {
         d.text(dl, fam.get(.regular), 12, x, y, ctx.col(.danger), i18n.tr("Esse horário já passou.", "That time has already passed."));
@@ -601,7 +601,7 @@ fn card(ctx: *d.Ctx, dl: *c.ImDrawList, body: d.Rect, y0: f32, r: *const core.Re
         .due => i18n.fmt(&tb, "venceu {s}", "due {s}", .{whenLabel(&wb, r.due_ms, now)}),
         .upcoming => blk: {
             var rb: [48]u8 = undefined;
-            break :blk std.fmt.bufPrint(&tb, "{s}  ·  {s}", .{ whenLabel(&wb, r.due_ms, now), horario.relative(&rb, @divFloor(r.due_ms - now, 1000), i18n.current()) }) catch "";
+            break :blk std.fmt.bufPrint(&tb, "{s}  ·  {s}", .{ whenLabel(&wb, r.due_ms, now), horario.relative(&rb, @divFloor(r.due_ms - now, 1000)) }) catch "";
         },
         .done => i18n.fmt(&tb, "concluído {s}", "done {s}", .{whenLabel(&wb, r.done_s * 1000, now)}),
     };

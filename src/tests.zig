@@ -112,6 +112,7 @@ test {
     _ = @import("ui/fuzzy.zig");
     _ = @import("ui/i18n.zig");
     _ = @import("ui/horario.zig");
+    _ = @import("core/i18n_cabecalho.zig");
     _ = @import("ui/atalhos.zig");
     _ = @import("ui/ime.zig");
     _ = @import("core/combinacao.zig");

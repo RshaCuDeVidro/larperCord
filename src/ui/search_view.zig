@@ -178,10 +178,8 @@ fn statusRow(ctx: *d.Ctx, dl: *c.ImDrawList, b: d.Rect, y: f32) f32 {
             // Na primeira página, o que estava neste computador veio junto.
             .done => if (search.offset == 0 and search.found > 0)
                 i18n.fmt(&buf, "{d} no Discord · {d} neste computador", "{d} on Discord · {d} on this computer", .{ search.total, search.found })
-            else if (search.total == 1)
-                i18n.tr("1 resultado", "1 result")
             else
-                i18n.fmt(&buf, "{d} resultados", "{d} results", .{search.total}),
+                i18n.plural(&buf, search.total, "{d} resultado", "{d} resultados", "{d} result", "{d} results", .{search.total}),
             else => i18n.tr("Busca no Discord", "Discord search"),
         };
         _ = d.textClipped(dl, bold, 13.5, r.x, d.centerY(r, 13.5), ctx.col(.text), label, right_x - r.x - 8);
