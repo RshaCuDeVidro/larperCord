@@ -151,7 +151,8 @@ fn languageRows(p: *Page, s: *S.Settings) void {
         if (row > 0) {
             if (i18n.coverage(row - 1)) |pm| {
                 var pb: [8]u8 = undefined;
-                const pct = std.fmt.bufPrint(&pb, "{d}%", .{pm / 10}) catch "";
+                // Menos de 1%, mas alguma coisa: "<1%" (e não um "0%" que parece vazio).
+                const pct = if (pm > 0 and pm < 10) "<1%" else std.fmt.bufPrint(&pb, "{d}%", .{pm / 10}) catch "";
                 const pw = d.width(p.font(.semibold), 14, pct);
                 d.text(p.dl, p.font(.semibold), 14, r.right() - 14 - pw, r.y + 13, if (pm >= 1000) ctx.col(.muted) else ctx.col(.faint), pct);
                 avail -= pw + 16;

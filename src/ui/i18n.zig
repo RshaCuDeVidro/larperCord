@@ -977,16 +977,47 @@ fn invalidate(l: *Info, act: *const Active) bool {
     return true;
 }
 
-/// "linha 12: esperava …", ou null quando o arquivo abre.
+/// "xx.kdl:12: expected …" (no idioma da interface), ou null quando o arquivo abre.
 fn checkUser(a: std.mem.Allocator, name: []const u8, text: []const u8) ?[]const u8 {
     var tmp: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
     defer tmp.deinit();
     var diag: kdl.Diagnostic = .{};
     _ = parseFile(tmp.allocator(), text, &diag) catch {
         std.log.warn("tradução {s}: linha {d}: {s}", .{ name, diag.line, diag.message });
-        return std.fmt.allocPrint(a, "{s}:{d}: {s}", .{ name, diag.line, diag.message }) catch null;
+        return std.fmt.allocPrint(a, "{s}:{d}: {s}", .{ name, diag.line, problemText(diag.message) }) catch null;
     };
     return null;
+}
+
+/// Os problemas que um arquivo de tradução pode ter (os daqui e os do leitor de KDL, que
+/// fala português), para a página Idioma mostrar no idioma de quem está traduzindo.
+const problems = [_]struct { pt: []const u8, en: []const u8 }{
+    .{ .pt = "esperava language \"Nome\" code=\"xx\"", .en = "expected language \"Name\" code=\"xx\"" },
+    .{ .pt = "o nome do idioma está vazio", .en = "the language name is empty" },
+    .{ .pt = "code: letras, números e -, até 15 (\"ja\", \"pt-PT\")", .en = "code: letters, digits and -, up to 15 (\"ja\", \"pt-PT\")" },
+    .{ .pt = "esperava direction \"ltr\" ou \"rtl\"", .en = "expected direction \"ltr\" or \"rtl\"" },
+    .{ .pt = "direction: \"ltr\" ou \"rtl\"", .en = "direction: \"ltr\" or \"rtl\"" },
+    .{ .pt = "esperava font-script \"ja\"", .en = "expected font-script \"ja\"" },
+    .{ .pt = "font-script: um código como \"ja\", \"zh\" ou \"ko\"", .en = "font-script: a code like \"ja\", \"zh\" or \"ko\"" },
+    .{ .pt = "esperava plurals \"ru\"", .en = "expected plurals \"ru\"" },
+    .{ .pt = "plurals: um código de idioma que o app conhece", .en = "plurals: a language code the app knows" },
+    .{ .pt = "esperava \"inglês\" \"tradução\"", .en = "expected \"English\" \"translation\"" },
+    .{ .pt = "forma de plural desconhecida (zero, one, two, few, many ou other)", .en = "unknown plural form (zero, one, two, few, many or other)" },
+    .{ .pt = "a forma de plural é um texto entre aspas", .en = "a plural form is a text in quotes" },
+    .{ .pt = "blocos aninhados demais", .en = "too many nested blocks" },
+    .{ .pt = "comentário /* sem fechar", .en = "a /* comment that isn't closed" },
+    .{ .pt = "escape inválido", .en = "invalid escape" },
+    .{ .pt = "esperava um nome", .en = "expected a name" },
+    .{ .pt = "faltou fechar '}'", .en = "a '}' is missing" },
+    .{ .pt = "número inválido", .en = "invalid number" },
+    .{ .pt = "número longo demais", .en = "number too long" },
+    .{ .pt = "'}' sobrando", .en = "an extra '}'" },
+    .{ .pt = "string sem fechar", .en = "a text that isn't closed" },
+};
+
+fn problemText(msg: []const u8) []const u8 {
+    for (problems) |pr| if (std.mem.eql(u8, pr.pt, msg)) return tr(pr.pt, pr.en);
+    return msg;
 }
 
 // --- Quanto está traduzido -------------------------------------------------------------
@@ -1537,6 +1568,8 @@ test "idioma novo só com um arquivo (xx), recarregado na hora" {
     _ = setUserFiles(&.{ .{ .name = "xx.kdl", .text = edited }, .{ .name = "yy.kdl", .text = "language \"Yy\" code=\"yy\"\n\"a\" \"b\" \"c\"\n" } });
     const yy = languages()[match("yy").?];
     try testing.expect(std.mem.indexOf(u8, yy.problem.?, "yy.kdl:2") != null);
+    // No idioma da interface (o xx não traduz este, então o inglês).
+    try testing.expectEqualStrings("yy.kdl:2: expected \"English\" \"translation\"", yy.problem.?);
     // O em uso salvo com um erro no meio fica com o texto de antes (e o problema aparece).
     const s2 = stamp();
     const broken = try std.mem.concat(testing.allocator, u8, &.{ edited, "\"sem fim\n" });
