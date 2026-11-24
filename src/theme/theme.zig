@@ -8,6 +8,7 @@ pub const schema = @import("schema.zig");
 pub const heranca = @import("heranca.zig");
 /// De onde vêm os temas de `extends` (bases.zig tem os de sempre).
 pub const Bases = heranca.Bases;
+pub const parts = @import("parts.zig");
 pub const Rgba = color.Rgba;
 
 pub const Token = enum {
@@ -109,6 +110,8 @@ pub const Theme = struct {
     node_colors: std.AutoHashMapUnmanaged(*const kdl.Node, []const Override) = .empty,
     /// Primitivas novas dos nós que usam alguma (`fx.zig`). Vazio na maioria.
     node_fx: std.AutoHashMapUnmanaged(*const kdl.Node, *const fx.NodeFx) = .empty,
+    /// Partes de dentro dos componentes com estados (`parts.zig`). null = sem `parts`.
+    parts: ?*const parts.Table = null,
     mode: Mode = .dark,
     options: []const Option = &.{},
     option_values: std.StringHashMapUnmanaged(bool) = .empty,
@@ -337,6 +340,7 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
     var fcx: fx.Cx = .{ .a = a, .palette = &pal, .tokens = tokenIndex };
     // O último nó de cada estilo: com `extends`, o do tema junta as propriedades às da base.
     var style_nodes: std.StringHashMapUnmanaged(*const kdl.Node) = .empty;
+    var part_rules: parts.Builder = .{};
 
     for (nodes) |*n| {
         if (!applies(&t, n, lo.mode)) continue;
@@ -385,8 +389,11 @@ pub fn loadWith(gpa: std.mem.Allocator, src: []const u8, lo: LoadOptions, diag: 
             }
         } else if (std.mem.eql(u8, n.name, "layout")) {
             t.layout = n;
+        } else if (std.mem.eql(u8, n.name, "parts")) {
+            part_rules.add(&fcx, n) catch |err| return fxFail(err, fcx, diag);
         }
     }
+    t.parts = try part_rules.finish(a);
     legibleText(&t);
     t.has_user_panel = if (t.layout) |root| hasNode(root, "user-panel") else true;
     t.has_member_list = if (t.layout) |root| hasNode(root, "member-list") else true;

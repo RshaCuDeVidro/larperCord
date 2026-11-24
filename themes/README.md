@@ -70,6 +70,7 @@ layout {
 | `metrics radius=6` | default rounding of rows and buttons |
 | `window transparent=#true` | transparent window background. On Linux your compositor (Hyprland, KDE…) can blur what's behind it. On Windows the app doesn't ask the system for blur, so there's none |
 | `styles { style "name" … }` | named styles to use with `style=name` |
+| `parts { part "name:state" … }` | the pieces inside the components, per state ([Parts and states](#parts-and-states)) |
 | `layout { … }` | the interface tree (a single child at the root) |
 | `extends "classico"` | starts from another theme and changes only what's different ([details](#building-on-another-theme)) |
 | `vars { name value … }` | values used as `$name` ([details](#variables)) |
@@ -195,6 +196,115 @@ The name and activity use `text`, switching to white or near black when the phot
 ```kdl
 messages flex=1 avatar=squircle call-style=card call-tint=0.16
 ```
+
+## Parts and states
+
+Components draw their inner pieces with the theme's tokens. A `parts` block styles those pieces one by one, and
+can change them in each state:
+
+```kdl
+parts {
+    part "message.author" color="@accent" weight=bold
+    part "message:hover" bg="@hover" radius=6
+    part "message:mention" bg="alpha(@mention, 0.12)" bar="@mention"
+    part "channel.item:selected" bg="@selected" color="@text" radius=4
+    part "channel.item:unread" color="@text" weight=bold
+    part "member.row:speaking" border="@online"
+    part "composer.box" bg="@elevated" radius=12 border="@border"
+}
+```
+
+Each `part` names a piece, then any states after a `:` (`"channel.item:selected:hover"` applies only when both are
+true). What a part doesn't set is drawn the way the component always draws it, so you only write what you want to
+change. Colors take the same expressions as everywhere else and are worked out with the current tokens: they follow
+light/dark mode, the accent color picked in Settings, the server color and the `c-…` of that part of the layout.
+Like `colors`, a `parts` block can have `mode=`, `when=` and `unless=`, and a theme can have several.
+
+To find the name of a piece, open the Inspector (`F12`), pick it on the screen and look at **Theme part** in the
+Theme section: it shows the name with the states it has right now, ready to paste (`channel.item:hover:selected`).
+[`community/studio-ink.kdl`](community/studio-ink.kdl) uses most of the list below.
+
+| Part | States | Properties | What it is |
+|---|---|---|---|
+| `message` | `self` `hover` `mention` | `bg` `border` `border-width` `radius` `bar` `bar-width` `opacity` | a whole message row, behind the avatar, the name and the text |
+| `message.author` | `self` `hover` `mention` | `color` `weight` | the author's name (the nick column in irc) |
+| `message.time` | `self` `hover` `mention` | `color` | the time of the message |
+| `message.body` | `self` `hover` `mention` | `color` | the text of the message |
+| `message.reply` | `self` `hover` `mention` | `color` | the line that quotes the message being replied to |
+| `channel.item` | `muted` `hover` `unread` `mention` `selected` | `bg` `color` `border` `border-width` `radius` `bar` `bar-width` `opacity` `weight` | a channel row of a server; `color` and `weight` are the name's |
+| `channel.category` | `hover` | `bg` `color` `border` `border-width` `radius` `weight` | a category header in the channel list |
+| `channel.unread` | | `color` | the unread marker of a channel row |
+| `channel.badge` | | `bg` `color` | the count of unread pings on a channel row |
+| `channel.voice-member` | `self` `hover` `speaking` | `bg` `color` `border` `border-width` `radius` `weight` | someone in a voice channel, listed under it |
+| `member.row` | `self` `offline` `hover` `speaking` | `bg` `border` `border-width` `radius` `bar` `bar-width` `opacity` | a row of the member list |
+| `member.name` | `self` `offline` `hover` `speaking` | `color` `weight` | the name in a member row |
+| `member.role-header` | | `color` `weight` | a group heading of the member list (ONLINE — 3) |
+| `composer.box` | | `bg` `border` `border-width` `radius` | the message box |
+| `composer.placeholder` | | `color` `weight` | the hint in the empty message box |
+
+Every part works in every variant of its component (`messages`: cozy, irc, bubbles; `channel-list`: discord, tree,
+pills; `member-list`: discord, tty; `composer`: box, pill, prompt), with these details:
+
+- `message`: with `variant=bubbles` the row is the whole line behind the bubble; the bubble keeps the `bubble-self`
+  and `bubble-other` tokens. `bar` goes on the side where the text starts: on the right for a message that starts in a
+  right-to-left script (Arabic, Hebrew). Without a `bg` of its own, a message that pings you keeps the app's
+  highlight, and `radius` rounds it too.
+- `message.author`: your own messages have no name in bubbles. In irc the nick column keeps its width.
+- `message.time`: next to the name and, with the mouse over a follow-up line, by the avatar (cozy); `[hh:mm]` (irc);
+  beside the bubble, with the mouse over it (bubbles).
+- `message.body`: the base color of the text. Links, mentions, code and quotes keep their colors, system lines stay
+  `muted` and a message still being sent stays half transparent.
+- `message.reply`: the quoted text (the name keeps its role color); with the mouse over it, it turns `text`.
+- `channel.item`: only the rows of a server's channels, not the DM list or threads. In `variant=tree` the whole line
+  (`├ # name`) takes `color`. `bar` is a straight stripe: on round rows (`pills`) keep `radius` small.
+- `channel.unread`: the pill at the edge (discord), the dot (pills) or `●` (tree).
+- `channel.badge`: in `variant=tree` the count is plain text, `(3)`, drawn in the `bg` color.
+- `channel.voice-member`: `border` goes around the row; the green ring on the photo of whoever talks stays.
+- `composer.box`: with `variant=prompt`, `bg` fills the line and `border` takes the place of the rule above it. The
+  text you type keeps `text`.
+- `composer.placeholder`: box and pill (prompt shows the prompt, not a hint).
+
+### States
+
+From the weakest to the strongest:
+
+`self` < `muted` < `offline` < `hover` < `unread` < `mention` < `selected` < `speaking`
+
+| State | When |
+|---|---|
+| `self` | your own message, or your own row in a list |
+| `muted` | a channel you muted (or can't open) |
+| `offline` | a member who is offline |
+| `hover` | the mouse is over it |
+| `unread` | a channel with unread messages (not when muted) |
+| `mention` | a message that pings you, or a channel with unread pings |
+| `selected` | the open channel |
+| `speaking` | someone talking in the voice call you are in |
+
+When a piece is in several states at once, each property comes from the strongest state that sets it, and the rest
+from the part without a state. A rule with several states (`channel.item:selected:hover`) applies only when all of them
+are true, after the rules of its strongest state alone. Two rules with the same states: the one further down wins.
+
+### Properties
+
+| Property | Value | What it does |
+|---|---|---|
+| `bg` | color | background (replaces the app's own for that state) |
+| `color` | color | text color |
+| `border` | color | border all around |
+| `border-width` | number, 0.5 to 8 | border thickness in pixels (1 when not set) |
+| `radius` | number, 0 to 64 | rounding of the background and the border (the component's own when not set) |
+| `bar` | color | a stripe along the side where the text starts |
+| `bar-width` | number, 1 to 16 | stripe thickness in pixels (3 when not set) |
+| `opacity` | number, 0 to 1 | opacity of everything drawn in the part |
+| `weight` | `regular` `medium` `semibold` `bold` `italic` | font weight (on Windows a font found by its file name has a single weight: [Fonts on Windows](#fonts-on-windows)) |
+
+Numbers outside the range are brought into it. There's no `padding`: rows keep their size, so a click lands where it
+always did. An unknown part, state or property, a state the part doesn't have (`member.row:unread`) and an invalid
+color are errors: the notice shows `file:line` and the previous theme stays.
+
+Cost: the block is worked out once, when the theme loads, into a table with every part in every combination of
+states; drawing a piece is one lookup in it. A theme without `parts` doesn't go through any of this.
 
 ## Beyond the flat rectangle
 

@@ -8,6 +8,10 @@
 - `theme-api 2` at the top of a theme turns the check strict: what would be a warning is an error, and the app doesn't load the theme until it's fixed. Themes without it work as before.
 - `larpercord --theme-lsp` is a language server for theme files: Neovim, Helix, VS Code and other editors show the errors and warnings while you type, complete components, properties, values, color tokens, options and variables, and show the description of each on hover. It talks over stdin and stdout and opens no window, on Linux and Windows. Setup snippets are in themes/README.md.
 
+**Theme parts**
+- A `parts` block styles the pieces inside the components, and each piece in each state: `part "message.author:hover" color="@accent"`, `part "channel.item:selected" bg="@selected" radius=4`. The pieces are the message row and its author, time, text and reply line; the channel row, category, unread marker, ping badge and the people under a voice channel; the member row, name and group heading; the message box and its hint. The states are hover, selected, unread, mention, speaking, muted, offline and self, and they combine (`channel.item:selected:hover`). A piece takes a background, a text color, a border, rounding, a stripe on the side where the text starts (the right side in Arabic or Hebrew), opacity and font weight, with colors that follow the light or dark mode and the accent picked in Settings. It works in every layout variant (cozy, irc and bubbles messages; discord, tree and pills channels; discord and tty members; box, pill and prompt message box), is worked out once when the theme loads, and a theme without `parts` draws exactly as before. Guide: "Parts and states" in themes/README.md, and Studio Ink in the community gallery uses most of them.
+- The Inspector shows the theme part under each element with the states it has right now, ready to paste into a theme (`larpercord ctl inspect el` returns it too).
+
 ## 0.6.8
 
 **Control from outside**

@@ -14,6 +14,7 @@ const types = @import("../core/types.zig");
 const i18n = @import("i18n.zig");
 const moderacao = @import("moderacao.zig");
 const devices = @import("device_menu.zig");
+const parts = @import("parts.zig");
 
 pub fn memberList(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect) void {
     if (ctx.st.friends) return @import("comp_friends.zig").activeNow(ctx, n, r);
@@ -107,7 +108,13 @@ const Rows = struct {
         const ctx = rw.ctx;
         if (!rw.first) rw.y += if (rw.tty) @as(f32, 8) else 14;
         rw.first = false;
-        d.text(rw.dl, rw.fam.get(.semibold), if (rw.tty) ctx.th.font_size - 2 else 12, rw.r.x + (if (rw.tty) @as(f32, 10) else 16), rw.y, ctx.col(.faint).mix(ctx.col(.muted), 0.3), label);
+        // A parte `member.role-header` do tema (theme/parts.zig), se ele tiver.
+        const hl = parts.look(ctx, .member_role_header, .{});
+        const font = rw.fam.get(parts.weightOr(hl, .semibold));
+        const size = if (rw.tty) ctx.th.font_size - 2 else 12;
+        const x = rw.r.x + (if (rw.tty) @as(f32, 10) else 16);
+        d.text(rw.dl, font, size, x, rw.y, parts.colorOr(ctx, hl.color, ctx.col(.faint).mix(ctx.col(.muted), 0.3)), label);
+        parts.mark(.{ .x = x, .y = rw.y, .w = d.width(font, size, label), .h = size * 1.3 }, .member_role_header, .{});
         rw.y += if (rw.tty) @as(f32, 20) else 22;
     }
 
@@ -126,19 +133,31 @@ const Rows = struct {
         const online = !offline_group and u.status != .offline;
         const name_col = w.nameColor(ctx, rw.guild, uid);
         const name = ctx.store.nameIn(rw.guild, uid) orelse u.name;
+        // As partes do tema (theme/parts.zig). Quem fala só é procurado se o tema tiver alguma.
+        var pst: parts.States = .{ .self = uid == ctx.store.me, .offline = !online, .speaking = parts.on(ctx) and ctx.store.isSpeaking(uid, ctx.now_ms) };
         if (rw.tty) {
             const rr: d.Rect = .{ .x = r.x + 4, .y = rw.y, .w = r.w - 8, .h = 20 };
             const hb = d.hit(ctx, @truncate(uid), rr);
             qa.mark(rr, "member:{d}", .{uid});
             memberClick(ctx, hb, uid, rr);
-            if (hb.hovered) d.rect(dl, rr, ctx.col(.hover), 0);
+            pst.hover = hb.hovered;
+            const rl = parts.look(ctx, .member_row, pst);
+            const nl = parts.look(ctx, .member_name, pst);
+            parts.mark(rr, .member_row, pst);
+            const fade = parts.Fade.begin(dl, rl);
+            if (!parts.fill(ctx, dl, rl, rr, 0) and hb.hovered) d.rect(dl, rr, ctx.col(.hover), rl.radius orelse 0);
+            parts.border(ctx, dl, rl, rr, 0);
+            parts.bar(ctx, dl, rl, rr, false, 0);
             const fs = ctx.th.font_size;
             d.text(dl, fam.get(.regular), fs - 1, rr.x + 6, d.centerY(rr, fs - 1), w.statusColor(ctx, if (online) u.status else .offline), w.statusGlyph(if (online) u.status else .offline));
             const castigo_t = moderacao.castigoAte(ctx, rw.guild, uid);
-            const nw_t = d.textClipped(dl, fam.get(if (online) .bold else .regular), fs - 1, rr.x + 24, d.centerY(rr, fs - 1), if (online) name_col else ctx.col(.faint), name, rr.w - 30 - w.botTagSpace(ctx, u, true) - (if (castigo_t != 0) moderacao.relogio_w else 0));
+            const nf_t = fam.get(parts.weightOr(nl, if (online) .bold else .regular));
+            const nw_t = d.textClipped(dl, nf_t, fs - 1, rr.x + 24, d.centerY(rr, fs - 1), parts.colorOr(ctx, nl.color, if (online) name_col else ctx.col(.faint)), name, rr.w - 30 - w.botTagSpace(ctx, u, true) - (if (castigo_t != 0) moderacao.relogio_w else 0));
             w.markName(rr, "member", uid, name);
+            parts.mark(.{ .x = rr.x + 24, .y = rr.y, .w = nw_t, .h = rr.h }, .member_name, pst);
             _ = w.botTag(ctx, dl, rr.x + 24 + nw_t, rr.y + rr.h / 2, u, true, if (online) 1 else 0.5);
             if (castigo_t != 0) moderacao.relogio(ctx, dl, rr.right() - 12, rr.y + rr.h / 2, castigo_t, if (online) 1 else 0.6);
+            fade.end();
             rw.y += 20;
             return;
         }
@@ -146,8 +165,15 @@ const Rows = struct {
         const hb = d.hit(ctx, @truncate(uid), rr);
         qa.mark(rr, "member:{d}", .{uid});
         memberClick(ctx, hb, uid, rr);
+        pst.hover = hb.hovered;
+        const rl = parts.look(ctx, .member_row, pst);
+        const nl = parts.look(ctx, .member_name, pst);
+        parts.mark(rr, .member_row, pst);
+        const fade = parts.Fade.begin(dl, rl);
         const k = anim.to(anim.id("member", uid), if (hb.hovered) 1 else 0, 24);
-        d.rect(dl, rr, ctx.col(.hover).alpha(k * 1.4), ctx.th.radius);
+        if (!parts.fill(ctx, dl, rl, rr, ctx.th.radius)) d.rect(dl, rr, ctx.col(.hover).alpha(k * 1.4), rl.radius orelse ctx.th.radius);
+        parts.border(ctx, dl, rl, rr, ctx.th.radius);
+        parts.bar(ctx, dl, rl, rr, false, ctx.th.radius);
         const alpha: f32 = if (online) 1 else 0.38 + 0.4 * k;
         w.avatarIn(ctx, dl, rw.guild, rr.x + 24, rr.y + 21, 32, uid, .circle, if (online) ctx.col(.sidebar) else null, alpha);
         w.markName(rr, "member", uid, name);
@@ -157,15 +183,19 @@ const Rows = struct {
         // Offline: só a foto fica apagada. O nome vai na cor fraca do tema, que
         // o tema já garante legível (4.5:1); a cor do cargo em 38% sumia no fundo.
         const off_col = ctx.col(.faint).mix(ctx.col(.muted), k);
+        const nf = fam.get(parts.weightOr(nl, .medium));
         if (u.activity != null and online) {
-            const nw = d.textClipped(dl, fam.get(.medium), 15, rr.x + 48, rr.y + 3, name_col, name, name_room);
+            const nw = d.textClipped(dl, nf, 15, rr.x + 48, rr.y + 3, parts.colorOr(ctx, nl.color, name_col), name, name_room);
+            parts.mark(.{ .x = rr.x + 48, .y = rr.y + 2, .w = nw, .h = 20 }, .member_name, pst);
             _ = w.botTag(ctx, dl, rr.x + 48 + nw, rr.y + 12, u, false, alpha);
             _ = d.textClipped(dl, fam.get(.regular), 12, rr.x + 48, rr.y + 22, ctx.col(.muted), u.activity.?, rr.w - 56);
         } else {
-            const nw = d.textClipped(dl, fam.get(.medium), 15, rr.x + 48, d.centerY(rr, 15), if (online) name_col else off_col, name, name_room);
+            const nw = d.textClipped(dl, nf, 15, rr.x + 48, d.centerY(rr, 15), parts.colorOr(ctx, nl.color, if (online) name_col else off_col), name, name_room);
+            parts.mark(.{ .x = rr.x + 48, .y = rr.y + 11, .w = nw, .h = 20 }, .member_name, pst);
             _ = w.botTag(ctx, dl, rr.x + 48 + nw, rr.y + rr.h / 2, u, false, alpha);
         }
         if (castigo != 0) moderacao.relogio(ctx, dl, rr.right() - 16, rr.y + rr.h / 2, castigo, @max(alpha, 0.6));
+        fade.end();
         rw.y += 44;
     }
 };

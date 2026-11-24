@@ -85,6 +85,8 @@ pub const Frame = struct {
     scopes: std.ArrayList(Scope) = .empty,
     layers: std.ArrayList(Layer) = .empty,
     marks: std.ArrayList(Mark) = .empty,
+    /// As partes do tema desenhadas (theme/parts.zig): o nome que um tema usa para cada uma.
+    parts: std.ArrayList(Mark) = .empty,
     /// Número do quadro (cresce a cada quadro gravado) e a geração do tema nele.
     number: u64 = 0,
     theme_gen: u32 = 0,
@@ -102,6 +104,7 @@ pub const Frame = struct {
         f.scopes.clearRetainingCapacity();
         f.layers.clearRetainingCapacity();
         f.marks.clearRetainingCapacity();
+        f.parts.clearRetainingCapacity();
         f.complete = false;
     }
 
@@ -118,6 +121,11 @@ pub const Frame = struct {
     /// O nome da marca do QA no retângulo (só nos builds com o robô).
     pub fn markFor(f: *const Frame, r: Rect) ?[]const u8 {
         return markOf(f, r);
+    }
+
+    /// A parte do tema em que o retângulo está ("message.author:hover"), em qualquer build.
+    pub fn partFor(f: *const Frame, r: Rect) ?[]const u8 {
+        return partOf(f, r);
     }
 
     pub fn layerName(f: *const Frame, layer: u16) []const u8 {
@@ -337,6 +345,12 @@ pub fn hit(local: usize, hovered: bool, held: bool, clicked: bool) void {
 pub fn mark(r: Rect, key: []const u8) void {
     const f = cur();
     f.marks.append(gpa, .{ .key = keep(key), .rect = r }) catch {};
+}
+
+/// Parte do tema desenhada em `r` (ui/parts.zig, só gravando).
+pub fn part(r: Rect, name: []const u8) void {
+    const f = cur();
+    f.parts.append(gpa, .{ .key = keep(name), .rect = r }) catch {};
 }
 
 /// Depois do ImGui_Render: junta os itens do ImGui, descobre a camada de cada lista de
@@ -574,6 +588,24 @@ pub fn markOf(f: *const Frame, r: Rect) ?[]const u8 {
     return best;
 }
 
+/// A parte do tema mais justa que tem o meio do retângulo: o nome do texto, a linha da
+/// mensagem em volta dele, e assim por diante.
+pub fn partOf(f: *const Frame, r: Rect) ?[]const u8 {
+    const mx = r.x + r.w / 2;
+    const my = r.y + r.h / 2;
+    var best: ?[]const u8 = null;
+    var best_area: f32 = std.math.floatMax(f32);
+    for (f.parts.items) |p| {
+        if (!p.rect.contains(mx, my)) continue;
+        const a = area(p.rect);
+        if (a < best_area) {
+            best_area = a;
+            best = f.str(p.key);
+        }
+    }
+    return best;
+}
+
 /// O fundo visível embaixo de um elemento: o último preenchimento desenhado antes dele,
 /// na mesma camada ou abaixo, que o cobre (para o contraste de um texto).
 pub fn backgroundOf(f: *const Frame, i: usize) ?u32 {
@@ -676,4 +708,25 @@ test "fundo de um texto: o último preenchimento opaco antes dele que o cobre" {
     // Desenhado depois do texto: está por cima, não embaixo.
     try f.els.append(gpa, .{ .kind = .fill, .rect = w, .clip = w, .order = 4, .color = 0xFF333333 });
     try t.expectEqual(@as(?u32, 0xFF222222), backgroundOf(&f, 3));
+}
+
+test "parte do tema: a mais justa que tem o meio do elemento" {
+    var f: Frame = .{};
+    defer {
+        f.parts.deinit(gpa);
+        f.strs.deinit(gpa);
+    }
+    const add = struct {
+        fn put(fr: *Frame, r: Rect, name: []const u8) !void {
+            const at: u32 = @intCast(fr.strs.items.len);
+            try fr.strs.appendSlice(gpa, name);
+            try fr.parts.append(gpa, .{ .key = .{ .at = at, .len = @intCast(name.len) }, .rect = r });
+        }
+    }.put;
+    try add(&f, .{ .x = 0, .y = 0, .w = 700, .h = 60 }, "message:hover");
+    try add(&f, .{ .x = 60, .y = 4, .w = 80, .h = 20 }, "message.author:hover");
+    // O nome dentro da linha é do nome; o texto embaixo dele, da linha.
+    try t.expectEqualStrings("message.author:hover", f.partFor(.{ .x = 62, .y = 6, .w = 70, .h = 16 }).?);
+    try t.expectEqualStrings("message:hover", f.partFor(.{ .x = 60, .y = 30, .w = 300, .h = 18 }).?);
+    try t.expect(f.partFor(.{ .x = 800, .y = 30, .w = 10, .h = 10 }) == null);
 }

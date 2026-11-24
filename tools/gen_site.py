@@ -905,6 +905,22 @@ PAINTED = {n["name"] for n in SCHEMA["components"] if n.get("paints")}
 WEIGHTS = set(next(p for n in SCHEMA["components"] if n["name"] == "label" for p in n["props"] if p["key"] == "weight")["values"])
 
 
+def part_table():
+    """As partes do tema, os estados e as propriedades (src/theme/parts.zig, `partes`,
+    `estados` e `props`): o bloco `parts` é conferido com a mesma lista que o app usa."""
+    global _PART_TABLE
+    if _PART_TABLE is None:
+        path = ROOT / "src" / "theme" / "parts.zig"
+        states = [e["name"] for e in zig_entries(path, "estados")]
+        props = {e["name"]: e["kind"] for e in zig_entries(path, "props")}
+        parts = {e["name"]: (e["states"].split(), e["props"].split()) for e in zig_entries(path, "partes")}
+        _PART_TABLE = (states, props, parts)
+    return _PART_TABLE
+
+
+_PART_TABLE = None
+
+
 class ThemeProblem(Exception):
     def __init__(self, msg, line=0, col=0):
         super().__init__(msg)
@@ -1387,6 +1403,35 @@ def check_theme_nodes(nodes):
             if not nd.kids:
                 bad(nd, "the layout is empty: it needs one root (row, column or stack)")
             walk(nd)
+        elif nd.name == "parts":
+            states, props, parts = part_table()
+            for p in nd.kids:
+                if p.name != "part":
+                    bad(p, 'only `part "name:state"` goes inside parts')
+                if not p.args:
+                    bad(p, 'part without a name (part "message:hover" …)')
+                if not isinstance(p.args[0], str):
+                    bad(p, "the part name must be a string")
+                name, *wanted = p.args[0].split(":")
+                if name not in parts:
+                    bad(p, f"unknown part: {name} (the list is in themes/README.md, \"Parts and states\")")
+                for st in wanted:
+                    if st not in states:
+                        bad(p, f"unknown state: {st!r} ({', '.join(states)})")
+                    if st not in parts[name][0]:
+                        bad(p, f"{name} has no state {st}")
+                for k, v in p.props.items():
+                    if k not in props:
+                        bad(p, f"unknown property in a part: {k}")
+                    if k not in parts[name][1]:
+                        bad(p, f"{name} has no property {k}")
+                    kind = props[k]
+                    if kind == "color" and not (isinstance(v, str) and color_ok(v, True)):
+                        bad(p, f"invalid color in {k}")
+                    if kind == "number" and (isinstance(v, bool) or not isinstance(v, (int, float))):
+                        bad(p, f"{k} needs a number")
+                    if kind == "weight" and v not in WEIGHTS:
+                        bad(p, "weight: regular, medium, semibold, bold or italic")
 
 
 VAR_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
@@ -1879,7 +1924,7 @@ def rewriter(lang, slug, path):
         if name.startswith("guide:"):
             return rel(path, page_url(lang, name[6:])) + frag
         if slug == "themes" and name.endswith(".kdl"):
-            return f"{REPO}/blob/main/themes/{name}"
+            return f"{REPO}/blob/main/themes/{target}"
         if slug == "plugins" and target.rstrip("/").startswith("plugins"):
             return f"{REPO}/tree/main/docs/{target}"
         return f"{REPO}/blob/main/{target}"

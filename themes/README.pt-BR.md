@@ -71,6 +71,7 @@ layout {
 | `metrics radius=6` | arredondamento padrão de linhas e botões |
 | `window transparent=#true` | fundo da janela transparente. No Linux, o seu compositor (Hyprland, KDE…) pode desfocar o que está atrás. No Windows o app não pede desfoque ao sistema, então não tem blur |
 | `styles { style "nome" … }` | estilos nomeados para usar com `style=nome` |
+| `parts { part "nome:estado" … }` | os pedaços de dentro dos componentes, por estado ([Partes e estados](#partes-e-estados)) |
 | `layout { … }` | a árvore da interface (um único filho na raiz) |
 | `extends "classico"` | parte de outro tema e muda só o que for diferente ([detalhes](#partindo-de-outro-tema)) |
 | `vars { nome valor … }` | valores usados como `$nome` ([detalhes](#variáveis)) |
@@ -197,6 +198,116 @@ O nome e a atividade usam `text`, e trocam por branco ou quase preto quando a co
 ```kdl
 messages flex=1 avatar=squircle call-style=card call-tint=0.16
 ```
+
+## Partes e estados
+
+Os componentes desenham os pedaços de dentro com os tokens do tema. Um bloco `parts` estiliza esses pedaços um por
+um, e pode mudá-los em cada estado:
+
+```kdl
+parts {
+    part "message.author" color="@accent" weight=bold
+    part "message:hover" bg="@hover" radius=6
+    part "message:mention" bg="alpha(@mention, 0.12)" bar="@mention"
+    part "channel.item:selected" bg="@selected" color="@text" radius=4
+    part "channel.item:unread" color="@text" weight=bold
+    part "member.row:speaking" border="@online"
+    part "composer.box" bg="@elevated" radius=12 border="@border"
+}
+```
+
+Cada `part` diz o nome de um pedaço e, depois de `:`, os estados (`"channel.item:selected:hover"` só vale quando os
+dois são verdade). O que a parte não diz é desenhado como o componente sempre desenha, então você só escreve o que quer
+mudar. As cores aceitam as mesmas expressões de todo lugar e são calculadas com os tokens do momento: seguem o modo
+claro/escuro, a cor de destaque escolhida nas Configurações, a cor do servidor e o `c-…` daquele pedaço do layout.
+Como o `colors`, um bloco `parts` aceita `mode=`, `when=` e `unless=`, e um tema pode ter vários.
+
+Para descobrir o nome de um pedaço, abra o Inspetor (`F12`), escolha ele na tela e veja **Parte do tema** na seção
+Tema: aparece o nome com os estados que ele tem agora, pronto para colar (`channel.item:hover:selected`).
+O [`community/studio-ink.kdl`](community/studio-ink.kdl) usa quase toda a lista abaixo.
+
+| Parte | Estados | Propriedades | O que é |
+|---|---|---|---|
+| `message` | `self` `hover` `mention` | `bg` `border` `border-width` `radius` `bar` `bar-width` `opacity` | a linha inteira de uma mensagem, atrás da foto, do nome e do texto |
+| `message.author` | `self` `hover` `mention` | `color` `weight` | o nome de quem escreveu (a coluna do apelido no irc) |
+| `message.time` | `self` `hover` `mention` | `color` | o horário da mensagem |
+| `message.body` | `self` `hover` `mention` | `color` | o texto da mensagem |
+| `message.reply` | `self` `hover` `mention` | `color` | a linha que cita a mensagem respondida |
+| `channel.item` | `muted` `hover` `unread` `mention` `selected` | `bg` `color` `border` `border-width` `radius` `bar` `bar-width` `opacity` `weight` | a linha de um canal de servidor; `color` e `weight` são do nome |
+| `channel.category` | `hover` | `bg` `color` `border` `border-width` `radius` `weight` | o título de uma categoria na lista de canais |
+| `channel.unread` | | `color` | o sinal de não lida na linha do canal |
+| `channel.badge` | | `bg` `color` | a contagem de menções não lidas na linha do canal |
+| `channel.voice-member` | `self` `hover` `speaking` | `bg` `color` `border` `border-width` `radius` `weight` | quem está num canal de voz, na lista embaixo dele |
+| `member.row` | `self` `offline` `hover` `speaking` | `bg` `border` `border-width` `radius` `bar` `bar-width` `opacity` | uma linha da lista de membros |
+| `member.name` | `self` `offline` `hover` `speaking` | `color` `weight` | o nome numa linha de membro |
+| `member.role-header` | | `color` `weight` | o título de um grupo da lista de membros (ONLINE — 3) |
+| `composer.box` | | `bg` `border` `border-width` `radius` | a caixa de mensagem |
+| `composer.placeholder` | | `color` `weight` | a dica na caixa de mensagem vazia |
+
+Toda parte funciona em todas as variantes do componente dela (`messages`: cozy, irc, bubbles; `channel-list`: discord,
+tree, pills; `member-list`: discord, tty; `composer`: box, pill, prompt), com estes detalhes:
+
+- `message`: com `variant=bubbles` a linha é a faixa inteira atrás do balão; o balão continua com os tokens
+  `bubble-self` e `bubble-other`. `bar` fica do lado em que o texto começa: à direita numa mensagem que começa numa
+  escrita da direita para a esquerda (árabe, hebraico). Sem um `bg` próprio, a mensagem que chama você continua com o
+  destaque do app, e o `radius` arredonda ele também.
+- `message.author`: nas bolhas, as suas mensagens não têm nome. No irc, a coluna do apelido mantém a largura.
+- `message.time`: ao lado do nome e, com o mouse em cima de uma linha que continua o grupo, junto da foto (cozy);
+  `[hh:mm]` (irc); do lado do balão, com o mouse em cima dele (bubbles).
+- `message.body`: a cor base do texto. Links, menções, código e citações mantêm as cores deles, as linhas de sistema
+  continuam `muted` e a mensagem ainda sendo enviada continua meio transparente.
+- `message.reply`: o texto citado (o nome continua na cor do cargo); com o mouse em cima, vira `text`.
+- `channel.item`: só as linhas dos canais de um servidor, não a lista de DMs nem as threads. Com `variant=tree` a linha
+  inteira (`├ # nome`) fica com o `color`. `bar` é uma faixa reta: nas linhas redondas (`pills`), use um `radius`
+  pequeno.
+- `channel.unread`: a pílula na beirada (discord), a bolinha (pills) ou o `●` (tree).
+- `channel.badge`: com `variant=tree` a contagem é só texto, `(3)`, na cor do `bg`.
+- `channel.voice-member`: `border` contorna a linha; o anel verde na foto de quem fala continua.
+- `composer.box`: com `variant=prompt`, `bg` preenche a linha e `border` fica no lugar do fio de cima. O texto que você
+  digita continua `text`.
+- `composer.placeholder`: box e pill (o prompt mostra o prompt, não uma dica).
+
+### Estados
+
+Do mais fraco para o mais forte:
+
+`self` < `muted` < `offline` < `hover` < `unread` < `mention` < `selected` < `speaking`
+
+| Estado | Quando |
+|---|---|
+| `self` | a sua mensagem, ou a sua linha numa lista |
+| `muted` | um canal que você silenciou (ou que não pode abrir) |
+| `offline` | um membro que está offline |
+| `hover` | o mouse está em cima |
+| `unread` | um canal com mensagens não lidas (não quando silenciado) |
+| `mention` | uma mensagem que chama você, ou um canal com menções não lidas |
+| `selected` | o canal aberto |
+| `speaking` | alguém falando na call em que você está |
+
+Quando um pedaço está em vários estados ao mesmo tempo, cada propriedade vem do estado mais forte que fala dela, e o
+resto vem da parte sem estado. Uma regra com vários estados (`channel.item:selected:hover`) só vale com todos eles, e
+vem depois das regras do seu estado mais forte sozinho. Duas regras com os mesmos estados: vale a de baixo.
+
+### Propriedades
+
+| Propriedade | Valor | O que faz |
+|---|---|---|
+| `bg` | cor | fundo (no lugar do próprio do app naquele estado) |
+| `color` | cor | cor do texto |
+| `border` | cor | borda em volta |
+| `border-width` | número, de 0,5 a 8 | espessura da borda em pixels (1 quando não tem) |
+| `radius` | número, de 0 a 64 | arredondamento do fundo e da borda (o do componente quando não tem) |
+| `bar` | cor | uma faixa ao longo do lado em que o texto começa |
+| `bar-width` | número, de 1 a 16 | espessura da faixa em pixels (3 quando não tem) |
+| `opacity` | número, de 0 a 1 | opacidade de tudo o que é desenhado na parte |
+| `weight` | `regular` `medium` `semibold` `bold` `italic` | peso da fonte (no Windows, uma fonte achada pelo nome do arquivo tem um peso só: [Fontes no Windows](#fontes-no-windows)) |
+
+Números fora da faixa são trazidos para dentro dela. Não existe `padding`: as linhas mantêm o tamanho, então o clique
+cai onde sempre caiu. Parte, estado ou propriedade que não existem, um estado que a parte não tem (`member.row:unread`)
+e uma cor inválida são erros: o aviso mostra `arquivo:linha` e o tema anterior continua valendo.
+
+Custo: o bloco é resolvido uma vez, ao carregar o tema, numa tabela com cada parte em cada combinação de estados;
+desenhar um pedaço é uma consulta nela. Um tema sem `parts` não passa por nada disso.
 
 ## Além do retângulo chapado
 

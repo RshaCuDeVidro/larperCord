@@ -2178,6 +2178,7 @@
 "Theme" "テーマ"
 "Theme color" "テーマの色"
 "Theme colors — {s} ({s})" "テーマの色 — {s}（{s}）"
+"Theme part" "テーマのパーツ"
 "theme error" "テーマのエラー"
 "theme reloaded: {s}" "テーマを再読み込みしました: {s}"
 "theme warnings ({d}): {s}" "テーマの警告 ({d}): {s}"

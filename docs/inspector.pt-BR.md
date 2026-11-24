@@ -12,6 +12,8 @@ Fechado e nunca aberto, não custa nada: nem memória, nem trabalho a mais em ca
 
 - **Elementos**: o quadro atual como árvore. Primeiro vêm os pedaços do layout do tema (`row`, `column`, cada componente) e, dentro de cada um, o que ele desenhou: caixas, textos, imagens e áreas clicáveis. Passe o mouse numa linha e o elemento acende na tela. Escolha um pedaço e você vê:
   - o arquivo e a linha do nó do `.kdl` que o desenha, com todas as propriedades;
+  - a parte do tema de que ele faz parte, com os estados de agora (`channel.item:hover:selected`), o nome que o bloco
+    `parts` de um tema usa ([Partes e estados](../themes/README.pt-BR.md#partes-e-estados));
   - cada cor com o nome no tema (`accent`, `muted`, `sidebar 50%`…) e o hex;
   - a fonte, o tamanho e o contraste de um texto com o fundo embaixo dele (WCAG AA/AAA);
   - o id, o rótulo e o estado de um item clicável do Dear ImGui, e o nome da marca do QA nos builds com o robô;

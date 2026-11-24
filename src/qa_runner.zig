@@ -3348,6 +3348,7 @@ const ops_fontes = [_]Op{
     key(c.ImGuiKey_Escape),
 };
 
+const ops_partes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_partes.zig").ops;
 const ops_lembretes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops;
 const ops_lembretes_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops_a;
 const ops_lembretes_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops_b;
@@ -3369,6 +3370,7 @@ fn soNoDebug(_: *App) bool {
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
 const suites = [_]struct { []const u8, []const Op }{
     .{ "tema", &ops_theme },
+    .{ "partes", &ops_partes },
     .{ "login", &ops_login },
     .{ "voice", &ops_voice },
     .{ "leitura", &ops_leitura },

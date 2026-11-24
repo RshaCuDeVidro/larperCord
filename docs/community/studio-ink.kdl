@@ -1,0 +1,113 @@
+// studio-ink.kdl: Ink on warm paper after dark, and a tour of the parts block.
+// Every line in `parts` styles a piece inside a component: themes/README.md, "Parts and states".
+theme "Studio Ink" description="Tinta sobre papel quente, à noite. Mostra o bloco parts: a mensagem sob o mouse num cartão, a menção com faixa, o canal aberto com barra e borda em quem fala." description-en="Ink on warm paper, after dark. Shows off the parts block: the message under the mouse on a card, mentions with a stripe, the open channel with a bar and a border on whoever is talking." author="larperCord" license="CC0-1.0" preview=classic
+
+colors mode=dark {
+    bg              "#171a21"
+    rail            "#101219"
+    sidebar         "#13161d"
+    surface         "#1c2029"
+    elevated        "#242934"
+    overlay         "#2b313d"
+    text            "#ece4d4"
+    muted           "#aaa391"
+    faint           "#857f6d"
+    accent          "#e8945a"
+    accent-text     "#1a1410"
+    border          "#2a2f3a"
+    hover           "alpha(#ece4d4, 0.04)"
+    selected        "alpha(#e8945a, 0.14)"
+    online          "#7fc28a"
+    idle            "#e2b45a"
+    dnd             "#e06464"
+    danger          "#e06464"
+    mention         "#e8945a"
+    link            "#8ab4e8"
+    code-bg         "#101219"
+    bubble-self     "#e8945a"
+    bubble-self-text "#1a1410"
+    bubble-other    "#242934"
+    shadow          "alpha(black, 0.42)"
+}
+roles mode=dark "#e8945a" "#8ab4e8" "#9fcf8a" "#d6a2e8" "#e2c35a" "#7fd1c8" "#e88a9a" "#c9bfa8"
+
+colors mode=light {
+    bg              "#f5f0e6"
+    rail            "#e7dfcf"
+    sidebar         "#eee7da"
+    surface         "#fbf8f1"
+    elevated        "#e9e1d2"
+    overlay         "#fdfbf6"
+    text            "#22252c"
+    muted           "#5c5a52"
+    faint           "#7a766a"
+    accent          "#b4532a"
+    accent-text     "#fdfbf6"
+    border          "#ddd3c1"
+    hover           "alpha(#22252c, 0.04)"
+    selected        "alpha(#b4532a, 0.12)"
+    online          "#3f7a4a"
+    idle            "#9a6a10"
+    dnd             "#b83a3a"
+    danger          "#b83a3a"
+    mention         "#b4532a"
+    link            "#2b5f9a"
+    code-bg         "#ece4d5"
+    bubble-self     "#b4532a"
+    bubble-self-text "#fdfbf6"
+    bubble-other    "#e9e1d2"
+    shadow          "alpha(#5a4320, 0.14)"
+}
+roles mode=light "#a14a24" "#2b5f9a" "#3f7a3a" "#7a4a9a" "#8a6a10" "#1f6e66" "#a83a5a" "#5c5040"
+
+fonts ui="Inter" mono="JetBrains Mono" size=15
+metrics radius=8
+
+// The pieces inside the components. A state (`:hover`, `:selected`…) applies on top of
+// the part without one, property by property; the colors follow light/dark and the accent
+// color picked in Settings.
+parts {
+    part "message:hover" bg="alpha(@text, 0.035)" radius=10
+    part "message:mention" bg="alpha(@mention, 0.10)" bar="@mention" bar-width=3 radius=10
+    part "message.author" weight=bold
+    part "message.author:self" color="@accent"
+    part "message.time" color="mix(@faint, @accent, 0.35)"
+    part "message.reply" color="@muted"
+
+    part "channel.category" color="@accent" weight=bold
+    part "channel.item:hover" bg="alpha(@text, 0.05)"
+    part "channel.item:selected" bg="alpha(@accent, 0.14)" color="@text" bar="@accent" bar-width=3
+    part "channel.item:unread" color="@text" weight=bold
+    part "channel.item:muted" opacity=0.55
+    part "channel.unread" color="@accent"
+    part "channel.badge" bg="@accent" color="@accent-text"
+    part "channel.voice-member:speaking" border="@online" radius=6
+
+    part "member.role-header" color="@accent" weight=bold
+    part "member.row:hover" bg="alpha(@text, 0.05)"
+    part "member.row:speaking" border="@online" border-width=1.5 radius=8
+    part "member.name:self" color="@accent"
+
+    part "composer.box" bg="@surface" border="alpha(@accent, 0.35)" radius=12
+    part "composer.placeholder" color="@muted" weight=medium
+}
+
+layout {
+    row {
+        guild-bar width=72 bg=rail border-right="@border"
+        column width=240 bg=sidebar border-right="@border" {
+            channel-list flex=1
+            user-panel height=54 border-top="@border"
+        }
+        column flex=1 bg=bg {
+            header height=48 border-bottom="@border"
+            messages flex=1 avatar=circle avatar-size=36 spacing=14 inset-x=6
+            column height=88 padding-x=18 {
+                spacer flex=1
+                composer height=48
+                spacer height=20
+            }
+        }
+        member-list width=236 bg=sidebar border-left="@border" hide-below=1040
+    }
+}
