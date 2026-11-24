@@ -24,6 +24,8 @@ const gw = @import("net/fake_gateway.zig");
 const types = @import("core/types.zig");
 const an = @import("app_notificacao.zig");
 const notif_dbus = @import("platform/notif_dbus.zig");
+const notif_win = @import("platform/notif_win.zig");
+const sys = @import("platform/sys.zig");
 const Id = types.Id;
 
 fn s(name: []const u8) Op {
@@ -535,6 +537,9 @@ var ns_buf: [600]u8 = undefined;
 var log_buf: [600]u8 = undefined;
 var bus_buf: [600]u8 = undefined;
 var ns0: u32 = 0;
+/// No Windows o aviso vai pelo sistema ou, recusado, pelo balão da bandeja: nunca pelo
+/// notify-send.
+var win0: u32 = 0;
 const dm_texto = "oi com a janela na bandeja";
 fn prepNotify(app: *App) void {
     const here = c.SDL_GetCurrentDirectory() orelse return;
@@ -552,6 +557,7 @@ fn prepNotify(app: *App) void {
     _ = c.SDL_setenv_unsafe("DBUS_SESSION_BUS_ADDRESS", bus.ptr, 1);
     notif_dbus.tentarDeNovo();
     ns0 = an.medidas.pelo_notify_send;
+    win0 = an.medidas.pelo_balao + notif_win.medidas.mostrados;
     _ = app;
 }
 fn dmArrives(app: *App) void {
@@ -562,6 +568,7 @@ fn dmArrives(app: *App) void {
     platform.Window.wake(app.win.wake_type, .gateway);
 }
 fn notifiedInTray(app: *App) bool {
+    if (sys.windows) return an.medidas.pelo_balao + notif_win.medidas.mostrados == win0 + 1 and app.win.window == null;
     var size: usize = 0;
     const data = c.SDL_LoadFile(std.mem.sliceTo(&log_buf, 0).ptr, &size) orelse return false;
     defer c.SDL_free(data);

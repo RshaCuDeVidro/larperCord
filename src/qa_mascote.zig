@@ -663,6 +663,10 @@ fn paletteOpenPortal(app: *App) bool {
 fn portalReset(_: *App) void {
     pet.qa_portal = false;
 }
+/// O portal dura 0,8 s: num quadro lento (o CI) ele já pode ter acabado quando o QA olha.
+fn portalStarted(_: *App) bool {
+    return pet.activity() == .portal or pet.qa_portal;
+}
 fn paletteClosed(app: *App) bool {
     return !app.st.palette.open;
 }
@@ -1290,8 +1294,9 @@ pub const ops = [_]Op{
     .{ .hover = .{ .at = .{ .key = "composer", .fx = 0.95, .fy = -0.6 } } },
     .{ .expect = .{ .name = "a setinha parada perto dele: tenta pegar", .check = isAct(.grab), .timeout_ms = 4000 } },
     run(lifeReset),
+    run(portalReset),
     .{ .click = .{ .dyn = otherChannel } },
-    expect("trocou de canal: ele passa pelo portal junto", isAct(.portal)),
+    expect("trocou de canal: ele passa pelo portal junto", portalStarted),
     .{ .wait = 900 },
     run(openAThread),
     expect("abriu uma thread: ele espia", isAct(.peek)),

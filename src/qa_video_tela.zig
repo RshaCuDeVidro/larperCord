@@ -129,7 +129,9 @@ fn restoreHide(_: *App) void {
 }
 
 fn playing(app: *App) bool {
-    if (!hasFfmpeg()) return !video.info().active and std.mem.indexOf(u8, app.st.toast.text(), "vídeo") != null;
+    // O aviso sai no idioma da interface (a bateria roda também em japonês).
+    const aviso = @import("ui/i18n.zig").tr("vídeo de demonstração (sem FFmpeg)", "demo video (no FFmpeg)");
+    if (!hasFfmpeg()) return !video.info().active and std.mem.indexOf(u8, app.st.toast.text(), aviso) != null;
     const v = video.info();
     return v.active and v.playing and v.shown >= 3 and qa.find("video") != null;
 }
