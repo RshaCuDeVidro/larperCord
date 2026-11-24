@@ -2843,7 +2843,8 @@ const ops = [_]Op{
     .{ .sweep = &.{ "word-remove:", "unignore:", "seg:", "button:" } },
     .{ .run = @import("qa_alertas.zig").focusReset },
     click("settings:Idioma"),
-    .{ .sweep = &.{"radio:"} },
+    // Cada idioma da lista (ui/settings.zig, languageRows): os do código e os dos arquivos.
+    .{ .sweep = &.{"lang:"} },
     .{ .sweep = &.{"settings:"} },
     .{ .sweep = &.{"settings-close"} },
 
@@ -3713,7 +3714,7 @@ pub const Runner = struct {
         if (std.mem.eql(u8, name, "friends")) return st.friends;
         if (num(name, "profile-tab:")) |t| return t == st.profile_tab;
         // Opções de escolha única: clicar na já escolhida não muda nada.
-        for ([_][]const u8{ "seg:", "radio:", "accent:", "theme-card:", "settings:", "inbox-tab:" }) |p| if (std.mem.startsWith(u8, name, p)) return true;
+        for ([_][]const u8{ "seg:", "radio:", "lang:", "accent:", "theme-card:", "settings:", "inbox-tab:" }) |p| if (std.mem.startsWith(u8, name, p)) return true;
         return false;
     }
 
