@@ -27,6 +27,12 @@
 - `tools/i18n_strings.py --template de` makes the template of a new language (each text empty, with where it is and what it is), `--update` brings a translation up to date without losing anything (texts the app dropped get `/-`), `--keys` keeps the list the app counts from, and `--check` checks every file. CI fails on a broken file or a wrong placeholder; a missing translation only warns.
 - Exported conversations follow a right-to-left translation (`dir="rtl"` on the page), and each message keeps its own direction. Japanese follows the new texts; the new Russian ones are in English for now.
 
+**Plugins**
+- Labels in any language: `larper.tr{ pt = "olá", en = "hello", ja = "こんにちは" }` picks the interface's language (the exact code, then the base language, then English), `larper.lang()` returns the real code (`"ja"`, `"ru"`…) and `-- @name:<code>` and `-- @description:<code>` translate the plugin's card. Menus, choices, the panel and the options take the same tables. The old `larper.tr("olá", "hello")` keeps working.
+- Real HTTP: `larper.http.put`, `patch`, `delete`, `head` and `request` besides `get` and `post`. `*.example.com` in `@hosts` covers the subdomains (a wildcard on a whole top-level domain, a public suffix or a shared hosting domain stops the plugin from starting, and Discord's domains can't be declared at all). `Authorization` and `X-API-Key` only go to the hosts in `@credentials` that you approved, and the card warns about them. `res.headers` brings a list of allowed headers, and redirects are followed only to an approved host, over HTTPS, up to 5. The plugin's card lists its last 32 requests, never a header value or a body.
+- `larper.secrets` keeps API keys and passwords in the system keyring (Credential Manager on Windows, Secret Service on Linux), separate for each plugin and never in the log.
+- Actions on messages: `larper.react`, `larper.reply`, `larper.edit` (only your own messages), `larper.delete` and `larper.attach` (both ask first, on screen), `larper.pin`, `larper.unpin`, `larper.thread`, and `larper.send` with `reply_to`. They only run straight from a gesture on the plugin (its command, keybind, panel button or menu entry, never an event, a timer or an HTTP answer), with a ceiling per gesture and per minute, and go the same way as the app's own buttons.
+
 ## 0.6.8
 
 **Control from outside**

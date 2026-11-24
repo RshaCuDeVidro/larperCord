@@ -27,6 +27,12 @@
 - O `tools/i18n_strings.py --template de` gera o modelo de um idioma novo (cada texto vazio, com onde ele está e o que ele é), o `--update` atualiza uma tradução sem perder nada (os textos que o app largou ganham `/-`), o `--keys` mantém a lista que o app usa para contar, e o `--check` confere cada arquivo. O CI falha com arquivo quebrado ou marcador errado; tradução que falta só avisa.
 - As conversas exportadas seguem uma tradução da direita para a esquerda (`dir="rtl"` na página), e cada mensagem fica na direção dela. O japonês segue os textos novos; os novos em russo estão em inglês por enquanto.
 
+**Plugins**
+- Rótulos em qualquer idioma: `larper.tr{ pt = "olá", en = "hello", ja = "こんにちは" }` escolhe o idioma da interface (o código exato, depois o idioma base, depois o inglês), `larper.lang()` devolve o código de verdade (`"ja"`, `"ru"`…) e `-- @name:<código>` e `-- @description:<código>` traduzem o cartão do plugin. Menus, escolhas, o painel e as opções aceitam as mesmas tabelas. O `larper.tr("olá", "hello")` antigo continua funcionando.
+- HTTP de verdade: `larper.http.put`, `patch`, `delete`, `head` e `request` além de `get` e `post`. `*.exemplo.com` em `@hosts` vale para os subdomínios (um curinga num domínio de topo inteiro, num sufixo público ou numa hospedagem compartilhada impede o plugin de começar, e os domínios do Discord não podem ser declarados de jeito nenhum). `Authorization` e `X-API-Key` só vão para os hosts de `@credentials` que você aprovou, e o cartão avisa. O `res.headers` traz uma lista de cabeçalhos permitidos, e um redirecionamento só é seguido para um host aprovado, por HTTPS, até 5. O cartão do plugin lista os 32 últimos pedidos, nunca o valor de um cabeçalho nem um corpo.
+- `larper.secrets` guarda chaves de API e senhas no chaveiro do sistema (o Gerenciador de Credenciais no Windows, o Secret Service no Linux), separado por plugin e nunca no log.
+- Ações nas mensagens: `larper.react`, `larper.reply`, `larper.edit` (só nas suas), `larper.delete` e `larper.attach` (os dois perguntam antes, na tela), `larper.pin`, `larper.unpin`, `larper.thread`, e `larper.send` com `reply_to`. Elas só rodam direto de um gesto no plugin (o comando, o atalho, um botão do painel ou um item do menu dele, nunca um evento, um temporizador ou uma resposta HTTP), com limite por gesto e por minuto, e vão pelo mesmo caminho dos botões do app.
+
 ## 0.6.8
 
 **Controle de fora**
