@@ -101,6 +101,20 @@ fn addFribidi(b: *std.Build, m: *std.Build.Module) void {
     });
 }
 
+/// mimalloc (third_party/mimalloc) no lugar do malloc do sistema, com -Dmimalloc: o executável
+/// define malloc, free e o resto, e no Linux as bibliotecas do sistema (SDL, curl, FreeType...)
+/// também alocam com ele. No Windows só o que está dentro do .exe; o que a DLL do C aloca
+/// sozinha continua com ela, e um free de lá que viesse para cá é recusado (MI_FREE_IS_CHECKED)
+/// em vez de estragar o heap. O src/platform/mem_mi.c dá a devolução e os números do heap.
+fn addMimalloc(b: *std.Build, m: *std.Build.Module) void {
+    const windows = m.resolved_target.?.result.os.tag == .windows;
+    m.addIncludePath(b.path("third_party/mimalloc/include"));
+    const base = [_][]const u8{ "-std=gnu11", "-O2", "-DNDEBUG", "-DMI_MALLOC_OVERRIDE", "-fno-builtin-malloc", "-Wno-unknown-pragmas", "-fno-sanitize=undefined" };
+    const flags: []const []const u8 = if (windows) &(base ++ [_][]const u8{"-DMI_FREE_IS_CHECKED=1"}) else &(base ++ [_][]const u8{ "-fvisibility=hidden", "-ftls-model=initial-exec" });
+    m.addCSourceFile(.{ .file = b.path("third_party/mimalloc/src/static.c"), .flags = flags });
+    m.addCSourceFile(.{ .file = b.path("src/platform/mem_mi.c"), .flags = &.{ "-std=gnu11", "-O2" } });
+}
+
 /// Windows: FreeType compilado junto (o baixado por tools/windows_deps.sh).
 const freetype_sources = [_][]const u8{
     "base/ftsystem.c", "base/ftinit.c",    "base/ftdebug.c",     "base/ftbase.c",  "base/ftbbox.c",  "base/ftbitmap.c",
@@ -218,6 +232,14 @@ pub fn build(b: *std.Build) void {
     const qa = b.option(bool, "qa", "Inclui o robô de QA (--qa); padrão: só no debug") orelse !release;
     const build_options = b.addOptions();
     build_options.addOption(bool, "qa", qa);
+    // O Discord de mentira em 127.0.0.1 (QA_SUITE=rede e conta-grande) só troca o endereço no
+    // debug. -Dqa-rede (com -Dqa) deixa trocar também num build otimizado, para medir a RAM
+    // com o alocador e o código da release (tools/ram_conta_grande.sh). Nunca nas releases.
+    const qa_rede = b.option(bool, "qa-rede", "Com -Dqa num build otimizado: o QA de rede e o da conta grande no Discord de mentira local") orelse false;
+    build_options.addOption(bool, "qa_rede", qa and qa_rede);
+    // O alocador (ver addMimalloc): o malloc do sistema por padrão.
+    const mimalloc = b.option(bool, "mimalloc", "Usa o mimalloc (third_party/mimalloc) no lugar do malloc do sistema") orelse false;
+    build_options.addOption(bool, "mimalloc", mimalloc);
     // O TLS do Chrome (src/platform/tls_chrome.c) mexe no OpenSSL do curl: só onde ele é
     // o mesmo que o app liga. O libcurl oficial do Windows traz o dele por dentro.
     const tls_chrome = target.result.os.tag != .windows or single_exe;
@@ -330,6 +352,8 @@ pub fn build(b: *std.Build) void {
     mod.addCSourceFile(.{ .file = b.path("third_party/imgui/imgui_demo.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti", "-DIMGUI_DISABLE_DEMO_WINDOWS" } });
 
     mod.addCSourceFile(.{ .file = b.path("src/ui/font_metrics.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
+    // A memória de cada biblioteca grande (src/platform/mem_contas.zig).
+    mod.addCSourceFile(.{ .file = b.path("src/platform/mem_contas.c"), .flags = if (mimalloc) &.{ "-std=gnu11", "-O2", "-DLARPER_MIMALLOC" } else &.{ "-std=gnu11", "-O2" } });
     mod.addCSourceFile(.{ .file = b.path("src/inspect/ganchos.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
 
     // Decodificador de imagens (PNG/JPEG/GIF) dos anexos; WebP vem da libwebp.
@@ -397,6 +421,7 @@ pub fn build(b: *std.Build) void {
     addRnnoise(b, mod);
     addFribidi(b, mod);
     addDrLibs(b, mod, &.{});
+    if (mimalloc) addMimalloc(b, mod);
     if (windows) {
         const ft = win_deps.path(b, "src/freetype");
         mod.addIncludePath(ft.path(b, "include"));
@@ -740,6 +765,8 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
 fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, c_mod: *std.Build.Module, themes_mod: *std.Build.Module, examples_mod: *std.Build.Module) *std.Build.Module {
     const options = b.addOptions();
     options.addOption(bool, "qa", false);
+    options.addOption(bool, "qa_rede", false);
+    options.addOption(bool, "mimalloc", false);
     options.addOption(bool, "tls_chrome", false);
     options.addOption(bool, "single_exe", false);
     options.addOption([]const u8, "version", @import("src/core/version.zig").number);

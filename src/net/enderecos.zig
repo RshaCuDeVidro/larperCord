@@ -5,7 +5,8 @@
 //! local (tools/discord_falso.py, QA_SUITE=rede), para o código de rede de verdade
 //! (net/discord.zig: WebSocket, zlib-stream, RESUME, rate limit) rodar no QA sem a conta de
 //! ninguém. A troca só aceita http/ws em 127.0.0.1 e não existe fora desse executável:
-//! `usarLocal` nem compila em outro (ver `pode_trocar`), e o resto devolve os fixos.
+//! `usarLocal` nem compila em outro (ver `pode_trocar`), e o resto devolve os fixos. Com a
+//! troca ligada, o CDN e o proxy de mídia vão para o mesmo servidor (`midiaLocal`).
 const std = @import("std");
 const builtin = @import("builtin");
 
@@ -19,9 +20,10 @@ pub const gateway_fixo = "wss://gateway.discord.gg";
 /// verdade esquecido no LARPER_TOKEN nunca vai para o servidor local.
 pub const token_qa = "larper-qa-token-falso-nao-e-do-discord";
 
-/// Só no executável do QA em debug. Num ReleaseFast (mesmo com -Dqa) é false, e os
-/// endereços ficam os fixos sem nem olhar a variável.
-pub const pode_trocar = builtin.mode == .debug and @import("build_options").qa;
+/// Só no executável do QA em debug, ou num otimizado com -Dqa -Dqa-rede (medir a RAM como
+/// na release, tools/ram_conta_grande.sh). Num ReleaseFast comum (mesmo com -Dqa) é false,
+/// e os endereços ficam os fixos sem nem olhar a variável.
+pub const pode_trocar = @import("build_options").qa and (builtin.mode == .debug or @import("build_options").qa_rede);
 
 var porta: u16 = 0;
 var buf_api: [48]u8 = undefined;
@@ -100,6 +102,31 @@ pub fn retomadaAceita(url: []const u8) bool {
     return url.len == base.len or url[base.len] == '/';
 }
 
+/// O CDN e o proxy de mídia do Discord no servidor de mentira (imagens da conta grande):
+/// "https://cdn.discordapp.com/x" vira "<base>/cdn/cdn.discordapp.com/x". Outro endereço
+/// fica como está (null).
+pub fn trocaMidia(buf: []u8, base: []const u8, url: []const u8) ?[:0]const u8 {
+    const pre = "https://";
+    if (!std.mem.startsWith(u8, url, pre)) return null;
+    const resto = url[pre.len..];
+    const host = resto[0 .. std.mem.indexOfAny(u8, resto, "/?#@:") orelse resto.len];
+    if (!std.mem.eql(u8, host, "cdn.discordapp.com") and !std.mem.eql(u8, host, "media.discordapp.net")) return null;
+    if (resto.len == host.len or resto[host.len] != '/') return null;
+    return std.fmt.bufPrintSentinel(buf, "{s}/cdn/{s}", .{ base, resto }, 0) catch null;
+}
+
+/// A URL de mídia que o curl pede: a do servidor de mentira com a troca ligada (só o CDN
+/// do Discord), senão null (fica a de verdade, sempre fora do QA).
+pub fn midiaLocal(buf: []u8, url: []const u8) ?[:0]const u8 {
+    if (!local()) return null;
+    return trocaMidia(buf, baseLocal(), url);
+}
+
+/// Protocolos do download de mídia: só https no de verdade.
+pub fn protocolosMidia() [*:0]const u8 {
+    return if (local()) "http,https" else "https";
+}
+
 /// Esperas da reconexão (net/discord.zig `run`): com o servidor local, um décimo, para cada
 /// queda do QA levar uma fração de segundo e não os 2, 4, 8 s de uma rede de verdade (a
 /// conta das esperas em si é testada em net/retry.zig).
@@ -121,6 +148,14 @@ test "endereço do Discord de mentira: só http em 127.0.0.1 com porta" {
     try t.expectEqual(@as(?u16, null), portaLocal("http://127.0.0.1:"));
     try t.expectEqual(@as(?u16, null), portaLocal("http://discord.com"));
     try t.expectEqual(@as(?u16, null), portaLocal("ws://127.0.0.1:8080"));
+    // O CDN e o proxy de mídia vão para o servidor local; o resto não muda.
+    var b: [128]u8 = undefined;
+    try t.expectEqualStrings("http://127.0.0.1:9/cdn/cdn.discordapp.com/avatars/1/a.png?size=128", trocaMidia(&b, "http://127.0.0.1:9", "https://cdn.discordapp.com/avatars/1/a.png?size=128").?);
+    try t.expectEqualStrings("http://127.0.0.1:9/cdn/media.discordapp.net/attachments/1/2/x.png", trocaMidia(&b, "http://127.0.0.1:9", "https://media.discordapp.net/attachments/1/2/x.png").?);
+    try t.expectEqual(@as(?[:0]const u8, null), trocaMidia(&b, "http://127.0.0.1:9", "https://cdn.discordapp.com.evil.org/x"));
+    try t.expectEqual(@as(?[:0]const u8, null), trocaMidia(&b, "http://127.0.0.1:9", "https://cdn.discordapp.com@evil.org/x"));
+    try t.expectEqual(@as(?[:0]const u8, null), trocaMidia(&b, "http://127.0.0.1:9", "http://cdn.discordapp.com/x"));
+    try t.expectEqual(@as(?[:0]const u8, null), trocaMidia(&b, "http://127.0.0.1:9", "https://example.org/x.png"));
     // O token de mentira não tem a forma de um token do Discord (partes separadas por ponto).
     try t.expect(std.mem.indexOfScalar(u8, token_qa, '.') == null);
 }

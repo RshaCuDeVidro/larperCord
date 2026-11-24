@@ -78,6 +78,9 @@ fn keepEnvironCopy() void {
 pub fn main(init: std.process.Init.Minimal) !void {
     // Antes de qualquer thread (platform/mem_tune.zig).
     @import("platform/mem_tune.zig").init();
+    // O SDL e o OpenSSL alocam pelas funções que contam (platform/mem_contas.zig): antes de
+    // qualquer alocação deles.
+    @import("platform/mem_contas.zig").instalar();
     keepEnvironCopy();
     sys.init();
     var opts: Options = .{};

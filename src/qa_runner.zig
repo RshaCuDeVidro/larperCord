@@ -3367,6 +3367,11 @@ const ops_rede = if (@import("net/enderecos.zig").pode_trocar) @import("qa_rede.
 fn soNoDebug(_: *App) bool {
     return false;
 }
+/// A conta grande no mesmo Discord de mentira (qa_conta_grande.zig, tools/ram_conta_grande.sh).
+const ops_conta_grande = if (@import("net/enderecos.zig").pode_trocar) @import("qa_conta_grande.zig").ops else [_]Op{
+    s("conta grande"),
+    expect("o Discord de mentira só existe no executável do QA de debug ou com -Dqa-rede", soNoDebug),
+};
 
 /// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
@@ -3453,6 +3458,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "pastas-tema", &ops_pastas_tema },
     .{ "pastas-plana", &ops_pastas_plana },
     .{ "rede", &ops_rede },
+    .{ "conta-grande", &ops_conta_grande },
     .{ "gif-clipes-a", &@import("qa_gif_clipes.zig").ops_a },
     .{ "gif-clipes-b", &@import("qa_gif_clipes.zig").ops_b },
     .{ "tema-herda", &qa_temas.ops_heranca },

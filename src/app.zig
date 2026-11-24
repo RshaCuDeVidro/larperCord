@@ -84,6 +84,9 @@ var auto_tried_buf: [32]u8 = @splat(0);
 var auto_tried_len: usize = 0;
 const lsp_ui = @import("ui/lsp_ui.zig");
 const mem_tune = @import("platform/mem_tune.zig");
+const app_memoria = @import("app_memoria.zig");
+/// --stats: o minuto da última RAM por partes no log (-1 = a abertura ainda não acabou).
+var stats_ram_min: i64 = -1;
 const mascote = @import("ui/mascote.zig");
 const mascote_arquivos = @import("ui/mascote_arquivos.zig");
 const i18n_pasta = @import("ui/i18n_pasta.zig");
@@ -103,12 +106,12 @@ const Debounce = @import("core/debounce.zig").Debounce;
 const sub_delay_ms = 250;
 const SubReq = struct { guild: types.Id, channel: types.Id, thread: types.Id };
 
-/// QA_SUITE=rede: o app abre no Discord de mentira (qa_rede.zig). Fora do executável de
-/// debug do QA é sempre false, sem nem olhar a variável.
+/// QA_SUITE=rede e conta-grande: o app abre no Discord de mentira (qa_rede.zig). Fora do
+/// executável do QA que pode trocar o endereço é sempre false, sem nem olhar a variável.
 fn qaRede(opts: Options) bool {
     if (comptime !enderecos.pode_trocar) return false;
-    const suite = c.SDL_getenv("QA_SUITE") orelse return false;
-    return opts.qa and std.mem.eql(u8, std.mem.span(suite), "rede");
+    const suite = std.mem.span(c.SDL_getenv("QA_SUITE") orelse return false);
+    return opts.qa and (std.mem.eql(u8, suite, "rede") or std.mem.eql(u8, suite, "conta-grande"));
 }
 
 pub const Options = struct {
@@ -345,6 +348,8 @@ pub const App = struct {
         busca_local.setWake(&buscaWake);
         timeline.mark(.janela);
 
+        // O ImGui e o FreeType dele alocam pelas funções que contam (platform/mem_contas.zig).
+        @import("platform/mem_contas.zig").imgui();
         _ = c.ImGui_CreateContext(null);
         const io = c.ImGui_GetIO();
         io.*.IniFilename = null;
@@ -1209,10 +1214,13 @@ pub const App = struct {
             const mem = platform.selfMemKb();
             kb = mem.pss;
             @atomicStore(u32, &app.stats.file_kb, mem.file, .monotonic);
-            if (!voz_audio.in_call.load(.acquire)) if (mem_tune.heap()) |h| {
+            const em_call = voz_audio.in_call.load(.acquire);
+            if (!em_call) if (mem_tune.heap()) |h| {
                 @atomicStore(u32, &app.stats.heap_used_kb, h.used_kb, .monotonic);
                 @atomicStore(u32, &app.stats.heap_free_kb, h.free_kb, .monotonic);
             };
+            // O mapa de memória inteiro, para Desempenho dividir a RAM por partes.
+            app_memoria.medir(!em_call, mem.pss);
         }
         if (app.opts.stats) std.log.info("laço: {d} voltas", .{prof_turns.load(.monotonic)});
         const S = struct {
@@ -3480,6 +3488,11 @@ pub const App = struct {
                             // acorda no minuto cheio): o que muda de minuto em minuto já
                             // está na tela. Outro aviso no mesmo tique ainda redesenha.
                             const minute_only = app.minute_tick.swap(false, .acq_rel);
+                            if (app.opts.stats and stats_ram_min >= 0 and @divFloor(now(), 60_000) != stats_ram_min) {
+                                stats_ram_min = @divFloor(now(), 60_000);
+                                var rb: [32]u8 = undefined;
+                                app_memoria.logar(app, std.fmt.bufPrint(&rb, "{d} s", .{@divFloor(c.SDL_GetTicksNS() - app.started_ns, std.time.ns_per_s)}) catch "minuto");
+                            }
                             // A janela flutuante mostra horários e o tempo da call: o minuto que virou.
                             if (@divFloor(now(), 60_000) != @divFloor(app.pip.ultimo_ms, 60_000)) app_flutuante.marcar(app);
                             if (!minute_only or @divFloor(last_frame_ms, 60_000) != @divFloor(now(), 60_000)) pending = @max(pending, 1) else tick_seen = true;
@@ -4091,7 +4104,14 @@ pub const App = struct {
                     std.log.info("primeiro quadro em {d} ms", .{(c.SDL_GetTicksNS() - app.started_ns) / 1_000_000});
                 }
                 if (!app.login.visible() and (app.store.ready or app.store.from_cache)) timeline.mark(.login_fora);
-                if (timeline.isMarked(.login_fora) and timeline.isMarked(.historico)) timeline.report();
+                if (timeline.isMarked(.login_fora) and timeline.isMarked(.historico)) {
+                    timeline.report();
+                    // --stats: a RAM por partes quando a abertura acaba, e depois a cada minuto.
+                    if (app.opts.stats and stats_ram_min < 0) {
+                        stats_ram_min = @divFloor(now(), 60_000);
+                        app_memoria.logar(app, "abertura");
+                    }
+                }
             }
             if (record_dir) |dir| if (app.login.visible()) {
                 var pbuf: [512]u8 = undefined;

@@ -324,11 +324,9 @@ fn fillReactions(app: *App) void {
     party_n = m.n_reactions;
     const extra = [_][]const u8{ "😀", "🔥", "👀", "🚀", "✅", "💯", "🙏", "🤔" };
     for (extra, 1..) |e, k| {
-        if (m.n_reactions == m.reactions.len) break;
         var r = types.Reaction.init(e);
         r.count = @intCast(k);
-        m.reactions[m.n_reactions] = r;
-        m.n_reactions += 1;
+        if (!app.store.addReaction(m, r)) break;
     }
     m.layout_w = -1;
 }
@@ -340,7 +338,7 @@ fn dropReactions(app: *App) void {
 /// Todas as abas dentro do popup, sem uma cobrir a outra.
 fn allTabs(app: *App) bool {
     const m = partyMsg(app) orelse return false;
-    if (app.st.popup != .reactions or m.n_reactions != m.reactions.len) return false;
+    if (app.st.popup != .reactions or m.n_reactions != @import("core/store.zig").StoredMessage.max_reactions) return false;
     const box = qa.find("reactors") orelse return false;
     var b: [32]u8 = undefined;
     for (0..m.n_reactions) |i| {

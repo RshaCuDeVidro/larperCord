@@ -355,6 +355,7 @@ Georgia e Segoe UI Emoji de `C:\Windows\Fonts`.
 | `zig build test` | testes (KDL, cores, layout, markdown, Store, temas embutidos, configurações) |
 | `tools/snapshots.sh` | gera os prints de `docs/` sem abrir janela |
 | `tools/membench.sh 60` | mede RAM e CPU de cada tema e falha se passar de 60 MB |
+| `tools/ram_conta_grande.sh BIN` | RAM e CPU em uns minutos de uso de uma conta de mentira com 52 servidores e 2.450 canais, parte por parte (build do QA com `-Dqa=true -Dqa-rede=true`; sem conta e sem rede) |
 | `tools/tls_check.sh` | compara a impressão TLS e HTTP/2 do app com a do Chrome, sem token |
 | `tools/qa_quadros.py BIN [--slow]` | confere o pulo de quadros e a memória com a janela escondida, com janela de verdade num Xvfb |
 | `zig build web -Demscripten=PASTA` | a demonstração no navegador em WebAssembly ([como](tools/web/README.pt-BR.md)) |
@@ -390,7 +391,7 @@ src/
   platform/   janela, renderizador, "acordar" o laço; o único lugar que conhece o SDL
 themes/       os temas embutidos (também compilados dentro do binário)
 third_party/  Dear ImGui 1.93 + dear_bindings (C), com um patch pequeno para emoji em bitmap; GNU FriBidi;
-              dr_mp3 + dr_wav (anexos de áudio)
+              dr_mp3 + dr_wav (anexos de áudio); mimalloc (só com -Dmimalloc=true)
 ```
 
 O fluxo é **interface → `Action` → app → `Command` → gateway → `Event` → Store → interface**.
@@ -428,5 +429,5 @@ gateway falso pelo real não toca na interface.
 
 ## Licença
 
-O larperCord usa a [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). O código de terceiros mantém a própria licença, em cada pasta de `third_party/`: Dear ImGui e dear_bindings são MIT, RNNoise é BSD, GNU FriBidi é LGPL-2.1 ou posterior, dr_mp3 e dr_wav (dr_libs) são domínio público ou MIT No Attribution. O arquivo
+O larperCord usa a [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). O código de terceiros mantém a própria licença, em cada pasta de `third_party/`: Dear ImGui e dear_bindings são MIT, RNNoise é BSD, GNU FriBidi é LGPL-2.1 ou posterior, dr_mp3 e dr_wav (dr_libs) são domínio público ou MIT No Attribution, mimalloc é MIT. O arquivo
 `third_party/imgui/misc/freetype/imgui_freetype.cpp` tem alterações marcadas com `[larperCord]`.

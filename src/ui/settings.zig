@@ -17,6 +17,7 @@ const dropdown = @import("dropdown.zig");
 const tray = @import("../platform/tray.zig");
 const inbox = @import("inbox.zig");
 const mem_use_mod = @import("../core/mem_use.zig");
+const mem_partes = @import("../core/mem_partes.zig");
 const teclas = @import("teclas.zig");
 const atalhos_mod = @import("atalhos.zig");
 const sys = @import("../platform/sys.zig");
@@ -1498,10 +1499,52 @@ fn mbText(buf: []u8, prefix: []const u8, kb: u64) []const u8 {
 /// Varrer a conta custa: basta de vez em quando, e só com a página aberta.
 pub var mem_use: mem_use_mod.MemUse = .{};
 var mem_use_ms: i64 = 0;
+/// A última divisão mostrada (o QA confere que as partes somam o total).
+pub var mem_partes_vistas: mem_partes.Partes = .{};
+
+/// O nome de cada parte da RAM (core/mem_partes.zig) na página.
+fn parteLabel(buf: []u8, x: mem_partes.Parte) []const u8 {
+    return switch (x) {
+        .programa => i18n.tr("Programa (o executável)", "Program (the executable)"),
+        .bibliotecas => i18n.tr("Bibliotecas do sistema", "System libraries"),
+        .fontes => i18n.tr("Fontes", "Fonts"),
+        .driver => i18n.tr("Driver de vídeo", "Video driver"),
+        .arquivos => i18n.tr("Outros arquivos", "Other files"),
+        .pilhas => i18n.tr("Pilhas das threads", "Thread stacks"),
+        .sdl => i18n.tr("Janela e texturas (SDL)", "Window and textures (SDL)"),
+        .imgui => i18n.tr("Interface (Dear ImGui)", "Interface (Dear ImGui)"),
+        .freetype => i18n.tr("Letras (FreeType)", "Glyphs (FreeType)"),
+        .curl => i18n.tr("Conexões (curl)", "Connections (curl)"),
+        .openssl => i18n.tr("Criptografia (OpenSSL)", "Encryption (OpenSSL)"),
+        .lua => i18n.tr("Plugins (Lua)", "Plugins (Lua)"),
+        .mensagens => i18n.fmt(buf, "Mensagens ({d})", "Messages ({d})", .{mem_use.n_messages}),
+        .pessoas => i18n.fmt(buf, "Pessoas ({d})", "People ({d})", .{mem_use.n_people}),
+        .lugares => i18n.fmt(buf, "Servidores ({d}) e canais ({d})", "Servers ({d}) and channels ({d})", .{ mem_use.n_guilds, mem_use.n_channels }),
+        .resto_heap => i18n.tr("O resto do app e das bibliotecas", "The rest of the app and libraries"),
+        .heap_livre => i18n.tr("Heap livre, ainda não devolvido", "Free heap, not returned yet"),
+        .anonima => if (mem_partes_vistas.tem[@intFromEnum(mem_partes.Parte.resto_heap)])
+            i18n.tr("Fora do malloc (driver de vídeo e bibliotecas)", "Outside malloc (video driver and libraries)")
+        else
+            i18n.tr("O resto (o app, o driver de vídeo e o sistema)", "The rest (the app, the video driver and the system)"),
+    };
+}
+
+/// Uma linha da divisão: as do heap ocupado entram recuadas, embaixo da linha dele.
+fn parteRow(p: *Page, h: f32, label: []const u8, value: []const u8, recuo: bool) void {
+    const x0 = p.x;
+    const w0 = p.w;
+    if (recuo) {
+        p.x += 24;
+        p.w -= 24;
+    }
+    statRow(p, h, label, value);
+    p.x = x0;
+    p.w = w0;
+}
 
 fn memoryRows(p: *Page) void {
     const ctx = p.ctx;
-    const row_h = 44;
+    const row_h = 40;
     if (ctx.now_ms - mem_use_ms >= 2000 or ctx.now_ms < mem_use_ms) {
         mem_use_ms = ctx.now_ms;
         mem_use = mem_use_mod.of(ctx.store);
@@ -1509,21 +1552,27 @@ fn memoryRows(p: *Page) void {
     var l: [64]u8 = undefined;
     var v: [32]u8 = undefined;
     p.heading(i18n.tr("Para onde vai a memória", "Where the memory goes"));
-    statRow(p, row_h, i18n.fmt(&l, "Imagens ({d})", "Images ({d})", .{ctx.images.readyCount()}), mbText(&v, "", ctx.images.bytes / 1024));
-    statRow(p, row_h, i18n.fmt(&l, "Mensagens ({d})", "Messages ({d})", .{mem_use.n_messages}), mbText(&v, "~", mem_use.messages / 1024));
-    statRow(p, row_h, i18n.fmt(&l, "Pessoas ({d})", "People ({d})", .{mem_use.n_people}), mbText(&v, "~", mem_use.people / 1024));
-    statRow(p, row_h, i18n.fmt(&l, "Servidores ({d}) e canais ({d})", "Servers ({d}) and channels ({d})", .{ mem_use.n_guilds, mem_use.n_channels }), mbText(&v, "~", mem_use.places / 1024));
-    if (ctx.io.*.Fonts.*.TexData) |tex| statRow(p, row_h, i18n.tr("Atlas de fontes", "Font atlas"), mbText(&v, "", @as(u64, @intCast(tex.*.Width * tex.*.Height * tex.*.BytesPerPixel)) / 1024));
-    // O que este sistema não informa fica de fora, em vez de aparecer zerado.
-    const used = @atomicLoad(u32, &ctx.stats.heap_used_kb, .monotonic);
-    const free = @atomicLoad(u32, &ctx.stats.heap_free_kb, .monotonic);
-    const file = @atomicLoad(u32, &ctx.stats.file_kb, .monotonic);
-    if (used > 0) {
-        statRow(p, row_h, i18n.tr("Alocada no total", "Allocated in total"), mbText(&v, "", used));
-        statRow(p, row_h, i18n.tr("Livre, ainda não devolvida", "Free, not returned yet"), mbText(&v, "", free));
+    const pt = @import("../app_memoria.zig").partes(mem_use);
+    mem_partes_vistas = pt;
+    if (pt.total_kb == 0) {
+        p.note(i18n.tr("Medindo…", "Measuring…"));
+        return;
     }
-    if (file > 0) statRow(p, row_h, i18n.tr("Driver, bibliotecas e fontes", "Driver, libraries and fonts"), mbText(&v, "", file));
-    p.note(i18n.tr("Com ~ é estimativa. As imagens podem estar na memória da placa de vídeo, e não na RAM.", "Values with ~ are estimates. Images may live in video memory rather than RAM."));
+    var heap_aberto = false;
+    for (std.enums.values(mem_partes.Parte)) |x| {
+        if (!pt.tem[@intFromEnum(x)]) continue;
+        // O heap ocupado (só com o mapa: fora do Linux não se sabe o que é heap).
+        if (x.doHeap() and !heap_aberto and pt.tem[@intFromEnum(mem_partes.Parte.resto_heap)]) {
+            heap_aberto = true;
+            statRow(p, row_h, i18n.tr("Heap em uso (malloc)", "Heap in use (malloc)"), mbText(&v, "", pt.heapUsado()));
+        }
+        const est = x == .mensagens or x == .pessoas or x == .lugares;
+        parteRow(p, row_h, parteLabel(&l, x), mbText(&v, if (est) "~" else "", pt.get(x)), x.doHeap() and heap_aberto);
+    }
+    statRow(p, row_h, if (sys.windows) i18n.tr("Total (memória privada)", "Total (private memory)") else i18n.tr("Total (PSS, a soma das partes)", "Total (PSS, the sum of the parts)"), mbText(&v, "", pt.soma()));
+    p.note(i18n.tr("Cada parte sai do mapa de memória do processo e do que o malloc e as bibliotecas contam, e as partes somam o total. Com ~ é estimativa (o resto do heap fica com a diferença).", "Each part comes from the process memory map and from what malloc and the libraries count, and the parts add up to the total. Values with ~ are estimates (the rest of the heap gets the difference)."));
+    statRow(p, row_h, i18n.fmt(&l, "Imagens ({d})", "Images ({d})", .{ctx.images.readyCount()}), mbText(&v, "", ctx.images.bytes / 1024));
+    p.note(i18n.tr("As imagens ficam na memória da placa de vídeo, fora da conta acima; no renderizador por software, elas são parte do SDL.", "Images live in video memory, outside the count above; with the software renderer, they are part of SDL."));
 }
 
 fn performance(p: *Page) void {

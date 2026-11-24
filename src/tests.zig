@@ -30,6 +30,8 @@ test {
     _ = @import("core/types.zig");
     _ = @import("core/ritmo.zig");
     _ = @import("core/mem_use.zig");
+    _ = @import("core/mem_partes.zig");
+    _ = @import("platform/mem_mapa.zig");
     _ = @import("core/image_uri.zig");
     _ = @import("core/version.zig");
     _ = @import("core/atualizacao.zig");

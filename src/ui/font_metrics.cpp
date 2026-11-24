@@ -2,6 +2,7 @@
 // linha de base dos runs do `label` precisa do Ascent de cada fonte e tamanho.
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "misc/freetype/imgui_freetype.h"
 
 extern "C" float larper_font_ascent(ImFont* font, float size) {
     return font->GetFontBaked(size)->Ascent;
@@ -124,4 +125,10 @@ extern "C" const char* larper_input_active_text() {
     const ImGuiInputTextState& st = g.InputTextState;
     if (st.ID == 0 || st.ID != g.ActiveId || st.TextA.Data == NULL) return nullptr;
     return st.TextA.Data;
+}
+
+// O FreeType do atlas aloca pelas funções contadas de src/platform/mem_contas.c (Configurações →
+// Desempenho mostra quanto ele tem). Antes de a primeira fonte entrar no atlas.
+extern "C" void larper_freetype_set_alloc(void* (*alloc_func)(size_t, void*), void (*free_func)(void*, void*)) {
+    ImGuiFreeType::SetAllocatorFunctions(alloc_func, free_func, nullptr);
 }

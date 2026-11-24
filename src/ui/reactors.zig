@@ -39,7 +39,7 @@ pub fn openReactions(ctx: *d.Ctx, msg: Id, index: usize, x: f32, y: f32) void {
     sel = @intCast(@min(index, f.m.n_reactions - 1));
     burst = false;
     ctx.popup(.{ .reactions = .{ .message = msg, .x = x, .y = y } });
-    want(ctx, .{ .channel = f.cs.info.id, .id = msg, .emoji = f.m.reactions[sel] });
+    want(ctx, .{ .channel = f.cs.info.id, .id = msg, .emoji = f.m.reactionSlice()[sel] });
 }
 
 /// Abre a lista de quem votou na opção `answer` da enquete da mensagem.

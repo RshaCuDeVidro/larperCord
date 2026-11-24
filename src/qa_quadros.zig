@@ -125,8 +125,13 @@ fn scrollbarSelectsNothing(app: *App) bool {
 fn memoryShown(app: *App) bool {
     if (settings.mem_use.n_channels == 0 or settings.mem_use.n_people == 0 or settings.mem_use.places == 0) return false;
     if (app.stats.frames_built == 0) return false;
-    // Só a glibc informa o heap, e só o Linux separa o que vem de arquivos.
-    if (builtin.os.tag == .linux) return @atomicLoad(u32, &app.stats.heap_used_kb, .monotonic) > 0 and @atomicLoad(u32, &app.stats.file_kb, .monotonic) > 0;
+    // As partes da RAM somam o total (core/mem_partes.zig), e o total é de verdade.
+    const pt = settings.mem_partes_vistas;
+    if (pt.total_kb < 10 * 1024 or pt.soma() != pt.total_kb) return false;
+    // Só a glibc informa o heap, e só o Linux separa o que vem de arquivos: lá a divisão tem
+    // o heap ocupado em partes, e as bibliotecas contadas aparecem.
+    if (builtin.os.tag == .linux) return @atomicLoad(u32, &app.stats.heap_used_kb, .monotonic) > 0 and @atomicLoad(u32, &app.stats.file_kb, .monotonic) > 0 and
+        pt.heapUsado() > 0 and pt.get(.imgui) > 0 and pt.get(.sdl) > 0 and pt.get(.freetype) > 0;
     return true;
 }
 

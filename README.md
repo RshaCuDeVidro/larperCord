@@ -353,6 +353,7 @@ Segoe UI Emoji from `C:\Windows\Fonts`.
 | `zig build test` | tests (KDL, colors, layout, markdown, Store, built-in themes, settings) |
 | `tools/snapshots.sh` | generates the screenshots in `docs/` without opening a window |
 | `tools/membench.sh 60` | measures RAM and CPU for each theme and fails over 60 MB |
+| `tools/ram_conta_grande.sh BIN` | RAM and CPU for a few minutes of use of a fake 52-server, 2,450-channel account, part by part (QA build with `-Dqa=true -Dqa-rede=true`; no account and no network) |
 | `tools/tls_check.sh` | compares the app's TLS and HTTP/2 fingerprint with Chrome's, without a token |
 | `tools/qa_quadros.py BIN [--slow]` | checks frame skipping and hidden-window memory with a real window in Xvfb |
 | `zig build web -Demscripten=DIR` | the browser demo in WebAssembly ([how](tools/web/README.md)) |
@@ -388,7 +389,7 @@ src/
   platform/   window, renderer, "wake the loop"; the only place that knows SDL
 themes/       the built-in themes (also compiled into the binary)
 third_party/  Dear ImGui 1.93 + dear_bindings (C), with a small patch for bitmap emoji; GNU FriBidi;
-              dr_mp3 + dr_wav (audio attachments)
+              dr_mp3 + dr_wav (audio attachments); mimalloc (only with -Dmimalloc=true)
 ```
 
 The flow is **UI → `Action` → app → `Command` → gateway → `Event` → Store → UI**.
@@ -426,5 +427,5 @@ swapping the fake gateway for the real one doesn't touch the UI.
 
 ## License
 
-larperCord is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). Third-party code keeps its own license, in each folder of `third_party/`: Dear ImGui and dear_bindings are MIT, RNNoise is BSD, GNU FriBidi is LGPL-2.1 or later, dr_mp3 and dr_wav (dr_libs) are public domain or MIT No Attribution. The file
+larperCord is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). Third-party code keeps its own license, in each folder of `third_party/`: Dear ImGui and dear_bindings are MIT, RNNoise is BSD, GNU FriBidi is LGPL-2.1 or later, dr_mp3 and dr_wav (dr_libs) are public domain or MIT No Attribution, mimalloc is MIT. The file
 `third_party/imgui/misc/freetype/imgui_freetype.cpp` has changes marked with `[larperCord]`.

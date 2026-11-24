@@ -37,14 +37,27 @@ Control channel (same port, used by src/qa_rede.zig; all GET, answers JSON):
   /ctl/summary                          checks whose last answer was not ok, unknown paths
   /ctl/state                            connections, heartbeats and requests (debugging)
 
-Usage: discord_falso.py   (prints the port it listens on, then serves until killed)
+Big account (--conta grande, tools/conta_grande.py; QA_SUITE=conta-grande and
+tools/ram_conta_grande.sh): the READY is the 52-server account, followed by READY_SUPPLEMENTAL;
+op 14 gets the member list, op 8 the members asked for, the history has older pages
+(`before`), the CDN (/cdn/<host>/...) serves generated PNGs, and background traffic
+(presences, member list updates, messages, typing) runs while connected.
+  /ctl/trafego?on=0|1                   pause or resume the background traffic
+  /ctl/conta                            counters of what the big account sent
+
+Usage: discord_falso.py [--conta grande] [--semente N]
+       (prints the port it listens on, then serves until killed)
 """
 import base64
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
+import random
+import re
 import struct
+import sys
 import threading
 import time
 import zlib
@@ -95,7 +108,28 @@ state = {
     "trigger": None,
     "checks": {},
     "last_id": 0,
+    # Big account (--conta grande).
+    "sub": None,
+    "trafego": True,
+    "sent": {},
 }
+
+# The big account (tools/conta_grande.py), or None for the small one of the rede suite.
+CONTA = None
+
+
+def load_conta(seed):
+    # Loaded by path: under python -I the script's folder is not on sys.path. No __pycache__
+    # left next to it in the repo.
+    sys.dont_write_bytecode = True
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location("conta_grande", os.path.join(here, "conta_grande.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod, mod.Conta(seed=seed)
+
+
+CG = None
 
 
 def next_id(ms=None):
@@ -172,6 +206,9 @@ def guild():
 
 def ready_payload(s):
     me = dict(user(ME), email=None, verified=True, mfa_enabled=False, premium_type=0, flags=0, bot=False)
+    if CONTA is not None:
+        me["id"] = str(CONTA.me)
+        return CONTA.ready(s.id, f"ws://127.0.0.1:{PORT}/retomar", me)
     return {
         "v": 10, "user": me, "session_id": s.id, "session_type": "normal",
         "resume_gateway_url": f"ws://127.0.0.1:{PORT}/retomar",
@@ -297,6 +334,7 @@ def dispatch(t, d, only_store=False):
             return None
         s.seq += 1
         p = {"op": 0, "t": t, "s": s.seq, "d": d}
+        state["sent"][t] = state["sent"].get(t, 0) + 1
         s.events.append(p)
         c = state["live"]
         if c is not None and c.ready and not only_store:
@@ -320,6 +358,8 @@ def on_identify(conn, d):
         state["live"] = conn
         conn.ready = True
         dispatch("READY", ready_payload(s))
+        if CONTA is not None:
+            dispatch("READY_SUPPLEMENTAL", CONTA.supplemental())
 
 
 def on_resume(conn, d):
@@ -364,6 +404,82 @@ def on_text(conn, data):
         on_identify(conn, d or {})
     elif op == 6:
         on_resume(conn, d or {})
+    elif CONTA is not None and op == 14 and isinstance(d, dict):
+        on_lazy(d)
+    elif CONTA is not None and op == 8 and isinstance(d, dict):
+        on_members(d)
+
+
+def on_lazy(d):
+    """op 14: the member list of the channel (the first 100 rows), like Discord."""
+    try:
+        gid = int(d.get("guild_id"))
+        cid = int(next(iter((d.get("channels") or {}).keys())))
+    except (TypeError, ValueError, StopIteration):
+        return
+    with lock:
+        state["sub"] = (gid, cid)
+    lst = CONTA.member_list(gid, cid)
+    if lst is not None:
+        dispatch("GUILD_MEMBER_LIST_UPDATE", lst)
+
+
+def on_members(d):
+    """op 8: the members asked for by ID (the authors of a history page) or by name."""
+    try:
+        gid = int(d.get("guild_id"))
+    except (TypeError, ValueError):
+        return
+    ids = d.get("user_ids")
+    if ids is None and isinstance(d.get("query"), str):
+        q = d["query"].lower()
+        g = CONTA.guilds.get(gid)
+        ids = [u for u in (g["pool"] if g else []) if CONTA.user(u)["username"].startswith(q)][:int(d.get("limit") or 10)]
+    chunk = CONTA.members_chunk(gid, ids or [], d.get("nonce"))
+    if chunk is not None:
+        dispatch("GUILD_MEMBERS_CHUNK", chunk)
+
+
+def trafego():
+    """Background traffic of a busy account, while a connection is live: presences and
+    member list updates in the server being viewed, messages across the servers and DMs,
+    typing in the open channel. Deterministic order (a seeded RNG), the clock decides the rest."""
+    r = random.Random(f"{CONTA.seed}:trafego")
+    texts = [cid for cid, (g, k, last) in CONTA.channel_info.items() if k in (0, 1, 3) and last is not None]
+    tick = 0
+    while True:
+        time.sleep(0.1)
+        tick += 1
+        with lock:
+            on, sub = state["trafego"], state["sub"]
+            live = state["live"] is not None and state["live"].ready
+        if not on or not live:
+            continue
+        if sub is not None:
+            gid, cid = sub
+            pool = CONTA.guilds[gid]["pool"]
+            # ~4 presences per second in the server on screen.
+            if r.random() < 0.4:
+                uid = r.choice(pool)
+                p = CONTA.presence(uid, random.Random(f"{CONTA.seed}:p:{tick}"))
+                p["guild_id"] = str(gid)
+                dispatch("PRESENCE_UPDATE", p)
+            # A row of the member list changes every ~2 s.
+            if r.random() < 0.05:
+                uid = r.choice(pool)
+                m = CONTA.member(gid, uid)
+                m["presence"] = CONTA.presence(uid, random.Random(f"{CONTA.seed}:p:{tick}"))
+                dispatch("GUILD_MEMBER_LIST_UPDATE", {"guild_id": str(gid), "id": "everyone", "member_count": CONTA.guilds[gid]["member_count"],
+                                                      "online_count": len(pool), "groups": [{"id": "online", "count": len(pool)}],
+                                                      "ops": [{"op": "UPDATE", "index": r.randint(1, 60), "item": {"member": m}}]})
+            if r.random() < 0.03:
+                dispatch("TYPING_START", {"channel_id": str(cid), "guild_id": str(gid), "user_id": str(r.choice(pool)),
+                                          "timestamp": int(time.time()), "member": CONTA.member(gid, r.choice(pool))})
+        # ~2 messages per second across the account, a third of them in the channel on screen.
+        if r.random() < 0.2:
+            cid = sub[1] if sub is not None and r.random() < 0.33 else r.choice(texts)
+            m = CONTA.live_message(cid, next_id(), random.Random(f"{CONTA.seed}:m:{tick}"))
+            dispatch("MESSAGE_CREATE", m)
 
 
 def gateway(handler, path, query):
@@ -374,7 +490,8 @@ def gateway(handler, path, query):
     conn = Conn(handler, path, query)
     # HELLO in the same write as the 101, as a real server often does: the client may read
     # it during the handshake, before it ever polls the socket.
-    conn.send({"op": 10, "d": {"heartbeat_interval": HB_MS, "_trace": ["discord-falso"]}}, prefix=switch)
+    # The big account uses Discord's own interval: its READY takes longer than 250 ms to read.
+    conn.send({"op": 10, "d": {"heartbeat_interval": HB_MS if CONTA is None else 41250, "_trace": ["discord-falso"]}}, prefix=switch)
     conn.hello_at = now()
     msg = bytearray()
     try:
@@ -762,6 +879,10 @@ def ctl(name, q):
     if name == "echo":
         state["echo_ms"] = int(q1(q, "ms", "0"))
         return True
+    if name == "trafego":
+        with lock:
+            state["trafego"] = q1(q, "on", "1") == "1"
+        return True
     return None
 
 
@@ -809,7 +930,28 @@ class Handler(BaseHTTPRequestHandler):
             return gateway(self, u.path, u.query)
         if u.path.startswith("/ctl/"):
             return self.control(u)
+        if u.path.startswith("/cdn/") and CONTA is not None:
+            return self.cdn(u)
         self.rest("GET", u)
+
+    def cdn(self, u):
+        """The CDN and the media proxy (the QA build sends cdn.discordapp.com and
+        media.discordapp.net here): a generated PNG of the size asked for."""
+        q = parse_qs(u.query)
+        m = re.search(r"_(\d+)x(\d+)\.png$", u.path)
+        w, h = (int(m.group(1)), int(m.group(2))) if m else (128, 128)
+        if "width" in q and "height" in q:
+            w, h = int(q1(q, "width")), int(q1(q, "height"))
+        elif "size" in q:
+            w = h = int(q1(q, "size"))
+        with lock:
+            state["sent"]["cdn"] = state["sent"].get("cdn", 0) + 1
+        body = CG.png(w, h, u.path)
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         self.rest("POST", urlsplit(self.path))
@@ -837,6 +979,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"ok": ok, "why": why})
         if name == "summary":
             return self.reply(200, {"lines": summary()})
+        if name == "conta":
+            with lock:
+                return self.reply(200, {"ok": CONTA is not None, "sent": dict(state["sent"]), "sub": state["sub"],
+                                        "requests": len(state["requests"])})
         if name == "state":
             with lock:
                 conns = [{"n": c.n, "path": c.path, "opened": round(c.opened, 3), "hello": c.hello_at,
@@ -887,6 +1033,14 @@ class Handler(BaseHTTPRequestHandler):
                 return 429, {"message": "You are being rate limited.", "retry_after": ra, "global": False, "code": 0}, \
                     {"Retry-After": str(max(1, int(ra + 0.999))), "X-RateLimit-Remaining": "0",
                      "X-RateLimit-Reset-After": f"{ra:.3f}", "X-RateLimit-Scope": "user"}, None
+        if CONTA is not None and len(parts) == 3 and parts[0] == "channels" and parts[2] == "messages" and method == "GET":
+            cid = int(parts[1]) if parts[1].isdigit() else 0
+            if cid not in CONTA.channel_info:
+                return 404, {"message": "Unknown Channel", "code": 10003}, {}, None
+            q = parse_qs(u.query)
+            if "after" in q or "around" in q:
+                return 200, [], {}, None
+            return 200, CONTA.history(cid, before=q1(q, "before"), limit=min(100, int(q1(q, "limit", "50")))), {}, None
         if len(parts) == 3 and parts[0] == "channels" and parts[2] == "messages":
             cid = int(parts[1]) if parts[1].isdigit() else 0
             if cid not in messages:
@@ -934,7 +1088,14 @@ class Server(ThreadingHTTPServer):
 
 
 def main():
-    global PORT
+    global PORT, CONTA, CG
+    args = sys.argv[1:]
+    if "--conta" in args:
+        if args[args.index("--conta") + 1] != "grande":
+            sys.exit("--conta: só existe a grande")
+        seed = int(args[args.index("--semente") + 1]) if "--semente" in args else 52
+        CG, CONTA = load_conta(seed)
+        threading.Thread(target=trafego, daemon=True).start()
     server = Server(("127.0.0.1", 0), Handler)
     PORT = server.server_address[1]
     print(PORT, flush=True)

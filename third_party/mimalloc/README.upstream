@@ -1,0 +1,13 @@
+mimalloc - a general purpose allocator by Microsoft Research (Daan Leijen)
+https://github.com/microsoft/mimalloc
+
+Copied here, unchanged, from the v3.6.1 release (2026-10-30, tarball sha256
+2672e6a99d4579fb4bb32d9de0d63aa424ce600d31fbfaf06eb74d940d2e07a6):
+  include/  the public headers and include/mimalloc/ (internal headers)
+  src/      the sources; src/static.c builds everything as one unit
+  LICENSE   MIT
+Left out: docs, tests, CMake files and the Windows ETW manifests.
+
+Used only with `zig build -Dmimalloc=true` (see build.zig and
+src/platform/mem_tune.zig): the whole process allocates with it in place of
+the system malloc.

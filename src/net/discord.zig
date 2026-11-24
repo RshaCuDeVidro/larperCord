@@ -629,10 +629,12 @@ pub const Gateway = struct {
         }
     }
 
-    /// Depois de um READY grande os buffers ficam com vários MB reservados:
-    /// devolve o que passar de 1 MB.
+    /// Depois de um READY grande os buffers ficam com vários MB reservados: devolve o que
+    /// passar de 64 KiB. Fora o READY e as listas de membros, um evento cabe nisso; com o
+    /// limite de 1 MiB de antes, os dois buffers seguravam ~1,7 MB a sessão inteira numa conta
+    /// grande (tools/ram_conta_grande.sh).
     fn shrinkBuffers(g: *Gateway) void {
-        const limit = 1024 * 1024;
+        const limit = 64 * 1024;
         if (g.frame.capacity > limit and g.frame.items.len == 0) g.frame.clearAndFree(alloc);
         if (g.zout.capacity > limit and g.zout.items.len == 0) g.zout.clearAndFree(alloc);
     }

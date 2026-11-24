@@ -19,6 +19,7 @@ const proxiedUrl = media_url.proxiedUrl;
 const apng = @import("apng.zig");
 const ffmpeg = @import("../platform/ffmpeg.zig");
 const proxy = @import("../net/proxy.zig");
+const enderecos = @import("../net/enderecos.zig");
 const janela = @import("../core/janela.zig");
 const quadros = @import("../core/gif_quadros.zig");
 const gif_stream = @import("gif_stream.zig");
@@ -1182,7 +1183,8 @@ pub fn curlGlobalInit() void {
     c.SDL_LockMutex(curl_mutex);
     defer c.SDL_UnlockMutex(curl_mutex);
     if (curl_inited) return;
-    _ = c.curl_global_init(c.CURL_GLOBAL_DEFAULT);
+    // O curl aloca pelas funções que contam (platform/mem_contas.zig); no navegador não há curl.
+    if (@import("builtin").os.tag == .emscripten) _ = c.curl_global_init(c.CURL_GLOBAL_DEFAULT) else @import("../platform/mem_contas.zig").curlInit();
     curl_inited = true;
 }
 
@@ -1262,7 +1264,10 @@ pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic
         var t: Transfer = .{ .sink = sink, .h = h };
         c.curl_easy_reset(h);
         @import("../platform/sys.zig").curlTls(h);
-        _ = c.curl_easy_setopt(h, c.CURLOPT_URL, cur_url.ptr);
+        // No QA da conta grande o CDN é o Discord de mentira local (net/enderecos.zig).
+        var local_buf: [2200]u8 = undefined;
+        const go_url = enderecos.midiaLocal(&local_buf, cur_url) orelse cur_url;
+        _ = c.curl_easy_setopt(h, c.CURLOPT_URL, go_url.ptr);
         _ = c.curl_easy_setopt(h, c.CURLOPT_NOSIGNAL, @as(c_long, 1));
         // No CDN do Discord, o mesmo UA do cliente web: um "larperCord/0.1"
         // aqui é um fingerprint de graça. Fora do Discord, o app se identifica.
@@ -1278,7 +1283,7 @@ pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic
             _ = c.curl_easy_setopt(h, c.CURLOPT_LOW_SPEED_TIME, @as(c_long, 20));
         }
         _ = c.curl_easy_setopt(h, c.CURLOPT_FOLLOWLOCATION, @as(c_long, 0));
-        _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, "https");
+        _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, enderecos.protocolosMidia());
         _ = c.curl_easy_setopt(h, c.CURLOPT_ACCEPT_ENCODING, @import("../platform/sys.zig").acceptEncoding());
         // Proxy das configurações (mídia de fora, ou tudo).
         var pbuf: proxy.Buf = undefined;
