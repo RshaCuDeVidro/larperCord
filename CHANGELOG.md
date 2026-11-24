@@ -1,5 +1,16 @@
 # What changed in each version
 
+## 0.7.0
+
+**Translations**
+- Every language besides Portuguese and English is now just a file. Each `i18n/*.kdl` says which language it is on its first line (`language "日本語" code="ja" english="Japanese"`, and if needed `direction "rtl"`, `font-script` and `plurals`), and the build packs every file of that folder into the app, compressed: adding a language needs no code change. A `.kdl` in the translations folder (`~/.config/larpercord/i18n/`, `%APPDATA%\larpercord\i18n\`) with a new code is a new language in Settings → Language; with the code of a built-in one, it goes on top of it. Missing text shows in English, never in Portuguese. A saved Japanese or Russian setting stays as it was.
+- Saving a file in the translations folder updates the app's text on the spot, like themes do. A line with a mistake shows in red on the Language page, with the file and the line, and the language keeps the text it had until the file opens again.
+- Settings → Language lists every language with how much of the app it translates (日本語 — 99%) and where its file comes from, has buttons for the translations folder and the translation editor, and "Follow system" says which language that is right now. The system language now finds a translation file too (`de` with a `de.kdl`), with the region first (`pt-PT` before `pt`), and `--lang` takes any code.
+- Plural forms: a text with a count has one form per CLDR category of the language (`"{d} votes" one="{d} голос" few="{d} голоса" many="{d} голосов"`), with the rules of 20 families of languages. Relative times ("3 days ago", "через 2 минуты") moved from the code to the files, so any language can translate them, and votes, threads, unread messages, mentions, results, tabs, members, plugins found and mutual friends and servers count with each language's forms: Russian says "21 голос", and a poll or an invite with one vote or one member no longer says "1 votes" or "1 members".
+- On the website: a translation editor (each English text with where it is in the code and what it is, placeholders checked while you type, the missing ones first, the plural forms of the language and the `.kdl` to download; it runs in the browser and keeps the work there), the "Translating larperCord" guide and a status page with each language.
+- `tools/i18n_strings.py --template de` makes the template of a new language (each text empty, with where it is and what it is), `--update` brings a translation up to date without losing anything (texts the app dropped get `/-`), `--keys` keeps the list the app counts from, and `--check` checks every file. CI fails on a broken file or a wrong placeholder; a missing translation only warns.
+- Exported conversations follow a right-to-left translation (`dir="rtl"` on the page), and each message keeps its own direction. Japanese follows the new texts; the new Russian ones are in English for now.
+
 ## 0.6.8
 
 **Control from outside**

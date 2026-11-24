@@ -31,6 +31,10 @@ Para compartilhar com todo mundo, coloque ele em `themes/community/` num pull re
 
 Para incluir um como embutido, ponha o arquivo em `themes/` e acrescente o nome dele em `theme_names` no `build.zig` e em `themes/builtin.zig`.
 
+## Traduzindo
+
+Traduzir não precisa de Zig: cada idioma é um arquivo `.kdl` em `i18n/`, com o texto em inglês e a tradução, e o build pega cada arquivo de lá. Comece no [editor de traduções](translate:new) ou com `python3 tools/i18n_strings.py --template <código>`, teste o arquivo na pasta de traduções do app (salvar atualiza o app) e mande como `i18n/<código>.kdl`. [Traduzindo o larperCord](page:translating) tem os detalhes, e o [Estado das traduções](page:translation-status) mostra o que falta em cada idioma.
+
 ## Enviando código
 
 - Mantenha as camadas separadas: o `core/` não sabe nada de janelas, e a interface nunca muda dados diretamente.

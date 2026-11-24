@@ -19,7 +19,7 @@ O larperCord é um projeto jovem: versão 0.6.5, com o primeiro commit em 2 de n
 | Threads e fóruns | **funciona** | Threads aninhadas, lista de posts dos fóruns, criar e editar threads e posts, arquivadas e privadas |
 | Emoji personalizado, figurinhas, autocompletar | **funciona** | Animados inclusive. O seletor avisa quando um emoji precisa de Nitro, e o seletor de GIFs envia figurinhas |
 | Árabe, hebraico e outras escritas | parcial | Aparecem nas mensagens e na caixa de mensagem, e uma fonte do sistema completa as letras que faltam em qualquer tema. Escritas que precisam de composição (devanágari, bengali, tailandês, khmer…) mostram as letras uma a uma, sem conjuntos nem sinais de vogal reordenados |
-| Idiomas | **funciona** | Inglês, português, japonês e russo, um arquivo de tradução para cada |
+| Idiomas | **funciona** | Inglês, português, japonês e russo embutidos; qualquer outro idioma é um arquivo, sem código ([estado de cada um](page:translation-status)) |
 | Leitura, fixadas, links do Discord | **funciona** | Sincronizada com os seus outros aparelhos |
 | Temas | **funciona** | 11 embutidos, cada um em claro e escuro, recarregam ao salvar |
 | Voz | parcial | Canais de voz dos servidores e calls em DM e grupo, com a tela da call. E2EE (DAVE), o mixer com Tirar ruído e Igualar volume por pessoa, mudo, seletor de dispositivo, aperte para falar, filtro passa-altas, porta de ruído e supressão de ruído com RNNoise funcionam. No Linux, o aperte para falar precisa da janela em foco, e nenhum teste automático cobre uma call de verdade |
@@ -57,6 +57,7 @@ O larperCord é um projeto jovem: versão 0.6.5, com o primeiro commit em 2 de n
 - [x] Árabe e hebraico, e fontes para qualquer escrita
 - [x] No site: um criador de temas, uma galeria de temas da comunidade e uma demonstração no navegador
 - [x] Interface em russo
+- [x] Um idioma novo é só um arquivo, com recarga na hora, formas de plural e um editor de traduções no site
 - [x] Aperte para falar de qualquer janela, no Windows
 - [x] Tela da call, um quadro por pessoa, no estilo do tema
 - [x] Perfil do servidor: apelido, foto, bio e banner por servidor

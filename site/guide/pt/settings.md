@@ -16,7 +16,7 @@ Abra as configurações com `Ctrl+,`. As mudanças valem na hora e são salvas n
 | **Voz** | Microfone e saída, volumes, detecção de voz ou aperte para falar, teste do microfone, filtros, supressão de ruído e um som para cada evento da call. Veja [Chamadas de voz](page:voice) |
 | **Notificações** | Notificações na área de trabalho e piscar na barra de tarefas |
 | **Atalhos de teclado** | A navegação estilo vim e a lista de atalhos. Clique num atalho que dá para trocar e aperte as teclas novas; **Padrão** volta. Veja [Trocar um atalho](page:shortcuts#trocar-um-atalho) |
-| **Idioma** | Seguir o sistema, Português (Brasil), English (US), 日本語 (japonês) ou Русский (russo) |
+| **Idioma** | Seguir o sistema, Português (Brasil), English (US), 日本語 (japonês), Русский (russo), ou qualquer idioma de um arquivo na pasta de traduções, cada um com quanto do app ele traduz. Botões abrem a pasta de traduções e o [editor de traduções](translate:new) |
 | **Rede** | O proxy (tipo, endereço, porta, login e senha) e **Usar o proxy em tudo**. A tela de entrada tem o mesmo formulário em **Conectar por um proxy**. Veja [Proxy](page:privacy#proxy) |
 | **Avançado** | Modo desenvolvedor (IDs das mensagens, "Copiar ID"), recarregar temas ao salvar, fechar para a bandeja, peso do texto, o registro de depuração e quantas vezes o Discord pediu captcha ou verificação |
 | **Desempenho** | RAM ao vivo, CPU por quadro, quadros pulados porque nada mudou, CPU parado e mensagens por canal; para onde vai a memória; limites de memória para imagens, cada GIF e mensagens; e o **Renderizador** (abaixo) |
