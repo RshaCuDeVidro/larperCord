@@ -701,19 +701,28 @@ fn fillUp(_: *App) void {
 }
 fn fillMain(_: ?*anyopaque) callconv(.c) c_int {
     defer held_done.store(true, .release);
-    // As conexões dos pedidos anteriores terminam do lado do app logo depois de fechar.
-    c.SDL_Delay(300);
     var pb: [512]u8 = undefined;
     const path = portFile(&pb) orelse return 0;
-    var n: usize = 0;
-    while (n < held.len) : (n += 1) {
-        held[n] = ctl.Conn.open(path) catch |e| {
-            held_err = e;
-            break;
-        };
+    // As conexões dos pedidos anteriores terminam do lado do app logo depois de fechar. Numa
+    // máquina lenta (o CI) uma ainda pode ocupar a vaga quando as oito chegam: solta as que
+    // abriu e tenta de novo.
+    var tries: u32 = 0;
+    while (true) : (tries += 1) {
+        c.SDL_Delay(300);
+        held_err = null;
+        var n: usize = 0;
+        while (n < held.len) : (n += 1) {
+            held[n] = ctl.Conn.open(path) catch |e| {
+                held_err = e;
+                break;
+            };
+        }
+        if (n >= ctl.max_clients or tries == 6) {
+            held_n.store(n, .release);
+            return 0;
+        }
+        for (held[0..n]) |*conn| conn.close();
     }
-    held_n.store(n, .release);
-    return 0;
 }
 fn ninthBusy(_: *App) bool {
     return held_done.load(.acquire) and held_n.load(.acquire) == ctl.max_clients and

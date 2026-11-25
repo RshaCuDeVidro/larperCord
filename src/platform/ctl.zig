@@ -273,6 +273,11 @@ fn acceptMain(_: ?*anyopaque) callconv(.c) c_int {
         sys.noInherit(sock);
         sys.setSendTimeout(sock, send_timeout_ms);
         const cl = claim(sock) orelse {
+            // O cliente manda o segredo assim que conecta. Lido antes de responder, o fechar
+            // sai limpo; com ele ainda na fila, o sistema manda um RST, e o cliente perde o
+            // "ERR busy" e vê "sem resposta".
+            var key: [128]u8 = undefined;
+            _ = sys.tcpRecv(sock, &key, 200);
             var out: std.ArrayList(u8) = .empty;
             defer out.deinit(alloc);
             proto.frame(&out, alloc, .{ .code = .busy }, "", true) catch {};
