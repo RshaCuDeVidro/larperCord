@@ -590,17 +590,23 @@ fn measurePaused(app: *App) bool {
 }
 /// Os quadros dizem se algo ficou pedindo redesenho: uns 25 por segundo com o
 /// visualizador, bem menos sem ele, e parado só os 4 do robô. A CPU, bem folgada (a
-/// máquina do QA é dividida), só pega um laço esquecido. Com QA_SLOW (o CI, numa
-/// máquina mais lenta), mais folgada, mas abaixo de um núcleo inteiro.
+/// máquina do QA é dividida), só pega um laço esquecido. Ela é a do processo inteiro,
+/// somando a thread do áudio e as do renderizador de software: no CI, com o
+/// visualizador a 25 quadros/s, chega a passar de um núcleo (114,7% numa medida, 85,7%
+/// noutra), então o teto acompanha o QA_SLOW sem parar em 90% — quem foge é um laço
+/// esquecido, que gasta um núcleo inteiro a mais. Parado (os 4 quadros do robô), a
+/// mesma conta é pequena, e é ali que um laço que não desenha aparece.
 fn cpuSane(_: *App) bool {
     const slow: f64 = if (c.SDL_getenv("QA_SLOW")) |v| std.fmt.parseFloat(f64, std.mem.span(v)) catch 1 else 1;
     // As medidas também vão para qa-out: o CI guarda a pasta, e não a saída de erro.
-    var b: [256]u8 = undefined;
-    if (std.fmt.bufPrint(&b, "tocando: {d:.1}% de um núcleo, {d:.1} quadros/s\nsem o visualizador: {d:.1} quadros/s\nparado: {d:.1} quadros/s\n", .{ cpu_playing, fps_playing, fps_noviz, fps_paused })) |t| {
+    var b: [320]u8 = undefined;
+    if (std.fmt.bufPrint(&b, "tocando: {d:.1}% de um núcleo, {d:.1} quadros/s\nsem o visualizador: {d:.1}% de um núcleo, {d:.1} quadros/s\nparado: {d:.1}% de um núcleo, {d:.1} quadros/s\n", .{ cpu_playing, fps_playing, cpu_noviz, fps_noviz, cpu_paused, fps_paused })) |t| {
         _ = c.SDL_SaveFile("qa-out/audio-cpu.txt", t.ptr, t.len);
     } else |_| {}
+    // Parado, a thread do áudio e as do desenho ficam quietas: um laço esquecido que
+    // não desenha (o que os quadros não pegam) aparece aqui como um núcleo inteiro.
     return fps_playing > 15 and fps_playing < 36 and fps_noviz < fps_playing and fps_paused < 7 and
-        cpu_playing >= 0 and cpu_playing < @min(40 * slow, 90);
+        cpu_playing >= 0 and cpu_playing < @min(50 * slow, 200) and cpu_paused < 30 * slow;
 }
 
 pub const ops = [_]Op{
