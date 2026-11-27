@@ -59,7 +59,7 @@ var client: pastas_net.Cache = .{};
 /// O que "outro aparelho" gravou (o QA põe; a thread do gateway aplica antes da
 /// próxima gravação, como se o servidor já tivesse e o aviso já tivesse chegado).
 var remote_buf: [4096]u8 = undefined;
-var remote_len: sys.Atomic(u64) = .init(0);
+var remote_len: sys.Atomic(usize) = .init(0);
 
 fn appendVarint(out: *std.ArrayList(u8), v: u64) !void {
     var x = v;

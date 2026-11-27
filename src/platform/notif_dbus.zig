@@ -17,6 +17,7 @@ const c = @import("c");
 const dbus = @import("dbus.zig");
 const n = @import("../core/notificacao.zig");
 const platform = @import("window.zig");
+const sys = @import("sys.zig");
 
 const d = &dbus.d;
 const Out = dbus.Out;
@@ -58,7 +59,7 @@ var estado_v: std.atomic.Value(u8) = .init(@backingInt(Estado.parado));
 var caps_v: std.atomic.Value(u8) = .init(0);
 var em_voo: std.atomic.Value(u32) = .init(0);
 var saindo: std.atomic.Value(bool) = .init(false);
-var falhou_ms: std.atomic.Value(i64) = .init(0);
+var falhou_ms: sys.Atomic(i64) = .init(0);
 /// Depois de um `sem`, a próxima notificação só tenta de novo passado este tempo.
 pub var tentar_ms: i64 = 60_000;
 

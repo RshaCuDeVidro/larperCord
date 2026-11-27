@@ -31,7 +31,7 @@ const fonte = @import("audio_fonte.zig");
 const demo = @import("audio_demo.zig");
 
 const alloc = std.heap.c_allocator;
-const Atomic = std.atomic.Value;
+const Atomic = @import("../platform/sys.zig").Atomic;
 
 /// Teto do download (o Discord sem Nitro aceita até 10 MB; com Nitro, bem mais).
 pub const max_bytes: usize = 32 << 20;

@@ -3354,7 +3354,7 @@ pub const App = struct {
     /// relógio, que roda de 2 em 2 s na thread dele, escreve no registro: contar não acorda
     /// ninguém. (No driver offscreen o SDL espera de 1 em 1 ms por dentro; isto conta só as
     /// vezes em que a espera devolveu.)
-    var prof_turns: std.atomic.Value(u64) = .init(0);
+    var prof_turns: sys.Atomic(u64) = .init(0);
 
     fn profEvent(t: u32) void {
         for (&prof_events) |*pe| if (pe.n == 0 or pe.t == t) {
