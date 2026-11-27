@@ -1126,6 +1126,11 @@ pub const Checker = struct {
                 try ck.value(n, p, ps);
                 continue;
             }
+            // A imagem num `wallpaper` já para o carregamento com a mensagem dela (fx.parseNode):
+            // "propriedade desconhecida" por cima só repetiria.
+            if (std.mem.eql(u8, n.name, "wallpaper") and for (fx.wallpaper_banned) |k| {
+                if (std.mem.eql(u8, k, p.key)) break true;
+            } else false) continue;
             if (takesPatterns(spec)) if (patternToken(p.key)) |tok| {
                 // Token desconhecido em `c-…` já é erro do carregamento.
                 _ = tok;
@@ -1508,6 +1513,17 @@ test "wallpaper: a imagem não é propriedade dele (o carregamento recusa)" {
     const wp = layoutSpec("wallpaper").?;
     for (fx.wallpaper_banned) |k| try testing.expect(findProp(wp, k) == null);
     try testing.expect(findProp(wp, "fit") != null and findProp(wp, "radius") != null);
+    // E a checagem não repete o erro do carregamento como "propriedade desconhecida".
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var out: std.ArrayList(Issue) = .empty;
+    try checkSrc(
+        \\theme "x"
+        \\layout {
+        \\    wallpaper src="a.png" fit=fill
+        \\}
+    , false, &out, arena.allocator());
+    for (out.items) |got| try testing.expect(std.mem.indexOf(u8, got.message, "'src'") == null);
 }
 
 test "parts: as partes, os estados e as propriedades de parts.zig" {
