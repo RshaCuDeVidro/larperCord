@@ -110,7 +110,7 @@ sem a linha `:ja` ou `:ru` mostra o inglês, nunca o português.
 
 | Capacidade | Dá acesso a |
 |---|---|
-| `messages` | `larper.on("message")`, `larper.on("edit")`, `larper.on("delete")`, `larper.messages` |
+| `messages` | `larper.on("message")`, `larper.on("edit")`, `larper.on("delete")`, `larper.on("click")`, `larper.messages` |
 | `send` | `larper.send` |
 | `notify` | `larper.notify` |
 | `storage` | `larper.storage` |
@@ -145,8 +145,9 @@ linha de aviso no cartão, além das etiquetas.
 
 - **Um plugin nunca vê o seu token nem o seu e-mail.**
 - **Enviar uma mensagem só funciona direto de um gesto naquele plugin**: um comando, atalho, botão do
-  painel (ou Enter num campo dele) ou entrada de menu. Não ao carregar, num evento, num temporizador
-  nem na resposta de um pedido HTTP. Responder sozinho transformaria a conta num *self-bot*, o que o
+  painel (ou Enter num campo dele), entrada de menu ou um [clique numa mensagem](#cliques-nas-mensagens)
+  que ele ouve (com uma tecla apertada, ou o botão do meio). Não ao carregar, em outro evento, num
+  temporizador nem na resposta de um pedido HTTP. Responder sozinho transformaria a conta num *self-bot*, o que o
   Discord proíbe e costuma punir com banimento. Não existe resposta automática, reação automática nem
   nada que escreva na conta em segundo plano.
 - `larper.insert`, `larper.jump`, `larper.copy`, `larper.open` e `larper.panel.open` também pedem um
@@ -154,8 +155,8 @@ linha de aviso no cartão, além das etiquetas.
   lugar. A única exceção: a resposta de um pedido HTTP feito num gesto pode chamar `larper.insert`.
   Enviar, ela continua sem poder.
 - As [ações](#ações) (`larper.reply`, `larper.react`, `larper.edit`, `larper.delete`, `larper.pin`,
-  `larper.unpin`, `larper.thread`, `larper.attach`) também pedem o gesto em si, nunca um evento, um
-  temporizador ou uma resposta HTTP, e têm um teto por gesto e por minuto. Apagar e anexar um arquivo
+  `larper.unpin`, `larper.thread`, `larper.attach`) também pedem o gesto em si, nunca outro evento,
+  um temporizador ou uma resposta HTTP, e têm um teto por gesto e por minuto. Apagar e anexar um arquivo
   sempre perguntam antes, na tela.
 - **Sem arquivos, programas nem sockets.** Só `string`, `table`, `math`, `utf8` e as funções básicas,
   mais `os.time`, `os.date`, `os.clock` e `os.difftime`. Não existe `io`,
@@ -189,6 +190,7 @@ Tudo fica na tabela global `larper`. IDs do Discord são textos (`"1234567890"`)
 | `"lang"` | o idioma do app mudou: desenhe o seu painel de novo | nenhum |
 | `"panel"` | o seu painel abriu ou fechou na tela | `true` ou `false` |
 | `"hosts"` | você aprovou ou tirou um host no cartão do plugin | nenhum |
+| `"click"` | você clicou numa mensagem com uma tecla apertada, ou com o botão do meio: veja [Cliques nas mensagens](#cliques-nas-mensagens) | `msg`, `info` |
 
 `msg` tem:
 
@@ -223,6 +225,45 @@ larper.on("message", function(msg)
   end
 end)
 ```
+
+### Cliques nas mensagens
+
+`larper.on("click", function(msg, info) … end)` roda quando você clica numa mensagem da conversa
+com uma tecla apertada (`Ctrl`, `Shift`, `Alt`, `Super` ou qualquer outra, como `Backspace`) ou com o
+botão do meio. Pede `messages`, como os outros eventos que trazem uma `msg`. `info` tem:
+
+| campo | exemplo |
+|---|---|
+| `info.button` | `"left"`, `"right"` ou `"middle"` |
+| `info.ctrl`, `info.shift`, `info.alt`, `info.super` | `true` ou `false` |
+| `info.keys` | as outras teclas apertadas, com os nomes que `larper.keybind` usa, como `true`: `info.keys.backspace`, `info.keys.e`, `info.keys.f2`. Sempre uma tabela, vazia quando não tem nenhuma |
+
+```lua
+-- @name Apagar com Backspace
+-- @capabilities messages, actions
+larper.on("click", function(msg, info)
+  if info.button == "left" and info.keys.backspace then
+    larper.delete(msg) -- continua perguntando na tela antes
+  end
+end)
+```
+
+- **O clique é um gesto naquele plugin**, como o atalho dele: `larper.delete`, `larper.react`,
+  `larper.send` e as outras [ações](#ações) funcionam dentro da função, com os mesmos tetos por gesto
+  e por minuto (uma apagada por clique, 5 por minuto). Cada plugin que ouve recebe o clique como um
+  gesto só dele.
+- **Um clique esquerdo ou direito sem nada apertado não dispara.** Esses são do app (escolher texto,
+  abrir o menu da mensagem) e acontecem o tempo todo, então não contam como pedir algo a um plugin,
+  do mesmo jeito que `ctrl+c` não pode ser um atalho.
+- **Só onde nada mais pega o clique.** Um link, uma menção, uma imagem ou vídeo, uma reação, um botão,
+  a barra da mensagem sob o mouse ou o × de uma nota ficam com o clique deles, e não dispara. Nem em
+  mensagens apagadas, ainda enviando ou de sistema, nem na janela flutuante.
+- **O app continua fazendo a parte dele**: um clique esquerdo ainda leva a seleção de texto para ali,
+  e um direito ainda abre o menu da mensagem. O que a função retorna é ignorado: os plugins rodam na
+  thread deles e o app nunca espera um, então o clique já foi tratado quando a função roda. O botão do
+  meio, ou o esquerdo com uma tecla apertada, é o que menos atrapalha.
+- Com a caixa de mensagem em foco, segurar `Backspace` também apaga nela: clique uma vez na conversa
+  antes.
 
 ### `larper.command("/nome", função(args))`
 

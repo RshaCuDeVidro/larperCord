@@ -110,7 +110,7 @@ interface with no `:ja` or `:ru` line shows English, never Portuguese.
 
 | Capability | Gives access to |
 |---|---|
-| `messages` | `larper.on("message")`, `larper.on("edit")`, `larper.on("delete")`, `larper.messages` |
+| `messages` | `larper.on("message")`, `larper.on("edit")`, `larper.on("delete")`, `larper.on("click")`, `larper.messages` |
 | `send` | `larper.send` |
 | `notify` | `larper.notify` |
 | `storage` | `larper.storage` |
@@ -146,7 +146,8 @@ These are what make it safe to run other people's scripts next to your account.
 
 - **A plugin never sees your token or your email.**
 - **Sending a message only works directly from a gesture on that plugin**: its command, keybind,
-  panel button (or Enter in one of its inputs) or menu entry. Not at load time, in an event, in a
+  panel button (or Enter in one of its inputs), menu entry or a [click on a message](#clicks-on-messages)
+  it listens for (with a key held, or the middle button). Not at load time, in another event, in a
   timer or in the answer to an HTTP request. Replying on its own would turn the account into a
   *self-bot*, which Discord forbids and usually punishes with a ban. There are no auto-replies,
   auto-reactions or anything else that writes to the account in the background.
@@ -156,8 +157,8 @@ These are what make it safe to run other people's scripts next to your account.
   send.
 - The [actions](#actions) (`larper.reply`, `larper.react`, `larper.edit`, `larper.delete`,
   `larper.pin`, `larper.unpin`, `larper.thread`, `larper.attach`) need the gesture itself too, never
-  an event, a timer or an HTTP answer, and have a ceiling per gesture and per minute. Deleting and
-  attaching a file always ask you first, on screen.
+  another event, a timer or an HTTP answer, and have a ceiling per gesture and per minute. Deleting
+  and attaching a file always ask you first, on screen.
 - **No files, programs or raw sockets.** Only `string`, `table`, `math`, `utf8` and the basic
   functions, plus `os.time`, `os.date`, `os.clock` and `os.difftime`. There is no `io`,
   `os.execute`/`os.remove`/`os.getenv`, `require`, `package`, `debug`, `coroutine`, `load`,
@@ -191,6 +192,7 @@ Everything lives in the global table `larper`. Discord IDs are strings (`"123456
 | `"lang"` | the app's language changed: draw your panel again | none |
 | `"panel"` | your panel opened or closed on the screen | `true` or `false` |
 | `"hosts"` | you approved or removed a host on the plugin's card | none |
+| `"click"` | you clicked a message with a key held, or with the middle button: see [Clicks on messages](#clicks-on-messages) | `msg`, `info` |
 
 `msg` has:
 
@@ -224,6 +226,45 @@ larper.on("message", function(msg)
   end
 end)
 ```
+
+### Clicks on messages
+
+`larper.on("click", function(msg, info) … end)` runs when you click a message in the conversation
+with a key held (`Ctrl`, `Shift`, `Alt`, `Super` or any other, like `Backspace`) or with the middle
+button. It needs `messages`, like the other events that bring a `msg`. `info` has:
+
+| field | example |
+|---|---|
+| `info.button` | `"left"`, `"right"` or `"middle"` |
+| `info.ctrl`, `info.shift`, `info.alt`, `info.super` | `true` or `false` |
+| `info.keys` | the other keys held, with the names `larper.keybind` uses, as `true`: `info.keys.backspace`, `info.keys.e`, `info.keys.f2`. Always a table, empty when there are none |
+
+```lua
+-- @name Backspace delete
+-- @capabilities messages, actions
+larper.on("click", function(msg, info)
+  if info.button == "left" and info.keys.backspace then
+    larper.delete(msg) -- still asks you on screen first
+  end
+end)
+```
+
+- **The click is a gesture on that plugin**, like its keybind: `larper.delete`, `larper.react`,
+  `larper.send` and the other [actions](#actions) work inside the function, with the same ceilings
+  per gesture and per minute (one delete per click, 5 a minute). Each plugin that listens gets the
+  click as a gesture of its own.
+- **A plain left or right click doesn't fire it.** Those belong to the app (selecting text, opening
+  the message menu) and happen all the time, so they can't count as asking a plugin for something,
+  the same way `ctrl+c` can't be a keybind.
+- **Only where nothing else takes the click.** A link, a mention, an image or video, a reaction, a
+  button, the toolbar of the hovered message or a note's × keep their click, and it doesn't fire.
+  Neither do clicks on deleted, still-sending or system messages, or in the floating window.
+- **The app still does its part**: a left click still moves the text selection there, and a right
+  click still opens the message menu. What the function returns is ignored: plugins run on their own
+  thread and the app never waits for one, so the click has already been handled when the function
+  runs. The middle button, or the left one with a key held, gets in the way least.
+- With the message box focused, a held `Backspace` also erases in it: click the conversation once
+  first.
 
 ### `larper.command("/name", function(args))`
 
