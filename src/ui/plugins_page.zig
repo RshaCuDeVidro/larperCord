@@ -21,7 +21,7 @@ const Plugin = engine.Plugin;
 const Label = struct { cap: engine.Cap, pt: []const u8, en: []const u8, tip_pt: []const u8, tip_en: []const u8, strong: bool = false };
 const labels = [_]Label{
     .{ .cap = .messages, .pt = "Lê mensagens", .en = "Reads messages", .tip_pt = "Vê as mensagens que chegam e as carregadas, de qualquer canal", .tip_en = "Sees incoming and loaded messages, in any channel", .strong = true },
-    .{ .cap = .send, .pt = "Envia quando você pede", .en = "Sends when you ask", .tip_pt = "Só num comando, atalho, botão ou menu dele; nunca sozinho", .tip_en = "Only from its command, keybind, button or menu; never on its own", .strong = true },
+    .{ .cap = .send, .pt = "Envia quando você pede", .en = "Sends when you ask", .tip_pt = "Só num comando, atalho, botão ou menu dele, ou num clique numa mensagem; nunca sozinho", .tip_en = "Only from its command, keybind, button or menu, or a click on a message; never on its own", .strong = true },
     .{ .cap = .http, .pt = "Internet", .en = "Internet", .tip_pt = "Só HTTPS, só para os hosts abaixo, e depois que você aprovar", .tip_en = "HTTPS only, only to the hosts below, and after you approve", .strong = true },
     .{ .cap = .lsp, .pt = "Propõe um programa", .en = "Proposes a program", .tip_pt = "Só roda se você ligar em Erros no código", .tip_en = "Only runs if you turn it on under Code diagnostics", .strong = true },
     .{ .cap = .composer, .pt = "Escreve na caixa", .en = "Writes in the box", .tip_pt = "Põe texto na caixa de mensagem quando você pede; nunca envia", .tip_en = "Puts text in the message box when you ask; never sends it" },
@@ -95,7 +95,7 @@ pub fn draw(p: anytype) void {
     p.divider();
     p.heading(i18n.tr("O que um plugin nunca faz", "What a plugin never does"));
     para(p, i18n.tr("Não vê o token nem o e-mail da conta, e não abre arquivos, programas nem conexões por conta própria.", "It doesn't see your token or email, and can't open files, programs or connections on its own."), .faint);
-    para(p, i18n.tr("Não escreve na sua conta em segundo plano: enviar uma mensagem só vale direto de um comando, atalho, botão ou menu dele.", "It doesn't write to your account in the background: sending a message only works directly from its command, keybind, button or menu."), .faint);
+    para(p, i18n.tr("Não escreve na sua conta em segundo plano: enviar uma mensagem só vale direto de um comando, atalho, botão ou menu dele, ou de um clique numa mensagem.", "It doesn't write to your account in the background: sending a message only works directly from its command, keybind, button or menu, or from a click on a message."), .faint);
     para(p, i18n.tr("Limite de instruções e de memória por plugin: quem passar é parado, e o erro aparece aqui.", "Instruction and memory limits per plugin: whoever goes over is stopped, and the error shows up here."), .faint);
     _ = ctx;
 }

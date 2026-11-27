@@ -1069,7 +1069,7 @@ ISSUE
 it didn't work
 it doesn't fit in the box
 It doesn't see your token or email, and can't open files, programs or connections on its own.
-It doesn't write to your account in the background: sending a message only works directly from its command, keybind, button or menu.
+It doesn't write to your account in the background: sending a message only works directly from its command, keybind, button or menu, or from a click on a message.
 It has grown for {d} of 30 days.
 It sits behind the panels, which turn translucent only as far as text stays easy to read. The theme's animated background steps aside while there's an image.
 It's archived: saving also unarchives it.
@@ -1499,7 +1499,7 @@ ONLINE — {d}
 Online, idle and do-not-disturb as a ring around the picture.
 Only @mentions
 Only Discord can apply this filter
-Only from its command, keybind, button or menu; never on its own
+Only from its command, keybind, button or menu, or a click on a message; never on its own
 Only games on this list show up; nothing else you have open leaves your computer. With several running, the first on the list wins.
 only GIFs and media from outside Discord
 Only members who can manage threads can change this tag
