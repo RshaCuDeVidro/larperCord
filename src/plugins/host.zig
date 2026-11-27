@@ -616,6 +616,25 @@ fn keyCode(name: []const u8) ?i32 {
     return null;
 }
 
+// Toda tecla que um clique conta (wire.click_keys) tem código aqui.
+comptime {
+    @setEvalBranchQuota(100_000);
+    for (engine.click_keys) |name| {
+        if (keyCode(name) == null) @compileError("tecla de clique sem código: " ++ name);
+    }
+}
+
+/// As teclas de `engine.click_keys` apertadas agora, no contexto do ImGui de agora (bit
+/// `i` = a tecla `i`). Só no clique, e só com algum plugin ouvindo.
+pub fn heldKeys() u128 {
+    var bits: u128 = 0;
+    for (engine.click_keys, 0..) |name, i| {
+        const k = keyCode(name) orelse continue;
+        if (c.ImGui_IsKeyDown(k)) bits |= @as(u128, 1) << @intCast(i);
+    }
+    return bits;
+}
+
 // --- Ganchos chamados pelo app ----------------------------------------------
 
 /// MESSAGE_CREATE (antes de ir para o Store; os textos ainda são da mensagem).
@@ -657,6 +676,17 @@ pub fn pollKeys(app: *App) void {
     const st = &app.st;
     if (st.settings.open or st.palette.open or app.login.visible()) return;
     app.plugins.pollKeys(app.io, &pressed);
+}
+
+/// Um clique no corpo de uma mensagem da lista (ui/comp_messages.zig). Só sai para os
+/// plugins que ouvem "click", e nunca o clique simples, que é do app. Mensagem apagada,
+/// pendente ou de sistema fica de fora, como em larper.messages.
+pub fn messageClick(app: *App, id: types.Id, k: engine.Click) void {
+    if (app.plugins.n_click == 0 or k.plain()) return;
+    const f = app.store.findAny(id) orelse return;
+    if (!visible(f.m)) return;
+    const pm = pluginMessage(app, &app.store, &f.m.msg);
+    app.plugins.onClick(&pm, k);
 }
 
 pub const MenuHit = struct { plugin: *engine.Plugin, entry: *const engine.MenuEntry };

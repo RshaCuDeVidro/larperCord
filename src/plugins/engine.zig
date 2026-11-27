@@ -40,6 +40,9 @@ pub const HttpRes = wire.HttpRes;
 pub const HttpError = wire.HttpError;
 pub const NetEntry = wire.NetEntry;
 pub const Action = wire.Action;
+pub const Click = wire.Click;
+pub const MouseButton = wire.MouseButton;
+pub const click_keys = wire.click_keys;
 pub const Cap = manifest.Cap;
 pub const parseKeys = runtime.parseKeys;
 pub const loc = @import("loc.zig");
@@ -84,6 +87,7 @@ pub const Plugin = struct {
     n_lang: u16 = 0,
     n_edit: u16 = 0,
     n_dismiss: u16 = 0,
+    n_click: u16 = 0,
     commands: std.ArrayList([]u8) = .empty,
     keys: std.ArrayList(Keybind) = .empty,
     lsp: std.ArrayList(LspServer) = .empty,
@@ -190,6 +194,8 @@ pub const Engine = struct {
     n_channel: u32 = 0,
     n_lang: u32 = 0,
     n_edit: u32 = 0,
+    /// Funções de larper.on("click"): com zero, um clique numa mensagem nem chega aqui.
+    n_click: u32 = 0,
     n_commands: u32 = 0,
     n_keys: u32 = 0,
     n_running: u32 = 0,
@@ -199,6 +205,9 @@ pub const Engine = struct {
     n_rewrite: u32 = 0,
     n_completions: u32 = 0,
     n_badges: u32 = 0,
+    /// Cliques entregues aos plugins (o QA confere que, sem ninguém ouvindo ou num clique
+    /// simples, nenhum sai).
+    clicks: u32 = 0,
     /// O app já recebeu o READY (plugin ligado depois recebe "ready" na hora).
     ready: bool = false,
     /// Plugins só rodam com uma conta aberta: o armazenamento é por conta.
@@ -424,6 +433,7 @@ pub const Engine = struct {
         p.n_lang = 0;
         p.n_edit = 0;
         p.n_dismiss = 0;
+        p.n_click = 0;
         p.want_open = false;
         if (p.tree) |t| t.destroy();
         p.tree = null;
@@ -455,6 +465,7 @@ pub const Engine = struct {
         e.n_channel = 0;
         e.n_lang = 0;
         e.n_edit = 0;
+        e.n_click = 0;
         e.n_commands = 0;
         e.n_keys = 0;
         e.n_running = 0;
@@ -470,6 +481,7 @@ pub const Engine = struct {
             e.n_channel += p.n_channel;
             e.n_lang += p.n_lang;
             e.n_edit += p.n_edit;
+            e.n_click += p.n_click;
             e.n_commands += @intCast(p.commands.items.len);
             e.n_keys += @intCast(p.keys.items.len);
             for (p.menus.items) |*m| if (m.toolbar.len > 0) {
@@ -634,6 +646,22 @@ pub const Engine = struct {
             for (p.keys.items) |*k| {
                 if (pressed(ctx, k)) e.gesture(p, .{ .key = k.slot });
             }
+        }
+    }
+
+    /// A pessoa clicou no corpo de uma mensagem (sem link, imagem ou botão no caminho).
+    /// Cada plugin que ouve "click" recebe a mensagem e o que estava apertado, como um
+    /// gesto dele: uma ficha nova, igual à de um atalho, com os mesmos limites por gesto
+    /// e por minuto. O clique simples (esquerdo ou direito sem nada apertado) é do app e
+    /// não sai daqui. O plugin roda depois, na thread dele: o app já fez o que faz com o
+    /// clique.
+    pub fn onClick(e: *Engine, m: *const Message, k: Click) void {
+        if (e.n_click == 0 or k.plain()) return;
+        for (e.list.items) |p| {
+            if (p.run == 0 or p.n_click == 0 or !p.man.has(.messages)) continue;
+            const own = wire.OwnedMsg.dup(e.gpa, m) orelse return;
+            e.gesture(p, .{ .click = .{ .msg = own, .info = k } });
+            e.clicks +%= 1;
         }
     }
 
@@ -920,6 +948,7 @@ pub const Engine = struct {
         p.n_lang = reg.n_lang;
         p.n_edit = reg.n_edit;
         p.n_dismiss = reg.n_dismiss;
+        p.n_click = reg.n_click;
         a.destroy(reg);
     }
 
@@ -4575,4 +4604,152 @@ test "plugins: ação sem a capacidade explica o que pedir" {
     try std.testing.expect(std.mem.indexOf(u8, T.note(0), "actions") != null);
     try std.testing.expect(std.mem.indexOf(u8, T.note(1), "composer") != null);
     try std.testing.expect(std.mem.indexOf(u8, T.note(2), "send") != null);
+}
+
+test "plugins: clique numa mensagem com uma tecla é gesto do plugin, e o simples fica com o app" {
+    var e = T.engine();
+    defer e.deinit();
+    const p = testOne(&e,
+        \\-- @name Clique
+        \\-- @capabilities messages, actions, notify, send
+        \\larper.on("click", function(msg, info)
+        \\  local ks = {}
+        \\  for k, v in pairs(info.keys) do ks[#ks + 1] = k .. "=" .. tostring(v) end
+        \\  table.sort(ks)
+        \\  larper.notify(msg.id .. "|" .. msg.content .. "|" .. msg.channel.id .. "|" .. info.button .. "|" .. tostring(info.ctrl) .. tostring(info.shift)
+        \\    .. tostring(info.alt) .. tostring(info.super) .. "|" .. table.concat(ks, ","))
+        \\  if info.keys.backspace and info.button == "left" then larper.delete(msg) end
+        \\  if info.keys.r then larper.react(msg, "👍"); larper.reply(msg, "visto") end
+        \\  return true
+        \\end)
+        \\larper.on("click", function(msg, info)
+        \\  if info.keys.backspace and info.shift then larper.delete(msg) end
+        \\end)
+    );
+    if (p.err()) |m| std.debug.print("{s}\n", .{m});
+    try std.testing.expectEqual(Status.running, p.status());
+    try std.testing.expectEqual(@as(u32, 2), e.n_click);
+    const m: Message = .{ .id = 77, .content = "oi", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
+    // Esquerdo e direito sem nada apertado são do app (escolher texto, o menu): nada sai.
+    e.onClick(&m, .{ .button = .left });
+    e.onClick(&m, .{ .button = .right });
+    e.waitIdle();
+    try std.testing.expectEqual(@as(usize, 0), T.n_notes);
+    try std.testing.expectEqual(@as(u32, 0), e.clicks);
+    // O do meio chega, com a mensagem e nada apertado.
+    e.onClick(&m, .{ .button = .middle });
+    e.waitIdle();
+    try std.testing.expectEqual(@as(usize, 1), T.n_notes);
+    try std.testing.expectEqualStrings("77|oi|42|middle|falsefalsefalsefalse|", T.note(0));
+    try std.testing.expectEqual(@as(usize, 0), T.n_actions);
+    // Backspace + esquerdo: as teclas pelo nome, e larper.delete sai (a interface pergunta).
+    e.onClick(&m, .{ .button = .left, .keys = wire.keyBit("backspace") | wire.keyBit("e") | wire.keyBit("f5") });
+    e.waitIdle();
+    try std.testing.expectEqualStrings("77|oi|42|left|falsefalsefalsefalse|backspace=true,e=true,f5=true", T.note(1));
+    try std.testing.expectEqual(@as(usize, 1), T.n_actions);
+    try std.testing.expectEqual(std.meta.Tag(Action).delete, T.actions[0]);
+    try std.testing.expectEqual(@as(u64, 77), T.action_ids[0]);
+    // Os modificadores, e as duas funções no mesmo gesto: o segundo delete passa do
+    // limite de 1 por gesto e vira erro no cartão.
+    e.onClick(&m, .{ .button = .left, .shift = true, .keys = wire.keyBit("backspace") });
+    e.waitIdle();
+    try std.testing.expectEqualStrings("77|oi|42|left|falsetruefalsefalse|backspace=true", T.note(2));
+    try std.testing.expectEqual(@as(usize, 2), T.n_actions);
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "larper.delete") != null);
+    e.onClick(&m, .{ .button = .right, .ctrl = true, .alt = true, .super = true });
+    e.waitIdle();
+    try std.testing.expectEqualStrings("77|oi|42|right|truefalsetruetrue|", T.note(3));
+    // Reagir e responder também valem no clique, cada um com o limite dele.
+    e.onClick(&m, .{ .button = .middle, .keys = wire.keyBit("r") });
+    e.waitIdle();
+    try std.testing.expectEqual(@as(usize, 3), T.n_actions);
+    try std.testing.expectEqual(std.meta.Tag(Action).react, T.actions[2]);
+    try std.testing.expectEqual(@as(u64, 77), T.replied_to);
+    try std.testing.expectEqualStrings("visto", T.sent[0][0..T.sent_len[0]]);
+    // No máximo 5 apagadas por minuto, como num comando (já foram 2).
+    for (0..4) |_| {
+        e.onClick(&m, .{ .button = .left, .keys = wire.keyBit("backspace") });
+        e.waitIdle();
+    }
+    var deletes: usize = 0;
+    for (T.actions[0..T.n_actions]) |a| {
+        if (a == .delete) deletes += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 5), deletes);
+    try std.testing.expect(std.mem.indexOf(u8, p.err().?, "5") != null);
+}
+
+test "plugins: sem a capacidade messages, larper.on(\"click\") dá erro e nenhum clique chega" {
+    var e = T.engine();
+    defer e.deinit();
+    const p = testOne(&e,
+        \\-- @name Sem
+        \\-- @capabilities notify, actions
+        \\local ok, err = pcall(larper.on, "click", function() larper.notify("clicou") end)
+        \\larper.notify(tostring(ok) .. "|" .. tostring(err))
+    );
+    try std.testing.expectEqual(Status.running, p.status());
+    try std.testing.expect(std.mem.startsWith(u8, T.note(0), "false|"));
+    try std.testing.expect(std.mem.indexOf(u8, T.note(0), "messages") != null);
+    try std.testing.expectEqual(@as(u32, 0), e.n_click);
+    const m: Message = .{ .id = 5, .content = "x", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
+    e.onClick(&m, .{ .button = .middle, .keys = wire.keyBit("backspace") });
+    e.waitIdle();
+    try std.testing.expectEqual(@as(usize, 1), T.n_notes);
+    try std.testing.expectEqual(@as(u32, 0), e.clicks);
+    // `contains` não vale no clique, e um evento errado diz quais existem.
+    T.reset();
+    const q = testOne(&e,
+        \\-- @name Com
+        \\-- @capabilities messages, notify
+        \\larper.notify(select(2, pcall(larper.on, "click", function() end, { contains = { "x" } })))
+        \\larper.notify(select(2, pcall(larper.on, "mouse", function() end)))
+    );
+    try std.testing.expectEqual(Status.running, q.status());
+    try std.testing.expect(std.mem.indexOf(u8, T.note(0), "contains") != null);
+    try std.testing.expect(std.mem.indexOf(u8, T.note(1), "\"click\"") != null);
+    try std.testing.expectEqual(@as(u32, 0), e.n_click);
+}
+
+test "plugins: clique de um plugin antigo, sem cabeçalho, também chega (ele lê mensagens)" {
+    var e = T.engine();
+    defer e.deinit();
+    const p = testOne(&e,
+        \\larper.on("click", function(msg, info) larper.notify(info.button .. "|" .. msg.author.name) end)
+    );
+    try std.testing.expectEqual(Status.running, p.status());
+    const m: Message = .{ .id = 9, .content = "y", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
+    e.onClick(&m, .{ .button = .middle });
+    e.waitIdle();
+    try std.testing.expectEqualStrings("middle|ana", T.note(0));
+    try std.testing.expectEqual(@as(u32, 1), e.clicks);
+    // Desligado, nada mais chega.
+    e.setEnabled(p, false);
+    e.onClick(&m, .{ .button = .middle });
+    e.waitIdle();
+    try std.testing.expectEqual(@as(usize, 1), T.n_notes);
+    try std.testing.expectEqual(@as(u32, 0), e.n_click);
+}
+
+test "plugins: dois plugins ouvindo o clique, cada um com o gesto dele" {
+    var e = T.engine();
+    defer e.deinit();
+    e.load(&.{
+        .{ .name = "a.lua", .src = "-- @name A\n-- @capabilities messages, actions\nlarper.on(\"click\", function(msg) larper.delete(msg) end)" },
+        .{ .name = "b.lua", .src = "-- @name B\n-- @capabilities messages, notify, actions\nlarper.on(\"click\", function(msg, info) larper.notify(\"b|\" .. msg.id .. \"|\" .. info.button); larper.pin(msg) end)" },
+        .{ .name = "c.lua", .src = "-- @name C\n-- @capabilities messages, notify\nlarper.on(\"message\", function() larper.notify(\"c\") end)" },
+    }, false);
+    e.waitIdle();
+    for (e.list.items) |p| try std.testing.expectEqual(Status.running, p.status());
+    try std.testing.expectEqual(@as(u32, 2), e.n_click);
+    const m: Message = .{ .id = 31, .content = "z", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
+    e.onClick(&m, .{ .button = .left, .keys = wire.keyBit("backspace") });
+    e.waitIdle();
+    // Só quem ouve recebe (o C nem acorda), e cada um age no próprio gesto.
+    try std.testing.expectEqual(@as(u32, 2), e.clicks);
+    try std.testing.expectEqual(@as(usize, 1), T.n_notes);
+    try std.testing.expectEqualStrings("b|31|left", T.note(0));
+    try std.testing.expectEqual(@as(usize, 2), T.n_actions);
+    try std.testing.expectEqual(std.meta.Tag(Action).delete, T.actions[0]);
+    try std.testing.expectEqual(std.meta.Tag(Action).pin, T.actions[1]);
 }

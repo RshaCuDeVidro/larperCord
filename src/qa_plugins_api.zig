@@ -4,7 +4,10 @@
 //! da resposta, credencial só para o host de @credentials, redirecionamento só para
 //! um host aprovado), o registro de rede no cartão, os segredos separados por plugin e
 //! as ações na conta: cada uma muda a demonstração, só num gesto, e apagar e anexar
-//! passam pela confirmação na tela. Nada sai para a internet nem fala com o Discord.
+//! passam pela confirmação na tela. Por fim, larper.on("click"): o clique com uma tecla
+//! apertada (ou o do meio) chega com a mensagem e as teclas e é um gesto (Backspace +
+//! clique apaga, perguntando antes), o simples fica com o app, e sem a capacidade ou sem
+//! ninguém ouvindo nada sai. Nada sai para a internet nem fala com o Discord.
 const std = @import("std");
 const c = @import("c");
 const App = @import("app.zig").App;
@@ -95,6 +98,22 @@ const plugin_b =
     \\-- @name QA 0.7 b
     \\-- @capabilities secrets, notify
     \\larper.command("/qb-secret", function() larper.notify("b|" .. tostring(larper.secrets.get("token"))) end)
+    \\local ok, err = pcall(larper.on, "click", function() larper.notify("b-clicou") end)
+    \\larper.command("/qb-clique", function() larper.notify("b-clique|" .. tostring(ok) .. "|" .. tostring(err)) end)
+;
+
+/// Ouve o clique: conta a mensagem, o botão e as teclas, e com Backspace + esquerdo apaga.
+const plugin_c =
+    \\-- @name QA clique
+    \\-- @capabilities messages, actions, notify
+    \\larper.on("click", function(msg, info)
+    \\  local ks = {}
+    \\  for k in pairs(info.keys) do ks[#ks + 1] = k end
+    \\  table.sort(ks)
+    \\  larper.notify("clique|" .. msg.id .. "|" .. info.button .. "|" .. tostring(info.ctrl) .. "|" .. tostring(info.shift)
+    \\    .. "|" .. tostring(info.alt) .. "|" .. table.concat(ks, ","))
+    \\  if info.button == "left" and info.keys.backspace then larper.delete(msg) end
+    \\end)
 ;
 
 fn plugin(app: *App, name: []const u8) ?*Plugin {
@@ -371,6 +390,97 @@ fn backInGeral(app: *App) bool {
     return app.st.activeChannel() == geral;
 }
 
+// --- O clique numa mensagem ------------------------------------------------------------
+
+var clicks0: u32 = 0;
+var click_own: Id = 0;
+
+fn tOwnClick(_: *App, buf: []u8) []const u8 {
+    return std.fmt.bufPrint(buf, "msgtext:{d}", .{click_own}) catch "";
+}
+
+const mmsg: Op = .{ .mclick = .{ .dyn_at = .{ .f = tOther, .fx = 0.25, .fy = 0.5 } } };
+const lmsg: Op = .{ .click = .{ .dyn_at = .{ .f = tOther, .fx = 0.25, .fy = 0.5 } } };
+const ctrl_lmsg: Op = .{ .ctrl_click = .{ .dyn_at = .{ .f = tOther, .fx = 0.25, .fy = 0.5 } } };
+const own_lmsg: Op = .{ .click = .{ .dyn_at = .{ .f = tOwnClick, .fx = 0.25, .fy = 0.5 } } };
+
+fn clickRefusedB(app: *App) bool {
+    const b = plugin(app, "qa07b.lua") orelse return false;
+    return toastHas(app, "b-clique|false|") and toastHas(app, "messages") and b.n_click == 0;
+}
+
+fn rememberClicks(app: *App) void {
+    clicks0 = app.plugins.clicks;
+}
+
+fn noClickSent(app: *App) bool {
+    return app.plugins.n_click == 0 and app.plugins.clicks == clicks0 and other_id != 0;
+}
+
+fn writeClickPlugin(app: *App) void {
+    _ = c.SDL_SaveFile("qa-out/plugins/qa07c.lua", plugin_c.ptr, plugin_c.len);
+    app.plugins.reload();
+}
+
+fn clickLoaded(app: *App) bool {
+    const p = plugin(app, "qa07c.lua") orelse return false;
+    const b = plugin(app, "qa07b.lua") orelse return false;
+    return p.status() == .running and p.n_click == 1 and app.plugins.n_click == 1 and b.status() == .running and b.n_click == 0;
+}
+
+fn plainNotSent(app: *App) bool {
+    return app.plugins.clicks == clicks0 and !toastHas(app, "clique|");
+}
+
+fn toastIs(app: *App, comptime fmt: []const u8, args: anytype) bool {
+    var b: [96]u8 = undefined;
+    const want = std.fmt.bufPrint(&b, fmt, args) catch return false;
+    return std.mem.eql(u8, app.st.toast.text(), want);
+}
+
+fn middleSeen(app: *App) bool {
+    return app.plugins.clicks == clicks0 + 1 and toastIs(app, "clique|{d}|middle|false|false|false|", .{other_id});
+}
+
+fn ctrlSeen(app: *App) bool {
+    // Nada apagado: o Ctrl+clique não tem Backspace.
+    return app.plugins.clicks == clicks0 + 2 and toastIs(app, "clique|{d}|left|true|false|false|", .{other_id}) and app.st.popup != .plugin_confirm;
+}
+
+fn clickOwnSeen(app: *App) bool {
+    const cs = app.store.channel(geral) orelse return false;
+    var i = cs.messages.items.len;
+    while (i > 0) {
+        i -= 1;
+        const m = &cs.messages.items[i];
+        if (m.msg.author != app.store.me or m.msg.id == 0 or m.pending or !std.mem.eql(u8, m.msg.content, "minha-clique")) continue;
+        if (qa.find(std.fmt.bufPrint(&mbuf, "msgtext:{d}", .{m.msg.id}) catch return false) == null) return false;
+        click_own = m.msg.id;
+        return true;
+    }
+    return false;
+}
+
+fn holdBackspace(app: *App) void {
+    c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiKey_Backspace, true);
+}
+
+fn releaseBackspace(app: *App) void {
+    c.ImGuiIO_AddKeyEvent(app.io, c.ImGuiKey_Backspace, false);
+}
+
+fn askingClickDelete(app: *App) bool {
+    const ask = plugin_confirm.current() orelse return false;
+    return app.st.popup == .plugin_confirm and ask == .delete and ask.delete == click_own and
+        toastIs(app, "clique|{d}|left|false|false|false|backspace", .{click_own}) and qa.find("plugin-confirm-yes") != null;
+}
+
+fn clickOwnDeleted(app: *App) bool {
+    if (app.st.popup != .none) return false;
+    const f = app.store.findAny(click_own) orelse return true;
+    return f.m.deleted;
+}
+
 fn cleanup(app: *App) void {
     qp.removeAllPluginsPub(app);
     app.plugins.reload();
@@ -472,6 +582,37 @@ pub const ops = [_]Op{
     expect("larper.thread cria a thread a partir da mensagem", threadMade),
     run(toGeral),
     expect("volta ao canal", backInGeral),
+} ++ cmd("/qb-clique") ++ [_]Op{
+    s("plugins 0.7: clique numa mensagem"),
+    expect("sem a capacidade messages, larper.on(\"click\") é recusado e o plugin não ouve", clickRefusedB),
+    .{ .wait = 300 },
+    run(pickOther),
+    run(rememberClicks),
+    mmsg,
+    .{ .wait = 400 },
+    expect("sem nenhum plugin ouvindo, o clique não vai para a thread dos plugins", noClickSent),
+    run(writeClickPlugin),
+    expect("o plugin do clique liga, e o sem a capacidade continua sem ouvir", clickLoaded),
+    run(clearToast),
+    run(rememberClicks),
+    lmsg,
+    .{ .wait = 400 },
+    expect("o clique simples é do app (a seleção) e não chega ao plugin", plainNotSent),
+    mmsg,
+    expect("o clique do meio chega ao plugin com a mensagem, sem tecla nenhuma", middleSeen),
+    ctrl_lmsg,
+    expect("Ctrl + clique chega com o ctrl, e sem Backspace nada é apagado", ctrlSeen),
+    click("composer"),
+    .{ .text = "minha-clique" },
+    key(c.ImGuiKey_Enter),
+    expect("a mensagem sua para o Backspace + clique está na lista", clickOwnSeen),
+    run(holdBackspace),
+    own_lmsg,
+    run(releaseBackspace),
+    expect("Backspace + clique: o plugin recebe a tecla, e o larper.delete dele pergunta na tela", askingClickDelete),
+    .{ .shot = "plugins-07-clique" },
+    click("plugin-confirm-yes"),
+    expect("confirmado, a mensagem some", clickOwnDeleted),
     run(cleanup),
     expect("sem os plugins de teste", gone),
 };

@@ -350,6 +350,7 @@ pub const Worker = struct {
                 .menu_message => |x| rt.invoke(.{ .kind = .menu_message, .slot = x.slot, .msg = &x.msg.msg, .value = x.value, .token = g.token }),
                 .menu_user => |x| rt.invoke(.{ .kind = .menu_user, .slot = x.slot, .id = x.id, .name = x.name, .value = x.value, .token = g.token }),
                 .panel => |x| rt.invoke(.{ .kind = .panel, .handle = x.handle, .value = x.value, .toggled = x.toggled, .token = g.token }),
+                .click => |x| if (rt.n_click > 0) rt.invoke(.{ .kind = .click, .msg = &x.msg.msg, .click = &x.info, .token = g.token }),
             },
             .messages => |r| if (w.find(r.run)) |rt| {
                 rt.invoke(.{ .kind = .messages, .slot = r.req, .list = r.list });
@@ -509,6 +510,7 @@ pub fn freeEv(gpa: std.mem.Allocator, ev: *wire.Ev) void {
                 if (x.value) |v| gpa.free(v);
             },
             .panel => |x| if (x.value) |v| gpa.free(v),
+            .click => |x| x.msg.free(gpa),
             .key => {},
         },
         .messages => |r| r.list.free(),
@@ -571,7 +573,7 @@ fn startRun(w: *Worker, args: *wire.StartArgs) void {
 
 const Timer = struct { id: u32, due_ms: i64, every_ms: i64 = 0, fired: bool = false };
 
-const Kind = enum { setup, store_load, store_flush, message, edit, dismiss, hosts, ready, delete, channel, lang, panel_state, command, key, menu_message, menu_user, panel, timer, http, messages };
+const Kind = enum { setup, store_load, store_flush, message, edit, dismiss, hosts, ready, delete, channel, lang, panel_state, command, key, menu_message, menu_user, panel, click, timer, http, messages };
 
 /// O que o trampolim protegido vai fazer dentro do Lua.
 const Call = struct {
@@ -587,6 +589,7 @@ const Call = struct {
     toggled: ?bool = null,
     res: ?*const wire.HttpRes = null,
     list: ?*const wire.MsgList = null,
+    click: ?*const wire.Click = null,
     bytes: []const u8 = "",
     flag: bool = false,
     /// Diferente de 0: é um gesto da pessoa neste plugin (libera larper.send etc.).
@@ -634,6 +637,7 @@ pub const Rt = struct {
     n_edit: u16 = 0,
     n_dismiss: u16 = 0,
     n_hosts: u16 = 0,
+    n_click: u16 = 0,
     /// O `contains` de cada função de "message" e "edit", na mesma ordem (vazio = todas).
     msg_filters: std.ArrayList([][]u8) = .empty,
     edit_filters: std.ArrayList([][]u8) = .empty,
@@ -714,6 +718,7 @@ pub const Rt = struct {
         rt.n_edit = 0;
         rt.n_dismiss = 0;
         rt.n_hosts = 0;
+        rt.n_click = 0;
         for (rt.msg_filters.items) |f| wire.freeNeedles(a, f);
         rt.msg_filters.clearRetainingCapacity();
         for (rt.edit_filters.items) |f| wire.freeNeedles(a, f);
@@ -875,7 +880,7 @@ pub const Rt = struct {
     fn buildReg(rt: *Rt) !*wire.Reg {
         const a = rt.gpa();
         const reg = try a.create(wire.Reg);
-        reg.* = .{ .n_message = rt.n_message, .n_ready = rt.n_ready, .n_delete = rt.n_delete, .n_channel = rt.n_channel, .n_lang = rt.n_lang, .n_edit = rt.n_edit, .n_dismiss = rt.n_dismiss };
+        reg.* = .{ .n_message = rt.n_message, .n_ready = rt.n_ready, .n_delete = rt.n_delete, .n_channel = rt.n_channel, .n_lang = rt.n_lang, .n_edit = rt.n_edit, .n_dismiss = rt.n_dismiss, .n_click = rt.n_click };
         errdefer reg.free(a);
         var cmds: std.ArrayList([]u8) = .empty;
         for (rt.commands.items) |s| try cmds.append(a, try a.dupe(u8, s));
@@ -1093,6 +1098,21 @@ fn trampoline(L: ?*lua.State) callconv(.c) c_int {
             _ = lua.lua_rawgeti(L, -1, call.slot);
             lua.call(L, 0, 0);
         },
+        .click => {
+            // Todas as funções de "click" no mesmo gesto: os limites dele valem para a soma.
+            _ = lua.lua_getfield(L, 2, "click"); // 3
+            pushMessage(L, call.msg.?); // 4
+            pushClick(L, call.click.?); // 5
+            const n: lua.Integer = @intCast(lua.lua_rawlen(L, 3));
+            var i: lua.Integer = 1;
+            while (i <= n) : (i += 1) {
+                _ = lua.lua_rawgeti(L, 3, i);
+                lua.lua_pushvalue(L, 4);
+                lua.lua_pushvalue(L, 5);
+                // O que a função devolve não muda nada: o app já tratou o clique.
+                lua.call(L, 2, 0);
+            }
+        },
         .menu_message, .menu_user => {
             _ = lua.lua_getfield(L, 2, "menus");
             _ = lua.lua_rawgeti(L, -1, call.slot);
@@ -1244,6 +1264,31 @@ fn pushMessage(L: ?*lua.State, m: *const wire.Message) void {
     }
 }
 
+/// {button="left", ctrl=false, shift=false, alt=false, super=false, keys={backspace=true}}
+fn pushClick(L: ?*lua.State, k: *const wire.Click) void {
+    lua.lua_createtable(L, 0, 6);
+    _ = lua.lua_pushstring(L, @tagName(k.button));
+    lua.lua_setfield(L, -2, "button");
+    for ([_]struct { name: [*:0]const u8, on: bool }{
+        .{ .name = "ctrl", .on = k.ctrl },
+        .{ .name = "shift", .on = k.shift },
+        .{ .name = "alt", .on = k.alt },
+        .{ .name = "super", .on = k.super },
+    }) |m| {
+        lua.lua_pushboolean(L, @intFromBool(m.on));
+        lua.lua_setfield(L, -2, m.name);
+    }
+    // Sempre uma tabela: `info.keys.backspace` nunca dá erro.
+    lua.lua_createtable(L, 0, 2);
+    for (wire.click_keys, 0..) |name, i| {
+        if ((k.keys >> @intCast(i)) & 1 == 0) continue;
+        lua.pushSlice(L, name);
+        lua.lua_pushboolean(L, 1);
+        lua.lua_rawset(L, -3);
+    }
+    lua.lua_setfield(L, -2, "keys");
+}
+
 /// Abre só o que o sandbox permite e cria a tabela `larper`.
 fn setup(L: ?*lua.State) void {
     lua.pushcfunction(L, &lua.luaopen_base);
@@ -1377,7 +1422,7 @@ fn setup(L: ?*lua.State) void {
     }
     lua.lua_setglobal(L, "larper");
     // As funções registradas ficam no registro, longe do script.
-    const lists = [_][*:0]const u8{ "message", "edit", "dismiss", "hosts", "ready", "delete", "channel", "lang", "panel", "commands", "keys", "menus", "timers", "http", "msgs", "cb_now", "cb_prev", "opt_now", "opt_prev", "storage" };
+    const lists = [_][*:0]const u8{ "message", "edit", "dismiss", "hosts", "ready", "delete", "channel", "lang", "panel", "click", "commands", "keys", "menus", "timers", "http", "msgs", "cb_now", "cb_prev", "opt_now", "opt_prev", "storage" };
     lua.lua_createtable(L, 0, lists.len);
     for (lists) |k| {
         lua.newtable(L);
@@ -1503,9 +1548,9 @@ fn optNeedles(L: ?*lua.State, p: *Rt, opts: c_int, api: []const u8) [][]u8 {
     return list;
 }
 
-/// larper.on("message" | "edit" | "dismiss" | "hosts" | "ready" | "delete" | "channel" | "lang" | "panel", fn, [opções])
+/// larper.on("message" | "edit" | "dismiss" | "hosts" | "ready" | "delete" | "channel" | "lang" | "panel" | "click", fn, [opções])
 /// Em "message" e "edit", {contains={"texto", …}} só chama a função para o que tem um
-/// deles: o resto nem chega ao Lua.
+/// deles: o resto nem chega ao Lua. "click" é um gesto do plugin (ver engine.onClick).
 fn lOn(L: ?*lua.State) callconv(.c) c_int {
     const p = plug(L);
     const event = lua.checkSlice(L, 1);
@@ -1529,9 +1574,12 @@ fn lOn(L: ?*lua.State) callconv(.c) c_int {
         .{ "lang", &p.n_lang }
     else if (eql(u8, event, "panel"))
         .{ "panel", &p.n_panel }
+    else if (eql(u8, event, "click"))
+        .{ "click", &p.n_click }
     else
-        raise(L, tr("larper.on: evento desconhecido (use \"message\", \"edit\", \"dismiss\", \"hosts\", \"ready\", \"delete\", \"channel\", \"lang\" ou \"panel\")", "larper.on: unknown event (use \"message\", \"edit\", \"dismiss\", \"hosts\", \"ready\", \"delete\", \"channel\", \"lang\" or \"panel\")"));
-    if (eql(u8, event, "message") or eql(u8, event, "edit") or eql(u8, event, "delete")) need(L, p, .messages, "larper.on");
+        raise(L, tr("larper.on: evento desconhecido (use \"message\", \"edit\", \"dismiss\", \"hosts\", \"ready\", \"delete\", \"channel\", \"lang\", \"panel\" ou \"click\")", "larper.on: unknown event (use \"message\", \"edit\", \"dismiss\", \"hosts\", \"ready\", \"delete\", \"channel\", \"lang\", \"panel\" or \"click\")"));
+    // O clique traz a mensagem inteira: pede a mesma capacidade de quem lê mensagens.
+    if (eql(u8, event, "message") or eql(u8, event, "edit") or eql(u8, event, "delete") or eql(u8, event, "click")) need(L, p, .messages, "larper.on");
     if (eql(u8, event, "dismiss")) need(L, p, .decorate, "larper.on");
     if (eql(u8, event, "hosts")) need(L, p, .http, "larper.on");
     if (counter.* >= 64) raise(L, tr("larper.on: funções demais para esse evento", "larper.on: too many functions for that event"));
@@ -1743,7 +1791,7 @@ fn sendOne(L: ?*lua.State, p: *Rt, ch: u64, text: []const u8, reply_to: u64, api
 fn lSend(L: ?*lua.State) callconv(.c) c_int {
     const p = plug(L);
     need(L, p, .send, "larper.send");
-    if (p.gesture == 0) raise(L, tr("larper.send só funciona dentro de larper.command, larper.keybind, de um botão ou de um menu do plugin (nunca em resposta automática)", "larper.send only works inside larper.command, larper.keybind, or one of the plugin's buttons or menus (never as an automatic reply)"));
+    if (p.gesture == 0) raise(L, tr("larper.send só funciona dentro de larper.command, larper.keybind, larper.on(\"click\"), de um botão ou de um menu do plugin (nunca em resposta automática)", "larper.send only works inside larper.command, larper.keybind, larper.on(\"click\"), or one of the plugin's buttons or menus (never as an automatic reply)"));
     const ch = idArg(L, 1) orelse raise(L, tr("larper.send: canal inválido", "larper.send: invalid channel"));
     const text = lua.checkSlice(L, 2);
     const reply_to = if (lua.lua_type(L, 3) == lua.TTABLE) fieldId(L, 3, "reply_to", "larper.send") orelse 0 else 0;
@@ -1788,7 +1836,7 @@ fn takeAct(L: ?*lua.State, p: *Rt, kind: ActKind, api: []const u8) void {
 /// Capacidade, gesto e limite: o que toda ação na conta confere antes de sair.
 fn actionStart(L: ?*lua.State, p: *Rt, cap: manifest.Cap, kind: ActKind, api: []const u8) void {
     need(L, p, cap, api);
-    if (p.gesture == 0) raiseFmt(L, "{s} só funciona num comando, atalho, botão ou menu do plugin (nunca num evento, temporizador ou resposta HTTP)", "{s} only works inside one of the plugin's commands, keybinds, buttons or menus (never in an event, timer or HTTP reply)", .{api});
+    if (p.gesture == 0) raiseFmt(L, "{s} só funciona num comando, atalho, clique, botão ou menu do plugin (nunca em outro evento, num temporizador ou numa resposta HTTP)", "{s} only works inside one of the plugin's commands, keybinds, clicks, buttons or menus (never in another event, a timer or an HTTP reply)", .{api});
     takeAct(L, p, kind, api);
 }
 
@@ -2522,7 +2570,7 @@ fn panelShow(L: ?*lua.State, open: bool) c_int {
     const p = plug(L);
     need(L, p, .panel, "larper.panel");
     // Abrir na cara da pessoa só quando foi ela quem pediu.
-    if (open and p.gesture == 0) raise(L, tr("larper.panel.open só funciona num comando, atalho, botão ou menu do plugin", "larper.panel.open only works inside one of the plugin's commands, keybinds, buttons or menus"));
+    if (open and p.gesture == 0) raise(L, tr("larper.panel.open só funciona num comando, atalho, clique, botão ou menu do plugin", "larper.panel.open only works inside one of the plugin's commands, keybinds, clicks, buttons or menus"));
     p.budgetCmd(L);
     _ = p.w.emit(p.run, .{ .panel_show = .{ .open = open, .token = p.gesture } });
     return 0;
@@ -2774,7 +2822,7 @@ fn lMessages(L: ?*lua.State) callconv(.c) c_int {
 }
 
 fn needGesture(L: ?*lua.State, p: *const Rt, api: []const u8) void {
-    if (p.gesture == 0) raiseFmt(L, "{s} só funciona num comando, atalho, botão ou menu do plugin", "{s} only works inside one of the plugin's commands, keybinds, buttons or menus", .{api});
+    if (p.gesture == 0) raiseFmt(L, "{s} só funciona num comando, atalho, clique, botão ou menu do plugin", "{s} only works inside one of the plugin's commands, keybinds, clicks, buttons or menus", .{api});
 }
 
 /// larper.jump(canal, mensagem): abre o canal e vai até a mensagem.

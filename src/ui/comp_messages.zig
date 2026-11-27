@@ -282,6 +282,20 @@ fn decoIndex(active_only: bool) ?*plugins.deco.Index {
     return &e.deco;
 }
 
+/// Um clique no corpo da mensagem `m`, sem nada clicável no caminho, para os plugins que
+/// ouvem "click" (plugins/host.zig `messageClick`). Sem nenhum ouvindo é só esta
+/// comparação; com algum, as teclas só são lidas no quadro do clique.
+fn pluginClick(ctx: *d.Ctx, m: *const StoredMessage, r: d.Rect) void {
+    const e = plugins.current orelse return;
+    if (e.n_click == 0) return;
+    // A barra de rolagem e um link (que já pediu a mãozinha) ficam com o clique deles.
+    if (ctx.mouse.x >= r.right() - scrollbar_zone or c.ImGui_GetMouseCursor() == c.ImGuiMouseCursor_Hand) return;
+    const button: plugins.MouseButton = if (c.ImGui_IsMouseClicked(0)) .left else if (c.ImGui_IsMouseClicked(1)) .right else if (c.ImGui_IsMouseClicked(2)) .middle else return;
+    const host = @import("../plugins/host.zig");
+    const io = ctx.io;
+    host.messageClick(host.appOf(), m.msg.id, .{ .button = button, .ctrl = io.*.KeyCtrl, .shift = io.*.KeyShift, .alt = io.*.KeyAlt, .super = io.*.KeySuper, .keys = host.heldKeys() });
+}
+
 const note_size_delta: f32 = 1.5;
 
 fn noteFont(g: Geo) *c.ImFont {
@@ -735,6 +749,9 @@ pub fn historyIn(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, ch_id: Id, region: 
             }
             // O menu da mensagem (responder, editar, thread...) é da caixa da janela principal.
             if (c.ImGui_IsMouseClicked(1) and !pip) ctx.popup(.{ .menu = .{ .kind = .message, .id = m.msg.id, .x = ctx.mouse.x, .y = ctx.mouse.y } });
+            // Os plugins que ouvem "click" (larper.on) recebem o mesmo clique, e o app ainda
+            // faz o dele. Na janela flutuante, não (como o menu da mensagem).
+            if (!pip) pluginClick(ctx, m, r);
         }
         // Entre as linhas de um cartão não há texto sob o mouse: fica onde estava.
         const in_gap = probe.out == null and m.msg.embeds.len > 0 and st.selection.b_id == m.msg.id;

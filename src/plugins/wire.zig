@@ -128,6 +128,58 @@ pub const Keybind = struct {
     }
 };
 
+/// O botão de um clique numa mensagem (larper.on("click")).
+pub const MouseButton = enum(u2) { left, right, middle };
+
+/// As teclas que um clique numa mensagem conta em `info.keys`, com os nomes de
+/// larper.keybind (os modificadores vão à parte). A posição de cada uma é o bit dela em
+/// `Click.keys`.
+pub const click_keys = blk: {
+    @setEvalBranchQuota(20_000);
+    const named = [_][]const u8{ "enter", "space", "tab", "backspace", "delete", "insert", "home", "end", "pageup", "pagedown", "up", "down", "left", "right", ",", ".", "/", ";", "-", "=" };
+    var out: [36 + 24 + named.len][]const u8 = undefined;
+    var n: usize = 0;
+    for ("abcdefghijklmnopqrstuvwxyz0123456789") |ch| {
+        out[n] = std.fmt.comptimePrint("{c}", .{ch});
+        n += 1;
+    }
+    for (1..25) |i| {
+        out[n] = std.fmt.comptimePrint("f{d}", .{i});
+        n += 1;
+    }
+    for (named) |s| {
+        out[n] = s;
+        n += 1;
+    }
+    break :blk out;
+};
+
+/// O bit da tecla `name` em `Click.keys` (0 = não está na lista).
+pub fn keyBit(name: []const u8) u128 {
+    for (click_keys, 0..) |k, i| {
+        if (std.mem.eql(u8, k, name)) return @as(u128, 1) << @intCast(i);
+    }
+    return 0;
+}
+
+/// Um clique no corpo de uma mensagem da lista: o botão e o que estava apertado na hora.
+pub const Click = struct {
+    button: MouseButton,
+    ctrl: bool = false,
+    shift: bool = false,
+    alt: bool = false,
+    super: bool = false,
+    /// Bit `i` ligado: `click_keys[i]` estava apertada.
+    keys: u128 = 0,
+
+    /// Esquerdo ou direito sem nada apertado: é do app (escolher texto, abrir o menu da
+    /// mensagem) e acontece o tempo todo. Como Ctrl+C num atalho, não vira gesto de
+    /// plugin, então nem chega a ele.
+    pub fn plain(k: Click) bool {
+        return k.button != .middle and !k.ctrl and !k.shift and !k.alt and !k.super and k.keys == 0;
+    }
+};
+
 /// Servidor de linguagem proposto com larper.lsp. Só uma proposta: quem decide
 /// rodar é a pessoa, em Configurações (ui/settings_lsp.zig).
 pub const LspServer = struct { lang: lsp_core.Short, cmd: lsp_core.Command };
@@ -206,6 +258,7 @@ pub const Reg = struct {
     n_lang: u16 = 0,
     n_edit: u16 = 0,
     n_dismiss: u16 = 0,
+    n_click: u16 = 0,
 
     pub fn free(r: *Reg, gpa: std.mem.Allocator) void {
         for (r.commands) |s| gpa.free(s);
@@ -462,6 +515,8 @@ pub const Gesture = union(enum) {
     menu_user: struct { slot: u32, id: u64, name: []u8, value: ?[]u8 = null },
     /// `toggled`: o estado novo de um interruptor (no lugar de `value`).
     panel: struct { handle: u32, value: ?[]u8, toggled: ?bool = null },
+    /// Clicou numa mensagem com uma tecla apertada (ou com o botão do meio).
+    click: struct { msg: *OwnedMsg, info: Click },
 };
 
 pub const Ev = union(enum) {
@@ -510,6 +565,25 @@ pub const CmdWhat = union(enum) {
 };
 
 pub const Cmd = struct { run: u32, what: CmdWhat };
+
+test "clique: as teclas têm os nomes de larper.keybind, e o clique simples é do app" {
+    try std.testing.expectEqual(@as(usize, 80), click_keys.len);
+    for (click_keys, 0..) |a, i| {
+        for (click_keys[i + 1 ..]) |b| try std.testing.expect(!std.mem.eql(u8, a, b));
+    }
+    try std.testing.expectEqualStrings("a", click_keys[0]);
+    try std.testing.expectEqualStrings("9", click_keys[35]);
+    try std.testing.expectEqualStrings("f24", click_keys[59]);
+    try std.testing.expect(keyBit("backspace") != 0 and keyBit("backspace") != keyBit("delete"));
+    try std.testing.expectEqual(@as(u128, 0), keyBit("ctrl"));
+    try std.testing.expectEqual(@as(u128, 0), keyBit("Backspace"));
+    try std.testing.expect((Click{ .button = .left }).plain());
+    try std.testing.expect((Click{ .button = .right }).plain());
+    try std.testing.expect(!(Click{ .button = .middle }).plain());
+    try std.testing.expect(!(Click{ .button = .left, .keys = keyBit("backspace") }).plain());
+    try std.testing.expect(!(Click{ .button = .right, .alt = true }).plain());
+    try std.testing.expect(!(Click{ .button = .left, .super = true }).plain());
+}
 
 test "registro de rede: host e caminho, nunca a busca" {
     var e: NetEntry = .{};
