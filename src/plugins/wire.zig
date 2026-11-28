@@ -391,7 +391,9 @@ pub const Action = union(enum) {
     /// `emoji`: o emoji em texto ou um personalizado ("nome:id").
     react: struct { id: u64, emoji: []u8 },
     edit: struct { id: u64, text: []u8 },
-    delete: struct { id: u64 },
+    /// `ask`: pergunta na tela antes. Só a interface desliga, quando a pessoa ligou
+    /// "Apagar sem perguntar" no cartão do plugin (engine.zig); o que vem da thread não conta.
+    delete: struct { id: u64, ask: bool = true },
     pin: struct { id: u64, add: bool },
     thread: struct { id: u64, name: []u8 },
     /// Abre o seletor de arquivos do app para a caixa deste canal (0 = o aberto).

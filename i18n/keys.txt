@@ -199,6 +199,7 @@ Archived private threads
 Archived Threads
 Armenian
 ASCII logo
+Ask before deleting again
 Asks GitHub for the latest version when the app opens. No account data is sent.
 Asleep
 Astronaut
@@ -611,8 +612,10 @@ Delete Tab Set
 Delete the tab set
 Delete this message?
 Delete Thread…
+Delete without asking
 Delete “{s}” for good
 Deleted messages stay visible (marked) and edits keep the original. Local only.
+Deletes messages without asking. Only leave this on if you trust who made it.
 Delivered ✓✓
 Delivery receipt
 demo
@@ -1163,6 +1166,7 @@ Less memory costs a little network and CPU: what left is fetched again when it c
 Less space between groups and smaller avatars.
 less than 1 min
 Let ctl click and type
+Let it delete without asking, only from your own click, keybind or command
 Level: {d:.0} dB
 Level: {d:.0} dB · learned threshold: {d:.0} dB
 Level: {d:.0} dB · threshold: {d:.0} dB (drag the handle)
@@ -1478,6 +1482,7 @@ Off
 off
 off now
 Off. You can also turn it on by clicking your name, bottom left.
+Off: each larper.delete from it asks you on screen before deleting.
 Off: stays on the list without showing up
 Offline
 Old API
@@ -1490,6 +1495,7 @@ On until you turn it off. What arrives in channels shows as unread at the end.
 on Wayland, staying above other windows is up to the compositor
 On: shows up while it's running
 On: starts when you type a block in this language.
+On: the plugin deletes messages right away, without asking, but only right after your own click, keybind or command (up to 1 at a time and 5 a minute).
 On: {d} min left. What arrives in channels shows as unread at the end.
 One color per part, in hex (#RRGGBB). Changing a color leaves the palette.
 One item can only be answered in the official app.
@@ -1689,7 +1695,7 @@ Raw
 react
 Reactions {d}
 Reacts to what you type
-Reacts, edits yours, pins and starts threads when you ask; deleting always asks you first
+Reacts, edits yours, pins and starts threads when you ask; deleting asks you first unless you turn on Delete without asking below
 Read and answer each item. Nothing is filled in for you.
 Read the rules
 Read up to

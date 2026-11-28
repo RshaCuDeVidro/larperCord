@@ -36,7 +36,7 @@ const labels = [_]Label{
     .{ .cap = .completions, .pt = "Sugere ao digitar", .en = "Suggests as you type", .tip_pt = "Uma lista na caixa de mensagem; o que você escolhe vai para a caixa, nunca é enviado sozinho", .tip_en = "A list in the message box; what you pick goes in the box and is never sent on its own" },
     .{ .cap = .settings, .pt = "Opções", .en = "Options", .tip_pt = "As opções dele aparecem neste cartão", .tip_en = "Its options show up on this card" },
     .{ .cap = .secrets, .pt = "Guarda segredos", .en = "Keeps secrets", .tip_pt = "Senhas e chaves de API no chaveiro do sistema, separadas por plugin", .tip_en = "Passwords and API keys in the system keyring, kept apart per plugin", .strong = true },
-    .{ .cap = .actions, .pt = "Age nas mensagens", .en = "Acts on messages", .tip_pt = "Reage, edita as suas, fixa e cria threads quando você pede; apagar sempre pergunta antes", .tip_en = "Reacts, edits yours, pins and starts threads when you ask; deleting always asks you first", .strong = true },
+    .{ .cap = .actions, .pt = "Age nas mensagens", .en = "Acts on messages", .tip_pt = "Reage, edita as suas, fixa e cria threads quando você pede; apagar pergunta antes, a não ser que você ligue Apagar sem perguntar abaixo", .tip_en = "Reacts, edits yours, pins and starts threads when you ask; deleting asks you first unless you turn on Delete without asking below", .strong = true },
 };
 
 /// Vinham com o app e saíram: uns viraram funções do próprio app, outros eram só
@@ -160,6 +160,7 @@ fn card(p: anytype, e: *engine.Engine, pl: *Plugin) void {
     y = chips(p, pl, x, y, w);
     y = alertLine(p, pl, x, y, w);
     y = credentialsLine(p, pl, x, y, w);
+    y = noAskAlert(p, e, pl, x, y, w);
 
     // Comandos e atalhos, se está rodando.
     if (pl.isRunning() and (pl.commands.items.len > 0 or pl.keys.items.len > 0)) {
@@ -170,6 +171,8 @@ fn card(p: anytype, e: *engine.Engine, pl: *Plugin) void {
 
     // Hosts: a aprovação é por plugin e por host.
     for (pl.man.hostList(), 0..) |h, i| y = hostRow(p, e, pl, h, i, x, y, w);
+    // Apagar sem perguntar: só para quem pode apagar (`actions`).
+    if (!pl.man.legacy and pl.man.has(.actions)) y = noAskRow(p, e, pl, x, y, w);
     // O que ele pediu à internet (só quem pode pedir).
     if (pl.man.has(.http)) y = netLog(p, pl, x, y, w);
 
@@ -319,6 +322,45 @@ fn credentialsLine(p: anytype, pl: *const Plugin, x: f32, y: f32, w: f32) f32 {
     const h = inbox.wrapText(p.dl, p.font(.medium), 12.5, x, y, w, text, 3, ctx.col(.danger));
     qa.mark(.{ .x = x, .y = y, .w = w, .h = h }, "plugin-creds:{s}", .{pl.name});
     return y + h + 8;
+}
+
+/// "Apagar sem perguntar" ligado: uma linha em vermelho com o que isso quer dizer.
+fn noAskAlert(p: anytype, e: *const engine.Engine, pl: *const Plugin, x: f32, y: f32, w: f32) f32 {
+    if (!e.deletesWithoutAsking(pl)) return y;
+    const ctx = p.ctx;
+    const text = i18n.tr("Apaga mensagens sem perguntar. Só deixe isso ligado se confiar em quem fez.", "Deletes messages without asking. Only leave this on if you trust who made it.");
+    const h = inbox.wrapText(p.dl, p.font(.medium), 12.5, x, y, w, text, 3, ctx.col(.danger));
+    qa.mark(.{ .x = x, .y = y, .w = w, .h = h }, "plugin-noask-alert:{s}", .{pl.name});
+    return y + h + 8;
+}
+
+/// O interruptor "Apagar sem perguntar" (desligado de início): com ele, o larper.delete
+/// deste plugin apaga na hora em vez de abrir a pergunta. O gesto e os limites ficam.
+fn noAskRow(p: anytype, e: *engine.Engine, pl: *Plugin, x: f32, y: f32, w: f32) f32 {
+    const ctx = p.ctx;
+    const dl = p.dl;
+    const on_now = e.deletesWithoutAsking(pl);
+    const hint = if (on_now)
+        i18n.tr("Ligado: o plugin apaga mensagens na hora, sem perguntar, mas só logo depois de um clique, atalho ou comando seu (até 1 por vez e 5 por minuto).", "On: the plugin deletes messages right away, without asking, but only right after your own click, keybind or command (up to 1 at a time and 5 a minute).")
+    else
+        i18n.tr("Desligado: cada larper.delete dele pergunta na tela antes de apagar.", "Off: each larper.delete from it asks you on screen before deleting.");
+    const text_w = w - 70;
+    const hint_f = p.font(.regular);
+    const hint_h = inbox.wrapText(null, hint_f, 12, 0, 0, text_w, hint, 4, d.Rgba.white);
+    const row: d.Rect = .{ .x = x, .y = y, .w = w, .h = @max(44, 26 + hint_h + 6) };
+    d.rect(dl, row, ctx.col(.elevated).alpha(0.7), 6);
+    _ = d.textClipped(dl, p.font(.semibold), 13, row.x + 10, row.y + 6, ctx.col(.text), i18n.tr("Apagar sem perguntar", "Delete without asking"), text_w);
+    _ = inbox.wrapText(dl, hint_f, 12, row.x + 10, row.y + 24, text_w, hint, 4, if (on_now) ctx.col(.danger) else ctx.col(.faint));
+    const sw: d.Rect = .{ .x = row.right() - 50, .y = row.y + 10, .w = 40, .h = 24 };
+    const id = 0xCF000 + @as(usize, pl.slot) * 16;
+    const hb = d.hit(ctx, id, sw);
+    qa.mark(sw, "plugin-noask:{s}", .{pl.name});
+    const on = anim.to(anim.id("plugin-noask", id), if (on_now) 1 else 0, 22);
+    d.rect(dl, sw, ctx.col(.faint).mix(ctx.col(.danger), on), 12);
+    d.circle(dl, sw.x + 12 + on * 16, sw.y + 12, 9, d.Rgba.white);
+    d.tip(ctx, sw, if (on_now) i18n.tr("Voltar a perguntar antes de apagar", "Ask before deleting again") else i18n.tr("Deixar apagar sem perguntar, só num clique, atalho ou comando seu", "Let it delete without asking, only from your own click, keybind or command"), hb.hovered);
+    if (hb.clicked) e.setDeleteNoAsk(pl, !on_now);
+    return y + row.h + 8;
 }
 
 fn hostRow(p: anytype, e: *engine.Engine, pl: *Plugin, host: []const u8, i: usize, x: f32, y: f32, w: f32) f32 {

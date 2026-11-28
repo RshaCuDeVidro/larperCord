@@ -253,7 +253,8 @@ fn actionTarget(app: *App, id: types.Id) @TypeOf(Store.findAny(undefined, 0)) {
 /// larper.react, edit, delete, pin, thread e attach, depois do gesto conferido
 /// (engine.zig): o mesmo caminho dos botões do app, com as mesmas permissões, os
 /// mesmos limites de envio e a demonstração respondendo igual. Apagar e anexar só
-/// depois de a pessoa confirmar (ui/plugin_confirm.zig).
+/// depois de a pessoa confirmar (ui/plugin_confirm.zig); apagar sem a pergunta só com
+/// "Apagar sem perguntar" ligado no cartão do plugin (`ask` falso, decidido em engine.zig).
 fn action(ctx: *anyopaque, _: []const u8, title: []const u8, a: *const engine.Action) ?[]const u8 {
     const app: *App = @ptrCast(@alignCast(ctx));
     if (!app.store.ready) return i18n.tr("o app ainda não conectou", "the app isn't connected yet");
@@ -276,6 +277,12 @@ fn action(ctx: *anyopaque, _: []const u8, title: []const u8, a: *const engine.Ac
             const own = f.m.msg.author == app.store.me;
             const mod = app.store.can(f.cs.info.guild, types.perm.manage_messages);
             if (!own and !mod) return i18n.tr("larper.delete: sem permissão para apagar essa mensagem", "larper.delete: no permission to delete that message");
+            // A pessoa ligou "Apagar sem perguntar" para este plugin: o mesmo caminho do
+            // botão Apagar da pergunta, sem a pergunta.
+            if (!x.ask) {
+                app.handle(.{ .delete_message = x.id });
+                return null;
+            }
             plugin_confirm.ask(&app.st, .{ .delete = x.id }, title);
         },
         .pin => |x| {

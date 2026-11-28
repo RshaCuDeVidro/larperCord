@@ -7,7 +7,9 @@
 //! passam pela confirmação na tela. Por fim, larper.on("click"): o clique com uma tecla
 //! apertada (ou o do meio) chega com a mensagem e as teclas e é um gesto (Backspace +
 //! clique apaga, perguntando antes), o simples fica com o app, e sem a capacidade ou sem
-//! ninguém ouvindo nada sai. Nada sai para a internet nem fala com o Discord.
+//! ninguém ouvindo nada sai; com "Apagar sem perguntar" ligado no cartão, o mesmo clique
+//! apaga na hora, e desligado a pergunta volta. Nada sai para a internet nem fala com o
+//! Discord.
 const std = @import("std");
 const c = @import("c");
 const App = @import("app.zig").App;
@@ -447,18 +449,86 @@ fn ctrlSeen(app: *App) bool {
     return app.plugins.clicks == clicks0 + 2 and toastIs(app, "clique|{d}|left|true|false|false|", .{other_id}) and app.st.popup != .plugin_confirm;
 }
 
-fn clickOwnSeen(app: *App) bool {
+/// A mensagem sua com este texto, já enviada e à vista: vira o alvo do Backspace + clique.
+fn findOwn(app: *App, text: []const u8) bool {
     const cs = app.store.channel(geral) orelse return false;
     var i = cs.messages.items.len;
     while (i > 0) {
         i -= 1;
         const m = &cs.messages.items[i];
-        if (m.msg.author != app.store.me or m.msg.id == 0 or m.pending or !std.mem.eql(u8, m.msg.content, "minha-clique")) continue;
+        if (m.msg.author != app.store.me or m.msg.id == 0 or m.pending or m.deleted or !std.mem.eql(u8, m.msg.content, text)) continue;
         if (qa.find(std.fmt.bufPrint(&mbuf, "msgtext:{d}", .{m.msg.id}) catch return false) == null) return false;
         click_own = m.msg.id;
         return true;
     }
     return false;
+}
+
+fn clickOwnSeen(app: *App) bool {
+    return findOwn(app, "minha-clique");
+}
+
+fn clickOwnSeen2(app: *App) bool {
+    return findOwn(app, "minha-clique2");
+}
+
+fn clickOwnSeen3(app: *App) bool {
+    return findOwn(app, "minha-clique3");
+}
+
+fn noAskOffShown(app: *App) bool {
+    const p = plugin(app, "qa07c.lua") orelse return false;
+    // Só quem pede `actions` tem o interruptor: o QA 0.7 e o do clique, não o b.
+    return !app.plugins.deletesWithoutAsking(p) and qa.find("plugin-noask:qa07c.lua") != null and
+        qa.find("plugin-noask:qa07.lua") != null and qa.find("plugin-noask:qa07b.lua") == null and
+        qa.find("plugin-noask-alert:qa07c.lua") == null;
+}
+
+fn noAskOn(app: *App) bool {
+    const p = plugin(app, "qa07c.lua") orelse return false;
+    const other = plugin(app, "qa07.lua") orelse return false;
+    return app.plugins.deletesWithoutAsking(p) and !app.plugins.deletesWithoutAsking(other) and
+        qa.find("plugin-noask-alert:qa07c.lua") != null and qa.find("plugin-noask-alert:qa07.lua") == null;
+}
+
+fn jaBig(app: *App) void {
+    i18n.set("ja");
+    app.st.settings.ui_scale = 1.25;
+    // Rola as configurações até o fim, onde fica o cartão do plugin do clique.
+    c.ImGuiIO_AddMousePosEvent(app.io, 700, 400);
+    c.ImGuiIO_AddMouseWheelEvent(app.io, 0, -30);
+}
+
+/// A escrita do japonês já ganhou a fonte de reserva (ou o sistema não tem nenhuma).
+fn jaFontReady(app: *App) bool {
+    const fonts = @import("ui/fonts.zig");
+    const b = fonts.blockOf('確') orelse return true;
+    return app.fonts.hasBlock(b) or app.fonts.triedBlock(b);
+}
+
+fn ptNormal(app: *App) void {
+    i18n.set("pt");
+    app.st.settings.ui_scale = 1;
+}
+
+fn noAskOff(app: *App) bool {
+    const p = plugin(app, "qa07c.lua") orelse return false;
+    return !app.plugins.deletesWithoutAsking(p) and qa.find("plugin-noask-alert:qa07c.lua") == null;
+}
+
+fn deletedNoPopup(app: *App) bool {
+    // Apagada sai do Store (sem o registro de mensagens): sumir também conta.
+    const gone_now = if (app.store.findAny(click_own)) |f| f.m.deleted else true;
+    return gone_now and click_own != 0 and app.plugins.clicks == clicks0 + 1 and app.st.popup != .plugin_confirm and plugin_confirm.current() == null;
+}
+
+fn stillNoPopup(app: *App) bool {
+    return app.st.popup != .plugin_confirm and plugin_confirm.current() == null;
+}
+
+fn clickOwnStill(app: *App) bool {
+    const f = app.store.findAny(click_own) orelse return false;
+    return app.st.popup == .none and !f.m.deleted;
 }
 
 fn holdBackspace(app: *App) void {
@@ -613,6 +683,54 @@ pub const ops = [_]Op{
     .{ .shot = "plugins-07-clique" },
     click("plugin-confirm-yes"),
     expect("confirmado, a mensagem some", clickOwnDeleted),
+
+    s("plugins 0.7: apagar sem perguntar"),
+    ctrl(c.ImGuiKey_Comma),
+    click("settings:Plugins"),
+    expect("o interruptor está nos cartões de quem pede actions, desligado", noAskOffShown),
+    click("plugin-noask:qa07c.lua"),
+    expect("ligado pelo cartão, só neste plugin, com o aviso em vermelho", noAskOn),
+    .{ .shot = "plugins-07-sem-perguntar" },
+    // O cartão em japonês e com a interface a 125%: a linha e o aviso quebram sem cortar.
+    run(jaBig),
+    .{ .wait = 400 },
+    expect("em japonês e a 125%, o interruptor e o aviso continuam no cartão", noAskOn),
+    .{ .expect = .{ .name = "a fonte de reserva do japonês já foi procurada", .check = jaFontReady, .timeout_ms = 10000 } },
+    .{ .wait = 300 },
+    .{ .shot = "plugins-07-sem-perguntar-ja" },
+    run(ptNormal),
+    .{ .wait = 300 },
+    key(c.ImGuiKey_Escape),
+    run(toGeral),
+    click("composer"),
+    .{ .text = "minha-clique2" },
+    key(c.ImGuiKey_Enter),
+    expect("a mensagem sua para apagar sem perguntar está na lista", clickOwnSeen2),
+    run(rememberClicks),
+    run(holdBackspace),
+    own_lmsg,
+    run(releaseBackspace),
+    expect("Backspace + clique apaga na hora, sem a pergunta na tela", deletedNoPopup),
+    .{ .wait = 400 },
+    expect("e a pergunta não aparece depois", stillNoPopup),
+    .{ .shot = "plugins-07-apagou-sem-perguntar" },
+    ctrl(c.ImGuiKey_Comma),
+    click("settings:Plugins"),
+    click("plugin-noask:qa07c.lua"),
+    expect("desligado pelo cartão, o aviso some", noAskOff),
+    key(c.ImGuiKey_Escape),
+    run(toGeral),
+    click("composer"),
+    .{ .text = "minha-clique3" },
+    key(c.ImGuiKey_Enter),
+    expect("outra mensagem sua para o Backspace + clique", clickOwnSeen3),
+    run(holdBackspace),
+    own_lmsg,
+    run(releaseBackspace),
+    expect("desligado, o Backspace + clique volta a perguntar", askingClickDelete),
+    .{ .shot = "plugins-07-pergunta-de-novo" },
+    click("plugin-confirm-no"),
+    expect("Cancelar não apaga", clickOwnStill),
     run(cleanup),
     expect("sem os plugins de teste", gone),
 };

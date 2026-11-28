@@ -183,6 +183,8 @@ pub const Engine = struct {
     disabled: std.StringHashMapUnmanaged(void) = .empty,
     /// Hosts aprovados: "arquivo.lua\x00host" (persistidos pelo app).
     approvals: std.StringHashMapUnmanaged(void) = .empty,
+    /// "Apagar sem perguntar" ligado no cartão: os nomes dos arquivos (persistidos pelo app).
+    no_ask: std.StringHashMapUnmanaged(void) = .empty,
     /// Muda a cada carga, troca ou erro (a página e o QA observam).
     generation: u32 = 0,
     /// Muda quando as entradas de menu mudam: a segunda lista aberta deixa de valer.
@@ -262,6 +264,9 @@ pub const Engine = struct {
         var ap = e.approvals.keyIterator();
         while (ap.next()) |k| e.gpa.free(k.*);
         e.approvals.deinit(e.gpa);
+        var na = e.no_ask.keyIterator();
+        while (na.next()) |k| e.gpa.free(k.*);
+        e.no_ask.deinit(e.gpa);
         e.deco.deinit();
         if (current == e) current = null;
     }
@@ -538,6 +543,32 @@ pub const Engine = struct {
         }
         e.generation +%= 1;
         if (p.run != 0) if (e.worker) |w| w.push(.{ .hosts = .{ .run = p.run, .approved = e.approvedFor(p) } });
+        e.host.save(e.host.ctx);
+    }
+
+    // --- Apagar sem perguntar --------------------------------------------------------
+
+    /// O larper.delete deste plugin apaga na hora, sem a pergunta na tela? Só com a
+    /// capacidade `actions` e a escolha da pessoa no cartão. O gesto e os limites (1 por
+    /// gesto, 5 por minuto) continuam valendo do mesmo jeito.
+    pub fn deletesWithoutAsking(e: *const Engine, p: *const Plugin) bool {
+        return !p.man.legacy and p.man.has(.actions) and e.no_ask.contains(p.name);
+    }
+
+    /// Ao ler as configurações salvas.
+    pub fn setNoAskName(e: *Engine, name: []const u8) void {
+        if (e.no_ask.contains(name)) return;
+        const k = e.gpa.dupe(u8, name) catch return;
+        e.no_ask.put(e.gpa, k, {}) catch e.gpa.free(k);
+    }
+
+    /// O interruptor do cartão: vale na hora, e fica salvo. Ligar só para quem pede `actions`.
+    pub fn setDeleteNoAsk(e: *Engine, p: *Plugin, on: bool) void {
+        if (on) {
+            if (p.man.legacy or !p.man.has(.actions)) return;
+            e.setNoAskName(p.name);
+        } else if (e.no_ask.fetchRemove(p.name)) |kv| e.gpa.free(kv.key);
+        e.generation +%= 1;
         e.host.save(e.host.ctx);
     }
 
@@ -846,7 +877,11 @@ pub const Engine = struct {
                 defer a.what.free(e.gpa);
                 // Sem o gesto de verdade (de outra partida, ou forjado), nada acontece.
                 if (!p.validToken(a.token)) return;
-                if (e.host.action(e.host.ctx, p.name, p.title(), &a.what)) |why| {
+                var what = a.what;
+                // Apagar pergunta antes, a não ser que a pessoa tenha desligado isso no
+                // cartão deste plugin: quem decide é a interface, nunca o que veio do Lua.
+                if (what == .delete) what.delete.ask = !e.deletesWithoutAsking(p);
+                if (e.host.action(e.host.ctx, p.name, p.title(), &what)) |why| {
                     p.setErr(why);
                     e.generation +%= 1;
                     e.host.failed(e.host.ctx, p.name, p.err() orelse "");
@@ -955,7 +990,7 @@ pub const Engine = struct {
     // --- plugins.kdl -----------------------------------------------------------------
 
     /// `plugin "nome.lua" enabled=#false`, `host-ok "nome.lua" "api.exemplo.com"`,
-    /// `panel side="left" width=340 open="nome.lua"`.
+    /// `delete-no-ask "nome.lua"`, `panel side="left" width=340 open="nome.lua"`.
     pub fn applyPrefNode(e: *Engine, n: *const kdl.Node) void {
         if (std.mem.eql(u8, n.name, "plugin")) {
             const name = (n.arg(0) orelse return).asString() orelse return;
@@ -964,6 +999,9 @@ pub const Engine = struct {
             const name = (n.arg(0) orelse return).asString() orelse return;
             const host = (n.arg(1) orelse return).asString() orelse return;
             e.setApprovedName(name, host);
+        } else if (std.mem.eql(u8, n.name, "delete-no-ask")) {
+            const name = (n.arg(0) orelse return).asString() orelse return;
+            e.setNoAskName(name);
         } else if (std.mem.eql(u8, n.name, "panel")) {
             if (n.str("side")) |s| e.panel_left = std.mem.eql(u8, s, "left");
             if (n.num("width")) |w| e.panel_w = @floatCast(std.math.clamp(w, 240, 900));
@@ -976,7 +1014,7 @@ pub const Engine = struct {
     }
 
     pub fn writePrefs(e: *const Engine, gpa: std.mem.Allocator, out: *std.ArrayList(u8)) !void {
-        try out.appendSlice(gpa, "// gerado pelo larperCord: plugins desligados, hosts aprovados e o painel\n");
+        try out.appendSlice(gpa, "// gerado pelo larperCord: plugins desligados, hosts aprovados, quem apaga sem perguntar e o painel\n");
         var it = e.disabled.keyIterator();
         while (it.next()) |k| {
             // Nomes que o KDL precisaria escapar ficam de fora.
@@ -988,6 +1026,11 @@ pub const Engine = struct {
             const cut = std.mem.indexOfScalar(u8, k.*, 0) orelse continue;
             if (!kdlSafe(k.*[0..cut]) or !kdlSafe(k.*[cut + 1..])) continue;
             try out.print(gpa, "host-ok \"{s}\" \"{s}\"\n", .{ k.*[0..cut], k.*[cut + 1..] });
+        }
+        var na = e.no_ask.keyIterator();
+        while (na.next()) |k| {
+            if (!kdlSafe(k.*)) continue;
+            try out.print(gpa, "delete-no-ask \"{s}\"\n", .{k.*});
         }
         try out.print(gpa, "panel side=\"{s}\" width={d}", .{ if (e.panel_left) "left" else "right", @round(e.panel_w) });
         if (e.panel_open) |p| if (kdlSafe(p.name)) try out.print(gpa, " open=\"{s}\"", .{p.name});
@@ -1045,6 +1088,8 @@ const T = struct {
     // Ações que a interface recebeu (o tipo e a mensagem), e o motivo para recusar.
     var actions: [16]std.meta.Tag(Action) = undefined;
     var action_ids: [16]u64 = @splat(0);
+    /// O `ask` de cada larper.delete (true nas outras ações).
+    var action_ask: [16]bool = @splat(true);
     var action_text: [64]u8 = undefined;
     var action_text_len: usize = 0;
     var n_actions: usize = 0;
@@ -1172,6 +1217,10 @@ const T = struct {
         if (refuse_action) |why| return why;
         if (n_actions == actions.len) return null;
         actions[n_actions] = std.meta.activeTag(a.*);
+        action_ask[n_actions] = switch (a.*) {
+            .delete => |x| x.ask,
+            else => true,
+        };
         action_ids[n_actions] = switch (a.*) {
             .react => |x| x.id,
             .edit => |x| x.id,
@@ -4752,4 +4801,81 @@ test "plugins: dois plugins ouvindo o clique, cada um com o gesto dele" {
     try std.testing.expectEqual(@as(usize, 2), T.n_actions);
     try std.testing.expectEqual(std.meta.Tag(Action).delete, T.actions[0]);
     try std.testing.expectEqual(std.meta.Tag(Action).pin, T.actions[1]);
+}
+
+test "plugins: apagar sem perguntar vale só para o plugin escolhido, com o gesto e os limites de sempre" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(std.testing.allocator);
+    {
+        var e = T.engine();
+        defer e.deinit();
+        e.load(&.{
+            .{ .name = "a.lua", .src = "-- @name A\n-- @capabilities actions, messages, timers\nlarper.command(\"/a\", function() larper.delete(\"10\") end)\nlarper.command(\"/a2\", function() larper.delete(\"10\"); larper.delete(\"11\") end)\nlarper.command(\"/at\", function() larper.after(0.01, function() larper.delete(\"12\") end) end)\nlarper.on(\"click\", function(msg) larper.delete(msg) end)" },
+            .{ .name = "b.lua", .src = "-- @name B\n-- @capabilities actions\nlarper.command(\"/b\", function() larper.delete(\"20\") end)" },
+            .{ .name = "c.lua", .src = "-- @name C\n-- @capabilities messages\nlarper.on(\"message\", function() end)" },
+        }, false);
+        e.waitIdle();
+        const a = e.list.items[0];
+        const b = e.list.items[1];
+        const cc = e.list.items[2];
+        for (e.list.items) |p| try std.testing.expectEqual(Status.running, p.status());
+        // Desligado de início: o delete chega pedindo a pergunta.
+        try cmdOk(&e, "/a");
+        try std.testing.expectEqual(@as(usize, 1), T.n_actions);
+        try std.testing.expect(T.action_ask[0]);
+        e.setDeleteNoAsk(a, true);
+        // Sem `actions`, nem liga.
+        e.setDeleteNoAsk(cc, true);
+        try std.testing.expect(e.deletesWithoutAsking(a) and !e.deletesWithoutAsking(b) and !e.deletesWithoutAsking(cc));
+        try std.testing.expect(!e.no_ask.contains("c.lua"));
+        try cmdOk(&e, "/a");
+        try std.testing.expect(!T.action_ask[1]);
+        // O outro plugin continua perguntando.
+        try cmdOk(&e, "/b");
+        try std.testing.expect(T.action_ask[2]);
+        try std.testing.expectEqual(@as(u64, 20), T.action_ids[2]);
+        // O clique com Backspace é gesto: apaga sem perguntar.
+        const m: Message = .{ .id = 31, .content = "z", .author = 1, .author_name = "ana", .channel = 42, .channel_name = "geral" };
+        e.onClick(&m, .{ .button = .left, .keys = wire.keyBit("backspace") });
+        e.waitIdle();
+        try std.testing.expectEqual(@as(usize, 4), T.n_actions);
+        try std.testing.expect(!T.action_ask[3]);
+        try std.testing.expectEqual(@as(u64, 31), T.action_ids[3]);
+        // Fora de um gesto, nem com a opção ligada.
+        try cmdOk(&e, "/at");
+        sync.sleepMs(40);
+        e.waitIdle();
+        try std.testing.expectEqual(@as(usize, 4), T.n_actions);
+        try std.testing.expect(std.mem.indexOf(u8, a.err().?, "só funciona") != null);
+        // Desligou: volta a perguntar.
+        e.setDeleteNoAsk(a, false);
+        try cmdOk(&e, "/a");
+        try std.testing.expect(T.action_ask[4]);
+        // Ligada de novo, os limites são os mesmos: 1 por gesto e 5 por minuto.
+        e.setDeleteNoAsk(a, true);
+        try cmdOk(&e, "/a2");
+        try std.testing.expectEqual(@as(usize, 6), T.n_actions);
+        try std.testing.expect(!T.action_ask[5]);
+        try std.testing.expect(std.mem.indexOf(u8, a.err().?, "por gesto") != null);
+        try cmdOk(&e, "/a");
+        try std.testing.expectEqual(@as(usize, 6), T.n_actions);
+        try e.writePrefs(std.testing.allocator, &out);
+    }
+    // A escolha vai e volta pelo plugins.kdl.
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "delete-no-ask \"a.lua\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "\"b.lua\"") == null);
+    const nodes = try kdl.parse(arena.allocator(), out.items, null);
+    var e = T.engine();
+    defer e.deinit();
+    for (nodes) |*n| e.applyPrefNode(n);
+    try std.testing.expect(e.no_ask.contains("a.lua") and !e.no_ask.contains("b.lua"));
+    // Depois de reabrir, o mesmo arquivo continua apagando sem perguntar.
+    e.load(&.{.{ .name = "a.lua", .src = "-- @name A\n-- @capabilities actions\nlarper.command(\"/x\", function() larper.delete(\"5\") end)" }}, false);
+    e.waitIdle();
+    try std.testing.expect(e.deletesWithoutAsking(e.list.items[0]));
+    try cmdOk(&e, "/x");
+    try std.testing.expectEqual(@as(usize, 1), T.n_actions);
+    try std.testing.expect(!T.action_ask[0]);
 }
