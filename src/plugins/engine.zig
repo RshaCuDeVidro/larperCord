@@ -2563,8 +2563,10 @@ test "plugins incluídos: todos ligam, com cabeçalho completo e nos dois idioma
         try std.testing.expect(p.man.name.len > 0 and p.man.nameIn("pt") != null);
         try std.testing.expect(p.man.description.len > 0 and p.man.descriptionIn("pt") != null);
         try std.testing.expect(p.man.version.len > 0);
-        // Estes não precisam de painel: menu, regras ou comando.
-        const no_panel = std.mem.eql(u8, ex.name, "translate.lua") or std.mem.eql(u8, ex.name, "cleanlinks.lua") or std.mem.eql(u8, ex.name, "github.lua");
+        // Estes não precisam de painel: menu, regras, notas, clique ou comando.
+        const no_panel = for ([_][]const u8{ "translate.lua", "cleanlinks.lua", "github.lua", "brasil.lua", "dice.lua", "dictionary.lua", "moneyconvert.lua", "pokemon.lua", "quote.lua", "sed.lua", "steamprice.lua", "wiki.lua" }) |n| {
+            if (std.mem.eql(u8, ex.name, n)) break true;
+        } else false;
         try std.testing.expect(p.tree != null or no_panel);
     }
 }

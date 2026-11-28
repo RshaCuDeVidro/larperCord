@@ -33,6 +33,26 @@ sobrescreve um arquivo que você editou e nunca apaga nada.
 | [`catchup.lua`](plugins/catchup.lua) | `/perdi` ou o painel resume as mensagens não lidas do canal aberto, ou as últimas: quantas de cada pessoa, menções a você, perguntas sem resposta, links e arquivos, cada um com um clique até a mensagem. Só olha quando você pede |
 | [`cleanlinks.lua`](plugins/cleanlinks.lua) | Tira o rastreio dos links que você envia (`utm_*`, `fbclid`, o `si` do YouTube e do Spotify…). O app aplica as regras ao enviar: o plugin não vê o que você escreve |
 | [`links.lua`](plugins/links.lua) | Todos os links e arquivos das mensagens carregadas no canal aberto: busque, abra, copie, vá até a mensagem. Só olha com o painel aberto, e não guarda nada no disco |
+| [`currency.lua`](plugins/currency.lua) | `/dolar`, `/euro`, `/btc` e `/cotacao GBP`: a cotação em reais, enviada na hora quando está fresca, senão posta na caixa de mensagem. O painel lista as cotações e alertas como `USD < 5`, que avisam uma vez quando cruzam. De economia.awesomeapi.com.br, depois de você aprovar o host |
+| [`moneyconvert.lua`](plugins/moneyconvert.lua) | `US$ 20`, `€ 15`, `10 libras` e afins numa mensagem ganham uma nota com o valor na sua moeda (BRL, USD ou EUR no cartão). Só as cotações saem, de economia.awesomeapi.com.br |
+| [`weather.lua`](plugins/weather.lua) | `/clima Recife` põe o tempo na caixa de mensagem: agora, a máxima e a mínima do dia e quando chove. O painel guarda uma cidade e mostra a semana. Do Open-Meteo, sem chave |
+| [`brasil.lua`](plugins/brasil.lua) | `/cep`, `/feriados`, `/ddd` e `/cnpj` põem o endereço, os feriados do ano, o estado de um DDD ou os dados de uma empresa na caixa de mensagem, conferindo o número antes. Da BrasilAPI |
+| [`wiki.lua`](plugins/wiki.lua) | `/wiki termo` põe o resumo da Wikipédia e o link na caixa de mensagem, no idioma da interface, com uma busca quando a página não existe e as opções de uma página de desambiguação |
+| [`dictionary.lua`](plugins/dictionary.lua) | `/significado palavra` (Dicionário Aberto) e `/define word` (dictionaryapi.dev) põem até três significados na caixa de mensagem, com palavras parecidas quando não acham nada |
+| [`pokemon.lua`](plugins/pokemon.lua) | `/pokemon pikachu` ou `/pokemon 25` põe um cartão curto na caixa de mensagem: número, tipos, tamanho e atributos base. Da PokeAPI |
+| [`steamprice.lua`](plugins/steamprice.lua) | Links da loja da Steam ganham uma nota com o preço (em reais, por padrão), o desconto e as análises. Cada jogo é buscado uma vez por hora, no máximo três por mensagem |
+| [`steamfriends.lua`](plugins/steamfriends.lua) | Um painel com quem está online na Steam e em qual jogo, para os perfis que você adicionar (os públicos). Precisa da sua chave da Steam Web API, que fica no chaveiro do sistema; o aviso quando um amigo começa um jogo é opcional |
+| [`freegames.lua`](plugins/freegames.lua) | Jogos de graça na Epic, na Steam e no GOG: um aviso quando aparecem novos, e um painel com Abrir e Avisar no canal. Da GamerPower, conferido a cada 6 horas |
+| [`anime.lua`](plugins/anime.lua) | `/anime nome` segue um anime no AniList, e o painel faz a contagem para o próximo episódio de cada um, com um aviso quando sai |
+| [`lastfm.lua`](plugins/lastfm.lua) | `/np` manda o que você está ouvindo no Last.fm, e o painel mostra a música com a letra (do lrclib.net), atualizando só enquanto está aberto. Precisa do seu usuário e da chave de API do Last.fm, guardada no chaveiro do sistema |
+| [`feeds.lua`](plugins/feeds.lua) | Feeds RSS e Atom num painel (canais do YouTube, Hacker News, versões no GitHub, notícias), com aviso de itens novos e Abrir e Compartilhar no canal. Os sites são os do `@hosts` dele: edite para pôr os seus |
+| [`dice.lua`](plugins/dice.lua) | `/rolar 2d20+3` (também `4d6k3`, `d%`, `dF`), `/sortear a b c` e `/moeda` mandam o resultado no canal, com cada dado. `/roll`, `/pick` e `/coin` também. Sem rede |
+| [`quote.lua`](plugins/quote.lua) | Q + clique numa mensagem, ou "Citar" no menu dela, põe a mensagem como citação na caixa de mensagem, pronta para a sua resposta embaixo |
+| [`sed.lua`](plugins/sed.lua) | `/s errado/certo` corrige a sua última mensagem no canal aberto, no estilo do IRC (`/s a/b/g` para todas as ocorrências, `/s a b` para duas palavras) |
+| [`hide.lua`](plugins/hide.lua) | "Esconder ou mostrar mensagens" no menu de alguém recolhe tudo o que a pessoa escreve, só na sua tela. `/escondidos` lista quem está escondido, com Mostrar |
+| [`channelstats.lua`](plugins/channelstats.lua) | `/raiox` ou o painel: quem mais fala, em que horários e dia da semana, quantas mensagens têm link ou arquivo e o tamanho médio, nas mensagens carregadas no canal (até 500) |
+| [`status.lua`](plugins/status.lua) | GitHub, Cloudflare, npm, Reddit, Twitch, DigitalOcean, Vercel e Epic Games num painel, conferidos a cada 5 minutos, com aviso quando um piora e quando volta. Um interruptor por serviço no cartão |
+| [`uptime.lua`](plugins/uptime.lua) | Confere os seus sites a cada minuto e avisa quando um cai e quando volta. Vem com `example.com`: ponha os seus sites na linha `@hosts` dele e depois adicione os endereços no painel |
 
 Nenhum deles guarda o texto de uma mensagem depois que ela é apagada ou editada: o plugin fica sabendo
 e joga fora o texto velho. Destaques nunca grava no disco o texto de outra pessoa.

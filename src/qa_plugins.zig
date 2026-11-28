@@ -137,7 +137,34 @@ fn fixturesLoaded(app: *App) bool {
     return bundledRunning(app);
 }
 
+/// Os incluídos da 0.7 sem passo próprio nesta bateria (cada um tem os testes dele, com a
+/// API de mentira e as respostas reais das APIs): ligam junto com os outros, e depois saem
+/// da pasta, para os menus, o botão do cabeçalho e as abas do painel serem os de antes.
+const so_ligam = [_][]const u8{ "anime.lua", "brasil.lua", "channelstats.lua", "currency.lua", "dice.lua", "dictionary.lua", "feeds.lua", "freegames.lua", "hide.lua", "lastfm.lua", "moneyconvert.lua", "pokemon.lua", "quote.lua", "sed.lua", "status.lua", "steamfriends.lua", "steamprice.lua", "uptime.lua", "weather.lua", "wiki.lua" };
+var novos_fora = false;
+
+fn soLiga(name: []const u8) bool {
+    for (so_ligam) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
+fn tirarNovos(app: *App) void {
+    for (so_ligam) |name| {
+        var b: [96]u8 = undefined;
+        const f = std.fmt.bufPrintSentinel(&b, "qa-out/plugins/{s}", .{name}, 0) catch continue;
+        _ = c.SDL_RemovePath(f.ptr);
+    }
+    novos_fora = true;
+    app.plugins.reload();
+}
+
+fn novosFora(app: *App) bool {
+    for (so_ligam) |name| if (plugin(app, name) != null) return false;
+    return bundledRunning(app);
+}
+
 fn writeBundled(app: *App) void {
+    novos_fora = false;
     _ = c.SDL_CreateDirectory("qa-out/plugins");
     for (exemplos.list) |ex| {
         var b: [96]u8 = undefined;
@@ -420,6 +447,7 @@ fn threadUp(app: *App) bool {
 
 fn bundledRunning(app: *App) bool {
     for (exemplos.list) |ex| {
+        if (novos_fora and soLiga(ex.name)) continue;
         const p = plugin(app, ex.name) orelse return false;
         if (p.status() != .running) return false;
     }
@@ -1460,6 +1488,9 @@ pub const ops = [_]Op{
     expect("quem lê mensagens e manda para fora ganha um aviso, os outros não", alertsShow),
     .{ .shot = "plugins-pagina" },
     .{ .key = .{ .key = c.ImGuiKey_Escape } },
+    // Os 20 da 0.7 ligaram junto (acima); daqui para baixo, os passos dos de antes.
+    run(tirarNovos),
+    expectLong("sem os incluídos novos, os de antes continuam ligados", novosFora),
 
     s("plugins: favoritos"),
     run(toGeral),
@@ -2367,6 +2398,7 @@ var shown_scam: Id = 0;
 
 // Só o que vem com o app: os plugins de teste apareceriam nas abas do painel.
 fn onlyShipped(app: *App) void {
+    novos_fora = false;
     wipeData(app);
     removeAllPlugins(app);
     _ = c.SDL_CreateDirectory("qa-out/plugins");

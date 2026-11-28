@@ -33,6 +33,26 @@ overwrites a file you've edited and never removes anything.
 | [`catchup.lua`](plugins/catchup.lua) | `/missed` or the panel sums up the unread messages in the open channel, or the last ones: how many from each person, mentions of you, questions left unanswered, links and files, each with a click to the message. It only looks when you ask |
 | [`cleanlinks.lua`](plugins/cleanlinks.lua) | Removes tracking from the links you send (`utm_*`, `fbclid`, YouTube's and Spotify's `si`…). The app applies the rules when you send: the plugin doesn't see what you write |
 | [`links.lua`](plugins/links.lua) | Every link and file in the messages loaded in the open channel: search, open, copy, go to the message. It only looks while its panel is open and keeps nothing on disk |
+| [`currency.lua`](plugins/currency.lua) | `/dolar`, `/euro`, `/btc` and `/cotacao GBP`: the rate in reais, sent right away when it's fresh, otherwise put in the message box. The panel lists the rates and alerts like `USD < 5`, which notify you once when crossed. From economia.awesomeapi.com.br, once you approve the host |
+| [`moneyconvert.lua`](plugins/moneyconvert.lua) | `US$ 20`, `€ 15`, `10 libras` and the like in a message get a note with the value in your currency (BRL, USD or EUR on its card). Only the exchange rates go out, from economia.awesomeapi.com.br |
+| [`weather.lua`](plugins/weather.lua) | `/clima Recife` puts the weather in the message box: now, the day's high and low and when it rains. The panel saves a city and shows the week. From Open-Meteo, no key |
+| [`brasil.lua`](plugins/brasil.lua) | `/cep`, `/feriados`, `/ddd` and `/cnpj` put the address, the year's holidays, the state of an area code or a company's details in the message box, checking the number first. From BrasilAPI |
+| [`wiki.lua`](plugins/wiki.lua) | `/wiki term` puts the Wikipedia summary and the link in the message box, in the interface's language, with a search when the page doesn't exist and the options of a disambiguation page |
+| [`dictionary.lua`](plugins/dictionary.lua) | `/significado palavra` (Dicionário Aberto) and `/define word` (dictionaryapi.dev) put up to three meanings in the message box, with similar words when it finds none |
+| [`pokemon.lua`](plugins/pokemon.lua) | `/pokemon pikachu` or `/pokemon 25` puts a short card in the message box: number, types, size and base stats. From PokeAPI |
+| [`steamprice.lua`](plugins/steamprice.lua) | Links to the Steam store get a note with the price (in reais by default), the discount and the reviews. Each game is looked up once an hour, at most three per message |
+| [`steamfriends.lua`](plugins/steamfriends.lua) | A panel with who's online on Steam and in which game, for the profiles you add (public ones). Needs your Steam Web API key, which stays in the system keyring; a notice when a friend starts a game is optional |
+| [`freegames.lua`](plugins/freegames.lua) | Free games on Epic, Steam and GOG: a notice when new ones show up, and a panel with Open and Tell the channel. From GamerPower, checked every 6 hours |
+| [`anime.lua`](plugins/anime.lua) | `/anime name` follows a show on AniList, and the panel counts down to the next episode of each one, with a notice when it airs |
+| [`lastfm.lua`](plugins/lastfm.lua) | `/np` sends what you're listening to on Last.fm, and the panel shows the song with its lyrics (from lrclib.net), refreshing only while open. Needs your Last.fm user and API key, kept in the system keyring |
+| [`feeds.lua`](plugins/feeds.lua) | RSS and Atom feeds in a panel (YouTube channels, Hacker News, GitHub releases, news), with a notice for new items and Open and Share in the channel. The sites are the ones in its `@hosts`: edit it to add yours |
+| [`dice.lua`](plugins/dice.lua) | `/rolar 2d20+3` (also `4d6k3`, `d%`, `dF`), `/sortear a b c` and `/moeda` send the result to the channel, with each die shown. `/roll`, `/pick` and `/coin` too. No network |
+| [`quote.lua`](plugins/quote.lua) | Q + click on a message, or "Quote" on its menu, puts it in the message box as a quote, ready for your answer under it |
+| [`sed.lua`](plugins/sed.lua) | `/s wrong/right` fixes your last message in the open channel, IRC style (`/s a/b/g` for every occurrence, `/s a b` for two words) |
+| [`hide.lua`](plugins/hide.lua) | "Hide or show messages" on someone's menu collapses everything they write, only on your screen. `/escondidos` lists who's hidden, with Show |
+| [`channelstats.lua`](plugins/channelstats.lua) | `/raiox` or its panel: who talks most, at which hours and weekday, how many messages have links or files, and the average length, over the messages loaded in the channel (up to 500) |
+| [`status.lua`](plugins/status.lua) | GitHub, Cloudflare, npm, Reddit, Twitch, DigitalOcean, Vercel and Epic Games on a panel, checked every 5 minutes, with a notice when one gets worse and when it recovers. One switch per service on its card |
+| [`uptime.lua`](plugins/uptime.lua) | Checks your sites every minute and notifies you when one goes down and when it's back. It comes with `example.com`: put your own sites in its `@hosts` line, then add the addresses on the panel |
 
 None of them keeps the text of a message after it's deleted or edited: the plugin hears about it and
 drops the old text. Highlights never writes other people's text to disk.
@@ -42,7 +62,7 @@ card shows **Update to vX**. It only changes on that click, and your file stays 
 `name.lua.bak` (then `.bak2`, and so on): nothing is overwritten.
 
 **No longer bundled:** bookmarks and the word filter became the app's own Saved messages and Alerts
-and filters; snippets, timestamps, stats and some demos (calc, shrug, dice…) left. If you have them
+and filters; snippets, timestamps, stats and some demos (calc, shrug, the old dado.lua…) left. If you have them
 they keep working, and **Archive to antigos/** moves them to `plugins/antigos/`, which isn't loaded.
 Nothing is deleted. The app still shows `<t:…>` times as dates, with or without a plugin.
 
