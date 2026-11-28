@@ -2538,6 +2538,9 @@ pub const ops_theme = [_]Op{
     run(writeBundled),
     run(reloadNow),
     expectLong("os plugins incluídos ligam", themeLoaded),
+    // Como na geral: os 20 da 0.7 ligaram; o resto confere os de antes.
+    run(tirarNovos),
+    expectLong("sem os incluídos novos, os de antes continuam ligados", novosFora),
     ctrl(c.ImGuiKey_Comma),
     click("settings:Plugins"),
     expect("os cartões aparecem", themeCards),
