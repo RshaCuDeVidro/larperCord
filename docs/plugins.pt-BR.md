@@ -14,8 +14,8 @@ plugins é um plugin:
 O topo de **Configurações → Plugins** (`Ctrl+,`) mostra a pasta exata, e **Instalar os incluídos**
 cria a pasta se ela ainda não existir. Nessa página você vê o que cada um é, o que pede e o erro que
 deu, liga ou desliga (a escolha fica em `plugins.kdl`, ao lado da pasta `plugins`), aprova os hosts
-com que ele quer falar, vê os últimos pedidos de rede dele, abre o painel dele e clica em
-**Recarregar** depois de editar um arquivo.
+com que ele quer falar, deixa ele [apagar sem perguntar](#ações), vê os últimos pedidos de rede dele,
+abre o painel dele e clica em **Recarregar** depois de editar um arquivo.
 
 ## Os plugins que vêm com o app
 
@@ -156,8 +156,9 @@ linha de aviso no cartão, além das etiquetas.
   Enviar, ela continua sem poder.
 - As [ações](#ações) (`larper.reply`, `larper.react`, `larper.edit`, `larper.delete`, `larper.pin`,
   `larper.unpin`, `larper.thread`, `larper.attach`) também pedem o gesto em si, nunca outro evento,
-  um temporizador ou uma resposta HTTP, e têm um teto por gesto e por minuto. Apagar e anexar um arquivo
-  sempre perguntam antes, na tela.
+  um temporizador ou uma resposta HTTP, e têm um teto por gesto e por minuto. Anexar um arquivo sempre
+  pergunta antes, na tela, e apagar também, a não ser que você ligue
+  [Apagar sem perguntar](#ações) no cartão daquele plugin.
 - **Sem arquivos, programas nem sockets.** Só `string`, `table`, `math`, `utf8` e as funções básicas,
   mais `os.time`, `os.date`, `os.clock` e `os.difftime`. Não existe `io`,
   `os.execute`/`os.remove`/`os.getenv`, `require`, `package`, `debug`, `coroutine`, `load`, `loadfile`,
@@ -243,7 +244,7 @@ botão do meio. Pede `messages`, como os outros eventos que trazem uma `msg`. `i
 -- @capabilities messages, actions
 larper.on("click", function(msg, info)
   if info.button == "left" and info.keys.backspace then
-    larper.delete(msg) -- continua perguntando na tela antes
+    larper.delete(msg) -- pergunta na tela antes, a não ser com "Apagar sem perguntar" ligado
   end
 end)
 ```
@@ -252,6 +253,8 @@ end)
   `larper.send` e as outras [ações](#ações) funcionam dentro da função, com os mesmos tetos por gesto
   e por minuto (uma apagada por clique, 5 por minuto). Cada plugin que ouve recebe o clique como um
   gesto só dele.
+- **Sem a pergunta**: `larper.delete` pergunta na tela a cada vez. Para o Backspace + clique apagar na
+  hora, como o plugin do Vencord, ligue [Apagar sem perguntar](#ações) no cartão daquele plugin.
 - **Um clique esquerdo ou direito sem nada apertado não dispara.** Esses são do app (escolher texto,
   abrir o menu da mensagem) e acontecem o tempo todo, então não contam como pedir algo a um plugin,
   do mesmo jeito que `ctrl+c` não pode ser um atalho.
@@ -605,12 +608,19 @@ aparece no cartão do plugin. `mensagem` é uma `msg` ou o ID dela.
 | `larper.reply(mensagem, texto)` | `send` | 5, com `larper.send` | | Responde à mensagem, no canal dela |
 | `larper.react(mensagem, emoji)` | `actions` | 5 | 30 | Põe uma reação: um emoji (`"👍"`) ou um personalizado (`"nome:123"`). Se já está lá, nada muda |
 | `larper.edit(mensagem, texto)` | `actions` | 3 | 20 | Troca o texto de uma mensagem sua (de 1 a 2000 bytes) |
-| `larper.delete(mensagem)` | `actions` | 1 | 5 | Pergunta na tela, mostrando a mensagem, e apaga se você confirmar. A de outra pessoa só se você pode gerenciar mensagens ali |
+| `larper.delete(mensagem)` | `actions` | 1 | 5 | Pergunta na tela, mostrando a mensagem, e apaga se você confirmar (na hora com **Apagar sem perguntar**, abaixo). A de outra pessoa só se você pode gerenciar mensagens ali |
 | `larper.pin(mensagem)`, `larper.unpin(mensagem)` | `actions` | 3 | 10 | Fixa ou desafixa. Pede "Gerenciar mensagens" naquele canal |
 | `larper.thread(mensagem, nome)` | `actions` | 1 | 5 | Cria uma thread a partir da mensagem (nome de 1 a 100 bytes) |
 | `larper.attach(canal)` | `composer` | 1 | 5 | Pergunta na tela e abre o seletor de arquivos do app. O arquivo vai para a caixa de mensagem daquele canal e espera você enviar: o plugin nunca fica sabendo qual foi |
 
 Passar de um teto, ou chamar uma destas fora de um gesto, dá erro no plugin.
+
+**Apagar sem perguntar**: o cartão de um plugin com `actions` em **Configurações → Plugins** tem este
+interruptor, desligado até você ligar, só para aquele plugin, e guardado em `plugins.kdl`. Ligado, o
+`larper.delete` daquele plugin apaga na hora em vez de perguntar. O resto não muda: continua só
+funcionando direto de um gesto no plugin (um clique, atalho, comando, botão ou menu seu), continua uma
+por gesto e 5 por minuto, e continua só nas mensagens que você mesmo poderia apagar. Enquanto está
+ligado, o cartão avisa em vermelho. `larper.attach` sempre pergunta.
 
 ### `larper.json.encode(valor)`, `larper.json.decode(texto)` e `larper.urlencode(texto)`
 

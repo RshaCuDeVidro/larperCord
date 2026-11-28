@@ -14,8 +14,8 @@ plugin:
 The top of **Settings → Plugins** (`Ctrl+,`) shows the exact folder, and **Install bundled plugins**
 creates it if it isn't there yet. On that page you can see what each plugin is, what it asks for and
 any error it hit, turn it on or off (the choice is kept in `plugins.kdl`, next to the `plugins`
-folder), approve the hosts it wants to talk to, see its last network requests, open its panel and
-**Reload** after editing a file.
+folder), approve the hosts it wants to talk to, let it [delete without asking](#actions), see its last
+network requests, open its panel and **Reload** after editing a file.
 
 ## The plugins that come with the app
 
@@ -157,8 +157,9 @@ These are what make it safe to run other people's scripts next to your account.
   send.
 - The [actions](#actions) (`larper.reply`, `larper.react`, `larper.edit`, `larper.delete`,
   `larper.pin`, `larper.unpin`, `larper.thread`, `larper.attach`) need the gesture itself too, never
-  another event, a timer or an HTTP answer, and have a ceiling per gesture and per minute. Deleting
-  and attaching a file always ask you first, on screen.
+  another event, a timer or an HTTP answer, and have a ceiling per gesture and per minute. Attaching
+  a file always asks you first, on screen, and so does deleting, unless you turn on
+  [Delete without asking](#actions) on that plugin's card.
 - **No files, programs or raw sockets.** Only `string`, `table`, `math`, `utf8` and the basic
   functions, plus `os.time`, `os.date`, `os.clock` and `os.difftime`. There is no `io`,
   `os.execute`/`os.remove`/`os.getenv`, `require`, `package`, `debug`, `coroutine`, `load`,
@@ -244,7 +245,7 @@ button. It needs `messages`, like the other events that bring a `msg`. `info` ha
 -- @capabilities messages, actions
 larper.on("click", function(msg, info)
   if info.button == "left" and info.keys.backspace then
-    larper.delete(msg) -- still asks you on screen first
+    larper.delete(msg) -- asks on screen first, unless "Delete without asking" is on
   end
 end)
 ```
@@ -253,6 +254,9 @@ end)
   `larper.send` and the other [actions](#actions) work inside the function, with the same ceilings
   per gesture and per minute (one delete per click, 5 a minute). Each plugin that listens gets the
   click as a gesture of its own.
+- **Without the question**: `larper.delete` asks you on screen each time. To make Backspace + click
+  delete straight away, like the Vencord plugin, turn on [Delete without asking](#actions) on that
+  plugin's card.
 - **A plain left or right click doesn't fire it.** Those belong to the app (selecting text, opening
   the message menu) and happen all the time, so they can't count as asking a plugin for something,
   the same way `ctrl+c` can't be a keybind.
@@ -613,12 +617,19 @@ shows up on the plugin's card. `message` is a `msg` or its ID.
 | `larper.reply(message, text)` | `send` | 5, with `larper.send` | | Replies to the message, in its channel |
 | `larper.react(message, emoji)` | `actions` | 5 | 30 | Adds a reaction: an emoji (`"👍"`) or a custom one (`"name:123"`). If it's already there, nothing changes |
 | `larper.edit(message, text)` | `actions` | 3 | 20 | Changes the text of one of your own messages (1 to 2000 bytes) |
-| `larper.delete(message)` | `actions` | 1 | 5 | Asks you on screen, showing the message, and deletes it if you confirm. Someone else's only if you can manage messages there |
+| `larper.delete(message)` | `actions` | 1 | 5 | Asks you on screen, showing the message, and deletes it if you confirm (straight away with **Delete without asking**, below). Someone else's only if you can manage messages there |
 | `larper.pin(message)`, `larper.unpin(message)` | `actions` | 3 | 10 | Pins or unpins. Needs "Manage messages" in that channel |
 | `larper.thread(message, name)` | `actions` | 1 | 5 | Starts a thread from the message (name of 1 to 100 bytes) |
 | `larper.attach(channel)` | `composer` | 1 | 5 | Asks you on screen and opens the app's file picker. The file goes to that channel's message box and waits for you to send it: the plugin never learns which file it was |
 
 Going over a ceiling, or calling one of these outside a gesture, raises an error in the plugin.
+
+**Delete without asking**: the card of a plugin with `actions` in **Settings → Plugins** has this
+switch, off until you turn it on, for that plugin alone, and kept in `plugins.kdl`. With it on, that
+plugin's `larper.delete` deletes right away instead of asking. Nothing else changes: it still only
+works straight from a gesture on the plugin (your click, keybind, command, button or menu), still one
+per gesture and 5 a minute, and still only messages you could delete yourself. While it's on, the card
+says so in red. `larper.attach` always asks.
 
 ### `larper.json.encode(value)`, `larper.json.decode(text)` and `larper.urlencode(text)`
 
