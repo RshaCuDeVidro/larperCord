@@ -34,6 +34,9 @@
 - Actions on messages: `larper.react`, `larper.reply`, `larper.edit` (only your own messages), `larper.delete` and `larper.attach` (both ask first, on screen; for delete, a "Delete without asking" switch on the plugin's card, off by default, skips the question for that plugin only, with the same gesture rule and ceilings), `larper.pin`, `larper.unpin`, `larper.thread`, and `larper.send` with `reply_to`. They only run straight from a gesture on the plugin (its command, keybind, panel button or menu entry, never an event, a timer or an HTTP answer), with a ceiling per gesture and per minute, and go the same way as the app's own buttons.
 - `larper.on("click", function(msg, info))`: a click on a message with a key held (`info.keys.backspace`, `info.ctrl`…) or with the middle button reaches the plugins that listen, with the message, the button and the keys. It needs `messages`, and it's a gesture on that plugin, so `larper.delete` and the other actions work in it with the same ceilings ("hold Backspace and click to delete" takes a few lines, and deletes without a prompt once you turn on "Delete without asking" on that plugin's card). A plain left or right click stays with the app, a link or a button keeps its own click, and with no plugin listening nothing changes.
 
+**Fixes**
+- Bots in a call (a music bot, say) now show up under the voice channel. Someone the app had never seen, because they never wrote anything, was left out of the list: now whoever joins comes with their profile, and whoever was already in a call when the app opened is fetched once, in the same budgeted queue as the history's members.
+
 ## 0.6.8
 
 **Control from outside**

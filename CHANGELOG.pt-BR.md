@@ -34,6 +34,9 @@
 - Ações nas mensagens: `larper.react`, `larper.reply`, `larper.edit` (só nas suas), `larper.delete` e `larper.attach` (os dois perguntam antes, na tela; para apagar, o interruptor "Apagar sem perguntar" no cartão do plugin, desligado de início, pula a pergunta só para aquele plugin, com a mesma regra do gesto e os mesmos tetos), `larper.pin`, `larper.unpin`, `larper.thread`, e `larper.send` com `reply_to`. Elas só rodam direto de um gesto no plugin (o comando, o atalho, um botão do painel ou um item do menu dele, nunca um evento, um temporizador ou uma resposta HTTP), com limite por gesto e por minuto, e vão pelo mesmo caminho dos botões do app.
 - `larper.on("click", function(msg, info))`: um clique numa mensagem com uma tecla apertada (`info.keys.backspace`, `info.ctrl`…) ou com o botão do meio chega aos plugins que ouvem, com a mensagem, o botão e as teclas. Pede `messages`, e é um gesto naquele plugin, então `larper.delete` e as outras ações funcionam nele com os mesmos tetos ("segurar Backspace e clicar para apagar" cabe em poucas linhas, e apaga sem a pergunta depois que você liga "Apagar sem perguntar" no cartão daquele plugin). O clique esquerdo ou direito sem nada apertado fica com o app, um link ou um botão fica com o clique dele, e sem plugin ouvindo nada muda.
 
+**Correções**
+- Bots na call (um bot de música, por exemplo) agora aparecem embaixo do canal de voz. Quem o app nunca tinha visto, por nunca ter escrito nada, ficava de fora da lista: agora quem entra já vem com o perfil, e quem já estava na call quando o app abriu é buscado uma vez, na mesma fila com limite dos membros do histórico.
+
 ## 0.6.8
 
 **Controle de fora**

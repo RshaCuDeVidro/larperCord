@@ -16,6 +16,7 @@ const types = @import("core/types.zig");
 const enderecos = @import("net/enderecos.zig");
 const app_accounts = @import("app_accounts.zig");
 const gw = @import("net/fake_gateway.zig");
+const qa = @import("ui/qa.zig");
 const Id = types.Id;
 
 comptime {
@@ -29,6 +30,9 @@ const guild: Id = 1190000000000000010;
 const geral: Id = 1190000000000000012;
 const limite: Id = 1190000000000000013;
 const dm: Id = 1190000000000000020;
+const voz: Id = 1190000000000000014;
+const bot: Id = 1180000000000000004;
+const bot2: Id = 1180000000000000005;
 
 /// O app abre na conta do Discord de mentira, com o net/discord.zig de verdade. Recusa
 /// qualquer endereço fora de http://127.0.0.1:<porta> e qualquer token que não seja o de
@@ -236,6 +240,18 @@ fn perdidas(app: *App) bool {
     return emOrdem(app, geral, &.{ "perdida 1", "perdida 2" }) and quantas(app, geral, "perdida 1") == 1;
 }
 
+/// O bot está no Store (como bot), na lista de #voz e desenhado embaixo do canal.
+fn botNaCall(comptime uid: Id) *const fn (*App) bool {
+    return struct {
+        fn f(app: *App) bool {
+            const u = app.store.user(uid) orelse return false;
+            const cs = app.store.channel(voz) orelse return false;
+            if (!u.bot or std.mem.indexOfScalar(Id, cs.voice_members.items, uid) == null) return false;
+            return qa.find(ctl("voice-member:{d}:{d}", .{ voz, uid })) != null;
+        }
+    }.f;
+}
+
 fn naEntrada(app: *App) bool {
     const err = app.login.err_buf[0..app.login.err_len];
     return app.net == .none and app.login.phase == .form and std.mem.indexOf(u8, err, "4004") != null;
@@ -259,6 +275,13 @@ pub const ops = [_]Op{
     s("rede: mensagem que chega"),
     manda("o servidor manda um MESSAGE_CREATE", ctl("/ctl/message?channel={d}&text=oi%20do%20servidor", .{geral})),
     expect("o MESSAGE_CREATE aparece no canal", temMsg(geral, "oi do servidor")),
+
+    s("rede: bot na call"),
+    expectT("quem já estava na call ao abrir e nunca escreveu (um bot) vai num op 8, uma vez", pergunta(ctl("/ctl/check/op8?user={d}&times=1", .{bot})), 4000),
+    expectT("com a resposta do op 8, o bot aparece embaixo de #voz", botNaCall(bot), 4000),
+    manda("outro bot entra na call (VOICE_STATE_UPDATE com o membro e a pessoa)", ctl("/ctl/voz?user={d}", .{bot2})),
+    expectT("ele aparece embaixo de #voz na hora", botNaCall(bot2), 3000),
+    expect("e não vai op 8 por ele (o evento já trouxe a pessoa)", pergunta(ctl("/ctl/check/op8?user={d}&times=0", .{bot2}))),
 
     s("rede: enviar"),
     manda("o eco do envio vai atrasar 800 ms", "/ctl/echo?ms=800"),

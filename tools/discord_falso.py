@@ -33,6 +33,7 @@ Control channel (same port, used by src/qa_rede.zig; all GET, answers JSON):
   /ctl/noack                            stop acking heartbeats on the current connection
   /ctl/rate429?channel=ID&count=N&retry_after=S   next N history GETs answer 429
   /ctl/echo?ms=N                        delay the MESSAGE_CREATE echo of a sent message
+  /ctl/voz?user=ID                      VOICE_STATE_UPDATE: that bot joins #voz, member and user included
   /ctl/check/<name>?...                 {"ok": bool, "why": "..."} (see CHECKS)
   /ctl/summary                          checks whose last answer was not ok, unknown paths
   /ctl/state                            connections, heartbeats and requests (debugging)
@@ -73,6 +74,10 @@ EPOCH = 1420070400000
 ME, BIA, CAIO = 1180000000000000001, 1180000000000000002, 1180000000000000003
 GUILD, CAT, GERAL, LIMITE = 1190000000000000010, 1190000000000000011, 1190000000000000012, 1190000000000000013
 DM = 1190000000000000020
+# #voz: BOT is already in it at READY (voice_states and merged_members with the ID only, like
+# Discord), BOT2 joins later with /ctl/voz. Neither ever wrote, so only the op 8 answer or the
+# VOICE_STATE_UPDATE's member brings the user.
+VOZ, BOT, BOT2 = 1190000000000000014, 1180000000000000004, 1180000000000000005
 
 lock = threading.RLock()
 T0 = time.monotonic()
@@ -106,6 +111,7 @@ state = {
     "fragment": 0,
     "rate429": {},
     "trigger": None,
+    "op8": [],
     "checks": {},
     "last_id": 0,
     # Big account (--conta grande).
@@ -139,13 +145,23 @@ def next_id(ms=None):
         return state["last_id"]
 
 
-NAMES = {ME: ("qa.eu", "QA Eu"), BIA: ("bia.falsa", "Bia Falsa"), CAIO: ("caio.falso", "Caio Falso")}
+NAMES = {ME: ("qa.eu", "QA Eu"), BIA: ("bia.falsa", "Bia Falsa"), CAIO: ("caio.falso", "Caio Falso"),
+         BOT: ("musica.bot", None), BOT2: ("radio.bot", None)}
 
 
 def user(uid):
     un, gn = NAMES[uid]
-    return {"id": str(uid), "username": un, "global_name": gn, "avatar": None, "discriminator": "0",
-            "public_flags": 0, "avatar_decoration_data": None}
+    u = {"id": str(uid), "username": un, "global_name": gn, "avatar": None, "discriminator": "0",
+         "public_flags": 0, "avatar_decoration_data": None}
+    if uid in (BOT, BOT2):
+        u["bot"] = True
+    return u
+
+
+def voice_state(uid):
+    return {"user_id": str(uid), "channel_id": str(VOZ), "session_id": "falso", "deaf": False, "mute": False,
+            "self_deaf": False, "self_mute": False, "self_video": False, "suppress": False,
+            "request_to_speak_timestamp": None}
 
 
 def member():
@@ -195,10 +211,11 @@ def guild():
         "id": str(GUILD),
         "properties": {"id": str(GUILD), "name": "Servidor Falso", "icon": None, "banner": None,
                        "owner_id": str(ME), "description": None, "features": [], "preferred_locale": "pt-BR"},
-        "channels": [chan(CAT, "Texto", 0, kind=4, parent=None), chan(GERAL, "geral", 0), chan(LIMITE, "limite", 1)],
+        "channels": [chan(CAT, "Texto", 0, kind=4, parent=None), chan(GERAL, "geral", 0), chan(LIMITE, "limite", 1),
+                     chan(VOZ, "voz", 2, kind=2)],
         "roles": [{"id": str(GUILD), "name": "@everyone", "permissions": "2248473465835073", "position": 0,
                    "color": 0, "managed": False, "mentionable": False, "hoist": False}],
-        "emojis": [], "stickers": [], "threads": [], "voice_states": [], "member_count": 3,
+        "emojis": [], "stickers": [], "threads": [], "voice_states": [voice_state(BOT)], "member_count": 4,
         "joined_at": joined, "lazy": True, "large": False, "data_mode": "full", "version": 1,
         "premium_subscription_count": 0,
     }
@@ -358,8 +375,7 @@ def on_identify(conn, d):
         state["live"] = conn
         conn.ready = True
         dispatch("READY", ready_payload(s))
-        if CONTA is not None:
-            dispatch("READY_SUPPLEMENTAL", CONTA.supplemental())
+        dispatch("READY_SUPPLEMENTAL", CONTA.supplemental() if CONTA is not None else supplemental())
 
 
 def on_resume(conn, d):
@@ -408,6 +424,27 @@ def on_text(conn, data):
         on_lazy(d)
     elif CONTA is not None and op == 8 and isinstance(d, dict):
         on_members(d)
+    elif op == 8 and isinstance(d, dict):
+        on_members_small(d)
+
+
+def supplemental():
+    """READY_SUPPLEMENTAL of the small account: who is in #voz, with the member by ID only."""
+    return {"guilds": [{"id": str(GUILD), "voice_states": [voice_state(BOT)], "embedded_activities": []}],
+            "merged_members": [[{"user_id": str(BOT), **member()}]],
+            "merged_presences": {"friends": [], "guilds": [[]]}, "lazy_private_channels": [], "disclose": []}
+
+
+def on_members_small(d):
+    """op 8 of the small account: the members it knows among the IDs asked for."""
+    ids = [int(x) for x in d.get("user_ids") or [] if str(x).isdigit()]
+    with lock:
+        state["op8"].append(ids)
+    found = [i for i in ids if i in NAMES]
+    dispatch("GUILD_MEMBERS_CHUNK", {
+        "guild_id": str(GUILD), "members": [{"user": user(i), **member()} for i in found],
+        "chunk_index": 0, "chunk_count": 1, "not_found": [str(i) for i in ids if i not in NAMES],
+        **({"nonce": d["nonce"]} if d.get("nonce") else {})})
 
 
 def on_lazy(d):
@@ -812,9 +849,20 @@ def chk_no_reconnect(q):
     return True, f"ok ({waited:.0f} ms sem conexão)"
 
 
+def chk_op8(q):
+    """op 8: `user` was asked for in exactly `times` requests (0 = never asked)."""
+    uid, times = int(q1(q, "user", "0")), int(q1(q, "times", "1"))
+    with lock:
+        n = sum(1 for ids in state["op8"] if uid in ids)
+        seen = list(state["op8"])
+    if n != times:
+        return False, f"pedido em {n} op 8 (esperado {times}); op 8 recebidos: {seen}"
+    return True, f"ok ({n})"
+
+
 CHECKS = {"identify": chk_identify, "heartbeat": chk_heartbeat, "rest": chk_rest, "history": chk_history,
           "sent": chk_sent, "resume": chk_resume, "fresh": chk_fresh, "zombie": chk_zombie,
-          "ratelimit": chk_ratelimit, "no_reconnect": chk_no_reconnect}
+          "ratelimit": chk_ratelimit, "no_reconnect": chk_no_reconnect, "op8": chk_op8}
 
 
 # --- Control actions -------------------------------------------------------------------
@@ -836,6 +884,10 @@ def ctl(name, q):
             for i in range(int(q1(q, "n", "10"))):
                 dispatch("MESSAGE_CREATE", as_event(remember(message(cid, CAIO, f"{q1(q, 'prefix', 'rajada')} {i + 1}"))))
         return True
+    if name == "voz":
+        uid = int(q1(q, "user", str(BOT2)))
+        return dispatch("VOICE_STATE_UPDATE", {**voice_state(uid), "guild_id": str(GUILD),
+                                               "member": {"user": user(uid), **member()}})
     if name == "big":
         e = as_event(remember(message(cid, BIA, q1(q, "text", "grande"))))
         e["x_padding"] = base64.b64encode(os.urandom(150_000)).decode()

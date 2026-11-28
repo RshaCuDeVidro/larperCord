@@ -1224,8 +1224,8 @@ pub const Gateway = struct {
     }
 
     /// Apelido e foto do servidor de um objeto `member` (perfil do servidor). Sozinho
-    /// (menção, voz, perfil) não marca a pessoa como conhecida para o op 8: a cor do
-    /// cargo não veio junto.
+    /// (menção, perfil, os `merged_members`) não marca a pessoa como conhecida para o
+    /// op 8: a cor do cargo não veio junto.
     fn memberFace(g: *Gateway, gid: Id, uid: Id, m: Value) void {
         var pb: [128]u8 = undefined;
         const read = face_json.read(&pb, gid, uid, m) orelse return;
@@ -1648,8 +1648,13 @@ pub const Gateway = struct {
         if (std.mem.eql(u8, t, "VOICE_STATE_UPDATE")) {
             const user = j.id(j.get(d, "user_id")) orelse return;
             const chan = j.id(j.get(d, "channel_id"));
-            // Quem entra na call vem com o membro: o apelido e a foto do servidor na lista.
-            if (j.get(d, "member")) |m| g.memberFace(j.id(j.get(d, "guild_id")) orelse 0, user, m);
+            // Quem entra na call vem com o membro: a pessoa em si (sem ela a lista da call
+            // pula quem o app nunca viu, como um bot de música que nunca escreveu), o
+            // apelido, a foto e a cor do servidor.
+            if (j.get(d, "member")) |m| {
+                if (j.get(m, "user")) |u| g.upsert(u);
+                g.memberColor(j.id(j.get(d, "guild_id")) orelse 0, user, m);
+            }
             g.emit(.{ .voice_state = .{ .channel = chan, .user = user, .flags = voiceFlagsOf(d) } });
             if (user == g.me) {
                 if (g.voice_unconfirmed) |v| {
@@ -1982,6 +1987,26 @@ pub const Gateway = struct {
             const gid = face_json.mergedGuild(d, gi) orelse continue;
             for (j.array(members)) |m| g.memberFace(gid, face_json.ownerOf(m) orelse continue, m);
         }
+        for (j.array(j.get(d, "guilds"))) |gv| g.askVoiceMembers(j.id(j.get(gv, "id")) orelse continue, j.array(j.get(gv, "voice_states")));
+    }
+
+    /// Quem já estava nas calls de um servidor quando a sessão abriu chega só com o ID
+    /// (os `merged_members` não trazem a pessoa): quem o app ainda não viu (um bot de
+    /// música que nunca escreveu) vai num op 8, pela mesma fila e com os mesmos limites
+    /// das páginas de histórico. Sem a pessoa, a lista da call a pula.
+    fn askVoiceMembers(g: *Gateway, gid: Id, states: []const Value) void {
+        if (gid == 0 or g.members_ask.full()) return;
+        var ids: [member_ask.max_ids]Id = undefined;
+        var n: usize = 0;
+        for (states) |vs| {
+            if (n == ids.len) break;
+            if (j.id(j.get(vs, "channel_id")) == null) continue;
+            const uid = j.id(j.get(vs, "user_id")) orelse continue;
+            if (uid == g.me) continue;
+            ids[n] = uid;
+            n += 1;
+        }
+        if (g.members_ask.page(alloc, gid, ids[0..n])) |r| g.queueMembers(r);
     }
 
     fn channelValue(g: *Gateway, cv: Value, guild_hint: Id) !?types.Channel {
@@ -2233,6 +2258,8 @@ pub const Gateway = struct {
             .voice = try voice.toOwnedSlice(alloc),
         } });
         g.emitVoiceFlags(j.array(j.get(d, "voice_states")));
+        // Os `members` acima já marcaram quem veio com a pessoa; o resto das calls, no op 8.
+        g.askVoiceMembers(gid, j.array(j.get(d, "voice_states")));
     }
 
     /// Mensagem da API -> nosso tipo (conteúdo alocado).
